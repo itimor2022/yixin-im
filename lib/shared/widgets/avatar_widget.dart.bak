@@ -1,0 +1,249 @@
+import 'package:flutter/foundation.dart';
+import 'package:universal_io/io.dart';
+
+import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+
+import '../../core/theme/app_colors.dart';
+
+/// 自定义缓存管理器 - 持久化缓存头像到本地，本地加载可秒开
+class AvatarCacheManager {
+  static const key = 'avatarCache';
+  static CacheManager instance = CacheManager(
+    Config(
+      key,
+      stalePeriod: const Duration(days: 30), // 缓存30天
+      maxNrOfCacheObjects: 500,
+    ),
+  );
+
+  /// 预取单个头像到本地，下次 AvatarWidget 加载即秒开
+  static Future<void> prefetch(String url) async {
+    if (url.isEmpty) return;
+    try {
+      await instance.getSingleFile(url);
+    } catch (_) {}
+  }
+
+  /// 预取一批头像（如联系人列表），后台静默缓存，列表展示时秒加载
+  static void prefetchUrls(List<String> urls) {
+    final valid = urls.where((u) => u.isNotEmpty).toSet().toList();
+    for (final url in valid) {
+      prefetch(url); // 不 await，后台跑
+    }
+  }
+
+  /// 清除所有头像缓存
+  static Future<void> clearAll() async {
+    await instance.emptyCache();
+  }
+
+  /// 清除指定URL的缓存
+  static Future<void> removeFile(String url) async {
+    await instance.removeFile(url);
+  }
+}
+
+class AvatarWidget extends StatefulWidget {
+  final String name;
+  final String? avatar;
+  final String? userId;
+  final double size;
+  final bool showBorder;
+  final Color? borderColor;
+  final double? borderRadius;
+  final String? cacheKey;
+
+  const AvatarWidget({
+    super.key,
+    required this.name,
+    this.avatar,
+    this.userId,
+    this.size = 48,
+    this.showBorder = false,
+    this.borderColor,
+    this.borderRadius,
+    this.cacheKey,
+  });
+
+  @override
+  State<AvatarWidget> createState() => _AvatarWidgetState();
+}
+
+class _AvatarWidgetState extends State<AvatarWidget> {
+  File? _cachedFile;
+  bool _cacheChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.avatar != null && widget.avatar!.isNotEmpty) {
+      _loadFromCache();
+    }
+  }
+
+  @override
+  void didUpdateWidget(AvatarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.avatar != widget.avatar ||
+        oldWidget.cacheKey != widget.cacheKey) {
+      setState(() {
+        _cachedFile = null;
+        _cacheChecked = false;
+      });
+      if (widget.avatar != null && widget.avatar!.isNotEmpty) {
+        _loadFromCache();
+      }
+    }
+  }
+
+  Future<void> _loadFromCache() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      setState(() {
+        _cachedFile = null;
+        _cacheChecked = true;
+      });
+      return;
+    }
+
+    final url = widget.avatar!;
+    final key = widget.cacheKey ?? url;
+    final file = await AvatarCacheManager.instance.getFileFromCache(key);
+    if (!mounted) return;
+    setState(() {
+      _cachedFile = file?.file;
+      _cacheChecked = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarColor = (widget.avatar == null || widget.avatar!.isEmpty)
+        ? AppColors.defaultAvatarColor
+        : AppColors.getAvatarColor(widget.userId ?? widget.name);
+    final initial = widget.name.isNotEmpty ? widget.name.characters.first : '?';
+    final isRounded = widget.borderRadius != null;
+    final size = widget.size;
+
+    Widget child;
+
+    if (widget.avatar == null || widget.avatar!.isEmpty) {
+      child = _buildPlaceholder(avatarColor, initial);
+    } else if (!kIsWeb && _cachedFile != null) {
+      // 本地缓存命中：直接读文件，秒加载，不闪占位
+      child = Image.file(
+        _cachedFile!,
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        cacheWidth: (size * 2).toInt(),
+        cacheHeight: (size * 2).toInt(),
+      );
+    } else if (_cacheChecked) {
+      // 缓存未命中：走网络并写入本地缓存
+      child = CachedNetworkImage(
+        imageUrl: widget.avatar!,
+        cacheManager: AvatarCacheManager.instance,
+        cacheKey: widget.cacheKey ?? widget.avatar!,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
+        placeholderFadeInDuration: Duration.zero,
+        memCacheWidth: (size * 2).toInt(),
+        memCacheHeight: (size * 2).toInt(),
+        useOldImageOnUrlChange: false,
+        imageBuilder: (context, imageProvider) => Container(
+          decoration: BoxDecoration(
+            shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
+            borderRadius: isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+            image: DecorationImage(
+              image: imageProvider,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        placeholder: (context, url) => _buildLoadingPlaceholder(),
+        errorWidget: (context, url, error) => _buildPlaceholder(avatarColor, initial),
+      );
+    } else {
+      child = _buildLoadingPlaceholder();
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: widget.showBorder
+          ? BoxDecoration(
+              shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+              border: Border.all(
+                color: widget.borderColor ?? AppColors.primary,
+                width: 2,
+              ),
+            )
+          : null,
+      child: isRounded
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(widget.borderRadius!),
+              child: child,
+            )
+          : ClipOval(child: child),
+    );
+  }
+
+  Widget _buildLoadingPlaceholder() {
+    final size = widget.size;
+    final isRounded = widget.borderRadius != null;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+        color: const Color(0xFFE0E0E0),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: size * 0.4,
+          height: size * 0.4,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white.withOpacity(0.9),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder(Color color, String initial) {
+    final size = widget.size;
+    final isRounded = widget.borderRadius != null;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color,
+            color.withOpacity(0.8),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initial.toUpperCase(),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.42,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,364 @@
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'api/api_client.dart';
+
+/// 提示音选项
+enum SoundOption {
+  coin('弹钱', 'sounds/crisp.mp3'),  // 弹钱音效
+  crisp('清脆', 'sounds/coin.mp3'),  // 清脆音效
+  none('无', null);
+
+  final String label;
+  final String? assetPath;
+  
+  const SoundOption(this.label, this.assetPath);
+}
+
+/// 全局震动控制器
+class GlobalHaptics {
+  static ProviderContainer? _container;
+  
+  /// 初始化（需要在 app 启动时调用）
+  static void init(ProviderContainer container) {
+    _container = container;
+  }
+  
+  /// 轻触反馈
+  static void light() {
+    if (_shouldVibrate()) {
+      HapticFeedback.lightImpact();
+    }
+  }
+  
+  /// 选择反馈
+  static void selection() {
+    if (_shouldVibrate()) {
+      HapticFeedback.selectionClick();
+    }
+  }
+  
+  /// 中等反馈
+  static void medium() {
+    if (_shouldVibrate()) {
+      HapticFeedback.mediumImpact();
+    }
+  }
+  
+  /// 重度反馈
+  static void heavy() {
+    if (_shouldVibrate()) {
+      HapticFeedback.heavyImpact();
+    }
+  }
+  
+  /// 检查是否应该震动
+  static bool _shouldVibrate() {
+    if (_container == null) return true;
+    try {
+      final settings = _container!.read(notificationSoundServiceProvider);
+      return settings.inAppVibrate;
+    } catch (e) {
+      return true;
+    }
+  }
+}
+
+/// 通知类型
+enum NotificationType {
+  privateMessage,  // 私聊消息
+  groupMessage,    // 群组消息
+  channelMessage,  // 频道消息
+  momentLike,      // 动态点赞
+  momentComment,   // 动态评论
+  momentReply,     // 动态回复
+}
+
+/// 通知音效设置状态
+class NotificationSoundSettings {
+  final bool messageNotification;
+  final bool groupNotification;
+  final bool channelNotification;
+  final bool momentNotification;  // 动态通知开关
+  final bool showPreview;
+  final bool soundEnabled;
+  final bool vibrateEnabled;
+  final bool momentSound;  // 动态声音开关
+  final bool inAppSound;
+  final bool inAppVibrate;
+  final SoundOption selectedSound;
+  
+  const NotificationSoundSettings({
+    this.messageNotification = true,
+    this.groupNotification = true,
+    this.channelNotification = true,
+    this.momentNotification = true,
+    this.showPreview = true,
+    this.soundEnabled = true,
+    this.vibrateEnabled = true,
+    this.momentSound = true,
+    this.inAppSound = true,
+    this.inAppVibrate = true,
+    this.selectedSound = SoundOption.coin,
+  });
+  
+  NotificationSoundSettings copyWith({
+    bool? messageNotification,
+    bool? groupNotification,
+    bool? channelNotification,
+    bool? momentNotification,
+    bool? showPreview,
+    bool? soundEnabled,
+    bool? vibrateEnabled,
+    bool? momentSound,
+    bool? inAppSound,
+    bool? inAppVibrate,
+    SoundOption? selectedSound,
+  }) {
+    return NotificationSoundSettings(
+      messageNotification: messageNotification ?? this.messageNotification,
+      groupNotification: groupNotification ?? this.groupNotification,
+      channelNotification: channelNotification ?? this.channelNotification,
+      momentNotification: momentNotification ?? this.momentNotification,
+      showPreview: showPreview ?? this.showPreview,
+      soundEnabled: soundEnabled ?? this.soundEnabled,
+      vibrateEnabled: vibrateEnabled ?? this.vibrateEnabled,
+      momentSound: momentSound ?? this.momentSound,
+      inAppSound: inAppSound ?? this.inAppSound,
+      inAppVibrate: inAppVibrate ?? this.inAppVibrate,
+      selectedSound: selectedSound ?? this.selectedSound,
+    );
+  }
+}
+
+/// 通知音效服务
+class NotificationSoundService extends StateNotifier<NotificationSoundSettings> {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  final Ref _ref;
+  bool _isPlaying = false;
+  bool _isDisposed = false;
+  
+  NotificationSoundService(this._ref) : super(const NotificationSoundSettings()) {
+    _loadSettings();
+  }
+  
+  /// 从本地存储加载设置
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final soundIndex = prefs.getInt('notification_sound_type') ?? 0;
+      final selectedSound = SoundOption.values[soundIndex.clamp(0, SoundOption.values.length - 1)];
+      
+      state = NotificationSoundSettings(
+        messageNotification: prefs.getBool('notification_message') ?? true,
+        groupNotification: prefs.getBool('notification_group') ?? true,
+        channelNotification: prefs.getBool('notification_channel') ?? true,
+        momentNotification: prefs.getBool('notification_moment') ?? true,
+        showPreview: prefs.getBool('notification_preview') ?? true,
+        soundEnabled: prefs.getBool('notification_sound') ?? true,
+        vibrateEnabled: prefs.getBool('notification_vibrate') ?? true,
+        momentSound: prefs.getBool('notification_moment_sound') ?? true,
+        inAppSound: prefs.getBool('notification_inapp_sound') ?? true,
+        inAppVibrate: prefs.getBool('notification_inapp_vibrate') ?? true,
+        selectedSound: selectedSound,
+      );
+    } catch (e) {
+      // 使用默认设置
+    }
+  }
+  
+  /// 保存设置
+  Future<void> saveSettings(NotificationSoundSettings settings) async {
+    final oldShowPreview = state.showPreview;
+    state = settings;
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notification_message', settings.messageNotification);
+    await prefs.setBool('notification_group', settings.groupNotification);
+    await prefs.setBool('notification_channel', settings.channelNotification);
+    await prefs.setBool('notification_moment', settings.momentNotification);
+    await prefs.setBool('notification_preview', settings.showPreview);
+    await prefs.setBool('notification_sound', settings.soundEnabled);
+    await prefs.setBool('notification_vibrate', settings.vibrateEnabled);
+    await prefs.setBool('notification_moment_sound', settings.momentSound);
+    await prefs.setBool('notification_inapp_sound', settings.inAppSound);
+    await prefs.setBool('notification_inapp_vibrate', settings.inAppVibrate);
+    await prefs.setInt('notification_sound_type', settings.selectedSound.index);
+    
+    // 如果 showPreview 设置改变了，同步到后端
+    if (oldShowPreview != settings.showPreview) {
+      _syncPushSettingsToServer(settings.showPreview);
+    }
+  }
+  
+  /// 同步推送设置到后端
+  Future<void> _syncPushSettingsToServer(bool showPreview) async {
+    try {
+      final api = _ref.read(apiClientProvider);
+      await api.put('/user/push-settings', data: {
+        'show_preview': showPreview,
+      });
+      debugPrint('[NotificationService] Push settings synced: showPreview=$showPreview');
+    } catch (e) {
+      debugPrint('[NotificationService] Failed to sync push settings: $e');
+    }
+  }
+  
+  /// 初始化时同步设置到后端（确保后端状态一致）
+  Future<void> syncSettingsToServer() async {
+    await _syncPushSettingsToServer(state.showPreview);
+  }
+  
+  /// 播放通知音效
+  Future<void> playNotificationSound(NotificationType type, {bool isInApp = true}) async {
+    // 检查是否应该播放声音
+    if (!_shouldPlaySound(type, isInApp)) return;
+    
+    // 获取要播放的音效
+    final sound = state.selectedSound;
+    if (sound.assetPath == null) return;
+    
+    // 防止重复播放
+    if (_isPlaying) return;
+    
+    try {
+      _isPlaying = true;
+      await _audioPlayer.stop();
+      await _audioPlayer.play(AssetSource(sound.assetPath!));
+      
+      // 播放完成后重置状态
+      _audioPlayer.onPlayerComplete.first.then((_) {
+        _isPlaying = false;
+      });
+    } catch (e) {
+      _isPlaying = false;
+    }
+  }
+  
+  /// 播放振动
+  Future<void> playVibration(NotificationType type, {bool isInApp = true}) async {
+    if (!_shouldVibrate(type, isInApp)) return;
+    
+    HapticFeedback.mediumImpact();
+  }
+  
+  /// 播放通知（声音 + 振动）
+  Future<void> playNotification(NotificationType type, {bool isInApp = true}) async {
+    await Future.wait([
+      playNotificationSound(type, isInApp: isInApp),
+      playVibration(type, isInApp: isInApp),
+    ]);
+  }
+  
+  /// 检查是否应该播放声音
+  bool _shouldPlaySound(NotificationType type, bool isInApp) {
+    // 应用内检查
+    if (isInApp && !state.inAppSound) return false;
+    // 应用外检查
+    if (!isInApp && !state.soundEnabled) return false;
+    
+    // 根据通知类型检查
+    switch (type) {
+      case NotificationType.privateMessage:
+        return state.messageNotification;
+      case NotificationType.groupMessage:
+        return state.groupNotification;
+      case NotificationType.channelMessage:
+        return state.channelNotification;
+      case NotificationType.momentLike:
+      case NotificationType.momentComment:
+      case NotificationType.momentReply:
+        return state.momentNotification && state.momentSound;
+    }
+  }
+  
+  /// 检查是否应该振动
+  bool _shouldVibrate(NotificationType type, bool isInApp) {
+    // 应用内检查
+    if (isInApp && !state.inAppVibrate) return false;
+    // 应用外检查
+    if (!isInApp && !state.vibrateEnabled) return false;
+    
+    // 根据通知类型检查
+    switch (type) {
+      case NotificationType.privateMessage:
+        return state.messageNotification;
+      case NotificationType.groupMessage:
+        return state.groupNotification;
+      case NotificationType.channelMessage:
+        return state.channelNotification;
+      case NotificationType.momentLike:
+      case NotificationType.momentComment:
+      case NotificationType.momentReply:
+        return state.momentNotification;
+    }
+  }
+  
+  /// 预览播放音效
+  Future<void> previewSound(SoundOption sound) async {
+    if (sound.assetPath == null) return;
+    
+    try {
+      await _audioPlayer.stop();
+      await _audioPlayer.play(AssetSource(sound.assetPath!));
+    } catch (e) {
+      // 忽略错误
+    }
+  }
+  
+  /// 检查是否应该显示通知（用于推送通知内容）
+  bool shouldShowNotification(NotificationType type) {
+    switch (type) {
+      case NotificationType.privateMessage:
+        return state.messageNotification;
+      case NotificationType.groupMessage:
+        return state.groupNotification;
+      case NotificationType.channelMessage:
+        return state.channelNotification;
+      case NotificationType.momentLike:
+      case NotificationType.momentComment:
+      case NotificationType.momentReply:
+        return state.momentNotification;
+    }
+  }
+  
+  /// 检查是否应该显示消息预览内容
+  bool shouldShowPreview() {
+    return state.showPreview;
+  }
+  
+  /// 获取当前设置状态（用于调试）
+  Map<String, dynamic> getSettingsDebugInfo() {
+    return {
+      'messageNotification': state.messageNotification,
+      'groupNotification': state.groupNotification,
+      'channelNotification': state.channelNotification,
+      'momentNotification': state.momentNotification,
+      'showPreview': state.showPreview,
+      'soundEnabled': state.soundEnabled,
+      'vibrateEnabled': state.vibrateEnabled,
+      'momentSound': state.momentSound,
+      'inAppSound': state.inAppSound,
+      'inAppVibrate': state.inAppVibrate,
+      'selectedSound': state.selectedSound.label,
+    };
+  }
+  
+  @override
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+}
+
+/// Provider
+final notificationSoundServiceProvider = 
+    StateNotifierProvider<NotificationSoundService, NotificationSoundSettings>((ref) {
+  return NotificationSoundService(ref);
+});

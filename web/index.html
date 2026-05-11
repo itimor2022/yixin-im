@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="YiXin IM web client">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <meta name="theme-color" content="#1a1a1a">
+  <link rel="manifest" href="manifest.json">
+
+  <title>壹信IM</title>
+</head>
+<body>
+  <script>
+    (function () {
+      try {
+        const cachedTitle = window.localStorage.getItem('app_browser_title');
+        if (cachedTitle && cachedTitle.trim()) {
+          document.title = cachedTitle.trim();
+        }
+      } catch (_) {}
+    })();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

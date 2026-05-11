@@ -1,0 +1,2 @@
+伪静态
+try_files $uri $uri/ /index.html;

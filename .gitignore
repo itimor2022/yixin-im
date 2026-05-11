@@ -1,0 +1,30 @@
+# 可执行文件
+/server
+*.exe
+*.dll
+
+# 上传目录（运行时生成）
+baota/uploads/
+uploads/
+
+# 本地/敏感（生产请自行配置）
+.env
+*.local.yaml
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.tmp
+data.db
+
+# Admin 前端（避免提交依赖与构建产物）
+admin/node_modules/
+admin/dist/
+admin/dist-ssr/
+
+# 编码/乱码排查脚本生成物
+docs/app_literals_snippets.txt
+docs/garbled_literals.txt
+docs/encoding_candidates.txt

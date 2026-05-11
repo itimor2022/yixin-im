@@ -1,0 +1,1 @@
+void setBrowserTitle(String title) {}

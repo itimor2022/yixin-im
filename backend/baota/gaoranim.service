@@ -1,0 +1,19 @@
+[Unit]
+Description=壹信 IM 后端服务
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/www/wwwroot/gaoranim
+ExecStart=/www/wwwroot/gaoranim/server
+Restart=always
+RestartSec=5
+StandardOutput=append:/www/wwwroot/gaoranim/server.log
+StandardError=append:/www/wwwroot/gaoranim/server.log
+
+# 环境变量
+Environment=GIN_MODE=release
+
+[Install]
+WantedBy=multi-user.target

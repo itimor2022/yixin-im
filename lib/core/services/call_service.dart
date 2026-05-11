@@ -1,0 +1,1609 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:uuid/uuid.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+
+import 'api/api_client.dart';
+import 'api/websocket_service.dart';
+import 'desktop_notification_service.dart';
+
+enum CallState { idle, outgoing, incoming, connecting, connected, ended }
+
+enum CallType { voice, video }
+
+class CallInfo {
+  final int? callId;
+  final String channelName;
+  final String remoteUserId;
+  final String remoteName;
+  final String? remoteAvatar;
+  final CallType type;
+  final bool isOutgoing;
+  final DateTime startTime;
+  DateTime? connectTime;
+  int? remoteUid;
+
+  CallInfo({
+    this.callId,
+    required this.channelName,
+    required this.remoteUserId,
+    required this.remoteName,
+    this.remoteAvatar,
+    required this.type,
+    required this.isOutgoing,
+    DateTime? startTime,
+    this.connectTime,
+    this.remoteUid,
+  }) : startTime = startTime ?? DateTime.now();
+
+  CallInfo copyWith({
+    int? callId,
+    String? channelName,
+    String? remoteUserId,
+    String? remoteName,
+    String? remoteAvatar,
+    CallType? type,
+    bool? isOutgoing,
+    DateTime? startTime,
+    DateTime? connectTime,
+    int? remoteUid,
+  }) {
+    return CallInfo(
+      callId: callId ?? this.callId,
+      channelName: channelName ?? this.channelName,
+      remoteUserId: remoteUserId ?? this.remoteUserId,
+      remoteName: remoteName ?? this.remoteName,
+      remoteAvatar: remoteAvatar ?? this.remoteAvatar,
+      type: type ?? this.type,
+      isOutgoing: isOutgoing ?? this.isOutgoing,
+      startTime: startTime ?? this.startTime,
+      connectTime: connectTime ?? this.connectTime,
+      remoteUid: remoteUid ?? this.remoteUid,
+    );
+  }
+}
+
+class CallServiceState {
+  final CallState state;
+  final CallInfo? callInfo;
+  final bool isMuted;
+  final bool isSpeakerOn;
+  final bool isVideoEnabled;
+  final bool isRemoteVideoEnabled;
+  final bool isMinimized;
+  final String? errorMessage;
+
+  const CallServiceState({
+    this.state = CallState.idle,
+    this.callInfo,
+    this.isMuted = false,
+    this.isSpeakerOn = false,
+    this.isVideoEnabled = true,
+    this.isRemoteVideoEnabled = true,
+    this.isMinimized = false,
+    this.errorMessage,
+  });
+
+  CallServiceState copyWith({
+    CallState? state,
+    CallInfo? callInfo,
+    bool? isMuted,
+    bool? isSpeakerOn,
+    bool? isVideoEnabled,
+    bool? isRemoteVideoEnabled,
+    bool? isMinimized,
+    String? errorMessage,
+    bool clearError = false,
+  }) {
+    return CallServiceState(
+      state: state ?? this.state,
+      callInfo: callInfo ?? this.callInfo,
+      isMuted: isMuted ?? this.isMuted,
+      isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
+      isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
+      isRemoteVideoEnabled: isRemoteVideoEnabled ?? this.isRemoteVideoEnabled,
+      isMinimized: isMinimized ?? this.isMinimized,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+    );
+  }
+
+  bool get isInCall =>
+      state == CallState.outgoing ||
+      state == CallState.incoming ||
+      state == CallState.connecting ||
+      state == CallState.connected;
+}
+
+class CallService extends StateNotifier<CallServiceState> {
+  final ApiClient _api;
+  final WebSocketService _wsService;
+  RtcEngine? _engine;
+  Timer? _callTimer;
+  String? _appId;
+  bool _isEnabled = false;
+  bool _isSimulator = false;
+
+  // CallKit UUID
+  String? _currentCallKitUuid;
+
+  Function(CallInfo)? onIncomingCall;
+  Function()? onCallConnected;
+  Function(String reason)? onCallEnded;
+  Function(String error)? onCallFailed;
+
+  static GlobalKey<NavigatorState>? navigatorKey;
+
+  Future<void>? _initEngineFuture;
+  bool _isAcceptingCall = false;
+  bool _isEndingCall = false;
+  bool _isRejectingCall = false;
+  bool _isCancellingCall = false;
+
+  StreamSubscription? _callKitSubscription;
+
+  bool _isHandlingCallKitAccept = false;
+  bool _isRestoringSystemIncomingCall = false;
+
+  final List<String> _wsHandlerIds = [];
+
+  bool _configLoaded = false;
+
+  RtcEngineEventHandler? _eventHandler;
+
+  bool _isDisposed = false;
+
+  CallService(this._api, this._wsService) : super(const CallServiceState()) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _checkSimulator();
+
+      if (!kIsWeb && !_isSimulator && (Platform.isIOS || Platform.isAndroid)) {
+        _setupCallKit();
+      }
+
+      _setupWebSocketListeners();
+    } catch (e) {
+      debugPrint('[CallService] Init error: $e');
+    }
+  }
+
+  Future<void> ensureConfigLoaded() async {
+    if (_configLoaded || _isDisposed) return;
+    try {
+      await _loadConfig();
+      _configLoaded = true;
+    } catch (e) {
+      debugPrint('[CallService] Load config error: $e');
+    }
+  }
+
+  Future<void> _checkSimulator() async {
+    try {
+      if (kIsWeb) {
+        _isSimulator = false;
+        return;
+      }
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        _isSimulator = !iosInfo.isPhysicalDevice;
+      } else if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        _isSimulator = !androidInfo.isPhysicalDevice;
+      } else {
+        _isSimulator = false;
+      }
+      if (_isSimulator) {
+        debugPrint('[CallService] Running on simulator, Agora SDK disabled');
+      }
+    } catch (e) {
+      debugPrint('[CallService] Check simulator error: $e');
+    }
+  }
+
+  void _setupWebSocketListeners() {
+    debugPrint('[CallService] Setting up WebSocket listeners');
+
+    for (final id in _wsHandlerIds) {
+      _wsService.unregisterHandler(id);
+    }
+    _wsHandlerIds.clear();
+
+    final incomingId = _wsService.registerHandler(WSMessageType.incomingCall, (
+      data,
+    ) {
+      debugPrint('[CallService] ========== INCOMING CALL ==========');
+      debugPrint('[CallService] Incoming call data: $data');
+      debugPrint(
+        '[CallService] isSimulator: $_isSimulator, isEnabled: $_isEnabled',
+      );
+      final callData = data['data'] as Map<String, dynamic>?;
+      if (callData != null) {
+        handleIncomingCall(callData);
+      } else {
+        debugPrint('[CallService] ERROR: callData is null!');
+      }
+    });
+    _wsHandlerIds.add(incomingId);
+
+    final acceptedId = _wsService.registerHandler(WSMessageType.callAccepted, (
+      data,
+    ) {
+      debugPrint('[CallService] Call accepted');
+      handleCallAccepted();
+    });
+    _wsHandlerIds.add(acceptedId);
+
+    final rejectedId = _wsService.registerHandler(WSMessageType.callRejected, (
+      data,
+    ) {
+      debugPrint('[CallService] Call rejected: $data');
+      final reason = data['data']?['reason'] as String? ?? 'decline';
+      handleCallRejected(reason);
+    });
+    _wsHandlerIds.add(rejectedId);
+
+    final endedId = _wsService.registerHandler(WSMessageType.callEnded, (data) {
+      debugPrint('[CallService] Call ended: $data');
+      final reason = data['data']?['reason'] as String? ?? 'hangup';
+      endCall(reason: reason, notifyServer: false);
+    });
+    _wsHandlerIds.add(endedId);
+
+    final cancelledId = _wsService.registerHandler(
+      WSMessageType.callCancelled,
+      (data) {
+        debugPrint('[CallService] Call cancelled');
+        handleCallCancelled();
+      },
+    );
+    _wsHandlerIds.add(cancelledId);
+  }
+
+  Future<void> _loadConfig() async {
+    try {
+      final response = await _api.get<Map<String, dynamic>>('/call/config');
+      if (response.isSuccess && response.data != null) {
+        _isEnabled = response.data!['enabled'] == true;
+        _appId = response.data!['app_id'] as String?;
+        debugPrint(
+          '[CallService] Enabled: $_isEnabled, AppId: ${_appId?.substring(0, 8)}...',
+        );
+      }
+    } catch (e) {
+      debugPrint('[CallService] Load config error: $e');
+    }
+  }
+
+  bool get isEnabled {
+    if (kIsWeb) {
+      return _isEnabled && _appId != null && _appId!.isNotEmpty;
+    }
+    return !_isSimulator && _isEnabled && _appId != null && _appId!.isNotEmpty;
+  }
+
+  Future<bool> _requestPermissions(CallType type) async {
+    try {
+      if (kIsWeb) {
+        debugPrint(
+          '[CallService] Web platform, browser will handle media permissions',
+        );
+        return true;
+      }
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+        debugPrint(
+          '[CallService] Desktop platform, system will handle permissions',
+        );
+        return true;
+      }
+
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        debugPrint('[CallService] Microphone permission denied');
+        if (micStatus.isPermanentlyDenied) {
+          state = state.copyWith(errorMessage: '通话失败，请重试');
+          await openAppSettings();
+        } else {
+          state = state.copyWith(errorMessage: '通话失败，请重试');
+        }
+        return false;
+      }
+
+      if (type == CallType.video) {
+        final cameraStatus = await Permission.camera.request();
+        if (!cameraStatus.isGranted) {
+          debugPrint('[CallService] Camera permission denied');
+          if (cameraStatus.isPermanentlyDenied) {
+            state = state.copyWith(errorMessage: '通话失败，请重试');
+            await openAppSettings();
+          } else {
+            state = state.copyWith(errorMessage: '通话失败，请重试');
+          }
+          return false;
+        }
+      }
+
+      if (Platform.isAndroid) {
+        await Permission.bluetoothConnect.request();
+      }
+    } catch (e) {
+      debugPrint('[CallService] Permission request error: $e');
+    }
+
+    return true;
+  }
+
+  Future<void> _initEngine() async {
+    if (_engine != null) return;
+
+    if (_initEngineFuture != null) {
+      return _initEngineFuture;
+    }
+
+    _initEngineFuture = _doInitEngine();
+    try {
+      await _initEngineFuture;
+    } finally {
+      _initEngineFuture = null;
+    }
+  }
+
+  Future<void> _doInitEngine() async {
+    if (_engine != null) return;
+    if (_appId == null || _appId!.isEmpty) {
+      throw Exception('App ID not configured');
+    }
+
+    _engine = createAgoraRtcEngine();
+    await _engine!.initialize(
+      RtcEngineContext(
+        appId: _appId!,
+        channelProfile: ChannelProfileType.channelProfileCommunication,
+      ),
+    );
+
+    _eventHandler = RtcEngineEventHandler(
+      onJoinChannelSuccess: (connection, elapsed) {
+        debugPrint('[Agora] Join channel success: ${connection.channelId}');
+      },
+      onUserJoined: (connection, remoteUid, elapsed) {
+        debugPrint('[Agora] User joined: $remoteUid');
+        if (_isDisposed) return;
+
+        _cancelConnectionTimeout();
+
+        if (state.state == CallState.connecting ||
+            state.state == CallState.outgoing) {
+          state = state.copyWith(
+            state: CallState.connected,
+            isRemoteVideoEnabled: true,
+            callInfo: state.callInfo?.copyWith(
+              remoteUid: remoteUid,
+              connectTime: DateTime.now(),
+            ),
+          );
+          onCallConnected?.call();
+          _startCallTimer();
+        }
+      },
+      onUserOffline: (connection, remoteUid, reason) {
+        debugPrint('[Agora] User offline: $remoteUid, reason: $reason');
+        if (_isDisposed) return;
+        if (state.state == CallState.connected) {
+          endCall(reason: 'remote_hangup');
+        }
+      },
+      onRemoteVideoStateChanged:
+          (connection, remoteUid, videoState, reason, elapsed) {
+        debugPrint(
+          '[Agora] Remote video state: $videoState, reason: $reason',
+        );
+        if (_isDisposed) return;
+        if (state.state == CallState.connected ||
+            state.state == CallState.connecting) {
+          final isEnabled =
+              videoState == RemoteVideoState.remoteVideoStateDecoding ||
+                  videoState == RemoteVideoState.remoteVideoStateStarting;
+          state = state.copyWith(isRemoteVideoEnabled: isEnabled);
+        }
+      },
+      onError: (err, msg) {
+        debugPrint('[Agora] Error: $err - $msg');
+        if (_isDisposed) return;
+        if (state.state != CallState.idle) {
+          state = state.copyWith(errorMessage: msg);
+        }
+      },
+      onConnectionStateChanged: (connection, stateType, reason) {
+        debugPrint('[Agora] Connection state: $stateType, reason: $reason');
+        if (_isDisposed) return;
+        if (stateType == ConnectionStateType.connectionStateDisconnected ||
+            stateType == ConnectionStateType.connectionStateFailed) {
+          if (state.state == CallState.connected ||
+              state.state == CallState.connecting) {
+            debugPrint('[Agora] Network disconnected during call, ending call');
+            endCall(reason: 'network_error');
+          }
+        }
+      },
+    );
+    _engine!.registerEventHandler(_eventHandler!);
+
+    await _engine!.enableAudio();
+
+    if (Platform.isIOS || Platform.isAndroid) {
+      await _engine!.setDefaultAudioRouteToSpeakerphone(false);
+    }
+  }
+
+  Future<bool> startCall({
+    required String targetUserId,
+    required String targetName,
+    String? targetAvatar,
+    required CallType type,
+  }) async {
+    if (_isDisposed) return false;
+
+    await _checkSimulator();
+    if (_isDisposed) return false;
+
+    debugPrint(
+      '[CallService] startCall: isWeb=$kIsWeb, isSimulator=$_isSimulator, isEnabled=$_isEnabled, appId=${_appId?.isNotEmpty}',
+    );
+
+    if (!kIsWeb && _isSimulator) {
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      return false;
+    }
+
+    await _loadConfig();
+    debugPrint(
+      '[CallService] After loadConfig: isEnabled=$_isEnabled, appId=$_appId',
+    );
+
+    if (!isEnabled) {
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      return false;
+    }
+
+    if (state.isInCall) {
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      return false;
+    }
+
+    if (_wsService.state != WSConnectionState.connected) {
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      return false;
+    }
+
+    try {
+      final hasPermission = await _requestPermissions(type);
+      if (!hasPermission) {
+        return false;
+      }
+
+      await _initEngine();
+
+      final response = await _api.post<Map<String, dynamic>>(
+        '/call/create',
+        data: {
+          'target_user_id': targetUserId,
+          'call_type': type == CallType.voice ? 'voice' : 'video',
+        },
+      );
+
+      if (!response.isSuccess || response.data == null) {
+        state = state.copyWith(errorMessage: response.message);
+        return false;
+      }
+
+      final data = response.data!;
+      final channelName = (data['channel_name'] as String?) ?? '';
+      final token = (data['token'] as String?) ?? '';
+      final callId = (data['call_id'] as int?) ?? 0;
+
+      if (channelName.isEmpty || token.isEmpty) {
+        debugPrint(
+          '[CallService] Invalid call data: channelName or token is empty',
+        );
+        state = state.copyWith(errorMessage: '通话失败，请重试');
+        return false;
+      }
+
+      state = state.copyWith(
+        state: CallState.outgoing,
+        callInfo: CallInfo(
+          callId: callId,
+          channelName: channelName,
+          remoteUserId: targetUserId,
+          remoteName: targetName,
+          remoteAvatar: targetAvatar,
+          type: type,
+          isOutgoing: true,
+        ),
+        isVideoEnabled: type == CallType.video,
+      );
+
+      if (type == CallType.video) {
+        await _engine!.enableVideo();
+        try {
+          await _engine!.startPreview();
+        } catch (previewError) {
+          debugPrint('[CallService] startPreview error: $previewError');
+          if (previewError is AgoraRtcException && previewError.code == -2) {
+            if (Platform.isMacOS) {
+              state = state.copyWith(errorMessage: '通话失败，请重试');
+            } else {
+              state = state.copyWith(errorMessage: '通话失败，请重试');
+            }
+          }
+        }
+      }
+
+      final isVideo = type == CallType.video;
+      await _engine!.joinChannel(
+        token: token,
+        channelId: channelName,
+        uid: 0,
+        options: ChannelMediaOptions(
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: isVideo,
+          publishMicrophoneTrack: true,
+          publishCameraTrack: isVideo,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
+
+      WakelockPlus.enable();
+
+      return true;
+    } catch (e) {
+      debugPrint('[CallService] Start call error: $e');
+
+      final errorMessage = _classifyError(e, '通话');
+
+      state = state.copyWith(state: CallState.idle, errorMessage: errorMessage);
+      return false;
+    }
+  }
+
+  Future<void> handleIncomingCall(Map<String, dynamic> data) async {
+    final callId = data['call_id'] is int
+        ? data['call_id'] as int
+        : int.tryParse(data['call_id']?.toString() ?? '');
+
+    if (state.isInCall) {
+      final currentCallId = state.callInfo?.callId;
+      if (callId != null && currentCallId == callId) {
+        debugPrint('[CallService] Duplicate incoming call ignored: $callId');
+        return;
+      }
+
+      if (callId != null) {
+        await _api.post(
+          '/call/reject',
+          data: {'call_id': callId, 'reason': 'busy'},
+        );
+      }
+      return;
+    }
+
+    final channelName = data['channel_name']?.toString();
+    final callerId = data['caller_id']?.toString();
+    final callerName = data['caller_name']?.toString();
+
+    if (channelName == null ||
+        channelName.isEmpty ||
+        callerId == null ||
+        callerId.isEmpty ||
+        callerName == null) {
+      debugPrint('[CallService] handleIncomingCall: invalid payload: $data');
+      return;
+    }
+
+    final callerAvatarRaw = data['caller_avatar']?.toString();
+    final callerAvatar = (callerAvatarRaw != null && callerAvatarRaw.isNotEmpty)
+        ? ApiConfig.getMediaUrl(callerAvatarRaw)
+        : null;
+    final callType =
+        data['call_type'] == 'video' ? CallType.video : CallType.voice;
+
+    final callInfo = CallInfo(
+      callId: callId,
+      channelName: channelName,
+      remoteUserId: callerId,
+      remoteName: callerName,
+      remoteAvatar: callerAvatar,
+      type: callType,
+      isOutgoing: false,
+    );
+
+    state = state.copyWith(
+      state: CallState.incoming,
+      callInfo: callInfo,
+      isVideoEnabled: callType == CallType.video,
+    );
+
+    _startIncomingCallTimeout(callInfo.callId);
+
+    _preloadForIncoming(callType);
+
+    if (kIsWeb) {
+      debugPrint('[CallService] Web: showing in-app IncomingCallPage');
+      onIncomingCall?.call(callInfo);
+      return;
+    }
+
+    if (Platform.isIOS) {
+      final lifecycleState = WidgetsBinding.instance.lifecycleState;
+      final isForeground = lifecycleState == AppLifecycleState.resumed ||
+          lifecycleState == AppLifecycleState.inactive;
+
+      debugPrint(
+        '[CallService] iOS lifecycleState: $lifecycleState, isForeground: $isForeground, isSimulator: $_isSimulator',
+      );
+
+      if (isForeground && onIncomingCall != null && !_isSimulator) {
+        debugPrint(
+          '[CallService] iOS foreground: showing in-app IncomingCallPage',
+        );
+        onIncomingCall?.call(callInfo);
+      } else {
+        debugPrint('[CallService] iOS background/locked: showing CallKit UI');
+        try {
+          await _showCallKit(callInfo);
+          if (_isSimulator && onIncomingCall != null) {
+            debugPrint(
+              '[CallService] iOS simulator: also showing in-app IncomingCallPage',
+            );
+            onIncomingCall?.call(callInfo);
+          }
+        } catch (e) {
+          debugPrint(
+            '[CallService] iOS CallKit failed: $e, falling back to in-app UI',
+          );
+          onIncomingCall?.call(callInfo);
+        }
+      }
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      final lifecycleState = WidgetsBinding.instance.lifecycleState;
+      final isForeground = lifecycleState == AppLifecycleState.resumed ||
+          lifecycleState == AppLifecycleState.inactive;
+
+      debugPrint(
+        '[CallService] Android lifecycleState: $lifecycleState, isForeground: $isForeground',
+      );
+
+      if (isForeground && onIncomingCall != null) {
+        debugPrint(
+          '[CallService] Android foreground: showing in-app IncomingCallPage',
+        );
+        onIncomingCall?.call(callInfo);
+      } else {
+        debugPrint(
+          '[CallService] Android background/locked: showing system full-screen incoming',
+        );
+        try {
+          await _showCallKit(callInfo);
+        } catch (e) {
+          debugPrint(
+            '[CallService] Android CallKit failed: $e, trying in-app UI',
+          );
+          onIncomingCall?.call(callInfo);
+        }
+      }
+      return;
+    }
+
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      debugPrint('[CallService] Desktop: showing in-app IncomingCallPage');
+      onIncomingCall?.call(callInfo);
+    }
+  }
+
+  Map<String, dynamic> _incomingPayloadFromCallInfo(CallInfo callInfo) {
+    return <String, dynamic>{
+      'type': 'incoming_call',
+      'call_id': callInfo.callId,
+      'callId': callInfo.callId,
+      'channel_name': callInfo.channelName,
+      'caller_id': callInfo.remoteUserId,
+      'caller_name': callInfo.remoteName,
+      'caller_avatar': callInfo.remoteAvatar ?? '',
+      'call_type': callInfo.type == CallType.video ? 'video' : 'voice',
+      'is_video': callInfo.type == CallType.video,
+    };
+  }
+
+  Map<String, dynamic>? _asStringKeyMap(dynamic value) {
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        return _asStringKeyMap(decoded);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is! Map) return null;
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  Map<String, dynamic>? _incomingPayloadFromCallKitData(dynamic rawData) {
+    final data = _asStringKeyMap(rawData);
+    if (data == null) return null;
+
+    final extra = _asStringKeyMap(data['extra']) ?? <String, dynamic>{};
+    final payload = <String, dynamic>{...extra};
+
+    payload['type'] = payload['type'] ?? 'incoming_call';
+    payload['call_id'] = payload['call_id'] ??
+        payload['callId'] ??
+        data['call_id'] ??
+        data['callId'];
+    payload['channel_name'] = payload['channel_name'] ?? data['channel_name'];
+    payload['caller_id'] = payload['caller_id'] ?? data['caller_id'];
+    payload['caller_name'] =
+        payload['caller_name'] ?? data['nameCaller'] ?? data['caller_name'];
+    payload['caller_avatar'] =
+        payload['caller_avatar'] ?? data['avatar'] ?? data['caller_avatar'];
+
+    final type = payload['call_type'] ?? data['call_type'];
+    final isVideo = payload['is_video'] == true ||
+        payload['is_video'] == 'true' ||
+        data['type'] == 1;
+    payload['call_type'] =
+        type?.toString() == 'video' || isVideo ? 'video' : 'voice';
+    payload['is_video'] = payload['call_type'] == 'video';
+
+    final hasRequiredFields = payload['call_id'] != null &&
+        payload['channel_name']?.toString().isNotEmpty == true &&
+        payload['caller_id']?.toString().isNotEmpty == true &&
+        payload['caller_name']?.toString().isNotEmpty == true;
+    return hasRequiredFields ? payload : null;
+  }
+
+  Future<bool> restoreIncomingCallFromSystem() async {
+    if (_isDisposed || _isRestoringSystemIncomingCall) return false;
+    if (kIsWeb || _isSimulator || !(Platform.isIOS || Platform.isAndroid)) {
+      return false;
+    }
+
+    if (state.state == CallState.incoming && state.callInfo != null) {
+      return true;
+    }
+    if (state.state == CallState.connecting ||
+        state.state == CallState.connected) {
+      return true;
+    }
+
+    _isRestoringSystemIncomingCall = true;
+    try {
+      final activeCalls = await FlutterCallkitIncoming.activeCalls();
+      final calls = activeCalls is List ? activeCalls : const [];
+      debugPrint('[CallService] Active system calls: $calls');
+
+      for (final rawCall in calls) {
+        final call = _asStringKeyMap(rawCall);
+        if (call == null) continue;
+
+        final isAccepted = call['accepted'] == true ||
+            call['isAccepted'] == true ||
+            call['isAccepted'] == 'true';
+
+        final payload = _incomingPayloadFromCallKitData(call);
+        if (payload == null) {
+          debugPrint('[CallService] Cannot restore CallKit payload: $call');
+          continue;
+        }
+
+        _currentCallKitUuid = call['id']?.toString() ??
+            call['uuid']?.toString() ??
+            _currentCallKitUuid;
+        debugPrint('[CallService] Restoring incoming call from system UI');
+        await handleIncomingCall(payload);
+        if (isAccepted) {
+          debugPrint('[CallService] Restored accepted system call, joining');
+          await _handleCallKitAccept();
+          return state.state == CallState.connecting ||
+              state.state == CallState.connected;
+        }
+        return state.state == CallState.incoming && state.callInfo != null;
+      }
+    } catch (e) {
+      debugPrint('[CallService] restoreIncomingCallFromSystem error: $e');
+    } finally {
+      _isRestoringSystemIncomingCall = false;
+    }
+
+    return false;
+  }
+
+  Timer? _incomingCallTimer;
+
+  void _startIncomingCallTimeout(int? callId) {
+    _incomingCallTimer?.cancel();
+    _incomingCallTimer = Timer(const Duration(seconds: 30), () {
+      if (_isDisposed) return;
+      if (state.state == CallState.incoming &&
+          state.callInfo?.callId == callId) {
+        debugPrint('[CallService] Incoming call timeout, auto rejecting');
+        rejectCall(reason: 'timeout');
+      }
+    });
+  }
+
+  void _cancelIncomingCallTimeout() {
+    _incomingCallTimer?.cancel();
+    _incomingCallTimer = null;
+  }
+
+  Timer? _connectionTimer;
+
+  void _startConnectionTimeout() {
+    _connectionTimer?.cancel();
+    _connectionTimer = Timer(const Duration(seconds: 20), () {
+      if (_isDisposed) return;
+      if (state.state == CallState.connecting ||
+          state.state == CallState.outgoing) {
+        debugPrint('[CallService] Connection timeout, ending call');
+        state = state.copyWith(errorMessage: '通话失败，请重试');
+        endCall(reason: 'connection_timeout');
+      }
+    });
+  }
+
+  void _cancelConnectionTimeout() {
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+  }
+
+  Future<bool> acceptCall() async {
+    debugPrint(
+      '[CallService] acceptCall called, state=${state.state}, callInfo=${state.callInfo != null}',
+    );
+
+    if (_isAcceptingCall) {
+      debugPrint('[CallService] acceptCall already in progress');
+      return false;
+    }
+
+    if (state.state != CallState.incoming || state.callInfo == null) {
+      debugPrint(
+        '[CallService] acceptCall failed: invalid state or no callInfo',
+      );
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      return false;
+    }
+
+    _isAcceptingCall = true;
+
+    _cancelIncomingCallTimeout();
+
+    final originalCallId = state.callInfo!.callId;
+    final callType = state.callInfo!.type;
+    final channelName = state.callInfo!.channelName;
+
+    state = state.copyWith(state: CallState.connecting);
+    debugPrint('[CallService] State changed to connecting immediately');
+
+    try {
+      final needPermission =
+          kIsWeb ? false : !await Permission.microphone.isGranted;
+      final needConfig = !_isEnabled || _appId == null || _appId!.isEmpty;
+      final needEngine = _engine == null;
+
+      debugPrint(
+        '[CallService] Accept: needPermission=$needPermission, needConfig=$needConfig, needEngine=$needEngine',
+      );
+
+      if (needPermission || needConfig) {
+        debugPrint('[CallService] Starting parallel permission & config...');
+        final results = await Future.wait([
+          needPermission ? _requestPermissions(callType) : Future.value(true),
+          needConfig
+              ? _loadConfigIfNeeded().then((_) => true)
+              : Future.value(true),
+        ]);
+
+        if (needPermission && results[0] != true) {
+          debugPrint('[CallService] Permission denied');
+          state = state.copyWith(
+            state: CallState.idle,
+            errorMessage: '通话失败，请重试',
+          );
+          return false;
+        }
+      }
+      debugPrint('[CallService] Permissions & config ready');
+
+      if (_isCallCancelledDuringAccept(originalCallId)) {
+        debugPrint('[CallService] Call was cancelled during permission/config');
+        return false;
+      }
+
+      if (!_isEnabled || _appId == null || _appId!.isEmpty) {
+        state = state.copyWith(
+          state: CallState.idle,
+          errorMessage: '音视频服务未启用',
+        );
+        return false;
+      }
+
+      debugPrint('[CallService] Starting engine init & accept API...');
+
+      final engineFuture = needEngine ? _initEngine() : Future.value();
+
+      final response = await _api.post<Map<String, dynamic>>(
+        '/call/accept',
+        data: {'call_id': originalCallId},
+      );
+
+      if (!response.isSuccess || response.data == null) {
+        debugPrint('[CallService] Accept API failed: ${response.message}');
+        if (response.message?.contains('cancelled') == true ||
+            response.message?.contains('not found') == true) {
+          state = state.copyWith(
+            state: CallState.idle,
+            errorMessage: '通话失败，请重试',
+          );
+        } else {
+          state = state.copyWith(
+            state: CallState.idle,
+            errorMessage: '通话失败，请重试',
+          );
+        }
+        return false;
+      }
+      debugPrint('[CallService] Accept API success');
+
+      await engineFuture;
+      debugPrint('[CallService] Engine initialized');
+
+      if (_isCallCancelledDuringAccept(originalCallId)) {
+        debugPrint('[CallService] Call was cancelled after API/engine init');
+        await _leaveChannel();
+        return false;
+      }
+
+      if (_currentCallKitUuid != null &&
+          (Platform.isIOS || Platform.isAndroid)) {
+        FlutterCallkitIncoming.setCallConnected(
+          _currentCallKitUuid!,
+        );
+      }
+
+      final data = response.data!;
+      final token = (data['token'] as String?) ?? '';
+
+      if (token.isEmpty) {
+        debugPrint('[CallService] Accept call: token is empty');
+        state = state.copyWith(errorMessage: '通话失败，请重试');
+        return false;
+      }
+
+      _startConnectionTimeout();
+
+      if (callType == CallType.video) {
+        debugPrint('[CallService] Enabling video...');
+        await _engine!.enableVideo();
+        _engine!.startPreview().catchError((e) {
+          debugPrint('[CallService] startPreview error: $e');
+        });
+      }
+
+      debugPrint('[CallService] Joining channel: $channelName');
+      final isVideoCall = callType == CallType.video;
+      await _engine!.joinChannel(
+        token: token,
+        channelId: channelName,
+        uid: 0,
+        options: ChannelMediaOptions(
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: isVideoCall,
+          publishMicrophoneTrack: true,
+          publishCameraTrack: isVideoCall,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
+      debugPrint('[CallService] Joined channel successfully');
+
+      WakelockPlus.enable();
+
+      return true;
+    } catch (e, stack) {
+      debugPrint('[CallService] Accept call error: $e');
+      debugPrint('[CallService] Stack: $stack');
+
+      final errorMessage = _classifyError(e, '接听');
+      state = state.copyWith(state: CallState.idle, errorMessage: errorMessage);
+      return false;
+    } finally {
+      _isAcceptingCall = false;
+    }
+  }
+
+  Future<void> _loadConfigIfNeeded() async {
+    if (_isEnabled && _appId != null && _appId!.isNotEmpty) {
+      return;
+    }
+    await _loadConfig();
+  }
+
+  bool _isPreloading = false;
+  Future<void> _preloadForIncoming(CallType callType) async {
+    if (_isPreloading) return;
+    _isPreloading = true;
+
+    try {
+      debugPrint('[CallService] Preloading for incoming call...');
+
+      await Future.wait([_loadConfigIfNeeded(), _requestPermissions(callType)]);
+
+      if (_isEnabled &&
+          _appId != null &&
+          _appId!.isNotEmpty &&
+          _engine == null) {
+        debugPrint('[CallService] Pre-initializing engine...');
+        await _initEngine();
+        debugPrint('[CallService] Engine pre-initialized');
+      }
+    } catch (e) {
+      debugPrint('[CallService] Preload error (non-fatal): $e');
+    } finally {
+      _isPreloading = false;
+    }
+  }
+
+  bool _isCallCancelledDuringAccept(int? originalCallId) {
+    if (state.state == CallState.connecting) {
+      return state.callInfo?.callId != originalCallId;
+    }
+    if (state.state == CallState.idle) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isCallCancelled(int? originalCallId) {
+    if (state.state != CallState.incoming &&
+        state.state != CallState.connecting) {
+      return true;
+    }
+    if (state.callInfo?.callId != originalCallId) {
+      return true;
+    }
+    return false;
+  }
+
+  String _classifyError(dynamic e, String action) {
+    if (e is TimeoutException) {
+      return '$action超时，请重试';
+    }
+
+    if (e is AgoraRtcException) {
+      switch (e.code) {
+        case -2: // ERR_INVALID_ARGUMENT
+          if (Platform.isMacOS) {
+            return '通话失败，请重试';
+          }
+          return '通话失败，请重试';
+        case -7: // ERR_NOT_INITIALIZED
+          return '通话失败，请重试';
+        case -17: // ERR_JOIN_CHANNEL_REJECTED
+          return '通话失败，请重试';
+        case 110: // ERR_TOKEN_EXPIRED
+          return '通话失败，请重试';
+        default:
+          return '$action失败（错误码: ${e.code}）';
+      }
+    }
+
+    final errorStr = e.toString().toLowerCase();
+    if (errorStr.contains('socket') ||
+        errorStr.contains('network') ||
+        errorStr.contains('connection')) {
+      return '通话失败，请重试';
+    }
+
+    return '$action失败，请重试';
+  }
+
+  Future<void> rejectCall({String reason = 'decline'}) async {
+    if (_isDisposed) return;
+    if (_isRejectingCall) return;
+    if (state.state != CallState.incoming || state.callInfo == null) {
+      return;
+    }
+    _isRejectingCall = true;
+
+    _cancelIncomingCallTimeout();
+
+    _callTimer?.cancel();
+    _callTimer = null;
+
+    if (DesktopNotificationService.isDesktop) {
+      DesktopNotificationService().cancelCallNotification();
+    }
+
+    try {
+      await _api.post(
+        '/call/reject',
+        data: {'call_id': state.callInfo!.callId, 'reason': reason},
+      );
+    } catch (e) {
+      debugPrint('[CallService] Reject call error: $e');
+    }
+
+    if (_isDisposed) return;
+
+    if (_currentCallKitUuid != null && (Platform.isIOS || Platform.isAndroid)) {
+      await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
+    }
+
+    _resetState();
+  }
+
+  Future<void> endCall({
+    String reason = 'hangup',
+    bool notifyServer = true,
+  }) async {
+    if (_isDisposed) return;
+    if (_isEndingCall) return;
+    if (!state.isInCall) return;
+    _isEndingCall = true;
+    _callTimer?.cancel();
+    _callTimer = null;
+
+    if (DesktopNotificationService.isDesktop) {
+      DesktopNotificationService().cancelCallNotification();
+    }
+
+    try {
+      if (notifyServer && state.callInfo?.callId != null) {
+        await _api.post(
+          '/call/end',
+          data: {'call_id': state.callInfo!.callId, 'reason': reason},
+        );
+      }
+    } catch (e) {
+      debugPrint('[CallService] End call error: $e');
+    }
+
+    if (_isDisposed) return;
+
+    if (_currentCallKitUuid != null && (Platform.isIOS || Platform.isAndroid)) {
+      await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
+    }
+
+    await _leaveChannel();
+    onCallEnded?.call(reason);
+    _resetState();
+  }
+
+  Future<void> cancelCall() async {
+    if (_isDisposed) return;
+    if (_isCancellingCall) return;
+    if (state.state != CallState.outgoing || state.callInfo == null) {
+      return;
+    }
+    _isCancellingCall = true;
+
+    try {
+      await _api.delete('/call/${state.callInfo!.callId}');
+    } catch (e) {
+      debugPrint('[CallService] Cancel call error: $e');
+    }
+
+    if (_isDisposed) return;
+
+    await _leaveChannel();
+    _resetState();
+  }
+
+  void toggleMute() {
+    if (_isDisposed) return;
+    final newMuted = !state.isMuted;
+    _engine?.muteLocalAudioStream(newMuted);
+    state = state.copyWith(isMuted: newMuted);
+  }
+
+  void toggleSpeaker() {
+    if (_isDisposed) return;
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      return;
+    }
+    final newSpeaker = !state.isSpeakerOn;
+    _engine?.setEnableSpeakerphone(newSpeaker);
+    state = state.copyWith(isSpeakerOn: newSpeaker);
+  }
+
+  void toggleVideo() {
+    if (_isDisposed) return;
+    if (state.callInfo?.type != CallType.video) return;
+
+    final newEnabled = !state.isVideoEnabled;
+    if (newEnabled) {
+      _engine?.enableVideo();
+      _engine?.startPreview();
+    } else {
+      _engine?.stopPreview();
+      _engine?.disableVideo();
+    }
+    _engine?.muteLocalVideoStream(!newEnabled);
+    state = state.copyWith(isVideoEnabled: newEnabled);
+  }
+
+  Future<void> switchCamera() async {
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      return;
+    }
+    await _engine?.switchCamera();
+  }
+
+  void toggleMinimize() {
+    state = state.copyWith(isMinimized: !state.isMinimized);
+  }
+
+  Duration get callDuration {
+    if (state.callInfo?.connectTime == null) return Duration.zero;
+    return DateTime.now().difference(state.callInfo!.connectTime!);
+  }
+
+  Widget getLocalView() {
+    if (_engine == null) return const SizedBox();
+    return AgoraVideoView(
+      controller: VideoViewController(
+        rtcEngine: _engine!,
+        canvas: const VideoCanvas(uid: 0),
+      ),
+    );
+  }
+
+  Widget getRemoteView() {
+    if (_engine == null || state.callInfo?.remoteUid == null) {
+      return const SizedBox();
+    }
+    return AgoraVideoView(
+      controller: VideoViewController.remote(
+        rtcEngine: _engine!,
+        canvas: VideoCanvas(uid: state.callInfo!.remoteUid!),
+        connection: RtcConnection(channelId: state.callInfo!.channelName),
+      ),
+    );
+  }
+
+  Future<void> _leaveChannel() async {
+    _callTimer?.cancel();
+    _callTimer = null;
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+
+    try {
+      if (_eventHandler != null && _engine != null) {
+        _engine!.unregisterEventHandler(_eventHandler!);
+        _eventHandler = null;
+      }
+      await _engine?.leaveChannel();
+      await _engine?.stopPreview();
+      await _engine?.release();
+      _engine = null;
+    } catch (e) {
+      debugPrint('[CallService] Leave channel error: $e');
+    }
+
+    WakelockPlus.disable();
+  }
+
+  void _resetState() {
+    _callTimer?.cancel();
+    _callTimer = null;
+    _currentCallKitUuid = null;
+    _isHandlingCallKitAccept = false;
+    _isAcceptingCall = false;
+    _isEndingCall = false;
+    _isRejectingCall = false;
+    _isCancellingCall = false;
+    _isPreloading = false;
+    WakelockPlus.disable();
+
+    if (_isDisposed) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isDisposed) {
+        state = const CallServiceState();
+      }
+    });
+  }
+
+  void _startCallTimer() {
+    _callTimer?.cancel();
+    _callTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_isDisposed) {
+        _callTimer?.cancel();
+        _callTimer = null;
+        return;
+      }
+      if (state.state != CallState.connected) {
+        _callTimer?.cancel();
+        _callTimer = null;
+      }
+    });
+  }
+
+  void _setupCallKit() {
+    _callKitSubscription?.cancel();
+    _callKitSubscription = FlutterCallkitIncoming.onEvent.listen((event) async {
+      debugPrint(
+        '[CallService] CallKit event: ${event?.event}, body: ${event?.body}',
+      );
+      switch (event?.event) {
+        case Event.actionCallAccept:
+          debugPrint('[CallService] CallKit: actionCallAccept');
+          await _handleCallKitAccept();
+          break;
+        case Event.actionCallDecline:
+          debugPrint('[CallService] CallKit: actionCallDecline');
+          await rejectCall();
+          break;
+        case Event.actionCallEnded:
+          debugPrint(
+            '[CallService] CallKit: actionCallEnded, currentState=${state.state}',
+          );
+          if (state.state == CallState.incoming) {
+            await rejectCall(reason: 'dismissed');
+          } else if (state.isInCall) {
+            await endCall();
+          }
+          break;
+        case Event.actionCallStart:
+          debugPrint('[CallService] CallKit: actionCallStart (outgoing)');
+          break;
+        case Event.actionCallIncoming:
+          debugPrint('[CallService] CallKit: actionCallIncoming');
+          final payload = _incomingPayloadFromCallKitData(event?.body);
+          if (payload != null && !state.isInCall) {
+            await handleIncomingCall(payload);
+          }
+          break;
+        case Event.actionCallTimeout:
+          debugPrint('[CallService] CallKit: actionCallTimeout');
+          await rejectCall(reason: 'timeout');
+          break;
+        case Event.actionCallToggleHold:
+          debugPrint('[CallService] CallKit: actionCallToggleHold');
+          break;
+        case Event.actionCallToggleMute:
+          debugPrint('[CallService] CallKit: actionCallToggleMute');
+          toggleMute();
+          break;
+        case Event.actionCallToggleDmtf:
+          debugPrint('[CallService] CallKit: actionCallToggleDmtf');
+          break;
+        case Event.actionCallToggleGroup:
+          debugPrint('[CallService] CallKit: actionCallToggleGroup');
+          break;
+        case Event.actionCallToggleAudioSession:
+          debugPrint('[CallService] CallKit: actionCallToggleAudioSession');
+          break;
+        case Event.actionDidUpdateDevicePushTokenVoip:
+          debugPrint(
+            '[CallService] CallKit: actionDidUpdateDevicePushTokenVoip',
+          );
+          break;
+        default:
+          debugPrint('[CallService] CallKit: unknown event ${event?.event}');
+          break;
+      }
+    });
+  }
+
+  Future<void> _handleCallKitAccept() async {
+    if (_isHandlingCallKitAccept) {
+      debugPrint(
+        '[CallService] CallKit accept already being handled, ignoring',
+      );
+      return;
+    }
+    _isHandlingCallKitAccept = true;
+
+    try {
+      if (_currentCallKitUuid != null) {
+        try {
+          await FlutterCallkitIncoming.setCallConnected(_currentCallKitUuid!);
+        } catch (e) {
+          debugPrint('[CallService] setCallConnected error: $e');
+        }
+      }
+
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (state.state != CallState.incoming || state.callInfo == null) {
+        debugPrint('[CallService] CallKit accept: call no longer incoming');
+        return;
+      }
+
+      final success = await acceptCall().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('[CallService] CallKit accept timeout');
+          state = state.copyWith(errorMessage: '接听超时，请重试');
+          return false;
+        },
+      );
+
+      debugPrint('[CallService] CallKit acceptCall result: $success');
+
+      if (success) {
+        debugPrint(
+          '[CallService] CallKit accept success, triggering onCallAccepted',
+        );
+        await Future.delayed(const Duration(milliseconds: 100));
+        onCallAccepted?.call();
+      } else {
+        debugPrint('[CallService] CallKit accept failed');
+        if (state.state == CallState.incoming ||
+            state.state == CallState.idle) {
+          if (_currentCallKitUuid != null) {
+            try {
+              await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
+            } catch (e) {
+              debugPrint('[CallService] endCall error: $e');
+            }
+          }
+          onCallFailed?.call(state.errorMessage ?? '接听失败');
+        }
+      }
+    } catch (e) {
+      debugPrint('[CallService] CallKit accept error: $e');
+      if (_currentCallKitUuid != null &&
+          state.state != CallState.connecting &&
+          state.state != CallState.connected) {
+        try {
+          await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
+        } catch (endError) {
+          debugPrint('[CallService] endCall error: $endError');
+        }
+      }
+      state = state.copyWith(errorMessage: '通话失败，请重试');
+      onCallFailed?.call('接听通话失败: $e');
+    } finally {
+      _isHandlingCallKitAccept = false;
+    }
+  }
+
+  VoidCallback? onCallAccepted;
+
+  Future<void> _showCallKit(CallInfo callInfo) async {
+    _currentCallKitUuid = const Uuid().v4();
+
+    final params = CallKitParams(
+      id: _currentCallKitUuid!,
+      nameCaller: callInfo.remoteName,
+      appName: '\u58f9\u8f6fIM',
+      avatar: callInfo.remoteAvatar,
+      handle: callInfo.remoteName,
+      type: callInfo.type == CallType.video ? 1 : 0,
+      duration: 30000,
+      textAccept: '\u63a5\u542c',
+      textDecline: '\u62d2\u7edd',
+      extra: _incomingPayloadFromCallInfo(callInfo),
+      headers: <String, dynamic>{},
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: false,
+        ringtonePath: 'system_ringtone_default',
+        backgroundColor: '#5865F2',
+        backgroundUrl: '',
+        actionColor: '#4CAF50',
+        textColor: '#FFFFFF',
+        isShowFullLockedScreen: true,
+        isShowCallID: false,
+        incomingCallNotificationChannelName: '\u6765\u7535\u901a\u77e5',
+      ),
+      ios: const IOSParams(
+        iconName: 'CallKitLogo',
+        handleType: 'generic',
+        supportsVideo: true,
+        maximumCallGroups: 2,
+        maximumCallsPerCallGroup: 1,
+        audioSessionMode: 'default',
+        audioSessionActive: false,
+        audioSessionPreferredSampleRate: 44100.0,
+        audioSessionPreferredIOBufferDuration: 0.005,
+        configureAudioSession: false,
+        supportsDTMF: true,
+        supportsHolding: true,
+        supportsGrouping: false,
+        supportsUngrouping: false,
+        ringtonePath: '',
+      ),
+    );
+
+    await FlutterCallkitIncoming.showCallkitIncoming(params);
+  }
+
+  void handleCallAccepted() {
+    if (state.state == CallState.outgoing) {
+      state = state.copyWith(state: CallState.connecting);
+    }
+  }
+
+  Future<void> handleCallRejected(String reason) async {
+    await _leaveChannel();
+    onCallEnded?.call(reason);
+    _resetState();
+  }
+
+  void handleCallCancelled() {
+    _cancelIncomingCallTimeout();
+
+    if (_currentCallKitUuid != null && (Platform.isIOS || Platform.isAndroid)) {
+      FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
+    }
+    onCallEnded?.call('cancelled');
+    _resetState();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+
+    if (state.isInCall) {
+      endCall(reason: 'service_disposed');
+    }
+
+    _callKitSubscription?.cancel();
+    _callKitSubscription = null;
+
+    for (final id in _wsHandlerIds) {
+      _wsService.unregisterHandler(id);
+    }
+    _wsHandlerIds.clear();
+
+    _callTimer?.cancel();
+    _callTimer = null;
+    _incomingCallTimer?.cancel();
+    _incomingCallTimer = null;
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+
+    if (_eventHandler != null && _engine != null) {
+      _engine!.unregisterEventHandler(_eventHandler!);
+      _eventHandler = null;
+    }
+    _engine?.release();
+    _engine = null;
+
+    onIncomingCall = null;
+    onCallConnected = null;
+    onCallEnded = null;
+    onCallFailed = null;
+    onCallAccepted = null;
+
+    WakelockPlus.disable();
+    super.dispose();
+  }
+}
+
+/// Provider
+final callServiceProvider =
+    StateNotifierProvider<CallService, CallServiceState>((ref) {
+  final api = ref.watch(apiClientProvider);
+  final wsService = ref.watch(webSocketServiceProvider.notifier);
+  return CallService(api, wsService);
+});
