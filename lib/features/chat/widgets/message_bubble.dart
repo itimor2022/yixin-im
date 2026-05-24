@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:universal_io/io.dart';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -1668,7 +1669,7 @@ class MessageBubble extends StatelessWidget {
         redPacket = RedPacketInfo.fromJson(jsonData);
       }
     } catch (e) {
-      debugPrint('[RedPacket] Parse error: $e');
+      if (kDebugMode) debugPrint('[RedPacket] Parse error: $e');
     }
 
     redPacket ??= RedPacketInfo(
@@ -1710,7 +1711,7 @@ class MessageBubble extends StatelessWidget {
         transfer = TransferInfo.fromJson(jsonData);
       }
     } catch (e) {
-      debugPrint('[Transfer] Parse error: $e');
+      if (kDebugMode) debugPrint('[Transfer] Parse error: $e');
     }
 
     transfer ??= TransferInfo(
@@ -2882,7 +2883,7 @@ class _VoiceBubbleWidgetState extends State<_VoiceBubbleWidget>
         _waveController.repeat();
         setState(() => _isPlaying = true);
       } catch (e) {
-        debugPrint('[VoiceBubble] Play error: $e');
+        if (kDebugMode) debugPrint('[VoiceBubble] Play error: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('播放失败: $e'), backgroundColor: Colors.red),
@@ -3582,7 +3583,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage>
         }
       }
     } catch (e) {
-      debugPrint('视频初始化失败: $e');
+      if (kDebugMode) debugPrint('视频初始化失败: $e');
       if (mounted) {
         setState(() => _hasError = true);
       }
@@ -4582,7 +4583,7 @@ class _RedPacketDetailSheetState extends State<_RedPacketDetailSheet> {
         });
       }
     } catch (e) {
-      debugPrint('[RedPacket] Fetch detail error: $e');
+      if (kDebugMode) debugPrint('[RedPacket] Fetch detail error: $e');
     }
   }
 
@@ -4621,7 +4622,7 @@ class _RedPacketDetailSheetState extends State<_RedPacketDetailSheet> {
         }
       }
     } catch (e) {
-      debugPrint('[RedPacket] Claim error: $e');
+      if (kDebugMode) debugPrint('[RedPacket] Claim error: $e');
       if (mounted) {
         setState(() {
           _isClaiming = false;
@@ -5024,7 +5025,7 @@ class _TransferDetailSheetState extends State<_TransferDetailSheet> {
         });
       }
     } catch (e) {
-      debugPrint('[Transfer] Fetch detail error: $e');
+      if (kDebugMode) debugPrint('[Transfer] Fetch detail error: $e');
     }
   }
 

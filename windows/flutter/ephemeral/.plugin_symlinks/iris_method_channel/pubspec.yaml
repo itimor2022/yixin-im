@@ -1,0 +1,39 @@
+name: iris_method_channel
+description: >-
+  iris_method_channel is a method channel that communicate between C/C++(iris)
+  and dart, which is used by Agora Flutter SDKs.
+version: 2.2.4
+homepage: https://www.agora.io
+repository: https://github.com/AgoraIO-Extensions/iris_method_channel_flutter/tree/main
+environment:
+  sdk: '>=2.14.0 <4.0.0'
+  flutter: '>=2.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  ffi: '>=1.1.2'
+  async: '>=2.8.2'
+  js: '>=0.6.3'
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: '>=1.0.0'
+  test: ^1.2.0
+  ffigen: ^4.1.2
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.agora.iris_method_channel
+        pluginClass: IrisMethodChannelPlugin
+      ios:
+        pluginClass: IrisMethodChannelPlugin
+      macos:
+        pluginClass: IrisMethodChannelPlugin
+      windows:
+        pluginClass: IrisMethodChannelPluginCApi
+      web:
+        pluginClass: IrisMethodChannelWeb
+        fileName: iris_method_channel_web.dart

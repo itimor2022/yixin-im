@@ -27,6 +27,7 @@ var errMeetingJoinApprovalRequired = errors.New("meeting join approval required"
 
 type MeetingWebSocketHub interface {
 	SendToUser(userID string, data interface{})
+	SendToUserCluster(userID string, data interface{}) // ★ 集群版，跨节点路由
 }
 
 // MeetingHandler 群会议处理器（MVP）
@@ -230,7 +231,7 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		chatUUID = chat.UUID
 	}
 	for _, invitee := range invitees {
-		h.wsHub.SendToUser(invitee.UUID, map[string]interface{}{
+		h.wsHub.SendToUserCluster(invitee.UUID, map[string]interface{}{
 			"type": "meeting_invite",
 			"data": gin.H{
 				"meeting_id":     meeting.UUID,
@@ -269,7 +270,7 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 			},
 		}
 		for _, memberUUID := range h.getChatMemberUUIDs(chat.ID, 0) {
-			h.wsHub.SendToUser(memberUUID, startEvent)
+			h.wsHub.SendToUserCluster(memberUUID, startEvent)
 		}
 
 		h.sendMeetingSystemMessage(
@@ -493,7 +494,7 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 	}
 
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, user.ID) {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_member_joined",
 			"data": gin.H{
 				"meeting_id":   meeting.UUID,
@@ -664,7 +665,7 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 	}
 
 	reason := strings.TrimSpace(req.Reason)
-	h.wsHub.SendToUser(target.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(target.UUID, map[string]interface{}{
 		"type": "meeting_join_request_reviewed",
 		"data": gin.H{
 			"meeting_id":     meeting.UUID,
@@ -692,7 +693,7 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 
 	if approved {
 		for _, uid := range h.getParticipantUUIDs(meeting.ID, target.ID) {
-			h.wsHub.SendToUser(uid, map[string]interface{}{
+			h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 				"type": "meeting_member_joined",
 				"data": gin.H{
 					"meeting_id":   meeting.UUID,
@@ -854,7 +855,7 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 		h.notifyMeetingEnded(meeting, strings.TrimSpace(req.Reason))
 	} else {
 		for _, uid := range h.getParticipantUUIDs(meeting.ID, user.ID) {
-			h.wsHub.SendToUser(uid, map[string]interface{}{
+			h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 				"type": "meeting_member_left",
 				"data": gin.H{
 					"meeting_id": meeting.UUID,
@@ -996,7 +997,7 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 	}
 
 	for _, invitee := range created {
-		h.wsHub.SendToUser(invitee.UUID, map[string]interface{}{
+		h.wsHub.SendToUserCluster(invitee.UUID, map[string]interface{}{
 			"type": "meeting_invite",
 			"data": gin.H{
 				"meeting_id":     meeting.UUID,
@@ -1333,7 +1334,7 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 		"updated_at":    now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_title_updated",
 			"data": eventData,
 		})
@@ -1475,7 +1476,7 @@ func (h *MeetingHandler) MuteMember(c *gin.Context) {
 		"updated_at":     now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_member_muted",
 			"data": eventData,
 		})
@@ -1584,12 +1585,12 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 		"operator_id": operator.UUID,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_member_left",
 			"data": memberLeftData,
 		})
 	}
-	h.wsHub.SendToUser(targetUser.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
 		"type": "meeting_member_kicked",
 		"data": gin.H{
 			"meeting_id":  meeting.UUID,
@@ -1695,7 +1696,7 @@ func (h *MeetingHandler) TransferHost(c *gin.Context) {
 		"updated_at":       now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_host_changed",
 			"data": eventData,
 		})
@@ -1805,7 +1806,7 @@ func (h *MeetingHandler) notifyHostJoinRequest(meeting *models.Meeting, host, re
 		}
 	}
 
-	h.wsHub.SendToUser(host.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(host.UUID, map[string]interface{}{
 		"type": "meeting_join_request",
 		"data": gin.H{
 			"meeting_id":      meeting.UUID,
@@ -2072,7 +2073,7 @@ func (h *MeetingHandler) notifyMeetingEnded(meeting *models.Meeting, reason stri
 	}
 
 	for uid := range targets {
-		h.wsHub.SendToUser(uid, map[string]interface{}{
+		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
 			"type": "meeting_ended",
 			"data": gin.H{
 				"meeting_id":   meeting.UUID,

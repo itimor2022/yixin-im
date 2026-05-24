@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -124,7 +124,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         }
       }
     } catch (e) {
-      debugPrint('[Splash] Permission request error: $e');
+      if (kDebugMode) debugPrint('[Splash] Permission request error: $e');
     }
   }
 
@@ -288,7 +288,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
             userUUID: userUUID,
             message: 'deferred_by_user',
           );
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Splash] Hot update deferred by user: ${patch.patchVersion}',
           );
           return;
@@ -315,7 +315,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
           userUUID: userUUID,
           message: supportStatus.message,
         );
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Splash] Hot update bridge unavailable: ${supportStatus.message}',
         );
         if (patch.isMandatory) {
@@ -344,7 +344,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
           userUUID: userUUID,
           message: supportStatus.message,
         );
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Splash] Hot update SDK not integrated yet: ${supportStatus.message}',
         );
         if (patch.isMandatory) {
@@ -383,7 +383,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
           userUUID: userUUID,
           message: applyResult.message,
         );
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Splash] Hot update available but apply failed: ${applyResult.message}',
         );
         if (patch.isMandatory) {
@@ -426,7 +426,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         message: applyResult.message.isEmpty ? 'ok' : applyResult.message,
       );
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Splash] Hot update applied: ${patch.patchVersion}, requiresRestart=${applyResult.requiresRestart}',
       );
       _setHotUpdateApplyingState(false);
@@ -445,7 +445,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         await _showPatchReadyPromptV2(patch);
       }
     } catch (e) {
-      debugPrint('[Splash] Hot update check/apply failed: $e');
+      if (kDebugMode) debugPrint('[Splash] Hot update check/apply failed: $e');
       if (activePatch != null) {
         await ref.read(hotUpdateServiceProvider).reportPatchResult(
               patch: activePatch,
@@ -765,7 +765,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
     );
     if (reportOk) {
       await installTracker.clearPendingInstall();
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Splash] Hot update confirmed on launch: ${pendingInstall.patch.patchVersion}',
       );
     }
@@ -797,7 +797,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         userUUID: userUUID,
       );
     } catch (e) {
-      debugPrint('[Splash] Save pending hot update install failed: $e');
+      if (kDebugMode) debugPrint('[Splash] Save pending hot update install failed: $e');
     }
   }
 
@@ -1137,7 +1137,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
       final updateUrl = settings.appUpdateUrl.trim();
       if (updateUrl.isEmpty) {
-        debugPrint('[Splash] New version detected but app_update_url is empty');
+        if (kDebugMode) debugPrint('[Splash] New version detected but app_update_url is empty');
         return null;
       }
 
@@ -1154,7 +1154,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         message: message,
       );
     } catch (e) {
-      debugPrint('[Splash] Update check failed: $e');
+      if (kDebugMode) debugPrint('[Splash] Update check failed: $e');
       return null;
     }
   }
@@ -1263,13 +1263,13 @@ class _SplashPageState extends ConsumerState<SplashPage>
     );
 
     try {
-      debugPrint('[Splash] Start in-app package update: $normalized');
+      if (kDebugMode) debugPrint('[Splash] Start in-app package update: $normalized');
       _setHotUpdateApplyingState(true, message: '正在准备安装包更新...');
       await _showHotUpdateProgressDialog();
 
       final supportStatus = await sdkAdapter.getSupportStatus();
       if (!supportStatus.available || !supportStatus.sdkIntegrated) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Splash] In-app package updater unavailable, fallback to external: ${supportStatus.message}',
         );
         await _closeHotUpdateProgressDialog();
@@ -1318,7 +1318,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
         message: '更新包已准备完成，可稍后重启应用生效。',
       );
     } catch (e) {
-      debugPrint('[Splash] Start in-app package update failed: $e');
+      if (kDebugMode) debugPrint('[Splash] Start in-app package update failed: $e');
       await _closeHotUpdateProgressDialog();
       _setHotUpdateApplyingState(false);
       await _showPatchApplyHintPromptV2(
@@ -1400,7 +1400,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
     try {
       return await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
-      debugPrint('[Splash] Open update url failed: $e');
+      if (kDebugMode) debugPrint('[Splash] Open update url failed: $e');
       return false;
     }
   }

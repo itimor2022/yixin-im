@@ -82,7 +82,7 @@ func (h *AnnouncementHandler) CreateAnnouncement(c *gin.Context) {
 
 	memberUUIDs := h.getChatMemberUUIDs(chat.ID)
 	if h.hub != nil && len(memberUUIDs) > 0 {
-		h.hub.SendToUsers(memberUUIDs, map[string]interface{}{
+		h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
 			"type":        "chat_announcement",
 			"chat_id":     chatUUID,
 			"content":     req.Content,
@@ -133,7 +133,7 @@ func (h *AnnouncementHandler) UpdateAnnouncement(c *gin.Context) {
 
 	memberUUIDs := h.getChatMemberUUIDs(chat.ID)
 	if h.hub != nil && len(memberUUIDs) > 0 {
-		h.hub.SendToUsers(memberUUIDs, map[string]interface{}{
+		h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
 			"type":    "chat_announcement_updated",
 			"chat_id": chatUUID,
 			"content": req.Content,
@@ -172,7 +172,7 @@ func (h *AnnouncementHandler) DeleteAnnouncement(c *gin.Context) {
 
 	memberUUIDs := h.getChatMemberUUIDs(chat.ID)
 	if h.hub != nil && len(memberUUIDs) > 0 {
-		h.hub.SendToUsers(memberUUIDs, map[string]interface{}{
+		h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
 			"type":    "chat_announcement_deleted",
 			"chat_id": chatUUID,
 		})

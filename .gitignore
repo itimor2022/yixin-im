@@ -2,6 +2,7 @@
 /server
 *.exe
 *.dll
+*.zip
 
 # 上传目录（运行时生成）
 baota/uploads/

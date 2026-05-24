@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -70,67 +71,67 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       try {
         _setupCallCallbacks();
       } catch (e) {
-        debugPrint('[App] _setupCallCallbacks error: $e');
+        if (kDebugMode) debugPrint('[App] _setupCallCallbacks error: $e');
       }
       try {
         _setupPushNotifications();
       } catch (e) {
-        debugPrint('[App] _setupPushNotifications error: $e');
+        if (kDebugMode) debugPrint('[App] _setupPushNotifications error: $e');
       }
       try {
         _setupUnreadBadgeSync();
       } catch (e) {
-        debugPrint('[App] _setupUnreadBadgeSync error: $e');
+        if (kDebugMode) debugPrint('[App] _setupUnreadBadgeSync error: $e');
       }
       try {
         _setupDiscoverSync();
       } catch (e) {
-        debugPrint('[App] _setupDiscoverSync error: $e');
+        if (kDebugMode) debugPrint('[App] _setupDiscoverSync error: $e');
       }
       try {
         _setupAnnouncementHandler();
       } catch (e) {
-        debugPrint('[App] _setupAnnouncementHandler error: $e');
+        if (kDebugMode) debugPrint('[App] _setupAnnouncementHandler error: $e');
       }
       try {
         _setupMeetingInviteHandler();
       } catch (e) {
-        debugPrint('[App] _setupMeetingInviteHandler error: $e');
+        if (kDebugMode) debugPrint('[App] _setupMeetingInviteHandler error: $e');
       }
       try {
         _setupMeetingJoinRequestHandler();
       } catch (e) {
-        debugPrint('[App] _setupMeetingJoinRequestHandler error: $e');
+        if (kDebugMode) debugPrint('[App] _setupMeetingJoinRequestHandler error: $e');
       }
       try {
         _setupMeetingStateHandlers();
       } catch (e) {
-        debugPrint('[App] _setupMeetingStateHandlers error: $e');
+        if (kDebugMode) debugPrint('[App] _setupMeetingStateHandlers error: $e');
       }
       try {
         _setupForceLogoutHandler();
       } catch (e) {
-        debugPrint('[App] _setupForceLogoutHandler error: $e');
+        if (kDebugMode) debugPrint('[App] _setupForceLogoutHandler error: $e');
       }
       try {
         _bindOfflineMessageQueue();
       } catch (e) {
-        debugPrint('[App] _bindOfflineMessageQueue error: $e');
+        if (kDebugMode) debugPrint('[App] _bindOfflineMessageQueue error: $e');
       }
       try {
         _bindApiTokenRefreshToWebSocket();
       } catch (e) {
-        debugPrint('[App] _bindApiTokenRefreshToWebSocket error: $e');
+        if (kDebugMode) debugPrint('[App] _bindApiTokenRefreshToWebSocket error: $e');
       }
       try {
         _bindPhoneRequiredRedirect();
       } catch (e) {
-        debugPrint('[App] _bindPhoneRequiredRedirect error: $e');
+        if (kDebugMode) debugPrint('[App] _bindPhoneRequiredRedirect error: $e');
       }
       try {
         _setupBrowserTitleSync();
       } catch (e) {
-        debugPrint('[App] _setupBrowserTitleSync error: $e');
+        if (kDebugMode) debugPrint('[App] _setupBrowserTitleSync error: $e');
       }
     });
   }
@@ -156,7 +157,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         if (!mounted) return;
         ref.invalidate(systemSettingsProvider);
       }).catchError((Object error) {
-        debugPrint('[App] Browser title refresh failed: $error');
+        if (kDebugMode) debugPrint('[App] Browser title refresh failed: $error');
       }),
     );
 
@@ -215,7 +216,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
 
   void _bindApiTokenRefreshToWebSocket() {
     ref.read(apiClientProvider).onAccessTokenRefreshed = (String newToken) {
-      debugPrint('[App] HTTP token refreshed -> WebSocket reconnect');
+      if (kDebugMode) debugPrint('[App] HTTP token refreshed -> WebSocket reconnect');
       ref
           .read(webSocketServiceProvider.notifier)
           .applyRefreshedHttpToken(newToken);
@@ -261,7 +262,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         }
         return OfflineMessageSendResult.retry;
       } catch (e) {
-        debugPrint('[App] Offline queue send failed: $e');
+        if (kDebugMode) debugPrint('[App] Offline queue send failed: $e');
         return OfflineMessageSendResult.retry;
       }
     };
@@ -275,7 +276,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           .read(messageListProvider(message.chatId).notifier)
           .markQueuedMessageFailed(message.id);
     } catch (e) {
-      debugPrint('[App] Failed to update active offline message state: $e');
+      if (kDebugMode) debugPrint('[App] Failed to update active offline message state: $e');
     }
 
     if (PlatformUtils.isWeb || !IsarService.instance.isAvailable) return;
@@ -291,7 +292,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         await IsarService.instance.isar.messageModels.put(model);
       });
     } catch (e) {
-      debugPrint('[App] Failed to mark offline message failed: $e');
+      if (kDebugMode) debugPrint('[App] Failed to mark offline message failed: $e');
     }
   }
 
@@ -300,7 +301,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     _discoverItemsUpdatedHandlerId ??= wsService.registerHandler(
       WSMessageType.discoverItemsUpdated,
       (_) {
-        debugPrint('[Discover] Received discover_items_updated, refreshing');
+        if (kDebugMode) debugPrint('[Discover] Received discover_items_updated, refreshing');
         unawaited(refreshDiscoverEntries(ref));
       },
     );
@@ -336,11 +337,11 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           final currentDeviceId = await DeviceService.getDeviceId();
           final deviceIds = (data['device_ids'] as List?)?.cast<String>() ?? [];
           if (deviceIds.contains(currentDeviceId)) {
-            debugPrint('[App] Force logout triggered for this device');
+            if (kDebugMode) debugPrint('[App] Force logout triggered for this device');
             await ref.read(authServiceProvider.notifier).logout();
           }
         } catch (e) {
-          debugPrint('[App] Force logout handler error: $e');
+          if (kDebugMode) debugPrint('[App] Force logout handler error: $e');
         }
       },
     );
@@ -512,7 +513,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   void _setupPushNotifications() {
     if (DesktopNotificationService.isDesktop) {
       DesktopNotificationService().onNotificationTap = (payload) {
-        debugPrint('[DesktopNotification] Notification tapped: $payload');
+        if (kDebugMode) debugPrint('[DesktopNotification] Notification tapped: $payload');
         if (payload != null && payload.isNotEmpty) {
           if (payload.startsWith('call:')) {
             return;
@@ -527,10 +528,10 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     final pushService = ref.read(pushNotificationServiceProvider);
 
     pushService.onNotificationReceived = (data) {
-      debugPrint('[Push] Notification received: $data');
+      if (kDebugMode) debugPrint('[Push] Notification received: $data');
       final type = data['type'] as String?;
       if (type == 'incoming_call') {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Push] Incoming call push received, triggering CallService',
         );
         final isVideoPush =
@@ -552,7 +553,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     };
 
     pushService.onNotificationTapped = (data) {
-      debugPrint('[Push] Notification tapped: $data');
+      if (kDebugMode) debugPrint('[Push] Notification tapped: $data');
       final type = data['type'] as String?;
 
       if (type == 'incoming_call') {
@@ -638,7 +639,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   }
 
   void _navigateToChat(String chatId, String chatType) {
-    debugPrint('[Push] Navigating to chat: $chatId (type: $chatType)');
+    if (kDebugMode) debugPrint('[Push] Navigating to chat: $chatId (type: $chatType)');
     final router = ref.read(appRouterProvider);
 
     ChatType type;
@@ -753,7 +754,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   void _showIncomingCallPage(CallInfo callInfo, {bool resetStack = false}) {
     final navigator = rootNavigatorKey.currentState;
     if (navigator == null) {
-      debugPrint('[App] ERROR: Navigator is null!');
+      if (kDebugMode) debugPrint('[App] ERROR: Navigator is null!');
       return;
     }
 
@@ -765,7 +766,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       return true;
     });
     if (isAlreadyOnIncomingCallPage) {
-      debugPrint('[App] IncomingCallPage already visible, skipping push');
+      if (kDebugMode) debugPrint('[App] IncomingCallPage already visible, skipping push');
       return;
     }
 
@@ -790,7 +791,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     final callService = ref.read(callServiceProvider.notifier);
 
     callService.onIncomingCall = (callInfo) {
-      debugPrint('[App] onIncomingCall triggered, showing IncomingCallPage');
+      if (kDebugMode) debugPrint('[App] onIncomingCall triggered, showing IncomingCallPage');
 
       if (DesktopNotificationService.isDesktop) {
         DesktopNotificationService().showIncomingCallNotification(
@@ -800,14 +801,14 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         );
       }
 
-      debugPrint('[App] Navigator: ${rootNavigatorKey.currentState}');
+      if (kDebugMode) debugPrint('[App] Navigator: ${rootNavigatorKey.currentState}');
       _showIncomingCallPage(callInfo);
     };
 
     callService.onCallAccepted = () {
-      debugPrint('[App] onCallAccepted triggered');
+      if (kDebugMode) debugPrint('[App] onCallAccepted triggered');
       Future.delayed(const Duration(milliseconds: 100), () {
-        debugPrint('[App] Navigating to CallPage');
+        if (kDebugMode) debugPrint('[App] Navigating to CallPage');
         final navigator = rootNavigatorKey.currentState;
         if (navigator != null) {
           navigator.popUntil((route) => route.isFirst);
@@ -817,9 +818,9 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
               settings: const RouteSettings(name: '/call'),
             ),
           );
-          debugPrint('[App] CallPage pushed');
+          if (kDebugMode) debugPrint('[App] CallPage pushed');
         } else {
-          debugPrint('[App] Navigator is null, retrying...');
+          if (kDebugMode) debugPrint('[App] Navigator is null, retrying...');
           Future.delayed(const Duration(milliseconds: 150), () {
             final nav = rootNavigatorKey.currentState;
             if (nav != null) {
@@ -837,7 +838,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     };
 
     callService.onCallFailed = (error) {
-      debugPrint('[App] onCallFailed: $error');
+      if (kDebugMode) debugPrint('[App] onCallFailed: $error');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = rootNavigatorKey.currentContext;
         if (ctx != null) {
@@ -882,11 +883,11 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           });
 
           if (isAlreadyOnCallPage) {
-            debugPrint('[App] Already on CallPage, skipping auto-navigation');
+            if (kDebugMode) debugPrint('[App] Already on CallPage, skipping auto-navigation');
             return;
           }
 
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[App] Auto-navigating to CallPage: $_lastCallState -> $newState',
           );
           navigator.popUntil((route) => route.isFirst);

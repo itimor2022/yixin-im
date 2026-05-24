@@ -55,19 +55,19 @@ class _CallPageState extends ConsumerState<CallPage>
     // 如果已经是 connected 状态，立即启动计时器
     // 这处理了从 CallKit 接听时，回调可能在页面创建前就已触发的情况
     if (currentState.state == CallState.connected) {
-      debugPrint('[CallPage] Already connected, starting timer immediately');
+      if (kDebugMode) debugPrint('[CallPage] Already connected, starting timer immediately');
       _startTimer();
     }
 
     callService.onCallConnected = () {
-      debugPrint('[CallPage] onCallConnected triggered');
+      if (kDebugMode) debugPrint('[CallPage] onCallConnected triggered');
       if (mounted) {
         _startTimer();
       }
     };
 
     callService.onCallEnded = (reason) {
-      debugPrint('[CallPage] onCallEnded: $reason');
+      if (kDebugMode) debugPrint('[CallPage] onCallEnded: $reason');
       _timer?.cancel();
       // 延迟一帧确保状态已更新，然后安全关闭页面
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -169,7 +169,7 @@ class _CallPageState extends ConsumerState<CallPage>
     if (callState.state == CallState.connected && _timer == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _timer == null) {
-          debugPrint('[CallPage] State changed to connected, starting timer');
+          if (kDebugMode) debugPrint('[CallPage] State changed to connected, starting timer');
           _startTimer();
         }
       });

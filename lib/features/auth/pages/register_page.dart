@@ -1044,7 +1044,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             await authService.getCurrentUser();
           }
         } catch (e) {
-          debugPrint('[Register] Avatar upload failed: $e');
+          if (kDebugMode) debugPrint('[Register] Avatar upload failed: $e');
         }
       } else if (_avatarPath != null) {
         try {
@@ -1061,7 +1061,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             await authService.getCurrentUser();
           }
         } catch (e) {
-          debugPrint('[Register] Avatar upload failed: $e');
+          if (kDebugMode) debugPrint('[Register] Avatar upload failed: $e');
           // 头像上传失败不阻塞注册流程
         }
       }

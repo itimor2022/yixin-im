@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_io/io.dart';
 
@@ -162,7 +162,7 @@ class HotUpdateService {
       }
       return HotUpdatePatch.fromJson(patchJson);
     } catch (e) {
-      debugPrint('[HotUpdate] check patch failed: $e');
+      if (kDebugMode) debugPrint('[HotUpdate] check patch failed: $e');
       return null;
     }
   }
@@ -211,7 +211,7 @@ class HotUpdateService {
       );
       return resp.isSuccess;
     } catch (e) {
-      debugPrint('[HotUpdate] report patch result failed: $e');
+      if (kDebugMode) debugPrint('[HotUpdate] report patch result failed: $e');
       return false;
     }
   }

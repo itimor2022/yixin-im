@@ -175,7 +175,7 @@ class CallService extends StateNotifier<CallServiceState> {
 
       _setupWebSocketListeners();
     } catch (e) {
-      debugPrint('[CallService] Init error: $e');
+      if (kDebugMode) debugPrint('[CallService] Init error: $e');
     }
   }
 
@@ -185,7 +185,7 @@ class CallService extends StateNotifier<CallServiceState> {
       await _loadConfig();
       _configLoaded = true;
     } catch (e) {
-      debugPrint('[CallService] Load config error: $e');
+      if (kDebugMode) debugPrint('[CallService] Load config error: $e');
     }
   }
 
@@ -206,15 +206,15 @@ class CallService extends StateNotifier<CallServiceState> {
         _isSimulator = false;
       }
       if (_isSimulator) {
-        debugPrint('[CallService] Running on simulator, Agora SDK disabled');
+        if (kDebugMode) debugPrint('[CallService] Running on simulator, Agora SDK disabled');
       }
     } catch (e) {
-      debugPrint('[CallService] Check simulator error: $e');
+      if (kDebugMode) debugPrint('[CallService] Check simulator error: $e');
     }
   }
 
   void _setupWebSocketListeners() {
-    debugPrint('[CallService] Setting up WebSocket listeners');
+    if (kDebugMode) debugPrint('[CallService] Setting up WebSocket listeners');
 
     for (final id in _wsHandlerIds) {
       _wsService.unregisterHandler(id);
@@ -224,16 +224,16 @@ class CallService extends StateNotifier<CallServiceState> {
     final incomingId = _wsService.registerHandler(WSMessageType.incomingCall, (
       data,
     ) {
-      debugPrint('[CallService] ========== INCOMING CALL ==========');
-      debugPrint('[CallService] Incoming call data: $data');
-      debugPrint(
+      if (kDebugMode) debugPrint('[CallService] ========== INCOMING CALL ==========');
+      if (kDebugMode) debugPrint('[CallService] Incoming call data: $data');
+      if (kDebugMode) debugPrint(
         '[CallService] isSimulator: $_isSimulator, isEnabled: $_isEnabled',
       );
       final callData = data['data'] as Map<String, dynamic>?;
       if (callData != null) {
         handleIncomingCall(callData);
       } else {
-        debugPrint('[CallService] ERROR: callData is null!');
+        if (kDebugMode) debugPrint('[CallService] ERROR: callData is null!');
       }
     });
     _wsHandlerIds.add(incomingId);
@@ -241,7 +241,7 @@ class CallService extends StateNotifier<CallServiceState> {
     final acceptedId = _wsService.registerHandler(WSMessageType.callAccepted, (
       data,
     ) {
-      debugPrint('[CallService] Call accepted');
+      if (kDebugMode) debugPrint('[CallService] Call accepted');
       handleCallAccepted();
     });
     _wsHandlerIds.add(acceptedId);
@@ -249,14 +249,14 @@ class CallService extends StateNotifier<CallServiceState> {
     final rejectedId = _wsService.registerHandler(WSMessageType.callRejected, (
       data,
     ) {
-      debugPrint('[CallService] Call rejected: $data');
+      if (kDebugMode) debugPrint('[CallService] Call rejected: $data');
       final reason = data['data']?['reason'] as String? ?? 'decline';
       handleCallRejected(reason);
     });
     _wsHandlerIds.add(rejectedId);
 
     final endedId = _wsService.registerHandler(WSMessageType.callEnded, (data) {
-      debugPrint('[CallService] Call ended: $data');
+      if (kDebugMode) debugPrint('[CallService] Call ended: $data');
       final reason = data['data']?['reason'] as String? ?? 'hangup';
       endCall(reason: reason, notifyServer: false);
     });
@@ -265,7 +265,7 @@ class CallService extends StateNotifier<CallServiceState> {
     final cancelledId = _wsService.registerHandler(
       WSMessageType.callCancelled,
       (data) {
-        debugPrint('[CallService] Call cancelled');
+        if (kDebugMode) debugPrint('[CallService] Call cancelled');
         handleCallCancelled();
       },
     );
@@ -278,12 +278,12 @@ class CallService extends StateNotifier<CallServiceState> {
       if (response.isSuccess && response.data != null) {
         _isEnabled = response.data!['enabled'] == true;
         _appId = response.data!['app_id'] as String?;
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Enabled: $_isEnabled, AppId: ${_appId?.substring(0, 8)}...',
         );
       }
     } catch (e) {
-      debugPrint('[CallService] Load config error: $e');
+      if (kDebugMode) debugPrint('[CallService] Load config error: $e');
     }
   }
 
@@ -297,13 +297,13 @@ class CallService extends StateNotifier<CallServiceState> {
   Future<bool> _requestPermissions(CallType type) async {
     try {
       if (kIsWeb) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Web platform, browser will handle media permissions',
         );
         return true;
       }
       if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Desktop platform, system will handle permissions',
         );
         return true;
@@ -311,7 +311,7 @@ class CallService extends StateNotifier<CallServiceState> {
 
       final micStatus = await Permission.microphone.request();
       if (!micStatus.isGranted) {
-        debugPrint('[CallService] Microphone permission denied');
+        if (kDebugMode) debugPrint('[CallService] Microphone permission denied');
         if (micStatus.isPermanentlyDenied) {
           state = state.copyWith(errorMessage: '通话失败，请重试');
           await openAppSettings();
@@ -324,7 +324,7 @@ class CallService extends StateNotifier<CallServiceState> {
       if (type == CallType.video) {
         final cameraStatus = await Permission.camera.request();
         if (!cameraStatus.isGranted) {
-          debugPrint('[CallService] Camera permission denied');
+          if (kDebugMode) debugPrint('[CallService] Camera permission denied');
           if (cameraStatus.isPermanentlyDenied) {
             state = state.copyWith(errorMessage: '通话失败，请重试');
             await openAppSettings();
@@ -339,7 +339,7 @@ class CallService extends StateNotifier<CallServiceState> {
         await Permission.bluetoothConnect.request();
       }
     } catch (e) {
-      debugPrint('[CallService] Permission request error: $e');
+      if (kDebugMode) debugPrint('[CallService] Permission request error: $e');
     }
 
     return true;
@@ -376,10 +376,10 @@ class CallService extends StateNotifier<CallServiceState> {
 
     _eventHandler = RtcEngineEventHandler(
       onJoinChannelSuccess: (connection, elapsed) {
-        debugPrint('[Agora] Join channel success: ${connection.channelId}');
+        if (kDebugMode) debugPrint('[Agora] Join channel success: ${connection.channelId}');
       },
       onUserJoined: (connection, remoteUid, elapsed) {
-        debugPrint('[Agora] User joined: $remoteUid');
+        if (kDebugMode) debugPrint('[Agora] User joined: $remoteUid');
         if (_isDisposed) return;
 
         _cancelConnectionTimeout();
@@ -399,7 +399,7 @@ class CallService extends StateNotifier<CallServiceState> {
         }
       },
       onUserOffline: (connection, remoteUid, reason) {
-        debugPrint('[Agora] User offline: $remoteUid, reason: $reason');
+        if (kDebugMode) debugPrint('[Agora] User offline: $remoteUid, reason: $reason');
         if (_isDisposed) return;
         if (state.state == CallState.connected) {
           endCall(reason: 'remote_hangup');
@@ -407,7 +407,7 @@ class CallService extends StateNotifier<CallServiceState> {
       },
       onRemoteVideoStateChanged:
           (connection, remoteUid, videoState, reason, elapsed) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Agora] Remote video state: $videoState, reason: $reason',
         );
         if (_isDisposed) return;
@@ -420,20 +420,20 @@ class CallService extends StateNotifier<CallServiceState> {
         }
       },
       onError: (err, msg) {
-        debugPrint('[Agora] Error: $err - $msg');
+        if (kDebugMode) debugPrint('[Agora] Error: $err - $msg');
         if (_isDisposed) return;
         if (state.state != CallState.idle) {
           state = state.copyWith(errorMessage: msg);
         }
       },
       onConnectionStateChanged: (connection, stateType, reason) {
-        debugPrint('[Agora] Connection state: $stateType, reason: $reason');
+        if (kDebugMode) debugPrint('[Agora] Connection state: $stateType, reason: $reason');
         if (_isDisposed) return;
         if (stateType == ConnectionStateType.connectionStateDisconnected ||
             stateType == ConnectionStateType.connectionStateFailed) {
           if (state.state == CallState.connected ||
               state.state == CallState.connecting) {
-            debugPrint('[Agora] Network disconnected during call, ending call');
+            if (kDebugMode) debugPrint('[Agora] Network disconnected during call, ending call');
             endCall(reason: 'network_error');
           }
         }
@@ -459,7 +459,7 @@ class CallService extends StateNotifier<CallServiceState> {
     await _checkSimulator();
     if (_isDisposed) return false;
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[CallService] startCall: isWeb=$kIsWeb, isSimulator=$_isSimulator, isEnabled=$_isEnabled, appId=${_appId?.isNotEmpty}',
     );
 
@@ -469,7 +469,7 @@ class CallService extends StateNotifier<CallServiceState> {
     }
 
     await _loadConfig();
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[CallService] After loadConfig: isEnabled=$_isEnabled, appId=$_appId',
     );
 
@@ -515,7 +515,7 @@ class CallService extends StateNotifier<CallServiceState> {
       final callId = (data['call_id'] as int?) ?? 0;
 
       if (channelName.isEmpty || token.isEmpty) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Invalid call data: channelName or token is empty',
         );
         state = state.copyWith(errorMessage: '通话失败，请重试');
@@ -541,7 +541,7 @@ class CallService extends StateNotifier<CallServiceState> {
         try {
           await _engine!.startPreview();
         } catch (previewError) {
-          debugPrint('[CallService] startPreview error: $previewError');
+          if (kDebugMode) debugPrint('[CallService] startPreview error: $previewError');
           if (previewError is AgoraRtcException && previewError.code == -2) {
             if (Platform.isMacOS) {
               state = state.copyWith(errorMessage: '通话失败，请重试');
@@ -570,7 +570,7 @@ class CallService extends StateNotifier<CallServiceState> {
 
       return true;
     } catch (e) {
-      debugPrint('[CallService] Start call error: $e');
+      if (kDebugMode) debugPrint('[CallService] Start call error: $e');
 
       final errorMessage = _classifyError(e, '通话');
 
@@ -587,7 +587,7 @@ class CallService extends StateNotifier<CallServiceState> {
     if (state.isInCall) {
       final currentCallId = state.callInfo?.callId;
       if (callId != null && currentCallId == callId) {
-        debugPrint('[CallService] Duplicate incoming call ignored: $callId');
+        if (kDebugMode) debugPrint('[CallService] Duplicate incoming call ignored: $callId');
         return;
       }
 
@@ -609,7 +609,7 @@ class CallService extends StateNotifier<CallServiceState> {
         callerId == null ||
         callerId.isEmpty ||
         callerName == null) {
-      debugPrint('[CallService] handleIncomingCall: invalid payload: $data');
+      if (kDebugMode) debugPrint('[CallService] handleIncomingCall: invalid payload: $data');
       return;
     }
 
@@ -641,7 +641,7 @@ class CallService extends StateNotifier<CallServiceState> {
     _preloadForIncoming(callType);
 
     if (kIsWeb) {
-      debugPrint('[CallService] Web: showing in-app IncomingCallPage');
+      if (kDebugMode) debugPrint('[CallService] Web: showing in-app IncomingCallPage');
       onIncomingCall?.call(callInfo);
       return;
     }
@@ -651,27 +651,27 @@ class CallService extends StateNotifier<CallServiceState> {
       final isForeground = lifecycleState == AppLifecycleState.resumed ||
           lifecycleState == AppLifecycleState.inactive;
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] iOS lifecycleState: $lifecycleState, isForeground: $isForeground, isSimulator: $_isSimulator',
       );
 
       if (isForeground && onIncomingCall != null && !_isSimulator) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] iOS foreground: showing in-app IncomingCallPage',
         );
         onIncomingCall?.call(callInfo);
       } else {
-        debugPrint('[CallService] iOS background/locked: showing CallKit UI');
+        if (kDebugMode) debugPrint('[CallService] iOS background/locked: showing CallKit UI');
         try {
           await _showCallKit(callInfo);
           if (_isSimulator && onIncomingCall != null) {
-            debugPrint(
+            if (kDebugMode) debugPrint(
               '[CallService] iOS simulator: also showing in-app IncomingCallPage',
             );
             onIncomingCall?.call(callInfo);
           }
         } catch (e) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[CallService] iOS CallKit failed: $e, falling back to in-app UI',
           );
           onIncomingCall?.call(callInfo);
@@ -685,23 +685,23 @@ class CallService extends StateNotifier<CallServiceState> {
       final isForeground = lifecycleState == AppLifecycleState.resumed ||
           lifecycleState == AppLifecycleState.inactive;
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] Android lifecycleState: $lifecycleState, isForeground: $isForeground',
       );
 
       if (isForeground && onIncomingCall != null) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Android foreground: showing in-app IncomingCallPage',
         );
         onIncomingCall?.call(callInfo);
       } else {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] Android background/locked: showing system full-screen incoming',
         );
         try {
           await _showCallKit(callInfo);
         } catch (e) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[CallService] Android CallKit failed: $e, trying in-app UI',
           );
           onIncomingCall?.call(callInfo);
@@ -711,7 +711,7 @@ class CallService extends StateNotifier<CallServiceState> {
     }
 
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-      debugPrint('[CallService] Desktop: showing in-app IncomingCallPage');
+      if (kDebugMode) debugPrint('[CallService] Desktop: showing in-app IncomingCallPage');
       onIncomingCall?.call(callInfo);
     }
   }
@@ -795,7 +795,7 @@ class CallService extends StateNotifier<CallServiceState> {
     try {
       final activeCalls = await FlutterCallkitIncoming.activeCalls();
       final calls = activeCalls is List ? activeCalls : const [];
-      debugPrint('[CallService] Active system calls: $calls');
+      if (kDebugMode) debugPrint('[CallService] Active system calls: $calls');
 
       for (final rawCall in calls) {
         final call = _asStringKeyMap(rawCall);
@@ -807,17 +807,17 @@ class CallService extends StateNotifier<CallServiceState> {
 
         final payload = _incomingPayloadFromCallKitData(call);
         if (payload == null) {
-          debugPrint('[CallService] Cannot restore CallKit payload: $call');
+          if (kDebugMode) debugPrint('[CallService] Cannot restore CallKit payload: $call');
           continue;
         }
 
         _currentCallKitUuid = call['id']?.toString() ??
             call['uuid']?.toString() ??
             _currentCallKitUuid;
-        debugPrint('[CallService] Restoring incoming call from system UI');
+        if (kDebugMode) debugPrint('[CallService] Restoring incoming call from system UI');
         await handleIncomingCall(payload);
         if (isAccepted) {
-          debugPrint('[CallService] Restored accepted system call, joining');
+          if (kDebugMode) debugPrint('[CallService] Restored accepted system call, joining');
           await _handleCallKitAccept();
           return state.state == CallState.connecting ||
               state.state == CallState.connected;
@@ -825,7 +825,7 @@ class CallService extends StateNotifier<CallServiceState> {
         return state.state == CallState.incoming && state.callInfo != null;
       }
     } catch (e) {
-      debugPrint('[CallService] restoreIncomingCallFromSystem error: $e');
+      if (kDebugMode) debugPrint('[CallService] restoreIncomingCallFromSystem error: $e');
     } finally {
       _isRestoringSystemIncomingCall = false;
     }
@@ -841,7 +841,7 @@ class CallService extends StateNotifier<CallServiceState> {
       if (_isDisposed) return;
       if (state.state == CallState.incoming &&
           state.callInfo?.callId == callId) {
-        debugPrint('[CallService] Incoming call timeout, auto rejecting');
+        if (kDebugMode) debugPrint('[CallService] Incoming call timeout, auto rejecting');
         rejectCall(reason: 'timeout');
       }
     });
@@ -860,7 +860,7 @@ class CallService extends StateNotifier<CallServiceState> {
       if (_isDisposed) return;
       if (state.state == CallState.connecting ||
           state.state == CallState.outgoing) {
-        debugPrint('[CallService] Connection timeout, ending call');
+        if (kDebugMode) debugPrint('[CallService] Connection timeout, ending call');
         state = state.copyWith(errorMessage: '通话失败，请重试');
         endCall(reason: 'connection_timeout');
       }
@@ -873,17 +873,17 @@ class CallService extends StateNotifier<CallServiceState> {
   }
 
   Future<bool> acceptCall() async {
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[CallService] acceptCall called, state=${state.state}, callInfo=${state.callInfo != null}',
     );
 
     if (_isAcceptingCall) {
-      debugPrint('[CallService] acceptCall already in progress');
+      if (kDebugMode) debugPrint('[CallService] acceptCall already in progress');
       return false;
     }
 
     if (state.state != CallState.incoming || state.callInfo == null) {
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] acceptCall failed: invalid state or no callInfo',
       );
       state = state.copyWith(errorMessage: '通话失败，请重试');
@@ -899,7 +899,7 @@ class CallService extends StateNotifier<CallServiceState> {
     final channelName = state.callInfo!.channelName;
 
     state = state.copyWith(state: CallState.connecting);
-    debugPrint('[CallService] State changed to connecting immediately');
+    if (kDebugMode) debugPrint('[CallService] State changed to connecting immediately');
 
     try {
       final needPermission =
@@ -907,12 +907,12 @@ class CallService extends StateNotifier<CallServiceState> {
       final needConfig = !_isEnabled || _appId == null || _appId!.isEmpty;
       final needEngine = _engine == null;
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] Accept: needPermission=$needPermission, needConfig=$needConfig, needEngine=$needEngine',
       );
 
       if (needPermission || needConfig) {
-        debugPrint('[CallService] Starting parallel permission & config...');
+        if (kDebugMode) debugPrint('[CallService] Starting parallel permission & config...');
         final results = await Future.wait([
           needPermission ? _requestPermissions(callType) : Future.value(true),
           needConfig
@@ -921,7 +921,7 @@ class CallService extends StateNotifier<CallServiceState> {
         ]);
 
         if (needPermission && results[0] != true) {
-          debugPrint('[CallService] Permission denied');
+          if (kDebugMode) debugPrint('[CallService] Permission denied');
           state = state.copyWith(
             state: CallState.idle,
             errorMessage: '通话失败，请重试',
@@ -929,10 +929,10 @@ class CallService extends StateNotifier<CallServiceState> {
           return false;
         }
       }
-      debugPrint('[CallService] Permissions & config ready');
+      if (kDebugMode) debugPrint('[CallService] Permissions & config ready');
 
       if (_isCallCancelledDuringAccept(originalCallId)) {
-        debugPrint('[CallService] Call was cancelled during permission/config');
+        if (kDebugMode) debugPrint('[CallService] Call was cancelled during permission/config');
         return false;
       }
 
@@ -944,7 +944,7 @@ class CallService extends StateNotifier<CallServiceState> {
         return false;
       }
 
-      debugPrint('[CallService] Starting engine init & accept API...');
+      if (kDebugMode) debugPrint('[CallService] Starting engine init & accept API...');
 
       final engineFuture = needEngine ? _initEngine() : Future.value();
 
@@ -954,7 +954,7 @@ class CallService extends StateNotifier<CallServiceState> {
       );
 
       if (!response.isSuccess || response.data == null) {
-        debugPrint('[CallService] Accept API failed: ${response.message}');
+        if (kDebugMode) debugPrint('[CallService] Accept API failed: ${response.message}');
         if (response.message?.contains('cancelled') == true ||
             response.message?.contains('not found') == true) {
           state = state.copyWith(
@@ -969,13 +969,13 @@ class CallService extends StateNotifier<CallServiceState> {
         }
         return false;
       }
-      debugPrint('[CallService] Accept API success');
+      if (kDebugMode) debugPrint('[CallService] Accept API success');
 
       await engineFuture;
-      debugPrint('[CallService] Engine initialized');
+      if (kDebugMode) debugPrint('[CallService] Engine initialized');
 
       if (_isCallCancelledDuringAccept(originalCallId)) {
-        debugPrint('[CallService] Call was cancelled after API/engine init');
+        if (kDebugMode) debugPrint('[CallService] Call was cancelled after API/engine init');
         await _leaveChannel();
         return false;
       }
@@ -991,7 +991,7 @@ class CallService extends StateNotifier<CallServiceState> {
       final token = (data['token'] as String?) ?? '';
 
       if (token.isEmpty) {
-        debugPrint('[CallService] Accept call: token is empty');
+        if (kDebugMode) debugPrint('[CallService] Accept call: token is empty');
         state = state.copyWith(errorMessage: '通话失败，请重试');
         return false;
       }
@@ -999,14 +999,14 @@ class CallService extends StateNotifier<CallServiceState> {
       _startConnectionTimeout();
 
       if (callType == CallType.video) {
-        debugPrint('[CallService] Enabling video...');
+        if (kDebugMode) debugPrint('[CallService] Enabling video...');
         await _engine!.enableVideo();
         _engine!.startPreview().catchError((e) {
-          debugPrint('[CallService] startPreview error: $e');
+          if (kDebugMode) debugPrint('[CallService] startPreview error: $e');
         });
       }
 
-      debugPrint('[CallService] Joining channel: $channelName');
+      if (kDebugMode) debugPrint('[CallService] Joining channel: $channelName');
       final isVideoCall = callType == CallType.video;
       await _engine!.joinChannel(
         token: token,
@@ -1020,14 +1020,14 @@ class CallService extends StateNotifier<CallServiceState> {
           clientRoleType: ClientRoleType.clientRoleBroadcaster,
         ),
       );
-      debugPrint('[CallService] Joined channel successfully');
+      if (kDebugMode) debugPrint('[CallService] Joined channel successfully');
 
       WakelockPlus.enable();
 
       return true;
     } catch (e, stack) {
-      debugPrint('[CallService] Accept call error: $e');
-      debugPrint('[CallService] Stack: $stack');
+      if (kDebugMode) debugPrint('[CallService] Accept call error: $e');
+      if (kDebugMode) debugPrint('[CallService] Stack: $stack');
 
       final errorMessage = _classifyError(e, '接听');
       state = state.copyWith(state: CallState.idle, errorMessage: errorMessage);
@@ -1050,7 +1050,7 @@ class CallService extends StateNotifier<CallServiceState> {
     _isPreloading = true;
 
     try {
-      debugPrint('[CallService] Preloading for incoming call...');
+      if (kDebugMode) debugPrint('[CallService] Preloading for incoming call...');
 
       await Future.wait([_loadConfigIfNeeded(), _requestPermissions(callType)]);
 
@@ -1058,12 +1058,12 @@ class CallService extends StateNotifier<CallServiceState> {
           _appId != null &&
           _appId!.isNotEmpty &&
           _engine == null) {
-        debugPrint('[CallService] Pre-initializing engine...');
+        if (kDebugMode) debugPrint('[CallService] Pre-initializing engine...');
         await _initEngine();
-        debugPrint('[CallService] Engine pre-initialized');
+        if (kDebugMode) debugPrint('[CallService] Engine pre-initialized');
       }
     } catch (e) {
-      debugPrint('[CallService] Preload error (non-fatal): $e');
+      if (kDebugMode) debugPrint('[CallService] Preload error (non-fatal): $e');
     } finally {
       _isPreloading = false;
     }
@@ -1146,7 +1146,7 @@ class CallService extends StateNotifier<CallServiceState> {
         data: {'call_id': state.callInfo!.callId, 'reason': reason},
       );
     } catch (e) {
-      debugPrint('[CallService] Reject call error: $e');
+      if (kDebugMode) debugPrint('[CallService] Reject call error: $e');
     }
 
     if (_isDisposed) return;
@@ -1181,7 +1181,7 @@ class CallService extends StateNotifier<CallServiceState> {
         );
       }
     } catch (e) {
-      debugPrint('[CallService] End call error: $e');
+      if (kDebugMode) debugPrint('[CallService] End call error: $e');
     }
 
     if (_isDisposed) return;
@@ -1206,7 +1206,7 @@ class CallService extends StateNotifier<CallServiceState> {
     try {
       await _api.delete('/call/${state.callInfo!.callId}');
     } catch (e) {
-      debugPrint('[CallService] Cancel call error: $e');
+      if (kDebugMode) debugPrint('[CallService] Cancel call error: $e');
     }
 
     if (_isDisposed) return;
@@ -1303,7 +1303,7 @@ class CallService extends StateNotifier<CallServiceState> {
       await _engine?.release();
       _engine = null;
     } catch (e) {
-      debugPrint('[CallService] Leave channel error: $e');
+      if (kDebugMode) debugPrint('[CallService] Leave channel error: $e');
     }
 
     WakelockPlus.disable();
@@ -1348,20 +1348,20 @@ class CallService extends StateNotifier<CallServiceState> {
   void _setupCallKit() {
     _callKitSubscription?.cancel();
     _callKitSubscription = FlutterCallkitIncoming.onEvent.listen((event) async {
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] CallKit event: ${event?.event}, body: ${event?.body}',
       );
       switch (event?.event) {
         case Event.actionCallAccept:
-          debugPrint('[CallService] CallKit: actionCallAccept');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallAccept');
           await _handleCallKitAccept();
           break;
         case Event.actionCallDecline:
-          debugPrint('[CallService] CallKit: actionCallDecline');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallDecline');
           await rejectCall();
           break;
         case Event.actionCallEnded:
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[CallService] CallKit: actionCallEnded, currentState=${state.state}',
           );
           if (state.state == CallState.incoming) {
@@ -1371,42 +1371,42 @@ class CallService extends StateNotifier<CallServiceState> {
           }
           break;
         case Event.actionCallStart:
-          debugPrint('[CallService] CallKit: actionCallStart (outgoing)');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallStart (outgoing)');
           break;
         case Event.actionCallIncoming:
-          debugPrint('[CallService] CallKit: actionCallIncoming');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallIncoming');
           final payload = _incomingPayloadFromCallKitData(event?.body);
           if (payload != null && !state.isInCall) {
             await handleIncomingCall(payload);
           }
           break;
         case Event.actionCallTimeout:
-          debugPrint('[CallService] CallKit: actionCallTimeout');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallTimeout');
           await rejectCall(reason: 'timeout');
           break;
         case Event.actionCallToggleHold:
-          debugPrint('[CallService] CallKit: actionCallToggleHold');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallToggleHold');
           break;
         case Event.actionCallToggleMute:
-          debugPrint('[CallService] CallKit: actionCallToggleMute');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallToggleMute');
           toggleMute();
           break;
         case Event.actionCallToggleDmtf:
-          debugPrint('[CallService] CallKit: actionCallToggleDmtf');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallToggleDmtf');
           break;
         case Event.actionCallToggleGroup:
-          debugPrint('[CallService] CallKit: actionCallToggleGroup');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallToggleGroup');
           break;
         case Event.actionCallToggleAudioSession:
-          debugPrint('[CallService] CallKit: actionCallToggleAudioSession');
+          if (kDebugMode) debugPrint('[CallService] CallKit: actionCallToggleAudioSession');
           break;
         case Event.actionDidUpdateDevicePushTokenVoip:
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[CallService] CallKit: actionDidUpdateDevicePushTokenVoip',
           );
           break;
         default:
-          debugPrint('[CallService] CallKit: unknown event ${event?.event}');
+          if (kDebugMode) debugPrint('[CallService] CallKit: unknown event ${event?.event}');
           break;
       }
     });
@@ -1414,7 +1414,7 @@ class CallService extends StateNotifier<CallServiceState> {
 
   Future<void> _handleCallKitAccept() async {
     if (_isHandlingCallKitAccept) {
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[CallService] CallKit accept already being handled, ignoring',
       );
       return;
@@ -1426,57 +1426,57 @@ class CallService extends StateNotifier<CallServiceState> {
         try {
           await FlutterCallkitIncoming.setCallConnected(_currentCallKitUuid!);
         } catch (e) {
-          debugPrint('[CallService] setCallConnected error: $e');
+          if (kDebugMode) debugPrint('[CallService] setCallConnected error: $e');
         }
       }
 
       await Future.delayed(const Duration(milliseconds: 200));
 
       if (state.state != CallState.incoming || state.callInfo == null) {
-        debugPrint('[CallService] CallKit accept: call no longer incoming');
+        if (kDebugMode) debugPrint('[CallService] CallKit accept: call no longer incoming');
         return;
       }
 
       final success = await acceptCall().timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          debugPrint('[CallService] CallKit accept timeout');
+          if (kDebugMode) debugPrint('[CallService] CallKit accept timeout');
           state = state.copyWith(errorMessage: '接听超时，请重试');
           return false;
         },
       );
 
-      debugPrint('[CallService] CallKit acceptCall result: $success');
+      if (kDebugMode) debugPrint('[CallService] CallKit acceptCall result: $success');
 
       if (success) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[CallService] CallKit accept success, triggering onCallAccepted',
         );
         await Future.delayed(const Duration(milliseconds: 100));
         onCallAccepted?.call();
       } else {
-        debugPrint('[CallService] CallKit accept failed');
+        if (kDebugMode) debugPrint('[CallService] CallKit accept failed');
         if (state.state == CallState.incoming ||
             state.state == CallState.idle) {
           if (_currentCallKitUuid != null) {
             try {
               await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
             } catch (e) {
-              debugPrint('[CallService] endCall error: $e');
+              if (kDebugMode) debugPrint('[CallService] endCall error: $e');
             }
           }
           onCallFailed?.call(state.errorMessage ?? '接听失败');
         }
       }
     } catch (e) {
-      debugPrint('[CallService] CallKit accept error: $e');
+      if (kDebugMode) debugPrint('[CallService] CallKit accept error: $e');
       if (_currentCallKitUuid != null &&
           state.state != CallState.connecting &&
           state.state != CallState.connected) {
         try {
           await FlutterCallkitIncoming.endCall(_currentCallKitUuid!);
         } catch (endError) {
-          debugPrint('[CallService] endCall error: $endError');
+          if (kDebugMode) debugPrint('[CallService] endCall error: $endError');
         }
       }
       state = state.copyWith(errorMessage: '通话失败，请重试');

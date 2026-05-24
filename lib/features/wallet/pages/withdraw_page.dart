@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -126,7 +127,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 );
               }).toList();
             } catch (e) {
-              debugPrint('[Withdraw] Parse form fields error: $e');
+              if (kDebugMode) debugPrint('[Withdraw] Parse form fields error: $e');
             }
 
             return WithdrawMethodConfig(
@@ -150,7 +151,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
         if (mounted) setState(() => _isLoadingMethods = false);
       }
     } catch (e) {
-      debugPrint('[Withdraw] Load methods error: $e');
+      if (kDebugMode) debugPrint('[Withdraw] Load methods error: $e');
       if (mounted) setState(() => _isLoadingMethods = false);
     }
   }

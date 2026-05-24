@@ -92,7 +92,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
         );
       }
     } catch (e) {
-      debugPrint('[Wallet] Load wallet error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Load wallet error: $e');
       state = state.copyWith(
         isLoading: false,
         error: '加载钱包失败',
@@ -128,7 +128,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '设置支付密码失败');
       return false;
     } catch (e) {
-      debugPrint('[Wallet] Set pay password error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Set pay password error: $e');
       state = state.copyWith(error: '设置支付密码失败');
       return false;
     } finally {
@@ -142,7 +142,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       final response = await _walletService.verifyPayPassword(password);
       return response.isSuccess && response.data == true;
     } catch (e) {
-      debugPrint('[Wallet] Verify pay password error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Verify pay password error: $e');
       return false;
     }
   }
@@ -159,7 +159,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '充值失败');
       return false;
     } catch (e) {
-      debugPrint('[Wallet] Recharge error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Recharge error: $e');
       state = state.copyWith(error: '充值失败');
       return false;
     }
@@ -193,7 +193,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
         );
       }
     } catch (e) {
-      debugPrint('[Wallet] Load transactions error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Load transactions error: $e');
       state = state.copyWith(
         isTransactionsLoading: false,
         error: '加载交易记录失败',
@@ -229,7 +229,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '发红包失败');
       return null;
     } catch (e) {
-      debugPrint('[Wallet] Send red packet error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Send red packet error: $e');
       state = state.copyWith(error: '发红包失败');
       return null;
     } finally {
@@ -251,7 +251,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '领取红包失败');
       return null;
     } catch (e) {
-      debugPrint('[Wallet] Claim red packet error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Claim red packet error: $e');
       state = state.copyWith(error: '领取红包失败');
       return null;
     } finally {
@@ -283,7 +283,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '转账失败');
       return null;
     } catch (e) {
-      debugPrint('[Wallet] Transfer error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Transfer error: $e');
       state = state.copyWith(error: '转账失败');
       return null;
     } finally {
@@ -305,7 +305,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '接收转账失败');
       return false;
     } catch (e) {
-      debugPrint('[Wallet] Accept transfer error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Accept transfer error: $e');
       state = state.copyWith(error: '接收转账失败');
       return false;
     } finally {
@@ -327,7 +327,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '退回转账失败');
       return false;
     } catch (e) {
-      debugPrint('[Wallet] Reject transfer error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Reject transfer error: $e');
       state = state.copyWith(error: '退回转账失败');
       return false;
     } finally {
@@ -359,7 +359,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       state = state.copyWith(error: response.message ?? '提现申请失败');
       return false;
     } catch (e) {
-      debugPrint('[Wallet] Create withdraw request error: $e');
+      if (kDebugMode) debugPrint('[Wallet] Create withdraw request error: $e');
       state = state.copyWith(error: '提现申请失败');
       return false;
     } finally {

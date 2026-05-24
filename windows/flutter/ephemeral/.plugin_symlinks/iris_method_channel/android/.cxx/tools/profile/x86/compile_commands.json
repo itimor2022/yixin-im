@@ -1,0 +1,17 @@
+[
+{
+  "directory": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86",
+  "command": "/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=i686-none-linux-android21 --sysroot=/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DDART_SHARED_LIB -Diris_method_channel_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -mstackrealign -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -fPIC -o CMakeFiles/iris_method_channel.dir/iris_event.cc.o -c /Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/iris_event.cc",
+  "file": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/iris_event.cc"
+},
+{
+  "directory": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86",
+  "command": "/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=i686-none-linux-android21 --sysroot=/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DDART_SHARED_LIB -Diris_method_channel_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -mstackrealign -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -fPIC -o CMakeFiles/iris_method_channel.dir/iris_life_cycle_observer.cc.o -c /Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/iris_life_cycle_observer.cc",
+  "file": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/iris_life_cycle_observer.cc"
+},
+{
+  "directory": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86",
+  "command": "/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=i686-none-linux-android21 --sysroot=/Users/li/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DDART_SHARED_LIB -Diris_method_channel_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -mstackrealign -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles/iris_method_channel.dir/dart-sdk/include/dart_api_dl.c.o -c /Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/dart-sdk/include/dart_api_dl.c",
+  "file": "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/dart-sdk/include/dart_api_dl.c"
+}
+]

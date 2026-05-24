@@ -70,15 +70,15 @@ class DesktopNotificationService {
       );
 
       _isInitialized = true;
-      debugPrint('[DesktopNotification] Initialized successfully');
+      if (kDebugMode) debugPrint('[DesktopNotification] Initialized successfully');
     } catch (e) {
-      debugPrint('[DesktopNotification] Failed to initialize: $e');
+      if (kDebugMode) debugPrint('[DesktopNotification] Failed to initialize: $e');
     }
   }
 
   /// 处理通知点击
   void _onNotificationResponse(NotificationResponse response) {
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[DesktopNotification] Notification tapped: ${response.payload}',
     );
     onNotificationTap?.call(response.payload);
@@ -126,9 +126,9 @@ class DesktopNotificationService {
         payload: payload,
       );
 
-      debugPrint('[DesktopNotification] Message notification shown: $title');
+      if (kDebugMode) debugPrint('[DesktopNotification] Message notification shown: $title');
     } catch (e) {
-      debugPrint('[DesktopNotification] Failed to show notification: $e');
+      if (kDebugMode) debugPrint('[DesktopNotification] Failed to show notification: $e');
     }
   }
 
@@ -171,9 +171,9 @@ class DesktopNotificationService {
         payload: payload,
       );
 
-      debugPrint('[DesktopNotification] Call notification shown: $callerName');
+      if (kDebugMode) debugPrint('[DesktopNotification] Call notification shown: $callerName');
     } catch (e) {
-      debugPrint('[DesktopNotification] Failed to show call notification: $e');
+      if (kDebugMode) debugPrint('[DesktopNotification] Failed to show call notification: $e');
     }
   }
 
@@ -222,9 +222,9 @@ class DesktopNotificationService {
         payload: payload,
       );
 
-      debugPrint('[DesktopNotification] Moment notification shown: $title');
+      if (kDebugMode) debugPrint('[DesktopNotification] Moment notification shown: $title');
     } catch (e) {
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[DesktopNotification] Failed to show moment notification: $e',
       );
     }
@@ -248,7 +248,7 @@ class DesktopNotificationService {
           ?.requestPermissions(alert: true, badge: true, sound: true);
       return result ?? false;
     } catch (e) {
-      debugPrint('[DesktopNotification] Failed to request permission: $e');
+      if (kDebugMode) debugPrint('[DesktopNotification] Failed to request permission: $e');
       return false;
     }
   }
@@ -293,7 +293,7 @@ class DesktopNotificationService {
         await _notifications.cancel(0);
       }
     } catch (e) {
-      debugPrint('[DesktopNotification] Failed to update badge: $e');
+      if (kDebugMode) debugPrint('[DesktopNotification] Failed to update badge: $e');
     }
   }
 
@@ -303,7 +303,7 @@ class DesktopNotificationService {
     _isDisposed = true;
     onNotificationTap = null;
     _isInitialized = false;
-    debugPrint('[DesktopNotification] Disposed');
+    if (kDebugMode) debugPrint('[DesktopNotification] Disposed');
   }
 }
 

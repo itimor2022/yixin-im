@@ -74,24 +74,24 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
 
   Future<bool> checkPermission() async {
     if (PlatformUtils.isWeb) {
-      debugPrint('[VoiceRecord] Web recording is disabled');
+      if (kDebugMode) debugPrint('[VoiceRecord] Web recording is disabled');
       state = state.copyWith(error: '当前 Web 端暂不支持语音录制');
       return false;
     }
 
-    debugPrint('[VoiceRecord] Checking permission...');
+    if (kDebugMode) debugPrint('[VoiceRecord] Checking permission...');
     var status = await Permission.microphone.status;
-    debugPrint('[VoiceRecord] Current status: $status');
+    if (kDebugMode) debugPrint('[VoiceRecord] Current status: $status');
 
     if (status.isGranted) {
-      debugPrint('[VoiceRecord] Permission granted');
+      if (kDebugMode) debugPrint('[VoiceRecord] Permission granted');
       return true;
     }
 
     if (status.isDenied || status.isRestricted || status.isLimited) {
-      debugPrint('[VoiceRecord] Requesting permission...');
+      if (kDebugMode) debugPrint('[VoiceRecord] Requesting permission...');
       status = await Permission.microphone.request();
-      debugPrint('[VoiceRecord] Request result: $status');
+      if (kDebugMode) debugPrint('[VoiceRecord] Request result: $status');
 
       if (status.isGranted) {
         return true;
@@ -99,14 +99,14 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
     }
 
     if (status.isPermanentlyDenied) {
-      debugPrint('[VoiceRecord] Permission permanently denied, opening settings');
+      if (kDebugMode) debugPrint('[VoiceRecord] Permission permanently denied, opening settings');
       state = state.copyWith(error: '麦克风权限被拒绝，请在设置中开启');
       await openAppSettings();
       return false;
     }
 
     status = await Permission.microphone.status;
-    debugPrint('[VoiceRecord] Final status: $status');
+    if (kDebugMode) debugPrint('[VoiceRecord] Final status: $status');
 
     if (!status.isGranted) {
       state = state.copyWith(error: '需要麦克风权限才能录音');
@@ -116,7 +116,7 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
   }
 
   Future<bool> startRecording() async {
-    debugPrint('[VoiceRecord] startRecording called');
+    if (kDebugMode) debugPrint('[VoiceRecord] startRecording called');
 
     try {
       if (PlatformUtils.isWeb) {
@@ -126,12 +126,12 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
 
       final hasPermission = await checkPermission();
       if (!hasPermission) {
-        debugPrint('[VoiceRecord] No permission');
+        if (kDebugMode) debugPrint('[VoiceRecord] No permission');
         return false;
       }
 
       final recorderPermission = await _recorder.hasPermission();
-      debugPrint('[VoiceRecord] Recorder permission: $recorderPermission');
+      if (kDebugMode) debugPrint('[VoiceRecord] Recorder permission: $recorderPermission');
       if (!recorderPermission) {
         state = state.copyWith(error: '无法访问麦克风');
         return false;
@@ -140,7 +140,7 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
       final dir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _currentPath = '${dir.path}/voice_$timestamp.m4a';
-      debugPrint('[VoiceRecord] Path: $_currentPath');
+      if (kDebugMode) debugPrint('[VoiceRecord] Path: $_currentPath');
 
       const config = RecordConfig(
         encoder: AudioEncoder.aacLc,
@@ -149,9 +149,9 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
         numChannels: 1,
       );
 
-      debugPrint('[VoiceRecord] Starting recorder...');
+      if (kDebugMode) debugPrint('[VoiceRecord] Starting recorder...');
       await _recorder.start(config, path: _currentPath!);
-      debugPrint('[VoiceRecord] Recorder started');
+      if (kDebugMode) debugPrint('[VoiceRecord] Recorder started');
 
       _startTime = DateTime.now();
       state = state.copyWith(
@@ -160,12 +160,12 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
         amplitude: 0,
         error: null,
       );
-      debugPrint('[VoiceRecord] Recording state updated');
+      if (kDebugMode) debugPrint('[VoiceRecord] Recording state updated');
 
       _startTimers();
       return true;
     } catch (e) {
-      debugPrint('[VoiceRecord] Start error: $e');
+      if (kDebugMode) debugPrint('[VoiceRecord] Start error: $e');
       state = state.copyWith(error: '录音启动失败');
       return false;
     }
@@ -259,7 +259,7 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
 
       return data;
     } catch (e) {
-      debugPrint('[VoiceRecord] Stop error: $e');
+      if (kDebugMode) debugPrint('[VoiceRecord] Stop error: $e');
       state = state.copyWith(state: RecordingState.idle, error: '录音停止失败');
       return null;
     }
@@ -286,7 +286,7 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
       _currentPath = null;
       _startTime = null;
     } catch (e) {
-      debugPrint('[VoiceRecord] Cancel error: $e');
+      if (kDebugMode) debugPrint('[VoiceRecord] Cancel error: $e');
       state = state.copyWith(state: RecordingState.idle);
     }
   }

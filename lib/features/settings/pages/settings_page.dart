@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +50,7 @@ final deviceCountProvider = FutureProvider<int>((ref) async {
       return devices.length;
     }
   } catch (e) {
-    debugPrint('[Settings] Get device count error: $e');
+    if (kDebugMode) debugPrint('[Settings] Get device count error: $e');
   }
   return 1; // 默认至少有当前设备
 });
@@ -1585,7 +1586,7 @@ class _MyMomentsPageState extends ConsumerState<MyMomentsPage> {
         setState(() => _moments = response.data['list'] ?? []);
       }
     } catch (e) {
-      debugPrint('加载失败: $e');
+      if (kDebugMode) debugPrint('加载失败: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1683,7 +1684,7 @@ class _MyLikesPageState extends ConsumerState<MyLikesPage> {
         setState(() => _moments = response.data['list'] ?? []);
       }
     } catch (e) {
-      debugPrint('加载失败: $e');
+      if (kDebugMode) debugPrint('加载失败: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1805,7 +1806,7 @@ class _MyCommentsPageState extends ConsumerState<MyCommentsPage>
         _sentComments = sentResponse.data['list'] ?? [];
       }
     } catch (e) {
-      debugPrint('加载失败: $e');
+      if (kDebugMode) debugPrint('加载失败: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -2260,7 +2261,7 @@ class _CommentTile extends ConsumerWidget {
         }
       }
     } catch (e) {
-      debugPrint('打开动态失败: $e');
+      if (kDebugMode) debugPrint('打开动态失败: $e');
     }
   }
 

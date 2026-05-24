@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -55,7 +56,7 @@ class BackgroundService {
       await start();
       startWatchdog();
     } catch (e) {
-      debugPrint('[BackgroundService] initialize error: $e');
+      if (kDebugMode) debugPrint('[BackgroundService] initialize error: $e');
     }
   }
 
@@ -83,7 +84,7 @@ class BackgroundService {
             unawaited(result);
           }
         } catch (e) {
-          debugPrint('[BackgroundService] keepAlive handler error: $e');
+          if (kDebugMode) debugPrint('[BackgroundService] keepAlive handler error: $e');
         }
       }
     });
@@ -110,18 +111,18 @@ class BackgroundService {
       final running = await _service.isRunning();
       if (!running) {
         await _service.startService();
-        debugPrint('[BackgroundService] restarted by $reason');
+        if (kDebugMode) debugPrint('[BackgroundService] restarted by $reason');
       }
       updateNotification(unreadCount: _lastUnreadCount);
     } catch (e) {
-      debugPrint('[BackgroundService] ensureRunning error: $e');
+      if (kDebugMode) debugPrint('[BackgroundService] ensureRunning error: $e');
     }
   }
 
   Future<void> start() async {
     if (!Platform.isAndroid) return;
     if (!_isInitialized) {
-      debugPrint('[BackgroundService] start ignored: not initialized');
+      if (kDebugMode) debugPrint('[BackgroundService] start ignored: not initialized');
       return;
     }
 
@@ -129,11 +130,11 @@ class BackgroundService {
       final running = await _service.isRunning();
       if (!running) {
         await _service.startService();
-        debugPrint('[BackgroundService] service started');
+        if (kDebugMode) debugPrint('[BackgroundService] service started');
       }
       updateNotification(unreadCount: _lastUnreadCount);
     } catch (e) {
-      debugPrint('[BackgroundService] start error: $e');
+      if (kDebugMode) debugPrint('[BackgroundService] start error: $e');
     }
   }
 
@@ -146,7 +147,7 @@ class BackgroundService {
     final running = await _service.isRunning();
     if (running) {
       _service.invoke('stop');
-      debugPrint('[BackgroundService] service stopped');
+      if (kDebugMode) debugPrint('[BackgroundService] service stopped');
     }
   }
 
@@ -224,7 +225,7 @@ Future<void> _onStart(ServiceInstance service) async {
   try {
     DartPluginRegistrant.ensureInitialized();
   } catch (e) {
-    debugPrint('[BackgroundService] plugin init warning: $e');
+    if (kDebugMode) debugPrint('[BackgroundService] plugin init warning: $e');
   }
 
   Timer? heartbeatTimer;
@@ -235,7 +236,7 @@ Future<void> _onStart(ServiceInstance service) async {
         service.invoke('keepAlive', {
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
-        debugPrint('[BackgroundService] heartbeat');
+        if (kDebugMode) debugPrint('[BackgroundService] heartbeat');
       }
     } catch (_) {}
   });
@@ -254,7 +255,7 @@ Future<void> _onStart(ServiceInstance service) async {
           content: (event['content'] ?? _notificationContent(0)).toString(),
         );
       } catch (e) {
-        debugPrint('[BackgroundService] update notification error: $e');
+        if (kDebugMode) debugPrint('[BackgroundService] update notification error: $e');
       }
     });
 
@@ -268,7 +269,7 @@ Future<void> _onStart(ServiceInstance service) async {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
     } catch (e) {
-      debugPrint('[BackgroundService] set foreground error: $e');
+      if (kDebugMode) debugPrint('[BackgroundService] set foreground error: $e');
     }
   }
 }
@@ -279,7 +280,7 @@ Future<bool> _onIosBackground(ServiceInstance service) async {
     WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
   } catch (e) {
-    debugPrint('[BackgroundService] iOS background init warning: $e');
+    if (kDebugMode) debugPrint('[BackgroundService] iOS background init warning: $e');
   }
   return true;
 }

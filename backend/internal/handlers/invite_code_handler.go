@@ -272,8 +272,10 @@ func ensureInviteUserChatRecord(db *gorm.DB, chatID, userID, targetID uint64, no
 }
 
 func sendInviteWelcomeMessage(db *gorm.DB, msgService *services.MessageService, chat *models.Chat, serviceUser, newUser *models.User, welcome string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	msg, err := msgService.SendMessage(
-		context.Background(),
+		ctx,
 		&services.SendMessageParams{
 			ChatID:   chat.UUID,
 			SenderID: serviceUser.UUID,

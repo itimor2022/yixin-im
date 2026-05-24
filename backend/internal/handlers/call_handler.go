@@ -19,6 +19,7 @@ import (
 
 type WebSocketHub interface {
 	SendToUser(userID string, data interface{})
+	SendToUserCluster(userID string, data interface{}) // ★ 集群版，跨节点路由
 }
 
 // CallHandler
@@ -228,7 +229,7 @@ func (h *CallHandler) CreateCall(c *gin.Context) {
 		return
 	}
 
-	h.wsHub.SendToUser(req.TargetUserID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(req.TargetUserID, map[string]interface{}{
 		"type": "incoming_call",
 		"data": map[string]interface{}{
 			"call_id":       call.ID,
@@ -333,7 +334,7 @@ func (h *CallHandler) AcceptCall(c *gin.Context) {
 
 	var caller models.User
 	h.db.First(&caller, call.CallerID)
-	h.wsHub.SendToUser(caller.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(caller.UUID, map[string]interface{}{
 		"type": "call_accepted",
 		"data": map[string]interface{}{
 			"call_id": call.ID,
@@ -425,7 +426,7 @@ func (h *CallHandler) RejectCall(c *gin.Context) {
 
 	var caller models.User
 	h.db.First(&caller, call.CallerID)
-	h.wsHub.SendToUser(caller.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(caller.UUID, map[string]interface{}{
 		"type": "call_rejected",
 		"data": map[string]interface{}{
 			"call_id": call.ID,
@@ -519,7 +520,7 @@ func (h *CallHandler) EndCall(c *gin.Context) {
 
 	var otherUser models.User
 	h.db.First(&otherUser, otherUserID)
-	h.wsHub.SendToUser(otherUser.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(otherUser.UUID, map[string]interface{}{
 		"type": "call_ended",
 		"data": map[string]interface{}{
 			"call_id":  call.ID,
@@ -602,7 +603,7 @@ func (h *CallHandler) CancelCall(c *gin.Context) {
 
 	var callee models.User
 	h.db.First(&callee, call.CalleeID)
-	h.wsHub.SendToUser(callee.UUID, map[string]interface{}{
+	h.wsHub.SendToUserCluster(callee.UUID, map[string]interface{}{
 		"type": "call_cancelled",
 		"data": map[string]interface{}{
 			"call_id": call.ID,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:universal_io/io.dart';
 import 'dart:typed_data';
 import 'dart:ui';
@@ -105,7 +106,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         _lastReadTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
       }
     } catch (e) {
-      debugPrint('加载上次查看时间失败: $e');
+      if (kDebugMode) debugPrint('加载上次查看时间失败: $e');
     }
   }
 
@@ -119,7 +120,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
       );
       _lastReadTime = DateTime.now();
     } catch (e) {
-      debugPrint('保存查看时间失败: $e');
+      if (kDebugMode) debugPrint('保存查看时间失败: $e');
     }
   }
 
@@ -130,7 +131,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
           .getSettings(forceRefresh: true);
       return settings.enableMomentPost;
     } catch (e) {
-      debugPrint('[Moments] Load settings failed: $e');
+      if (kDebugMode) debugPrint('[Moments] Load settings failed: $e');
       return true;
     }
   }
@@ -177,7 +178,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         });
       }
     } catch (e) {
-      debugPrint('加载通知数量失败: $e');
+      if (kDebugMode) debugPrint('加载通知数量失败: $e');
     }
   }
 
@@ -3725,7 +3726,7 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
               final videoFile = File(videoPath);
               if (await videoFile.exists()) {
                 liveVideoPath = videoPath;
-                debugPrint('[MediaPicker] Live Photo video found: $videoPath');
+                if (kDebugMode) debugPrint('[MediaPicker] Live Photo video found: $videoPath');
                 break;
               }
             }
@@ -3736,12 +3737,12 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
         final file = await asset.file;
         if (file != null && await file.exists()) {
           filePath = file.path;
-          debugPrint('[MediaPicker] File path: $filePath');
+          if (kDebugMode) debugPrint('[MediaPicker] File path: $filePath');
         }
 
         // 如果仍然没有文件路径，尝试获取原始数据并保存
         if (filePath == null) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[MediaPicker] Warning: Could not get file for asset ${asset.id}, trying originBytes...',
           );
           final bytes = await asset.originBytes;
@@ -3751,12 +3752,12 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
             final tempFile = File('${tempDir.path}/${asset.id}.jpg');
             await tempFile.writeAsBytes(bytes);
             filePath = tempFile.path;
-            debugPrint('[MediaPicker] Saved to temp file: $filePath');
+            if (kDebugMode) debugPrint('[MediaPicker] Saved to temp file: $filePath');
           }
         }
 
         if (filePath == null) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[MediaPicker] Error: Failed to get file for asset ${asset.id}',
           );
           continue;
@@ -3771,11 +3772,11 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
           ),
         );
       } catch (e) {
-        debugPrint('[MediaPicker] Error processing asset ${asset.id}: $e');
+        if (kDebugMode) debugPrint('[MediaPicker] Error processing asset ${asset.id}: $e');
       }
     }
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[MediaPicker] Confirm completed: ${results.length} files selected',
     );
 
@@ -4409,7 +4410,7 @@ class _LivePhotoPreviewState extends State<_LivePhotoPreview> {
         setState(() => _isInitialized = true);
       }
     } catch (e) {
-      debugPrint('[LivePhoto] Video init error: $e');
+      if (kDebugMode) debugPrint('[LivePhoto] Video init error: $e');
     }
   }
 
@@ -4536,7 +4537,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         setState(() => _isInitialized = true);
       }
     } catch (e) {
-      debugPrint('[Video] Initialize error: $e');
+      if (kDebugMode) debugPrint('[Video] Initialize error: $e');
       if (mounted) {
         setState(() => _hasError = true);
       }
@@ -4875,7 +4876,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         _publishReviewEnabled = settings.momentPostReviewEnabled;
       });
     } catch (e) {
-      debugPrint('[Publish] Load publish settings failed: $e');
+      if (kDebugMode) debugPrint('[Publish] Load publish settings failed: $e');
     }
   }
 
@@ -4956,7 +4957,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         HapticFeedback.mediumImpact();
       }
     } catch (e) {
-      debugPrint('[Publish] Take photo error: $e');
+      if (kDebugMode) debugPrint('[Publish] Take photo error: $e');
     }
   }
 
@@ -5018,7 +5019,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         });
       }
     } catch (e) {
-      debugPrint('[Publish] Generate thumbnail error: $e');
+      if (kDebugMode) debugPrint('[Publish] Generate thumbnail error: $e');
     }
   }
 
@@ -5940,7 +5941,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     MomentContentType contentType = MomentContentType.text;
     String? videoThumbnailUrl;
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[Publish] Starting publish: images=${_localImages.length}, video=${_localVideo != null}',
     );
 
@@ -5953,7 +5954,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         setState(
           () => _uploadingStatus = '正在上传图片 (0/${_localImages.length})...',
         );
-        debugPrint('[Publish] Uploading ${_localImages.length} images...');
+        if (kDebugMode) debugPrint('[Publish] Uploading ${_localImages.length} images...');
 
         for (int i = 0; i < _localImages.length; i++) {
           if (!mounted) return;
@@ -5963,17 +5964,17 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           );
 
           final url = await uploadService.uploadImage(_localImages[i]);
-          debugPrint('[Publish] Image ${i + 1} upload result: $url');
+          if (kDebugMode) debugPrint('[Publish] Image ${i + 1} upload result: $url');
           if (url != null) {
             uploadedUrls.add(url);
           } else {
-            debugPrint(
+            if (kDebugMode) debugPrint(
               '[Publish] Warning: Image ${i + 1} upload returned null',
             );
           }
         }
         contentType = MomentContentType.image;
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Publish] All images uploaded: ${uploadedUrls.length} successful',
         );
       }
@@ -6003,7 +6004,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         _uploadingStatus = null;
       });
     } catch (e) {
-      debugPrint('[Publish] Upload error: $e');
+      if (kDebugMode) debugPrint('[Publish] Upload error: $e');
       setState(() {
         _isPublishing = false;
         _isUploading = false;
@@ -6032,7 +6033,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         .map((m) => m.group(1)!)
         .toList();
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[Publish] Calling publishMoment: contentType=$contentType, urlCount=${uploadedUrls.length}',
     );
 
@@ -6925,7 +6926,7 @@ class _MyMomentsTabState extends ConsumerState<_MyMomentsTab>
         });
       }
     } catch (e) {
-      debugPrint('加载数据失败: $e');
+      if (kDebugMode) debugPrint('加载数据失败: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -7192,7 +7193,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
         });
       }
     } catch (e) {
-      debugPrint('搜索失败: $e');
+      if (kDebugMode) debugPrint('搜索失败: $e');
     } finally {
       if (mounted) {
         setState(() => _isSearching = false);
@@ -7545,7 +7546,7 @@ class _MomentNotificationsPageState
       });
       _receivedNotifications = allNotifications;
     } catch (e) {
-      debugPrint('加载失败: $e');
+      if (kDebugMode) debugPrint('加载失败: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -8205,7 +8206,7 @@ class _MomentNotificationsPageState
         );
       }
     } catch (e) {
-      debugPrint('打开动态失败: $e');
+      if (kDebugMode) debugPrint('打开动态失败: $e');
     }
   }
 }

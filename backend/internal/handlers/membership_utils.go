@@ -81,10 +81,10 @@ func getOwnedChatCreationLimit(db *gorm.DB, userID uint64, chatType int8) int {
 		}
 	}
 	if chatType == 2 {
-		return 5
+		return 9999
 	}
 	if chatType == 3 {
-		return 3
+		return 9999
 	}
 	return 0
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -332,7 +333,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        debugPrint('[ChatSettings] 点击聊天背景');
+        if (kDebugMode) debugPrint('[ChatSettings] 点击聊天背景');
         _showBackgroundPicker(context);
       },
       child: Container(
@@ -382,7 +383,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        debugPrint('[ChatSettings] 点击气泡颜色');
+        if (kDebugMode) debugPrint('[ChatSettings] 点击气泡颜色');
         _showBubbleColorPicker(context);
       },
       child: Container(

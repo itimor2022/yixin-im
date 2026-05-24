@@ -8,7 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api/api_client.dart';
 
 void _log(String message) {
-  debugPrint(message);
+  if (kDebugMode) debugPrint(message);
 }
 
 /// 推送通知服务 - iOS 使用 APNs，Android 使用 FCM

@@ -155,7 +155,7 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
       HapticFeedback.selectionClick();
     }
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[NewContact] Opening result: ${result.name}, type: ${result.type}',
     );
 

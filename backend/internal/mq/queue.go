@@ -2,6 +2,8 @@ package mq
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"strconv"
@@ -41,8 +43,9 @@ const (
 	QueueMessageSync = "mq:message:sync" // 消息同步队列
 	QueuePushNotify  = "mq:push:notify"  // 推送通知队列
 	QueueUserStatus  = "mq:user:status"  // 用户状态队列
-	QueueDelayed     = "mq:delayed"      // 延迟队列
-	QueueDead        = "mq:dead"         // 死信队列
+	QueueDelayed      = "mq:delayed"         // 延迟队列
+	QueueDead         = "mq:dead"            // 死信队列
+	QueueUserChatSync = "mq:user_chat:sync"  // 会话预览异步更新队列
 )
 
 // NewMessageQueue 创建消息队列
@@ -265,23 +268,21 @@ func getQueueByType(msgType string) string {
 		return QueuePushNotify
 	case "user_status":
 		return QueueUserStatus
+	case "user_chat_sync":
+		return QueueUserChatSync
 	default:
 		return QueueMessageSend
 	}
 }
 
-// 生成消息ID
+// 生成消息ID - 使用 crypto/rand 保证高并发下全局唯一
 func generateID() string {
-	return time.Now().Format("20060102150405") + randomString(8)
-}
-
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		// 降级方案：时间戳 base36，极端情况下不崩溃
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
 	}
-	return string(b)
+	return time.Now().Format("20060102150405") + hex.EncodeToString(b)
 }
 
 func formatFloat(f float64) string {

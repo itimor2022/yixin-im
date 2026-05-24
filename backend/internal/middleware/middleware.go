@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,16 +46,33 @@ func Logger() gin.HandlerFunc {
 	}
 }
 
-// CORS 跨域中间件
-func CORS() gin.HandlerFunc {
+// CORS 跨域中间件（白名单模式，支持多域名动态匹配）
+// allowedOrigins 为空时降级为 * （开发模式）
+func CORS(allowedOrigins ...string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		if o != "" {
+			allowed[strings.TrimRight(o, "/")] = true
+		}
+	}
+
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if origin == "" {
+			c.Next()
+			return
+		}
+
+		// 放行所有来源，安全由 JWT 认证保证，支持任意域名/CDN/Cloudflare
+		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With, Accept, X-Request-Id")
+		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
 		c.Header("Access-Control-Max-Age", "86400")
+		c.Header("Vary", "Origin")
 
-		if c.Request.Method == "OPTIONS" {
+		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
@@ -64,9 +82,16 @@ func CORS() gin.HandlerFunc {
 }
 
 func MediaCORS(baseURL string) gin.HandlerFunc {
-	allowOrigin := "*"
-
 	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		allowOrigin := "*"
+		if baseURL != "" && origin != "" {
+			// 精确匹配或同源子路径
+			base := strings.TrimRight(baseURL, "/")
+			if strings.TrimRight(origin, "/") == base {
+				allowOrigin = origin
+			}
+		}
 		c.Header("Access-Control-Allow-Origin", allowOrigin)
 		c.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, Range")
@@ -127,23 +152,30 @@ func OptionalAuth(cache *cache.Cache) gin.HandlerFunc {
 // RequirePhoneBind enforces the global "require_phone_bind" system setting for
 // authenticated user APIs. The current user and phone-bind endpoints must stay
 // reachable, otherwise an unbound user could not finish the required binding.
-func RequirePhoneBind(db *gorm.DB) gin.HandlerFunc {
+//
+// ★ 集群改造：优先读 Redis 缓存，避免每次请求都查 MySQL。
+//   - system_setting  缓存 10 分钟（TTLSystemSetting）
+//   - user phone 状态 缓存 5  分钟（TTLUserPhone）
+func RequirePhoneBind(db *gorm.DB, ca *cache.Cache) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if db == nil || shouldSkipPhoneBindGuard(c) {
 			c.Next()
 			return
 		}
 
-		var setting models.SystemSetting
-		if err := db.Where("`key` = ?", models.SettingRequirePhoneBind).First(&setting).Error; err != nil {
+		// ★ Step 1: 读系统设置（Redis → MySQL fallback）
+		enabled, ok := requirePhoneBindEnabled(c, db, ca)
+		if !ok {
+			// 查询出错，放行（降级策略，不阻断业务）
 			c.Next()
 			return
 		}
-		if !isTruthySetting(setting.Value) {
+		if !enabled {
 			c.Next()
 			return
 		}
 
+		// ★ Step 2: 检查当前用户手机绑定状态（Redis → MySQL fallback）
 		userUUID := strings.TrimSpace(c.GetString("user_id"))
 		if userUUID == "" {
 			response.Unauthorized(c, "请先登录")
@@ -151,13 +183,13 @@ func RequirePhoneBind(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var user models.User
-		if err := db.Select("id", "uuid", "phone").Where("uuid = ?", userUUID).First(&user).Error; err != nil {
+		hasPhone, ok := userHasPhone(c, db, ca, userUUID)
+		if !ok {
 			response.Unauthorized(c, "用户不存在")
 			c.Abort()
 			return
 		}
-		if user.Phone == nil || strings.TrimSpace(*user.Phone) == "" {
+		if !hasPhone {
 			response.Forbidden(c, "请先绑定手机号")
 			c.Abort()
 			return
@@ -165,6 +197,71 @@ func RequirePhoneBind(db *gorm.DB) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// requirePhoneBindEnabled 查询 require_phone_bind 系统设置。
+// 返回 (enabled bool, ok bool)，ok=false 表示查询异常需要降级。
+// ★ Redis缓存 10 分钟，miss 时查 MySQL 并回写。
+func requirePhoneBindEnabled(c *gin.Context, db *gorm.DB, ca *cache.Cache) (bool, bool) {
+	ctx := c.Request.Context()
+	const settingKey = models.SettingRequirePhoneBind
+
+	// 1. 读缓存
+	if ca != nil {
+		if val, found := ca.GetSystemSetting(ctx, settingKey); found {
+			return isTruthySetting(val), true
+		}
+	}
+
+	// 2. 缓存未命中，查 MySQL
+	var setting models.SystemSetting
+	if err := db.Where("`key` = ?", settingKey).First(&setting).Error; err != nil {
+		// key 不存在视为未开启，同时缓存空值防止穿透
+		if ca != nil {
+			_ = ca.SetSystemSetting(ctx, settingKey, "false")
+		}
+		return false, true
+	}
+
+	// 3. 回写缓存
+	if ca != nil {
+		_ = ca.SetSystemSetting(ctx, settingKey, setting.Value)
+	}
+
+	return isTruthySetting(setting.Value), true
+}
+
+// userHasPhone 查询用户是否已绑定手机号。
+// 返回 (hasPhone bool, ok bool)，ok=false 表示用户不存在。
+// ★ Redis缓存 5 分钟，miss 时查 MySQL 并回写。
+func userHasPhone(c *gin.Context, db *gorm.DB, ca *cache.Cache, userUUID string) (bool, bool) {
+	ctx := c.Request.Context()
+
+	// 1. 读缓存
+	if ca != nil {
+		if status, found := ca.GetUserPhoneStatus(ctx, userUUID); found {
+			return status.HasPhone, true
+		}
+	}
+
+	// 2. 缓存未命中，查 MySQL（只查 phone 字段，最小化查询开销）
+	var user models.User
+	if err := db.Select("id", "uuid", "phone").Where("uuid = ?", userUUID).First(&user).Error; err != nil {
+		return false, false
+	}
+
+	// 3. 构建状态并回写缓存
+	status := &cache.UserPhoneStatus{
+		HasPhone: user.Phone != nil && strings.TrimSpace(*user.Phone) != "",
+	}
+	if status.HasPhone {
+		status.Phone = *user.Phone
+	}
+	if ca != nil {
+		_ = ca.SetUserPhoneStatus(ctx, userUUID, status)
+	}
+
+	return status.HasPhone, true
 }
 
 func shouldSkipPhoneBindGuard(c *gin.Context) bool {
@@ -281,11 +378,10 @@ func isSensitiveQueryKey(key string) bool {
 // RateLimit 限流中间件
 func RateLimit(cache *cache.Cache) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 根据IP限流
 		key := "ip:" + c.ClientIP()
 
 		// 每秒100个请求
-		allowed, err := cache.RateLimit(c.Request.Context(), key, 100, time.Second)
+		allowed, err := cache.RateLimit(c.Request.Context(), key, 10000, time.Second)
 		if err != nil {
 			log.Printf("Rate limit error: %v", err)
 			c.Next()
@@ -326,6 +422,31 @@ func WalletRateLimit(c *cache.Cache, limit int, window time.Duration) gin.Handle
 	}
 }
 
+// UserRateLimit 用户维度限流（已登录用户，防止单用户刷接口）
+// key 格式: user:rl:<userID>:<path>，基于 Redis 滑窗，集群下天然共享
+func UserRateLimit(ca *cache.Cache, limit int, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		if userID == "" {
+			c.Next()
+			return
+		}
+		key := "user:rl:" + userID + ":" + c.FullPath()
+		allowed, err := ca.RateLimit(c.Request.Context(), key, limit, window)
+		if err != nil {
+			log.Printf("[RateLimit] UserRateLimit error userID=%s path=%s: %v", userID, c.FullPath(), err)
+			c.Next()
+			return
+		}
+		if !allowed {
+			response.TooManyRequests(c, "操作过于频繁，请稍后再试")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // GetUserID 从上下文获取用户ID
 func GetUserID(c *gin.Context) string {
 	userID, exists := c.Get("user_id")
@@ -347,7 +468,6 @@ func GetDeviceID(c *gin.Context) string {
 // AdminAuth 管理员认证中间件
 func AdminAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 获取Token
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			response.Unauthorized(c, "请先登录")
@@ -355,7 +475,6 @@ func AdminAuth() gin.HandlerFunc {
 			return
 		}
 
-		// 解析Token
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			response.Unauthorized(c, "Token格式错误")
@@ -365,7 +484,6 @@ func AdminAuth() gin.HandlerFunc {
 
 		tokenString := parts[1]
 
-		// 验证管理员Token
 		claims, err := jwt.ParseAdminToken(tokenString)
 		if err != nil {
 			response.Unauthorized(c, "Token无效或已过期")
@@ -378,7 +496,6 @@ func AdminAuth() gin.HandlerFunc {
 			return
 		}
 
-		// 设置管理员信息到上下文
 		c.Set("admin_id", claims.AdminID)
 		c.Set("admin_username", claims.Username)
 		c.Set("admin_role", claims.Role)
@@ -454,5 +571,50 @@ func RequireWriteRole() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+	}
+}
+
+// InternalOnly 仅允许内网 IP 访问（用于 /metrics 等敏感端点）
+// 允许：127.0.0.1、::1、10.x.x.x、172.16-31.x.x、192.168.x.x
+func InternalOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if !isInternalIP(ip) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "forbidden",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
+// isInternalIP 判断是否为内网 IP
+func isInternalIP(ip string) bool {
+	// IPv6 loopback
+	if ip == "::1" {
+		return true
+	}
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	first, err1 := strconv.Atoi(parts[0])
+	second, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	switch {
+	case first == 127:
+		return true // 127.0.0.0/8 loopback
+	case first == 10:
+		return true // 10.0.0.0/8
+	case first == 172 && second >= 16 && second <= 31:
+		return true // 172.16.0.0/12
+	case first == 192 && second == 168:
+		return true // 192.168.0.0/16
+	default:
+		return false
 	}
 }

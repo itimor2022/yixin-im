@@ -167,10 +167,22 @@ export interface ChatTableListItem {
   ownerName: string
   ownerAvatar: string
   memberCount: number
+  onlineCount: number
   isPublic: boolean
   status: number
   createTime: string
   members?: ChatMemberInfo[] // 私聊时的参与者
+  // 群组权限
+  canSendMessage: boolean
+  canSendMedia: boolean
+  canSendLinks: boolean
+  canAddMembers: boolean
+  canPinMessages: boolean
+  memberProtection: boolean
+  joinApproval: boolean
+  // 待审核加入申请
+  pendingRequest?: boolean
+  pendingRequestCount?: number
 }
 
 /** 获取会话列表（兼容 useTable） */
@@ -197,10 +209,20 @@ export async function fetchGetChatList(params: ChatTableSearchParams): Promise<C
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
+    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
     createTime: item.created_at,
-    members: item.members || []
+    members: item.members || [],
+    canSendMessage: item.can_send_message ?? true,
+    canSendMedia: item.can_send_media ?? true,
+    canSendLinks: item.can_send_links ?? true,
+    canAddMembers: item.can_add_members ?? false,
+    canPinMessages: item.can_pin_messages ?? false,
+    memberProtection: item.member_protection ?? false,
+    joinApproval: item.join_approval ?? false,
+    pendingRequest: item.pending_request,
+    pendingRequestCount: item.pending_request_count
   }))
 
   return {
@@ -233,9 +255,19 @@ export async function fetchGetGroupList(params: ChatTableSearchParams): Promise<
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
+    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
-    createTime: item.created_at
+    createTime: item.created_at,
+    canSendMessage: item.can_send_message ?? true,
+    canSendMedia: item.can_send_media ?? true,
+    canSendLinks: item.can_send_links ?? true,
+    canAddMembers: item.can_add_members ?? false,
+    canPinMessages: item.can_pin_messages ?? false,
+    memberProtection: item.member_protection ?? false,
+    joinApproval: item.join_approval ?? false,
+    pendingRequest: item.pending_request,
+    pendingRequestCount: item.pending_request_count
   }))
 
   return {
@@ -268,9 +300,19 @@ export async function fetchGetChannelList(params: ChatTableSearchParams): Promis
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
+    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
-    createTime: item.created_at
+    createTime: item.created_at,
+    canSendMessage: item.can_send_message ?? true,
+    canSendMedia: item.can_send_media ?? true,
+    canSendLinks: item.can_send_links ?? true,
+    canAddMembers: item.can_add_members ?? false,
+    canPinMessages: item.can_pin_messages ?? false,
+    memberProtection: item.member_protection ?? false,
+    joinApproval: item.join_approval ?? false,
+    pendingRequest: item.pending_request,
+    pendingRequestCount: item.pending_request_count
   }))
 
   return {

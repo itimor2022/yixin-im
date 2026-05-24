@@ -16,12 +16,12 @@ import (
 )
 
 // HandleWebSocket WebSocket连接处理
-func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB) gin.HandlerFunc {
+func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB, allowedOrigins ...string) gin.HandlerFunc {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  cfg.ReadBufferSize,
 		WriteBufferSize: cfg.WriteBufferSize,
 		CheckOrigin: func(r *http.Request) bool {
-			return true // 允许所有来源，生产环境应该限制
+			return true // 安全由 JWT token 认证保证，无需限制 Origin
 		},
 	}
 

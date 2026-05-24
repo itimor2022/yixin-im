@@ -1,4 +1,5 @@
 import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -79,7 +80,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                 await settingsService.getSettings(forceRefresh: true);
             if (!mounted || !settings.newUserFollowOfficial) return;
           } catch (error) {
-            debugPrint(
+            if (kDebugMode) debugPrint(
               '[ChatPage] Load settings before official sync failed: $error',
             );
             return;
@@ -1645,7 +1646,7 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
         });
       }
     } catch (e) {
-      debugPrint('加载用户状态失败: $e');
+      if (kDebugMode) debugPrint('加载用户状态失败: $e');
     }
   }
 
@@ -1690,7 +1691,7 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      debugPrint('加载消息失败: $e');
+      if (kDebugMode) debugPrint('加载消息失败: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }

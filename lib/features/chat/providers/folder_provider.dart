@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -145,7 +146,7 @@ class FolderNotifier extends StateNotifier<FolderState> {
         await _createDefaultFolders();
       }
     } catch (e) {
-      debugPrint('[Folder] Load folders failed: $e, using default folders');
+      if (kDebugMode) debugPrint('[Folder] Load folders failed: $e, using default folders');
       await _createDefaultFolders();
     }
   }

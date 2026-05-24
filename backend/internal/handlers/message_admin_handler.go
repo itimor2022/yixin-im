@@ -100,7 +100,8 @@ func (h *MessageAdminHandler) SearchMessages(c *gin.Context) {
 		}
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	collectionNames := h.getMessageCollections(ctx)
 
 	var total int64

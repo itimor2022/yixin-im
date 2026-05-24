@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/src/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/li/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/RelWithDebInfo/2v5l6xj5/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/li/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/RelWithDebInfo/2v5l6xj5/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "iris_method_channel::@6890427a1f51a3e7e1df": {
+      "artifactName": "iris_method_channel",
+      "abi": "arm64-v8a",
+      "output": "/Volumes/PD/源码/yi-xin-511/build/iris_method_channel/intermediates/cxx/RelWithDebInfo/2v5l6xj5/obj/arm64-v8a/libiris_method_channel.so",
+      "runtimeFiles": []
+    }
+  }
+}

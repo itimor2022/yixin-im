@@ -11,7 +11,7 @@
     
     <!-- 存储权限 (Android 13 以下) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
     
     <!-- 媒体权限 (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>

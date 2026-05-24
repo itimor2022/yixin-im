@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 
@@ -100,7 +101,7 @@ class HotkeyService {
     );
     
     _initialized = true;
-    debugPrint('[Hotkey] Registered ${_registeredHotkeys.length} hotkeys');
+    if (kDebugMode) debugPrint('[Hotkey] Registered ${_registeredHotkeys.length} hotkeys');
   }
   
   /// 获取 Cmd（macOS）或 Ctrl（Windows/Linux）
@@ -113,14 +114,14 @@ class HotkeyService {
       await hotKeyManager.register(
         hotKey,
         keyDownHandler: (hotKey) {
-          debugPrint('[Hotkey] Triggered: $id');
+          if (kDebugMode) debugPrint('[Hotkey] Triggered: $id');
           callback();
         },
       );
       _registeredHotkeys[id] = hotKey;
       _failedHotkeys.remove(id); // 成功则移除失败记录
     } catch (e) {
-      debugPrint('[Hotkey] Failed to register $id: $e');
+      if (kDebugMode) debugPrint('[Hotkey] Failed to register $id: $e');
       _failedHotkeys.add(id); // 记录失败的快捷键
     }
   }
@@ -192,7 +193,7 @@ class HotkeyService {
     onPrevChat = null;
     onCloseChat = null;
     _initialized = false;
-    debugPrint('[Hotkey] Disposed');
+    if (kDebugMode) debugPrint('[Hotkey] Disposed');
   }
 }
 

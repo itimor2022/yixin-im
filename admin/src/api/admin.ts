@@ -191,15 +191,28 @@ export interface UserStats {
 export interface ChatListItem {
   id: number
   uuid: string
-  type: number // 1: 绉佽亰, 2: 缇よ亰, 3: 棰戦亾
+  type: number // 1: 私聊, 2: 群聊, 3: 频道
   name: string
   avatar: string
   description: string
   owner_id: number
   member_count: number
+  online_count: number // 当前在线成员数
   is_public: boolean
   status: number
   created_at: string
+  // 群组权限字段
+  can_send_message: boolean
+  can_send_media: boolean
+  can_send_links: boolean
+  can_add_members: boolean
+  can_pin_messages: boolean
+  member_protection: boolean
+  join_approval: boolean
+  // 待审核加入申请（群主/管理员可见）
+  pending_request?: boolean
+  pending_request_count?: number
+  ban_reason?: string
 }
 export interface ChatListResponse {
   list: ChatListItem[]

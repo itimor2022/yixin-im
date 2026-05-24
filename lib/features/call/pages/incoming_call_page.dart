@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:universal_io/io.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -68,7 +69,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       await _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
       await _ringtonePlayer.play(AssetSource('sounds/ringtone.mp3'));
     } catch (e) {
-      debugPrint('[IncomingCall] Play ringtone error: $e');
+      if (kDebugMode) debugPrint('[IncomingCall] Play ringtone error: $e');
     }
   }
   
@@ -129,7 +130,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   Future<void> _doAcceptCall() async {
     try {
       final success = await ref.read(callServiceProvider.notifier).acceptCall();
-      debugPrint('[IncomingCall] Accept call result: $success');
+      if (kDebugMode) debugPrint('[IncomingCall] Accept call result: $success');
 
       if (!mounted) return;
 
@@ -153,7 +154,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         );
       }
     } catch (e) {
-      debugPrint('[IncomingCall] Accept call error: $e');
+      if (kDebugMode) debugPrint('[IncomingCall] Accept call error: $e');
       if (!mounted) return;
       _isProcessing = false;
       _startVibration();

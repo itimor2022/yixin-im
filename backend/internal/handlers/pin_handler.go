@@ -93,14 +93,14 @@ func (h *PinHandler) PinMessage(c *gin.Context) {
 		return
 	}
 
-	h.hub.SendToChat(chatUUID, map[string]interface{}{
+	h.hub.SendToChatCluster(chatUUID, map[string]interface{}{
 		"type":         "message_pinned",
 		"chat_id":      chatUUID,
 		"message_id":   req.MessageID,
 		"message_text": msgText,
 		"pinned_by":    userID,
 		"pinned_at":    now.Format("2006-01-02 15:04:05"),
-	}, "")
+	})
 
 	response.Success(c, map[string]interface{}{
 		"message_id":          req.MessageID,
@@ -149,11 +149,11 @@ func (h *PinHandler) UnpinMessage(c *gin.Context) {
 		return
 	}
 
-	h.hub.SendToChat(chatUUID, map[string]interface{}{
+	h.hub.SendToChatCluster(chatUUID, map[string]interface{}{
 		"type":        "message_unpinned",
 		"chat_id":     chatUUID,
 		"unpinned_by": userID,
-	}, "")
+	})
 
 	response.SuccessWithMessage(c, "已取消置顶", nil)
 }

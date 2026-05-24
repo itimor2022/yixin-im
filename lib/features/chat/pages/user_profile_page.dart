@@ -1,4 +1,5 @@
 import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -202,7 +203,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         }
       }
     } catch (e) {
-      debugPrint('[UserProfile] Load block status error: $e');
+      if (kDebugMode) debugPrint('[UserProfile] Load block status error: $e');
     } finally {
       if (mounted && _loadingBlockStatus) {
         setState(() => _loadingBlockStatus = false);
@@ -3842,7 +3843,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
         });
         _controller.play();
       }).catchError((e) {
-        debugPrint('[Video] Init error: $e');
+        if (kDebugMode) debugPrint('[Video] Init error: $e');
       });
     _controller.addListener(() {
       if (mounted) setState(() {});

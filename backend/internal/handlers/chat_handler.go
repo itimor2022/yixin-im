@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"context"
 	"fmt"
 	"log"
@@ -191,6 +192,74 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 		h.db.Where("id IN ?", chatIDs).Find(&chats)
 	}
 
+	// ★ 阶段二：chat_last_msg 优先读Redis，miss再批量查MySQL
+	type lastMsgRow struct {
+		ChatID        uint64    `gorm:"column:chat_id"`
+		LastSeq       uint64    `gorm:"column:last_seq"`
+		LastMsgTime   time.Time `gorm:"column:last_msg_time"`
+		LastMsgText   string    `gorm:"column:last_msg_text"`
+		LastMsgType   int       `gorm:"column:last_msg_type"`
+		LastMsgSender string    `gorm:"column:last_msg_sender"`
+	}
+	chatLastMsgMap := make(map[uint64]lastMsgRow)
+	if len(chatIDs) > 0 {
+		// 先从 Redis 批量读取
+		missChatIDs := make([]uint64, 0)
+		if h.cache != nil {
+			for _, cid := range chatIDs {
+				cidStr := strconv.FormatUint(cid, 10)
+				var cached map[string]interface{}
+				if err := h.cache.GetChatLastMsg(c.Request.Context(), cidStr, &cached); err == nil {
+					row := lastMsgRow{ChatID: cid}
+					if v, ok := cached["last_seq"]; ok {
+						switch n := v.(type) {
+						case float64:
+							row.LastSeq = uint64(n)
+						case json.Number:
+							if i, e := n.Int64(); e == nil { row.LastSeq = uint64(i) }
+						}
+					}
+					if v, ok := cached["last_msg_text"]; ok { row.LastMsgText, _ = v.(string) }
+					if v, ok := cached["last_msg_type"]; ok {
+						if n, ok2 := v.(float64); ok2 { row.LastMsgType = int(n) }
+					}
+					if v, ok := cached["last_msg_sender"]; ok { row.LastMsgSender, _ = v.(string) }
+					if v, ok := cached["last_msg_time"]; ok {
+						if ts, ok2 := v.(string); ok2 {
+							if t, e := time.Parse(time.RFC3339Nano, ts); e == nil { row.LastMsgTime = t }
+						}
+					}
+					chatLastMsgMap[cid] = row
+				} else {
+					missChatIDs = append(missChatIDs, cid)
+				}
+			}
+		} else {
+			missChatIDs = chatIDs
+		}
+		// miss 的从 MySQL 补查
+		if len(missChatIDs) > 0 {
+			var lastMsgs []lastMsgRow
+			h.db.Table("chat_last_msg").Where("chat_id IN ?", missChatIDs).Find(&lastMsgs)
+			for _, lm := range lastMsgs {
+				chatLastMsgMap[lm.ChatID] = lm
+				// 回填 Redis
+				if h.cache != nil {
+					cidStr := strconv.FormatUint(lm.ChatID, 10)
+					_ = h.cache.SetChatLastMsg(c.Request.Context(), cidStr, map[string]interface{}{
+						"chat_id":         lm.ChatID,
+						"last_seq":        lm.LastSeq,
+						"last_msg_time":   lm.LastMsgTime.Format(time.RFC3339Nano),
+						"last_msg_text":   lm.LastMsgText,
+						"last_msg_type":   lm.LastMsgType,
+						"last_msg_sender": lm.LastMsgSender,
+					})
+				}
+			}
+		}
+	}
+
+
 	// 构建聊天 ID 到聊天的映射
 	chatMap := make(map[uint64]models.Chat)
 	for _, chat := range chats {
@@ -289,12 +358,12 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"member_count":          chat.MemberCount,
 			"pending_request":       false,
 			"pending_request_count": 0,
-			"last_msg_text":         userChat.LastMsgText,
-			"last_msg_type":         userChat.LastMsgType,
-			"last_msg_time":         optionalTimeValue(userChat.LastMsgTime),
-			"last_msg_seq":          userChat.LastMsgSeq,
-			"last_msg_sender":       userChat.LastMsgSender,
-			"unread_count":          userChat.UnreadCount,
+			"last_msg_text":         func() string { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgText }; return userChat.LastMsgText }(),
+			"last_msg_type":         func() int { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgType }; return userChat.LastMsgType }(),
+			"last_msg_time":         func() interface{} { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && !lm.LastMsgTime.IsZero() { return lm.LastMsgTime }; return optionalTimeValue(userChat.LastMsgTime) }(),
+			"last_msg_seq":          func() uint64 { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastSeq }; return userChat.LastMsgSeq }(),
+			"last_msg_sender":       func() string { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgSender }; return userChat.LastMsgSender }(),
+			"unread_count":          func() int { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && lm.LastSeq > userChat.LastReadSeq { return int(lm.LastSeq - userChat.LastReadSeq) }; return userChat.UnreadCount }(),
 			"is_pinned":             userChat.IsPinned,
 			"is_muted":              userChat.IsMuted,
 			"is_archived":           userChat.IsArchived,
@@ -474,16 +543,13 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 		h.db.Create(&userChats)
 
 		// 通过 WebSocket 通知对方有新会话
-		h.hub.Broadcast(&ws.BroadcastMessage{
-			Type:    "new_chat",
-			UserIDs: []string{targetUser.UUID},
-			Data: map[string]interface{}{
-				"chat_id":   chat.UUID,
-				"chat_type": 1,
-				"target_id": currentUser.ID, // 使用数字ID保持头像颜色一致
-				"name":      currentUser.Nickname,
-				"avatar":    currentUser.Avatar,
-			},
+		h.hub.SendToUsersCluster([]string{targetUser.UUID}, map[string]interface{}{
+			"type":      "new_chat",
+			"chat_id":   chat.UUID,
+			"chat_type": 1,
+			"target_id": currentUser.ID, // 使用数字ID保持头像颜色一致
+			"name":      currentUser.Nickname,
+			"avatar":    currentUser.Avatar,
 		})
 
 		response.Success(c, chat)
@@ -668,10 +734,7 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 				"created_at":   chat.CreatedAt,
 			},
 		}
-		h.hub.Broadcast(&ws.BroadcastMessage{
-			Data:    newChatNotification,
-			UserIDs: allNotifyIDs,
-		})
+		h.hub.SendToUsersCluster(allNotifyIDs, newChatNotification)
 	}
 
 	// 发送"xxx 创建了群聊/频道"系统消息，让会话排到列表顶部
@@ -709,8 +772,12 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	}
 
 	// 获取当前用户
+	// ★ 获取当前用户（加错误检查）
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	// 获取当前用户在此群的角色
 	// 返回值: 0=非成员, 1=普通成员, 2=管理员, 3=群主
@@ -739,42 +806,25 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		return
 	}
 
-	// 计算在线成员数（大群使用订阅者计数避免全量扫描）
-	onlineCount := 0
-	if chat.Type == 2 || chat.Type == 3 {
-		if h.hub != nil {
-			onlineCount = h.hub.GetChatOnlineCount(chat.UUID)
-		}
-	} else if chat.Type == 1 {
-		var members []models.ChatMember
-		h.db.Where("chat_id = ?", chat.ID).Find(&members)
-		for _, m := range members {
-			if m.UserID != currentUser.ID {
-				var targetUser models.User
-				h.db.First(&targetUser, m.UserID)
-				canSeeOnline, err := privacy.CanViewerSeeOnlineStatus(h.db, currentUser.ID, targetUser.ID)
-				if err == nil && canSeeOnline && h.hub != nil && h.hub.IsUserOnline(targetUser.UUID) {
-					onlineCount = 1
-				}
-			}
-		}
-	}
-
-	// 对于私聊，获取对方用户信息（包括名字、头像、数字ID、表情状态、昵称颜色）
+	// ★ 私聊：一次性查出所有成员 + 对方用户信息，合并原来两段重复逻辑
 	var targetUserID string
 	var targetUserName string
 	var targetUserAvatar string
 	var targetEmojiAvatar string
 	var targetNicknameColor string
+	onlineCount := 0
 	if chat.Type == 1 {
 		var members []models.ChatMember
 		h.db.Where("chat_id = ?", chat.ID).Find(&members)
 		for _, m := range members {
 			if m.UserID != currentUser.ID {
 				var targetUser models.User
-				h.db.First(&targetUser, m.UserID)
-				targetUserID = targetUser.UUID // 使用 UUID
-				// 获取对方用户的名字、头像、表情状态、昵称颜色
+				if err := h.db.First(&targetUser, m.UserID).Error; err != nil {
+					log.Printf("[ChatHandler] GetChat: target user not found memberUserID=%d err=%v", m.UserID, err)
+					break
+				}
+				// 填充对方用户信息
+				targetUserID = targetUser.UUID
 				targetUserName = targetUser.Nickname
 				if targetUserName == "" {
 					targetUserName = targetUser.Username
@@ -782,8 +832,17 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 				targetUserAvatar = targetUser.Avatar
 				targetEmojiAvatar = targetUser.EmojiAvatar
 				targetNicknameColor = targetUser.NicknameColor
+				// 同时检查在线状态
+				canSeeOnline, err := privacy.CanViewerSeeOnlineStatus(h.db, currentUser.ID, targetUser.ID)
+				if err == nil && canSeeOnline && h.hub != nil && h.hub.IsUserOnlineCluster(targetUser.UUID) {
+					onlineCount = 1
+				}
 				break
 			}
+		}
+	} else if chat.Type == 2 || chat.Type == 3 {
+		if h.hub != nil {
+			onlineCount = h.hub.GetChatOnlineCount(chat.UUID)
 		}
 	}
 
@@ -865,7 +924,10 @@ func (h *ChatHandler) UpdateChat(c *gin.Context) {
 
 	// 检查权限
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	var member models.ChatMember
 	if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, currentUser.ID).First(&member).Error; err != nil {
@@ -930,6 +992,11 @@ func (h *ChatHandler) UpdateChat(c *gin.Context) {
 		h.broadcastChatPermissionsUpdated(&chat)
 	}
 
+	// 使相关缓存失效
+	if h.cache != nil {
+		_ = h.cache.DeleteChatInfo(c.Request.Context(), chat.UUID)
+	}
+
 	response.Success(c, chat)
 }
 
@@ -946,7 +1013,10 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 	// 检查权限
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	if chat.OwnerID != currentUser.ID {
 		response.Forbidden(c, "只有群主可以解散群组")
@@ -976,10 +1046,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 			"type":    "chat_deleted",
 			"chat_id": chatID,
 		}
-		h.hub.Broadcast(&ws.BroadcastMessage{
-			Data:    deletedPayload,
-			UserIDs: memberUUIDs,
-		})
+		h.hub.SendToUsersCluster(memberUUIDs, deletedPayload)
 	}
 
 	response.Success(c, nil)
@@ -1012,7 +1079,10 @@ func (h *ChatHandler) GetMembers(c *gin.Context) {
 
 	// 检查当前用户是否是成员
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	var myMember models.ChatMember
 	if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, currentUser.ID).First(&myMember).Error; err != nil {
@@ -1062,7 +1132,7 @@ func (h *ChatHandler) GetMembers(c *gin.Context) {
 
 		isOnline := false
 		if onlineVisibility[user.ID] && h.hub != nil {
-			isOnline = h.hub.IsUserOnline(user.UUID)
+			isOnline = h.hub.IsUserOnlineCluster(user.UUID)
 		}
 
 		result = append(result, ChatMemberItem{
@@ -1113,7 +1183,10 @@ func (h *ChatHandler) SearchMembers(c *gin.Context) {
 	}
 
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	var myMember models.ChatMember
 	if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, currentUser.ID).First(&myMember).Error; err != nil {
@@ -1164,7 +1237,7 @@ func (h *ChatHandler) SearchMembers(c *gin.Context) {
 	for _, row := range rows {
 		isOnline := false
 		if searchVisibility[row.UserID] && h.hub != nil {
-			isOnline = h.hub.IsUserOnline(row.UserUUID)
+			isOnline = h.hub.IsUserOnlineCluster(row.UserUUID)
 		}
 
 		result = append(result, ChatMemberItem{
@@ -1216,7 +1289,10 @@ func (h *ChatHandler) AddMembers(c *gin.Context) {
 
 	// 检查权限
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	var member models.ChatMember
 	if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, currentUser.ID).First(&member).Error; err != nil {
@@ -1390,7 +1466,9 @@ func (h *ChatHandler) AddMembers(c *gin.Context) {
 		var allMemberUUIDs []string
 		h.db.Model(&models.User{}).Where("id IN ?", allMemberIDs).Pluck("uuid", &allMemberUUIDs)
 
-		sysMsg, err := h.msgService.SendMessage(context.Background(), systemParams, "系统消息", "", "", "", "", allMemberUUIDs)
+		sendCtx, sendCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer sendCancel()
+		sysMsg, err := h.msgService.SendMessage(sendCtx, systemParams, "系统消息", "", "", "", "", allMemberUUIDs)
 		if err != nil {
 			log.Printf("Failed to send system message: %v", err)
 		} else {
@@ -1420,11 +1498,15 @@ func (h *ChatHandler) AddMembers(c *gin.Context) {
 					"member_count": chat.MemberCount + addedCount,
 				},
 			}
-			h.hub.Broadcast(&ws.BroadcastMessage{
-				Data:    newChatNotification,
-				UserIDs: addedUserUUIDs,
-			})
+			h.hub.SendToUsersCluster(addedUserUUIDs, newChatNotification)
 		}
+	}
+
+	// 使相关缓存失效
+	if h.cache != nil {
+		chatIDStr := strconv.FormatUint(chat.ID, 10)
+		_ = h.cache.InvalidateChatMembers(c.Request.Context(), chatIDStr)
+		_ = h.cache.DeleteChatInfo(c.Request.Context(), chat.UUID)
 	}
 
 	response.Success(c, gin.H{"added": addedCount})
@@ -1444,7 +1526,10 @@ func (h *ChatHandler) RemoveMember(c *gin.Context) {
 
 	// 获取当前用户
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	// 检查权限
 	var currentMember models.ChatMember
@@ -1496,7 +1581,7 @@ func (h *ChatHandler) RemoveMember(c *gin.Context) {
 
 	// 通知被移除用户的所有设备
 	if h.hub != nil {
-		h.hub.SendToUser(targetUser.UUID, map[string]interface{}{
+		h.hub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
 			"type":    "chat_left",
 			"chat_id": chat.UUID,
 		})
@@ -1504,6 +1589,13 @@ func (h *ChatHandler) RemoveMember(c *gin.Context) {
 
 	// 广播成员数更新给剩余成员
 	h.broadcastChatUpdate(&chat)
+
+	// 使相关缓存失效
+	if h.cache != nil {
+		chatIDStr := strconv.FormatUint(chat.ID, 10)
+		_ = h.cache.InvalidateChatMembers(c.Request.Context(), chatIDStr)
+		_ = h.cache.DeleteChatInfo(c.Request.Context(), chat.UUID)
+	}
 
 	response.Success(c, nil)
 }
@@ -1536,7 +1628,10 @@ func (h *ChatHandler) SetMemberRole(c *gin.Context) {
 
 	// 获取当前用户
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	// 检查权限 - 只有群主可以设置管理员
 	var currentMember models.ChatMember
@@ -1641,7 +1736,7 @@ func (h *ChatHandler) LeaveChat(c *gin.Context) {
 
 	// 通知当前用户的其他设备同步退出事件
 	if h.hub != nil {
-		h.hub.SendToUser(userID, map[string]interface{}{
+		h.hub.SendToUserCluster(userID, map[string]interface{}{
 			"type":    "chat_left",
 			"chat_id": chat.UUID,
 		})
@@ -1649,6 +1744,13 @@ func (h *ChatHandler) LeaveChat(c *gin.Context) {
 
 	// 通知群组/频道成员，成员数已更新
 	h.broadcastChatUpdate(&chat)
+
+	// 使相关缓存失效
+	if h.cache != nil {
+		chatIDStr := strconv.FormatUint(chat.ID, 10)
+		_ = h.cache.InvalidateChatMembers(c.Request.Context(), chatIDStr)
+		_ = h.cache.DeleteChatInfo(c.Request.Context(), chat.UUID)
+	}
 
 	response.Success(c, nil)
 }
@@ -1683,7 +1785,7 @@ func (h *ChatHandler) HideChat(c *gin.Context) {
 
 	// 广播隐藏事件到当前用户的其他设备（多端同步）
 	if h.hub != nil {
-		h.hub.SendToUser(userID, map[string]interface{}{
+		h.hub.SendToUserCluster(userID, map[string]interface{}{
 			"type":    "chat_hidden",
 			"chat_id": chatID,
 		})
@@ -2015,7 +2117,10 @@ func (h *ChatHandler) GetJoinRequests(c *gin.Context) {
 
 	// 获取当前用户
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	// 检查权限（只有管理员和群主可以查看）
 	var member models.ChatMember
@@ -2078,7 +2183,10 @@ func (h *ChatHandler) ReviewJoinRequest(c *gin.Context) {
 
 	// 获取当前用户
 	var currentUser models.User
-	h.db.Where("uuid = ?", userID).First(&currentUser)
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
 
 	// 检查权限
 	var member models.ChatMember
@@ -2216,13 +2324,10 @@ func (h *ChatHandler) ReviewJoinRequest(c *gin.Context) {
 		// 用户自己申请加入不发送系统消息，只有被邀请时才发送
 
 		// 通知申请人
-		h.hub.Broadcast(&ws.BroadcastMessage{
-			UserIDs: []string{requestUser.UUID},
-			Data: map[string]interface{}{
-				"type":    "join_approved",
-				"chat_id": chat.UUID,
-				"name":    chat.Name,
-			},
+		h.hub.SendToUsersCluster([]string{requestUser.UUID}, map[string]interface{}{
+			"type":    "join_approved",
+			"chat_id": chat.UUID,
+			"name":    chat.Name,
 		})
 
 		// 通知群组/频道成员，成员数已更新
@@ -2239,13 +2344,10 @@ func (h *ChatHandler) ReviewJoinRequest(c *gin.Context) {
 		// 通知申请人
 		var requestUser models.User
 		h.db.First(&requestUser, joinRequest.UserID)
-		h.hub.Broadcast(&ws.BroadcastMessage{
-			UserIDs: []string{requestUser.UUID},
-			Data: map[string]interface{}{
-				"type":    "join_rejected",
-				"chat_id": chat.UUID,
-				"name":    chat.Name,
-			},
+		h.hub.SendToUsersCluster([]string{requestUser.UUID}, map[string]interface{}{
+			"type":    "join_rejected",
+			"chat_id": chat.UUID,
+			"name":    chat.Name,
 		})
 
 		response.Success(c, gin.H{"message": "已拒绝申请"})
@@ -2363,6 +2465,15 @@ func (h *ChatHandler) MuteMember(c *gin.Context) {
 	// 广播禁言状态变更
 	h.broadcastMuteStatusChanged(&chat, targetUser.UUID, true, updates["mute_end_time"])
 
+	// 使muted缓存失效
+	if h.cache != nil {
+		chatIDStr := strconv.FormatUint(chat.ID, 10)
+		_ = h.cache.InvalidateChatMutedIDs(c.Request.Context(), chatIDStr)
+		// 同时失效成员缓存（禁言状态存在ChatMember中）
+		userIDStr := strconv.FormatUint(targetUser.ID, 10)
+		_ = h.cache.DeleteChatMemberInfo(c.Request.Context(), chatIDStr, userIDStr)
+	}
+
 	response.Success(c, gin.H{
 		"message": "禁言成功",
 	})
@@ -2431,6 +2542,15 @@ func (h *ChatHandler) UnmuteMember(c *gin.Context) {
 	// 广播解禁状态变更
 	h.broadcastMuteStatusChanged(&chat, targetUser.UUID, false, nil)
 
+	// 使muted缓存失效
+	if h.cache != nil {
+		chatIDStr := strconv.FormatUint(chat.ID, 10)
+		_ = h.cache.InvalidateChatMutedIDs(c.Request.Context(), chatIDStr)
+		// 同时失效成员缓存（禁言状态存在ChatMember中）
+		userIDStr := strconv.FormatUint(targetUser.ID, 10)
+		_ = h.cache.DeleteChatMemberInfo(c.Request.Context(), chatIDStr, userIDStr)
+	}
+
 	response.Success(c, gin.H{
 		"message": "解除禁言成功",
 	})
@@ -2498,16 +2618,13 @@ func (h *ChatHandler) broadcastMuteStatusChanged(chat *models.Chat, targetUserUU
 	}
 
 	// 广播给所有成员
-	h.hub.Broadcast(&ws.BroadcastMessage{
-		UserIDs: memberUUIDs,
-		Data: map[string]interface{}{
-			"type": "member_mute_status_changed",
-			"message": map[string]interface{}{
-				"chat_id":       chat.UUID,
-				"user_id":       targetUserUUID,
-				"is_muted":      isMuted,
-				"mute_end_time": muteEndTime,
-			},
+	h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
+		"type": "member_mute_status_changed",
+		"message": map[string]interface{}{
+			"chat_id":       chat.UUID,
+			"user_id":       targetUserUUID,
+			"is_muted":      isMuted,
+			"mute_end_time": muteEndTime,
 		},
 	})
 }
@@ -2534,20 +2651,17 @@ func (h *ChatHandler) broadcastChatPermissionsUpdated(chat *models.Chat) {
 	}
 
 	// 广播给所有成员
-	h.hub.Broadcast(&ws.BroadcastMessage{
-		UserIDs: memberUUIDs,
-		Data: map[string]interface{}{
-			"type": "chat_permissions_updated",
-			"message": map[string]interface{}{
-				"chat_id":           chat.UUID,
-				"can_send_message":  chat.CanSendMessage,
-				"can_send_media":    chat.CanSendMedia,
-				"can_send_links":    chat.CanSendLinks,
-				"can_add_members":   chat.CanAddMembers,
-				"can_pin_messages":  chat.CanPinMessages,
-				"member_protection": chat.MemberProtection,
-				"join_approval":     chat.JoinApproval,
-			},
+	h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
+		"type": "chat_permissions_updated",
+		"message": map[string]interface{}{
+			"chat_id":           chat.UUID,
+			"can_send_message":  chat.CanSendMessage,
+			"can_send_media":    chat.CanSendMedia,
+			"can_send_links":    chat.CanSendLinks,
+			"can_add_members":   chat.CanAddMembers,
+			"can_pin_messages":  chat.CanPinMessages,
+			"member_protection": chat.MemberProtection,
+			"join_approval":     chat.JoinApproval,
 		},
 	})
 }
@@ -2617,13 +2731,10 @@ func (h *ChatHandler) broadcastChatUpdate(chat *models.Chat) {
 	h.db.First(chat, chat.ID)
 
 	// 广播给所有成员
-	h.hub.Broadcast(&ws.BroadcastMessage{
-		UserIDs: memberUUIDs,
-		Data: map[string]interface{}{
-			"type":         "chat_update",
-			"chat_id":      chat.UUID,
-			"member_count": chat.MemberCount,
-		},
+	h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
+		"type":         "chat_update",
+		"chat_id":      chat.UUID,
+		"member_count": chat.MemberCount,
 	})
 }
 
@@ -2903,7 +3014,7 @@ func (h *ChatHandler) broadcastChatHistoryCleared(
 		return
 	}
 
-	h.hub.SendToUsers(userUUIDs, map[string]interface{}{
+	h.hub.SendToUsersCluster(userUUIDs, map[string]interface{}{
 		"type":        "chat_history_cleared",
 		"chat_id":     chatUUID,
 		"for_both":    forBoth,
@@ -2953,7 +3064,8 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 	}
 
 	// 从 MongoDB 搜索消息
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	messages, err := h.msgService.SearchMessages(ctx, chat.UUID, keyword, 50)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "搜索失败")

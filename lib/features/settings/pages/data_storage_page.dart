@@ -1,4 +1,5 @@
 import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,7 +32,7 @@ class DataStorageService extends StateNotifier<DataStorageSettings> {
         networkUsageLastReset: prefs.getString('storage_network_reset_date'),
       );
     } catch (e) {
-      debugPrint('[DataStorage] Error loading: $e');
+      if (kDebugMode) debugPrint('[DataStorage] Error loading: $e');
     }
   }
   
@@ -238,7 +239,7 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('[DataStorage] Calculate error: $e');
+      if (kDebugMode) debugPrint('[DataStorage] Calculate error: $e');
       setState(() {
         _storageInfo = StorageInfo(
           totalSize: 0,
@@ -265,7 +266,7 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
         }
       }
     } catch (e) {
-      debugPrint('[DataStorage] Dir size error: $e');
+      if (kDebugMode) debugPrint('[DataStorage] Dir size error: $e');
     }
   }
   
@@ -282,7 +283,7 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
         }
       }
     } catch (e) {
-      debugPrint('[DataStorage] Dir size error: $e');
+      if (kDebugMode) debugPrint('[DataStorage] Dir size error: $e');
     }
     return size;
   }

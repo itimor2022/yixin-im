@@ -34,6 +34,7 @@ class MessageContextMenu extends StatefulWidget {
   final VoidCallback? onSelect;
   final VoidCallback? onPin;
   // 桌面端文件操作
+  final VoidCallback? onDownload;
   final VoidCallback? onSaveAs;
   final VoidCallback? onShowInFolder;
   final VoidCallback? onOpenFile;
@@ -55,6 +56,7 @@ class MessageContextMenu extends StatefulWidget {
     this.onRevoke,
     this.onSelect,
     this.onPin,
+    this.onDownload,
     this.onSaveAs,
     this.onShowInFolder,
     this.onOpenFile,
@@ -486,13 +488,24 @@ class _MessageContextMenuState extends State<MessageContextMenu>
 
           // 媒体/文件类型消息显示额外操作
           if (isMediaMessage) ...[
-            _buildDesktopDivider(isDark),
-            _buildDesktopMenuItem(
-              icon: Icons.save_alt_rounded,
-              title: '存储到...',
-              isDark: isDark,
-              onTap: () => _handleAction(widget.onSaveAs),
-            ),
+            if (widget.onDownload != null) ...[
+              _buildDesktopDivider(isDark),
+              _buildDesktopMenuItem(
+                icon: Icons.download_rounded,
+                title: '下载',
+                isDark: isDark,
+                onTap: () => _handleAction(widget.onDownload),
+              ),
+            ],
+            if (widget.onSaveAs != null) ...[
+              _buildDesktopDivider(isDark),
+              _buildDesktopMenuItem(
+                icon: Icons.save_alt_rounded,
+                title: '存储到...',
+                isDark: isDark,
+                onTap: () => _handleAction(widget.onSaveAs),
+              ),
+            ],
             if (widget.onShowInFolder != null) ...[
               _buildDesktopDivider(isDark),
               _buildDesktopMenuItem(
@@ -1780,6 +1793,7 @@ Future<void> showMessageContextMenu({
   VoidCallback? onSelect,
   VoidCallback? onPin,
   // 桌面端文件操作
+  VoidCallback? onDownload,
   VoidCallback? onSaveAs,
   VoidCallback? onShowInFolder,
   VoidCallback? onOpenFile,
@@ -1805,6 +1819,7 @@ Future<void> showMessageContextMenu({
       onRevoke: onRevoke,
       onSelect: onSelect,
       onPin: onPin,
+      onDownload: onDownload,
       onSaveAs: onSaveAs,
       onShowInFolder: onShowInFolder,
       onOpenFile: onOpenFile,

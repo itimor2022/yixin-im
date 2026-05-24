@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -53,7 +54,7 @@ class PrivacySettingsService extends StateNotifier<PrivacySettings> {
         await _saveSettingsToPrefs(serverSettings);
       }
     } catch (e) {
-      debugPrint('[PrivacySettings] Error loading: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Error loading: $e');
     }
   }
 
@@ -110,7 +111,7 @@ class PrivacySettingsService extends StateNotifier<PrivacySettings> {
     } catch (e) {
       state = state.copyWith(allowPhoneSearch: previous);
       await prefs.setBool('privacy_allow_phone_search', previous);
-      debugPrint('[PrivacySettings] Sync allow_phone_search error: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Sync allow_phone_search error: $e');
     }
   }
 
@@ -129,7 +130,7 @@ class PrivacySettingsService extends StateNotifier<PrivacySettings> {
     } catch (e) {
       state = state.copyWith(allowShortIdSearch: previous);
       await prefs.setBool('privacy_allow_short_id_search', previous);
-      debugPrint('[PrivacySettings] Sync allow_short_id_search error: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Sync allow_short_id_search error: $e');
     }
   }
 
@@ -141,7 +142,7 @@ class PrivacySettingsService extends StateNotifier<PrivacySettings> {
       await _apiClient
           .put('/user/privacy', data: {'device_lock_enabled': value});
     } catch (e) {
-      debugPrint('[PrivacySettings] Sync device_lock_enabled error: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Sync device_lock_enabled error: $e');
     }
   }
 
@@ -180,7 +181,7 @@ class PrivacySettingsService extends StateNotifier<PrivacySettings> {
     try {
       await _apiClient.put('/user/privacy', data: {key: value});
     } catch (e) {
-      debugPrint('[PrivacySettings] Sync error: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Sync error: $e');
     }
   }
 }
@@ -331,7 +332,7 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       // 复用 deviceCountProvider，避免重复请求 /user/devices
       // 会话数量通过 provider 在 build 时获取
     } catch (e) {
-      debugPrint('[PrivacySettings] Load error: $e');
+      if (kDebugMode) debugPrint('[PrivacySettings] Load error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

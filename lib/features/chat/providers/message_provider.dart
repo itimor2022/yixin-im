@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:universal_io/io.dart';
@@ -635,7 +636,7 @@ Future<void> persistMessageItemsToIsarCache(List<MessageItem> messages) async {
       await IsarService.instance.isar.messageModels.putAll(models);
     });
   } catch (e) {
-    debugPrint('[IsarCache] persistMessageItemsToIsarCache failed: $e');
+    if (kDebugMode) debugPrint('[IsarCache] persistMessageItemsToIsarCache failed: $e');
   }
 }
 
@@ -824,7 +825,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       final rawMsg = data['message'];
       if (rawMsg == null) return;
       if (rawMsg is! Map) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Message] WS new_message: expected message object, got ${rawMsg.runtimeType}',
         );
         return;
@@ -843,7 +844,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
           }
         }
       } catch (e, st) {
-        debugPrint('[Message] WS new_message fromJson failed: $e');
+        if (kDebugMode) debugPrint('[Message] WS new_message fromJson failed: $e');
         debugPrintStack(stackTrace: st, maxFrames: 12);
       }
     };
@@ -871,7 +872,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       final msgSeq = data['msg_seq'];
       // Ignore read receipts sent by the current user because SendToChat broadcasts to everyone.
       if (readUserId == _currentUserId) return;
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Message] Received read receipt from $readUserId: chatId=$msgChatId, seq=$msgSeq',
       );
       if (msgChatId == chatId && msgSeq != null) {
@@ -907,7 +908,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             _applyEditedMessage(message);
             return;
           } catch (e) {
-            debugPrint('[Message] parse edited message failed: $e');
+            if (kDebugMode) debugPrint('[Message] parse edited message failed: $e');
           }
         }
         _handleMessageEdited(data);
@@ -920,7 +921,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
 
     _reconnectedHandler = (data) {
       if (!mounted) return;
-      debugPrint('[Message] Reconnected, starting delta sync for chat $chatId');
+      if (kDebugMode) debugPrint('[Message] Reconnected, starting delta sync for chat $chatId');
       _deltaSyncAfterReconnect();
     };
     _wsService.registerHandler(WSMessageType.reconnected, _reconnectedHandler);
@@ -929,7 +930,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       if (!mounted) return;
       final msgChatId = data['chat_id']?.toString();
       if (msgChatId != chatId) return;
-      debugPrint('[Message] Chat history cleared event: chatId=$chatId');
+      if (kDebugMode) debugPrint('[Message] Chat history cleared event: chatId=$chatId');
       unawaited(_clearHistoryFromEvent());
     };
     _wsService.registerHandler(
@@ -1139,7 +1140,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             .deleteAll();
       });
     } catch (e) {
-      debugPrint('[Message] Clear local history failed: $e');
+      if (kDebugMode) debugPrint('[Message] Clear local history failed: $e');
     }
   }
 
@@ -1171,7 +1172,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       }
       return msg;
     }).toList();
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[Message] Updated $updatedCount messages to read status (up to seq=$seq)',
     );
 
@@ -1272,13 +1273,13 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         if (_isActive) {
           _markAsReadUpToSeq(message.seq);
         }
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Message] Updated existing message from WS echo: ${message.msgId}',
         );
         return;
       }
 
-      debugPrint('[Message] Skip duplicate message: ${message.msgId}');
+      if (kDebugMode) debugPrint('[Message] Skip duplicate message: ${message.msgId}');
       return;
     }
 
@@ -1307,7 +1308,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             _markAsReadUpToSeq(message.seq);
           }
           _persistMessageUpdate(localId, item);
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Message] Merged WS text into optimistic row: ${message.msgId}',
           );
           return;
@@ -1332,7 +1333,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
                 _markAsReadUpToSeq(message.seq);
               }
               _persistMessageUpdate(localId, item);
-              debugPrint(
+              if (kDebugMode) debugPrint(
                 '[Message] Merged WS wallet message into local row: ${message.msgId}',
               );
               return;
@@ -1358,7 +1359,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
               _markAsReadUpToSeq(message.seq);
             }
             _persistMessageUpdate(localId, item);
-            debugPrint(
+            if (kDebugMode) debugPrint(
               '[Message] Merged WS non-text into optimistic row: ${message.msgId}',
             );
             return;
@@ -1393,13 +1394,13 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
           displayText.contains('已拒收') ||
           displayText.contains('红包已过期') ||
           displayText.contains('转账已过期')) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Message] Wallet status change detected, refreshing bubbles',
         );
         WalletBubbleRefreshNotifier.instance.refresh();
       }
     } catch (e) {
-      debugPrint('[Message] _checkAndRefreshWalletBubbles error: $e');
+      if (kDebugMode) debugPrint('[Message] _checkAndRefreshWalletBubbles error: $e');
     }
   }
 
@@ -1448,12 +1449,12 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
 
       // If seq is still missing, fall back to a full message reload.
       if (maxSeq == 0) {
-        debugPrint('[Message] Delta sync: no seq yet, fallback to full load');
+        if (kDebugMode) debugPrint('[Message] Delta sync: no seq yet, fallback to full load');
         await loadMessages();
         return;
       }
 
-      debugPrint('[Message] Delta sync: chatId=$chatId, lastSeq=$maxSeq');
+      if (kDebugMode) debugPrint('[Message] Delta sync: chatId=$chatId, lastSeq=$maxSeq');
 
       final deletedFuture = _getDeletedMessageIds();
       final response = await _chatService.syncMessages(chatId, lastSeq: maxSeq);
@@ -1477,7 +1478,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
 
       if (newMessages.isEmpty) return;
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Message] Delta sync: got ${newMessages.length} new messages',
       );
 
@@ -1504,7 +1505,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         }
       }
     } catch (e) {
-      debugPrint('[Message] Delta sync error: $e');
+      if (kDebugMode) debugPrint('[Message] Delta sync error: $e');
     } finally {
       _isSyncing = false;
     }
@@ -1560,7 +1561,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _reconcileBurnStateFromCurrentMessages();
       }
     } catch (e) {
-      debugPrint('[Message] Failed to load from local: $e');
+      if (kDebugMode) debugPrint('[Message] Failed to load from local: $e');
     }
   }
 
@@ -1696,7 +1697,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         }
       }
     } catch (e) {
-      debugPrint('[Message] loadMessages error: $e');
+      if (kDebugMode) debugPrint('[Message] loadMessages error: $e');
     }
   }
 
@@ -1736,7 +1737,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         prefetchCount++;
         await Future.delayed(const Duration(milliseconds: 50));
       } catch (e) {
-        debugPrint('[Message] Failed to prefetch image: $e');
+        if (kDebugMode) debugPrint('[Message] Failed to prefetch image: $e');
       }
     }
   }
@@ -1795,7 +1796,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _hasMore = false;
       }
     } catch (e) {
-      debugPrint('[Message] loadMoreMessages failed: $e');
+      if (kDebugMode) debugPrint('[Message] loadMoreMessages failed: $e');
       _hasMore = false;
     } finally {
       _isLoadingMore = false;
@@ -1846,7 +1847,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
           createdAt: DateTime.now(),
         ),
       );
-      debugPrint('[Message] Offline, queued text message: $localId');
+      if (kDebugMode) debugPrint('[Message] Offline, queued text message: $localId');
       return null;
     }
 
@@ -1903,7 +1904,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         );
         return null;
       } else {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Message] sendMessage failed: code=${response.code} message=${response.message} dataNull=${response.data == null}',
         );
         // Server-side rejections are final business errors. Do not put them
@@ -1927,7 +1928,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         return null;
       }
     } catch (e, st) {
-      debugPrint('[Message] sendMessage exception: $e');
+      if (kDebugMode) debugPrint('[Message] sendMessage exception: $e');
       debugPrintStack(stackTrace: st, maxFrames: 6);
       _updateMessageStatus(localId, MessageStatus.failed);
       // Also queue the message offline when an exception happens.
@@ -2024,7 +2025,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       );
 
       if (!uploadResponse.isSuccess || uploadResponse.data == null) {
-        debugPrint('[Image] Upload failed: ${uploadResponse.message}');
+        if (kDebugMode) debugPrint('[Image] Upload failed: ${uploadResponse.message}');
         _updateMessageStatus(localId, MessageStatus.failed);
         return;
       }
@@ -2073,7 +2074,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[Image] Send error: $e');
+      if (kDebugMode) debugPrint('[Image] Send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2122,7 +2123,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       );
 
       if (!uploadResponse.isSuccess || uploadResponse.data == null) {
-        debugPrint('[Image] Paste upload failed: ${uploadResponse.message}');
+        if (kDebugMode) debugPrint('[Image] Paste upload failed: ${uploadResponse.message}');
         _updateMessageStatus(localId, MessageStatus.failed);
         return;
       }
@@ -2173,7 +2174,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[Image] Paste send error: $e');
+      if (kDebugMode) debugPrint('[Image] Paste send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2245,7 +2246,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[Image] Send by url error: $e');
+      if (kDebugMode) debugPrint('[Image] Send by url error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2300,7 +2301,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
           }).toList();
         }
       } catch (e) {
-        debugPrint('[Message] Failed to generate video thumbnail: $e');
+        if (kDebugMode) debugPrint('[Message] Failed to generate video thumbnail: $e');
       }
     }
 
@@ -2365,7 +2366,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             }
           }
         } catch (e) {
-          debugPrint('[Message] Failed to upload video thumbnail: $e');
+          if (kDebugMode) debugPrint('[Message] Failed to upload video thumbnail: $e');
         }
       }
 
@@ -2454,7 +2455,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       );
 
       if (!uploadResponse.isSuccess || uploadResponse.data == null) {
-        debugPrint('[File] Bytes upload failed: ${uploadResponse.message}');
+        if (kDebugMode) debugPrint('[File] Bytes upload failed: ${uploadResponse.message}');
         _updateMessageStatus(localId, MessageStatus.failed);
         return;
       }
@@ -2500,7 +2501,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[File] Bytes send error: $e');
+      if (kDebugMode) debugPrint('[File] Bytes send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2554,7 +2555,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       );
 
       if (!uploadResponse.isSuccess || uploadResponse.data == null) {
-        debugPrint('[File] Upload failed: ${uploadResponse.message}');
+        if (kDebugMode) debugPrint('[File] Upload failed: ${uploadResponse.message}');
         _updateMessageStatus(localId, MessageStatus.failed);
         return;
       }
@@ -2599,7 +2600,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[File] Send error: $e');
+      if (kDebugMode) debugPrint('[File] Send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2692,7 +2693,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       );
 
       if (!uploadResponse.isSuccess || uploadResponse.data == null) {
-        debugPrint('[Voice] Upload failed: ${uploadResponse.message}');
+        if (kDebugMode) debugPrint('[Voice] Upload failed: ${uploadResponse.message}');
         _updateMessageStatus(localId, MessageStatus.failed);
         return;
       }
@@ -2739,7 +2740,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _updateMessageStatus(localId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[Voice] Send error: $e');
+      if (kDebugMode) debugPrint('[Voice] Send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
   }
@@ -2806,7 +2807,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         );
         return null;
       } else {
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Location] sendMessage failed: code=${sendResponse.code} message=${sendResponse.message} dataNull=${sendResponse.data == null}',
         );
         if (sendResponse.code > 0) {
@@ -2819,7 +2820,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         return '发送位置失败，请检查网络后重试';
       }
     } catch (e) {
-      debugPrint('[Location] Send error: $e');
+      if (kDebugMode) debugPrint('[Location] Send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
       return '发送位置失败，请检查网络后重试';
     }
@@ -2886,7 +2887,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       // Write the updated message back to local storage.
       _saveMessagesToLocal([newMsg]);
     } catch (e) {
-      debugPrint('[Message] Persist message update failed: $e');
+      if (kDebugMode) debugPrint('[Message] Persist message update failed: $e');
     }
   }
 
@@ -2916,7 +2917,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             .deleteAll();
       });
     } catch (e) {
-      debugPrint('[MessageProvider] Delete local message failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Delete local message failed: $e');
     }
   }
 
@@ -2930,7 +2931,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         await prefs.setStringList(key, deletedIds);
       }
     } catch (e) {
-      debugPrint('[MessageProvider] Save deleted message IDs failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Save deleted message IDs failed: $e');
     }
   }
 
@@ -2957,7 +2958,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       }
       _cachedBurnState = parsed;
     } catch (e) {
-      debugPrint('[MessageProvider] Load burn state failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Load burn state failed: $e');
       _cachedBurnState = <String, Map<String, dynamic>>{};
     }
     return _cachedBurnState!;
@@ -3013,7 +3014,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_burnStateStorageKey);
     } catch (e) {
-      debugPrint('[MessageProvider] Clear burn state failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Clear burn state failed: $e');
     }
   }
 
@@ -3027,7 +3028,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       }
       await prefs.setString(_burnStateStorageKey, jsonEncode(burnState));
     } catch (e) {
-      debugPrint('[MessageProvider] Save burn state failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Save burn state failed: $e');
     }
   }
 
@@ -3041,7 +3042,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       _cachedDeletedIds = deletedIds.toSet();
       return _cachedDeletedIds!;
     } catch (e) {
-      debugPrint('[MessageProvider] Get deleted message IDs failed: $e');
+      if (kDebugMode) debugPrint('[MessageProvider] Get deleted message IDs failed: $e');
       return {};
     }
   }
@@ -3483,7 +3484,7 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
           _updateMessageStatus(messageId, MessageStatus.failed);
       }
     } catch (e) {
-      debugPrint('[Message] Resend error: $e');
+      if (kDebugMode) debugPrint('[Message] Resend error: $e');
       _updateMessageStatus(messageId, MessageStatus.failed);
     }
   }

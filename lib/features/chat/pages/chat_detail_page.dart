@@ -5,7 +5,9 @@ import 'package:universal_io/io.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +19,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:gao_ran_im/core/services/api/api_client.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_saver/file_saver.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/router/app_router.dart';
@@ -238,7 +241,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       final response = await chatService.getPinnedMessage(widget.chatId);
       if (!mounted) return;
       if (!response.isSuccess) {
-        debugPrint('[Pin] getPinnedMessage failed: ${response.message}');
+        if (kDebugMode) debugPrint('[Pin] getPinnedMessage failed: ${response.message}');
         return;
       }
 
@@ -247,13 +250,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         final pinnedData = Map<String, dynamic>.from(data);
         final id = _readPinnedMessageId(pinnedData);
         final text = _readPinnedMessageText(pinnedData);
-        debugPrint('[Pin] Loaded pinned: id=$id, text=$text');
+        if (kDebugMode) debugPrint('[Pin] Loaded pinned: id=$id, text=$text');
         _setPinnedMessage(messageId: id, messageText: text);
       } else if (data == null) {
         _clearPinnedMessage();
       }
     } catch (e) {
-      debugPrint('[Pin] _loadPinnedMessage error: $e');
+      if (kDebugMode) debugPrint('[Pin] _loadPinnedMessage error: $e');
     }
   }
 
@@ -299,7 +302,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         });
       }
     } catch (e) {
-      debugPrint('[Announcement] _loadLatestAnnouncement error: $e');
+      if (kDebugMode) debugPrint('[Announcement] _loadLatestAnnouncement error: $e');
     }
   }
 
@@ -1270,7 +1273,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
         final id = _readPinnedMessageId(event);
         final text = _readPinnedMessageText(event);
-        debugPrint('[Pin] WS message_pinned: id=$id, text=$text');
+        if (kDebugMode) debugPrint('[Pin] WS message_pinned: id=$id, text=$text');
 
         if (id != null && id.isNotEmpty) {
           _setPinnedMessage(messageId: id, messageText: text);
@@ -1396,7 +1399,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       _updateChatListPreview('[图片]', type: MessageContentType.photo);
       _scrollToBottom();
     } catch (e) {
-      debugPrint('[Paste] 粘贴图片失败: $e');
+      if (kDebugMode) debugPrint('[Paste] 粘贴图片失败: $e');
     }
   }
 
@@ -1789,7 +1792,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final chatBackground = ref.watch(chatBackgroundProvider);
 
     final isDesktop =
-        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+        PlatformUtils.isPhysicalDesktop;
 
     Widget content = PopScope(
       canPop: true, // 允许左滑返回
@@ -2619,7 +2622,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final isGroup = widget.chatType == ChatType.group;
     final isChannel = widget.chatType == ChatType.channel;
     final isDesktop =
-        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+        PlatformUtils.isPhysicalDesktop;
 
     // 从 chatDetailProvider 获取用户角色
     final chatDetailAsync = ref.read(chatDetailProvider(widget.chatId));
@@ -2827,7 +2830,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   void _openEditPage(BuildContext context) {
     final isDesktop =
-        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+        PlatformUtils.isPhysicalDesktop;
     final isChannel = widget.chatType == ChatType.channel;
 
     if (isDesktop) {
@@ -4639,9 +4642,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               senderAvatar: currentUserAvatar,
             );
 
-        debugPrint('[Chat] Red packet message added');
+        if (kDebugMode) debugPrint('[Chat] Red packet message added');
       } catch (e) {
-        debugPrint('[Chat] Error adding red packet message: $e');
+        if (kDebugMode) debugPrint('[Chat] Error adding red packet message: $e');
       }
     }
   }
@@ -4687,9 +4690,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               senderAvatar: currentUserAvatar,
             );
 
-        debugPrint('[Chat] Transfer message added');
+        if (kDebugMode) debugPrint('[Chat] Transfer message added');
       } catch (e) {
-        debugPrint('[Chat] Error adding transfer message: $e');
+        if (kDebugMode) debugPrint('[Chat] Error adding transfer message: $e');
       }
     }
   }
@@ -4869,7 +4872,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             imgWidth = decodedImage.width;
             imgHeight = decodedImage.height;
           } catch (e) {
-            debugPrint('[Chat] Failed to decode image dimensions: $e');
+            if (kDebugMode) debugPrint('[Chat] Failed to decode image dimensions: $e');
           }
 
           if (!mounted) return;
@@ -5110,20 +5113,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _startVoiceRecord() async {
-    debugPrint('[ChatDetail] _startVoiceRecord called');
+    if (kDebugMode) debugPrint('[ChatDetail] _startVoiceRecord called');
     GlobalHaptics.medium();
 
     final voiceService = ref.read(voiceRecordProvider.notifier);
-    debugPrint('[ChatDetail] Starting recording...');
+    if (kDebugMode) debugPrint('[ChatDetail] Starting recording...');
     final started = await voiceService.startRecording();
-    debugPrint('[ChatDetail] Recording started: $started');
+    if (kDebugMode) debugPrint('[ChatDetail] Recording started: $started');
 
     if (started) {
       setState(() => _isRecordingVoice = true);
-      debugPrint('[ChatDetail] _isRecordingVoice set to true');
+      if (kDebugMode) debugPrint('[ChatDetail] _isRecordingVoice set to true');
     } else {
       final state = ref.read(voiceRecordProvider);
-      debugPrint('[ChatDetail] Recording failed, error: ${state.error}');
+      if (kDebugMode) debugPrint('[ChatDetail] Recording failed, error: ${state.error}');
       if (state.error != null && mounted) {
         ScaffoldMessenger.of(
           context,
@@ -5175,13 +5178,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         message.type == MessageItemType.file ||
         message.type == MessageItemType.voice;
     final isDesktop =
-        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+        PlatformUtils.isPhysicalDesktop;
 
     // 从后端配置获取撤回时间限制
     final revokeMinutes =
         ref.read(systemSettingsProvider).valueOrNull?.revokeMessageMinutes ?? 2;
     final chatDetail = ref.read(chatDetailProvider(widget.chatId)).valueOrNull;
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[Chat] revokeMinutes from server: $revokeMinutes, message age: ${DateTime.now().difference(message.createdAt).inMinutes} min',
     );
     final canSelfRevoke =
@@ -5220,6 +5223,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ? () => _handlePinMessage(message)
           : null,
       onSelect: () => _enterSelectionMode(message),
+      // Web 端文件下载
+      onDownload: kIsWeb && isMediaMessage
+          ? () => _handleWebDownload(message)
+          : null,
       // 桌面端文件操作
       onSaveAs: isDesktop && isMediaMessage
           ? () => _handleSaveAs(message)
@@ -5244,7 +5251,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         String pinnedMessageId = message.id;
         String pinnedMessageText = _buildPinnedMessagePreview(message);
         final data = response.data;
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Pin] pinMessage response data type: ${data.runtimeType}, value: $data',
         );
         if (data is Map) {
@@ -5254,7 +5261,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               _readPinnedMessageText(pinnedData) ?? pinnedMessageText;
         }
 
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Pin] Setting pinned: id=$pinnedMessageId, text=$pinnedMessageText',
         );
         _setPinnedMessage(
@@ -5337,7 +5344,58 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     setState(() => _replyToMessage = null);
   }
 
-  /// 桌面端：另存为
+  /// Web 端：通过浏览器下载文件（file_saver LinkDetails 触发浏览器下载管理器）
+  Future<void> _handleWebDownload(MessageItem message) async {
+    try {
+      final mediaUrl = message.mediaUrl;
+      if (mediaUrl == null || mediaUrl.isEmpty) {
+        _showSnackBar('文件不存在');
+        return;
+      }
+      final fullUrl = _getFullMediaUrl(mediaUrl);
+      if (fullUrl.isEmpty) {
+        _showSnackBar('无法解析文件地址');
+        return;
+      }
+
+      // 推断文件名与扩展名
+      final rawName = message.fileName ??
+          Uri.parse(fullUrl).pathSegments.lastOrNull ??
+          'file';
+      final dotIdx = rawName.lastIndexOf('.');
+      final name = dotIdx > 0 ? rawName.substring(0, dotIdx) : rawName;
+      final ext  = dotIdx > 0 ? rawName.substring(dotIdx + 1) : '';
+
+      // 推断 MimeType
+      MimeType mimeType;
+      switch (message.type) {
+        case MessageItemType.image:
+          mimeType = MimeType.png;
+          break;
+        case MessageItemType.video:
+          mimeType = MimeType.mp4Video;
+          break;
+        case MessageItemType.voice:
+          mimeType = MimeType.aac;
+          break;
+        default:
+          mimeType = MimeType.other;
+      }
+
+      _showSnackBar('正在下载...');
+      await FileSaver.instance.saveFile(
+        name: name,
+        fileExtension: ext,
+        mimeType: mimeType,
+        link: LinkDetails(link: fullUrl),
+      );
+      _showSnackBar('下载已开始');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ChatDetail] Web download error: \$e');
+      _showSnackBar('下载失败: \$e');
+    }
+  }
+
   Future<void> _handleSaveAs(MessageItem message) async {
     try {
       final mediaUrl = message.mediaUrl;
@@ -5346,52 +5404,72 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         return;
       }
 
-      // 获取文件名
+      // 推断默认文件名
       String defaultFileName;
       switch (message.type) {
         case MessageItemType.image:
-          defaultFileName =
-              'image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          defaultFileName = 'image_\${DateTime.now().millisecondsSinceEpoch}.jpg';
           break;
         case MessageItemType.video:
-          defaultFileName =
-              'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+          defaultFileName = 'video_\${DateTime.now().millisecondsSinceEpoch}.mp4';
           break;
         case MessageItemType.voice:
-          defaultFileName =
-              'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          defaultFileName = 'voice_\${DateTime.now().millisecondsSinceEpoch}.m4a';
           break;
         case MessageItemType.file:
-          defaultFileName =
-              message.fileName ??
-              'file_${DateTime.now().millisecondsSinceEpoch}';
+          defaultFileName = message.fileName ??
+              'file_\${DateTime.now().millisecondsSinceEpoch}';
           break;
         default:
-          defaultFileName = 'file_${DateTime.now().millisecondsSinceEpoch}';
+          defaultFileName = 'file_\${DateTime.now().millisecondsSinceEpoch}';
       }
 
-      // 让用户选择保存位置
-      final result = await FilePicker.platform.saveFile(
-        dialogTitle: '保存文件',
-        fileName: defaultFileName,
-      );
-
-      if (result == null) return;
-
-      // 下载文件到选定位置
       final fullUrl = _getFullMediaUrl(mediaUrl);
-      final dio = Dio();
-      await dio.download(fullUrl, result);
+      final dotIdx = defaultFileName.lastIndexOf('.');
+      final name = dotIdx > 0 ? defaultFileName.substring(0, dotIdx) : defaultFileName;
+      final ext  = dotIdx > 0 ? defaultFileName.substring(dotIdx + 1) : '';
 
-      _showSnackBar('文件已保存');
+      if (kIsWeb) {
+        // ── Web：交给浏览器下载管理器 ──
+        MimeType mimeType;
+        switch (message.type) {
+          case MessageItemType.image: mimeType = MimeType.png;   break;
+          case MessageItemType.video: mimeType = MimeType.mp4Video;   break;
+          case MessageItemType.voice: mimeType = MimeType.aac;   break;
+          default:                    mimeType = MimeType.other; break;
+        }
+        _showSnackBar('正在下载...');
+        await FileSaver.instance.saveFile(
+          name: name,
+          fileExtension: ext,
+          mimeType: mimeType,
+          link: LinkDetails(link: fullUrl),
+        );
+        _showSnackBar('下载已开始');
+      } else {
+        // ── 桌面端：FilePicker 选择保存位置 + Dio 下载 ──
+        final result = await FilePicker.platform.saveFile(
+          dialogTitle: '保存文件',
+          fileName: defaultFileName,
+        );
+        if (result == null) return;
+
+        final dio = Dio();
+        await dio.download(fullUrl, result);
+        _showSnackBar('文件已保存');
+      }
     } catch (e) {
-      debugPrint('[ChatDetail] Save as error: $e');
+      if (kDebugMode) debugPrint('[ChatDetail] Save as error: $e');
       _showSnackBar('保存失败: $e');
     }
   }
-
-  /// 桌面端：在 Finder/资源管理器中显示
+  /// 桌面端：在 Finder/资源管理器中显示（Web 不支持）
   Future<void> _handleShowInFolder(MessageItem message) async {
+    // Web 端不支持文件系统操作，降级为浏览器打开
+    if (kIsWeb) {
+      await _handleWebDownload(message);
+      return;
+    }
     try {
       final mediaUrl = message.mediaUrl;
       if (mediaUrl == null || mediaUrl.isEmpty) {
@@ -5431,13 +5509,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
       }
     } catch (e) {
-      debugPrint('[ChatDetail] Show in folder error: $e');
+      if (kDebugMode) debugPrint('[ChatDetail] Show in folder error: $e');
       _showSnackBar('操作失败: $e');
     }
   }
 
-  /// 桌面端：使用默认应用打开文件
+  /// 桌面端：使用默认应用打开文件（Web 不支持本地进程）
   Future<void> _handleOpenFile(MessageItem message) async {
+    // Web 端无法调用本地应用，降级为浏览器下载
+    if (kIsWeb) {
+      await _handleWebDownload(message);
+      return;
+    }
     try {
       final mediaUrl = message.mediaUrl;
       if (mediaUrl == null || mediaUrl.isEmpty) {
@@ -5471,13 +5554,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         await Process.run('xdg-open', [localFile.path]);
       }
     } catch (e) {
-      debugPrint('[ChatDetail] Open file error: $e');
+      if (kDebugMode) debugPrint('[ChatDetail] Open file error: $e');
       _showSnackBar('打开失败: $e');
     }
   }
 
-  /// 获取媒体缓存目录
+  /// 获取媒体缓存目录（仅原生平台可用）
   Future<String> _getMediaCacheDir() async {
+    if (kIsWeb) return ''; // Web 不支持本地目录
     final appDir = await getApplicationSupportDirectory();
     final cacheDir = Directory('${appDir.path}/media_cache');
     if (!await cacheDir.exists()) {

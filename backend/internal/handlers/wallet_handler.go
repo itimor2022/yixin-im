@@ -675,7 +675,7 @@ func (h *WalletHandler) SendRedPacket(c *gin.Context) {
 				"text": string(contentJSON),
 			},
 		}
-		h.sendChatMessageWithRetry(context.Background(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
+		h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
 	}
 
 	response.Success(c, gin.H{
@@ -868,7 +868,9 @@ func (h *WalletHandler) ClaimRedPacket(c *gin.Context) {
 
 	// 记录交易
 	var sender models.User
-	h.db.First(&sender, redPacket.SenderID)
+	if err := h.db.First(&sender, redPacket.SenderID).Error; err != nil {
+		log.Printf("[WalletHandler] ClaimRedPacket: sender not found senderID=%d err=%v", redPacket.SenderID, err)
+	}
 
 	transaction := models.Transaction{
 		UserID:          userID,
@@ -921,16 +923,21 @@ func (h *WalletHandler) ClaimRedPacket(c *gin.Context) {
 		}
 		contentJSON, _ := json.Marshal(claimNotice)
 
-		// 获取聊天成员
+		// 获取聊天成员 ★ 批量查询 UUID，避免 N+1
 		var chatMembers []models.ChatMember
 		h.db.Where("chat_id = (SELECT id FROM chats WHERE uuid = ?)", redPacket.ChatID).Find(&chatMembers)
 
-		targetUserIDs := make([]string, 0)
+		memberUserIDs := make([]uint64, 0, len(chatMembers))
 		for _, member := range chatMembers {
-			var memberUser models.User
-			if h.db.First(&memberUser, member.UserID).Error == nil {
-				targetUserIDs = append(targetUserIDs, memberUser.UUID)
-			}
+			memberUserIDs = append(memberUserIDs, member.UserID)
+		}
+		var memberUsers []models.User
+		if len(memberUserIDs) > 0 {
+			h.db.Where("id IN ?", memberUserIDs).Select("id, uuid").Find(&memberUsers)
+		}
+		targetUserIDs := make([]string, 0, len(memberUsers))
+		for _, u := range memberUsers {
+			targetUserIDs = append(targetUserIDs, u.UUID)
 		}
 
 		if len(targetUserIDs) > 0 {
@@ -943,7 +950,7 @@ func (h *WalletHandler) ClaimRedPacket(c *gin.Context) {
 					"text": string(contentJSON),
 				},
 			}
-			h.sendChatMessageWithRetry(context.Background(), params, claimer.Nickname, claimer.Avatar, claimer.NicknameColor, claimer.PremiumType, claimer.EmojiAvatar, targetUserIDs)
+			h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, claimer.Nickname, claimer.Avatar, claimer.NicknameColor, claimer.PremiumType, claimer.EmojiAvatar, targetUserIDs)
 		}
 	}
 
@@ -971,7 +978,9 @@ func (h *WalletHandler) GetRedPacket(c *gin.Context) {
 
 	// 获取发送者信息
 	var sender models.User
-	h.db.First(&sender, redPacket.SenderID)
+	if err := h.db.First(&sender, redPacket.SenderID).Error; err != nil {
+		log.Printf("[WalletHandler] GetRedPacket: sender not found senderID=%d err=%v", redPacket.SenderID, err)
+	}
 
 	// 检查是否已领取
 	var claim models.RedPacketClaim
@@ -981,17 +990,30 @@ func (h *WalletHandler) GetRedPacket(c *gin.Context) {
 	var claims []models.RedPacketClaim
 	h.db.Where("red_packet_id = ?", redPacket.ID).Order("created_at").Find(&claims)
 
+	// ★ 批量查询领取用户信息，避免 N+1
+	claimUserIDs := make([]uint64, 0, len(claims))
+	for _, cl := range claims {
+		claimUserIDs = append(claimUserIDs, cl.UserID)
+	}
+	var claimUsers []models.User
+	if len(claimUserIDs) > 0 {
+		h.db.Where("id IN ?", claimUserIDs).Find(&claimUsers)
+	}
+	claimUserMap := make(map[uint64]models.User, len(claimUsers))
+	for _, u := range claimUsers {
+		claimUserMap[u.ID] = u
+	}
+
 	claimList := make([]gin.H, len(claims))
-	for i, c := range claims {
-		var user models.User
-		h.db.First(&user, c.UserID)
+	for i, cl := range claims {
+		u := claimUserMap[cl.UserID]
 		claimList[i] = gin.H{
-			"user_id":     user.UUID,
-			"user_name":   user.Nickname,
-			"user_avatar": user.Avatar,
-			"amount":      c.Amount,
-			"is_best":     c.IsBest,
-			"created_at":  c.CreatedAt,
+			"user_id":     u.UUID,
+			"user_name":   u.Nickname,
+			"user_avatar": u.Avatar,
+			"amount":      cl.Amount,
+			"is_best":     cl.IsBest,
+			"created_at":  cl.CreatedAt,
 		}
 	}
 
@@ -1180,7 +1202,7 @@ func (h *WalletHandler) SendTransfer(c *gin.Context) {
 				"text": string(contentJSON),
 			},
 		}
-		h.sendChatMessageWithRetry(context.Background(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, []string{receiver.UUID})
+		h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, []string{receiver.UUID})
 	}
 
 	response.Success(c, gin.H{
@@ -1284,7 +1306,9 @@ func (h *WalletHandler) AcceptTransfer(c *gin.Context) {
 
 	// 记录交易
 	var sender models.User
-	h.db.First(&sender, transfer.SenderID)
+	if err := h.db.First(&sender, transfer.SenderID).Error; err != nil {
+		log.Printf("[WalletHandler] AcceptTransfer: sender not found senderID=%d err=%v", transfer.SenderID, err)
+	}
 
 	transaction := models.Transaction{
 		UserID:          userID,
@@ -1311,7 +1335,9 @@ func (h *WalletHandler) AcceptTransfer(c *gin.Context) {
 	// 发送收款通知给转账发送者
 	if h.msgService != nil {
 		var receiver models.User
-		h.db.First(&receiver, userID)
+		if err := h.db.First(&receiver, userID).Error; err != nil {
+			log.Printf("[WalletHandler] AcceptTransfer: receiver not found userID=%d err=%v", userID, err)
+		}
 
 		if h.walletChatMessagesBlocked() {
 			response.Success(c, gin.H{
@@ -1352,7 +1378,7 @@ func (h *WalletHandler) AcceptTransfer(c *gin.Context) {
 						"text": string(contentJSON),
 					},
 				}
-				h.sendChatMessageWithRetry(context.Background(), params, receiver.Nickname, receiver.Avatar, receiver.NicknameColor, receiver.PremiumType, receiver.EmojiAvatar, []string{sender.UUID, receiver.UUID})
+				h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, receiver.Nickname, receiver.Avatar, receiver.NicknameColor, receiver.PremiumType, receiver.EmojiAvatar, []string{sender.UUID, receiver.UUID})
 			}
 		}
 	}
@@ -1433,7 +1459,9 @@ func (h *WalletHandler) RejectTransfer(c *gin.Context) {
 
 	// 获取接收者信息
 	var receiver models.User
-	h.db.First(&receiver, userID)
+	if err := h.db.First(&receiver, userID).Error; err != nil {
+		log.Printf("[WalletHandler] RejectTransfer: receiver not found userID=%d err=%v", userID, err)
+	}
 
 	// 记录退款交易
 	refundTx := models.Transaction{
@@ -1483,8 +1511,12 @@ func (h *WalletHandler) GetTransfer(c *gin.Context) {
 	}
 
 	var sender, receiver models.User
-	h.db.First(&sender, transfer.SenderID)
-	h.db.First(&receiver, transfer.ReceiverID)
+	if err := h.db.First(&sender, transfer.SenderID).Error; err != nil {
+		log.Printf("[WalletHandler] GetTransfer: sender not found senderID=%d err=%v", transfer.SenderID, err)
+	}
+	if err := h.db.First(&receiver, transfer.ReceiverID).Error; err != nil {
+		log.Printf("[WalletHandler] GetTransfer: receiver not found receiverID=%d err=%v", transfer.ReceiverID, err)
+	}
 
 	response.Success(c, gin.H{
 		"id":              transfer.UUID,
@@ -1610,10 +1642,23 @@ func (h *WalletHandler) GetRechargeOrders(c *gin.Context) {
 	var orders []models.RechargeOrder
 	h.db.Where("user_id = ?", userID).Order("created_at DESC").Limit(50).Find(&orders)
 
+	// ★ 批量查询充值方式，避免 N+1
+	methodIDs := make([]uint64, 0, len(orders))
+	for _, o := range orders {
+		methodIDs = append(methodIDs, o.MethodID)
+	}
+	var rechargeMethods []models.RechargeMethod
+	if len(methodIDs) > 0 {
+		h.db.Where("id IN ?", methodIDs).Find(&rechargeMethods)
+	}
+	rechargeMethodMap := make(map[uint64]models.RechargeMethod, len(rechargeMethods))
+	for _, m := range rechargeMethods {
+		rechargeMethodMap[m.ID] = m
+	}
+
 	result := make([]gin.H, len(orders))
 	for i, o := range orders {
-		var method models.RechargeMethod
-		h.db.First(&method, o.MethodID)
+		method := rechargeMethodMap[o.MethodID]
 		result[i] = gin.H{
 			"id":          o.ID,
 			"method_name": method.Name,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:universal_io/io.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -275,6 +276,18 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                         : (chatDetailAsync.isLoading ? '加载中...' : '群组'),
                     style: TextStyle(fontSize: 15, color: Colors.grey),
                   ),
+                  // 在线人数（有数据时才展示）
+                  if (chatDetail != null && chatDetail.onlineCount > 0) ...
+                    [
+                      const SizedBox(height: 2),
+                      Text(
+                        '${chatDetail.onlineCount} 人在线',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.green.shade400,
+                        ),
+                      ),
+                    ],
                 ],
               ),
             ),
@@ -4045,7 +4058,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
             _controller.play();
           })
           .catchError((e) {
-            debugPrint('[Video] Init error: $e');
+            if (kDebugMode) debugPrint('[Video] Init error: $e');
           });
     _controller.addListener(() {
       if (mounted) setState(() {});

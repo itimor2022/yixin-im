@@ -279,7 +279,7 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
       state = items;
       _isInitialized = true;
     } catch (e) {
-      debugPrint('[Contact] Failed to load from cache: $e');
+      if (kDebugMode) debugPrint('[Contact] Failed to load from cache: $e');
     }
   }
 
@@ -417,7 +417,7 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
               await IsarService.instance.isar.userModels.putAll(models);
           });
         } catch (e) {
-          debugPrint('[Contact] Failed to cache contacts: $e');
+          if (kDebugMode) debugPrint('[Contact] Failed to cache contacts: $e');
         }
 
         // 联系人列表头像预取到本地，列表/聊天等处加载即秒开
@@ -429,7 +429,7 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
         AvatarCacheManager.prefetchUrls(avatarUrls);
       }
     } catch (e) {
-      debugPrint('[Contact] Load from server failed: $e');
+      if (kDebugMode) debugPrint('[Contact] Load from server failed: $e');
     }
   }
 
@@ -498,14 +498,14 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
               await IsarService.instance.isar.userModels.putAll(models);
           });
         } catch (e) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Contact] Failed to cache contacts in silent refresh: $e',
           );
         }
       }
     } catch (e) {
       // 静默刷新失败记录日志
-      debugPrint('[Contact] Silent refresh failed: $e');
+      if (kDebugMode) debugPrint('[Contact] Silent refresh failed: $e');
     }
   }
 

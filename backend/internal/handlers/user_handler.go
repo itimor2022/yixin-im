@@ -206,7 +206,7 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 
 	// 通知当前用户的其他设备同步个人资料更新
 	if h.hub != nil {
-		h.hub.SendToUser(userID, buildUserProfilePayload(user, "profile_updated", true))
+		h.hub.SendToUserCluster(userID, buildUserProfilePayload(user, "profile_updated", true))
 		h.broadcastUserProfileToRelatedUsers(user)
 	}
 
@@ -282,7 +282,7 @@ func (h *UserHandler) broadcastUserProfileToRelatedUsers(user models.User) {
 	for userUUID := range recipients {
 		userUUIDs = append(userUUIDs, userUUID)
 	}
-	h.hub.SendToUsers(userUUIDs, buildUserProfilePayload(user, "user_profile", false))
+	h.hub.SendToUsersCluster(userUUIDs, buildUserProfilePayload(user, "user_profile", false))
 }
 
 // SendPhoneBindCode 发送绑定手机号验证码（需登录）
@@ -397,13 +397,15 @@ func (h *UserHandler) BindPhone(c *gin.Context) {
 	}
 	_ = h.cache.DeleteVerifyCode(ctx, phone)
 	clearSMSVerifyAttempts(ctx, h.cache, "bind-phone:"+phone)
+	// ★ 清除手机绑定状态缓存，防止 RequirePhoneBind 中间件读到旧缓存
+	_ = h.cache.DeleteUserPhoneStatus(c.Request.Context(), userUUID)
 	h.db.Where("uuid = ?", userUUID).First(&user)
 	if h.hub != nil {
 		var phone any
 		if user.Phone != nil {
 			phone = *user.Phone
 		}
-		h.hub.SendToUser(userUUID, map[string]interface{}{
+		h.hub.SendToUserCluster(userUUID, map[string]interface{}{
 			"type": "profile_updated", "user_id": user.UUID,
 			"nickname": user.Nickname, "username": user.Username, "avatar": user.Avatar,
 			"bio": user.Bio, "emoji_avatar": user.EmojiAvatar, "nickname_color": user.NicknameColor,
@@ -593,7 +595,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		canSeeOnlineStatus = false
 	}
 	if canSeeOnlineStatus && h.hub != nil {
-		if h.hub.IsUserOnline(user.UUID) {
+		if h.hub.IsUserOnlineCluster(user.UUID) {
 			status = 1 // 在线
 		} else {
 			status = 0 // 离线
@@ -1944,7 +1946,7 @@ func (h *UserHandler) TerminateDevice(c *gin.Context) {
 
 	// 发送强制下线 WS 通知（在删除前发送，确保设备还在线能收到）
 	if h.hub != nil {
-		h.hub.SendToUser(userID, map[string]interface{}{
+		h.hub.SendToUserCluster(userID, map[string]interface{}{
 			"type":       "force_logout",
 			"device_ids": []string{deviceID},
 			"reason":     "device_terminated",
@@ -2010,7 +2012,7 @@ func (h *UserHandler) TerminateOtherDevices(c *gin.Context) {
 
 	// 发送强制下线 WS 通知（在删除前发送）
 	if h.hub != nil && len(otherDeviceIDs) > 0 {
-		h.hub.SendToUser(userID, map[string]interface{}{
+		h.hub.SendToUserCluster(userID, map[string]interface{}{
 			"type":       "force_logout",
 			"device_ids": otherDeviceIDs,
 			"reason":     "device_terminated",

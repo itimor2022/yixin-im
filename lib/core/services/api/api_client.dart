@@ -8,25 +8,53 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../utils/platform_utils.dart';
 
+/// 节点切换回调接口，解耦 ApiConfig 与 ApiClient 的循环依赖
+abstract class BaseUrlUpdatable {
+  void updateBaseUrl(String newServerUrl);
+}
+
+
 /// API 配置
 class ApiConfig {
-  // 本地开发环境
-  // static const String serverUrl = 'http://192.168.10.102:8080;
-  // static const String wsUrl = 'ws://192.168.10.102:8080/api/v1/ws';
-  // 线上环境
-  // 改这里即可切换：
-  // `true`  -> 安卓模拟器 `10.0.2.2`
-  // `false` -> 真机/局域网 `192.168.31.242`
-  static const bool useEmulatorServer = false;
-  static const String _serverHost = useEmulatorServer
-      ? '10.0.2.2'
-      : '192.168.31.242';
-  static const String _onlineServerUrl = 'https://im.yi-ruan.com';
-  static const String _onlineWsUrl = 'wss://im.yi-ruan.com/api/v1/ws';
+  // ── 编译期 Fallback（ServerDiscovery 未完成时使用） ──────
+  // 本地开发时可临时改这里，生产由 ServerDiscovery 动态写入
+  static const String _defaultServerUrl = 'https://vvs.unf58.icu';
 
-  static const String serverUrl = 'https://im.yi-ruan.com';
-  static const String wsUrl = 'wss://im.yi-ruan.com/api/v1/ws';
-  static String get baseUrl => '$serverUrl/api/v1';
+  // ── 运行时可变节点（由 ServerDiscovery.updateServer 写入）──
+  static String _serverUrl = _defaultServerUrl;
+
+  /// 当前生效的 serverUrl（只读）
+  static String get serverUrl => _serverUrl;
+
+  /// 当前生效的 wsUrl（自动跟随 serverUrl）
+  static String get wsUrl {
+    final base = _serverUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
+    return '$base/api/v1/ws';
+  }
+
+  static String get baseUrl => '$_serverUrl/api/v1';
+
+  /// 由 ServerDiscovery 调用，切换节点
+  /// 同时通知已创建的 ApiClient 实例更新 baseUrl
+  static void updateServer(String newServerUrl) {
+    final url = newServerUrl.endsWith('/')
+        ? newServerUrl.substring(0, newServerUrl.length - 1)
+        : newServerUrl;
+    if (url == _serverUrl) return;
+    if (kDebugMode) debugPrint('[ApiConfig] Server switched: \$_serverUrl → \$url');
+    _serverUrl = url;
+    // 通知所有已注册的 ApiClient 实例更新
+    for (final client in _registeredClients) {
+      client.updateBaseUrl(url);
+    }
+  }
+
+  // ── ApiClient 注册表（节点切换时批量更新）───────────────
+  static final List<BaseUrlUpdatable> _registeredClients = [];
+  static void registerClient(BaseUrlUpdatable c)   => _registeredClients.add(c);
+  static void unregisterClient(BaseUrlUpdatable c) => _registeredClients.remove(c);
 
   /// 获取完整的媒体 URL（处理相对路径，支持 http/https）
   static String getMediaUrl(String? url) {
@@ -112,7 +140,7 @@ class ApiResponse<T> {
 /// - 自动重试机制
 /// - 请求去重（避免重复的 GET 请求）
 /// - 请求节流（避免频繁重复请求）
-class ApiClient {
+class ApiClient implements BaseUrlUpdatable {
   late final Dio _dio;
   String? _token;
 
@@ -144,7 +172,7 @@ class ApiClient {
   late final Dio _authDio;
 
   ApiClient() {
-    debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
+    if (kDebugMode) debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
@@ -166,6 +194,8 @@ class ApiClient {
     );
 
     _setupInterceptors();
+    // 注册到 ApiConfig，节点切换时自动更新 baseUrl
+    ApiConfig.registerClient(this);
   }
 
   /// 设置拦截器
@@ -180,7 +210,7 @@ class ApiClient {
 
             // 检查是否有相同请求正在进行
             if (_pendingRequests.containsKey(key)) {
-              debugPrint('[API] Request dedup: waiting for $key');
+              if (kDebugMode) debugPrint('[API] Request dedup: waiting for $key');
               try {
                 final response = await _pendingRequests[key]!.future;
                 return handler.resolve(response);
@@ -239,7 +269,7 @@ class ApiClient {
           if (lastTime != null &&
               now.difference(lastTime) < _throttleDuration) {
             // 节流：请求太频繁，跳过
-            debugPrint('[API] Request throttled: $key');
+            if (kDebugMode) debugPrint('[API] Request throttled: $key');
             return handler.reject(
               DioException(
                 requestOptions: options,
@@ -262,17 +292,17 @@ class ApiClient {
           if (_token != null) {
             options.headers['Authorization'] = 'Bearer $_token';
           }
-          debugPrint('[API] ${options.method} ${options.uri}');
+          if (kDebugMode) debugPrint('[API] ${options.method} ${options.uri}');
           return handler.next(options);
         },
         onResponse: (response, handler) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[API] Response: ${response.statusCode} ${response.requestOptions.path}',
           );
           return handler.next(response);
         },
         onError: (error, handler) async {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[API] Error: ${error.message} URL: ${error.requestOptions.uri}',
           );
 
@@ -289,7 +319,7 @@ class ApiClient {
                 return handler.resolve(retryResponse);
               }
             } catch (e) {
-              debugPrint('[API] Retry failed: $e');
+              if (kDebugMode) debugPrint('[API] Retry failed: $e');
             }
             // 刷新失败，触发登出
             if (_lastRefreshFailureWasAuth) {
@@ -309,7 +339,7 @@ class ApiClient {
           if (_shouldRetryOnError(error)) {
             final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
             if (retryCount < 3) {
-              debugPrint(
+              if (kDebugMode) debugPrint(
                 '[API] Retrying request (attempt ${retryCount + 1}/3): ${error.requestOptions.path}',
               );
 
@@ -335,7 +365,7 @@ class ApiClient {
                 return handler.resolve(response);
               } catch (e) {
                 // 重试失败，继续传递错误
-                debugPrint('[API] Retry failed: $e');
+                if (kDebugMode) debugPrint('[API] Retry failed: $e');
               }
             }
           }
@@ -387,12 +417,12 @@ class ApiClient {
   Future<String?> _refreshTokenWithLock() async {
     // 如果正在刷新，等待现有刷新完成
     if (_refreshCompleter != null) {
-      debugPrint('[API] Waiting for existing token refresh...');
+      if (kDebugMode) debugPrint('[API] Waiting for existing token refresh...');
       return _refreshCompleter!.future;
     }
 
     if (_token == null || _isDisposed) {
-      debugPrint('[API] Cannot refresh: token is null or disposed');
+      if (kDebugMode) debugPrint('[API] Cannot refresh: token is null or disposed');
       return null;
     }
 
@@ -402,7 +432,7 @@ class ApiClient {
     _lastRefreshFailureWasAuth = true;
 
     try {
-      debugPrint('[API] Starting token refresh...');
+      if (kDebugMode) debugPrint('[API] Starting token refresh...');
 
       // 使用独立的 _authDio 实例，避免走拦截器导致死循环
       final response = await _authDio.post(
@@ -410,23 +440,23 @@ class ApiClient {
         options: Options(headers: {'Authorization': 'Bearer $_token'}),
       );
 
-      debugPrint('[API] Refresh response status: ${response.statusCode}');
+      if (kDebugMode) debugPrint('[API] Refresh response status: ${response.statusCode}');
 
       final newToken = _extractToken(response);
       if (newToken != null) {
         _token = newToken;
         await TokenStorage.saveToken(newToken);
-        debugPrint('[API] Token refreshed successfully');
+        if (kDebugMode) debugPrint('[API] Token refreshed successfully');
         try {
           onAccessTokenRefreshed?.call(newToken);
         } catch (e) {
-          debugPrint('[API] onAccessTokenRefreshed error: $e');
+          if (kDebugMode) debugPrint('[API] onAccessTokenRefreshed error: $e');
         }
         _refreshCompleter!.complete(newToken);
         return newToken;
       }
 
-      debugPrint('[API] Token refresh failed: could not extract token');
+      if (kDebugMode) debugPrint('[API] Token refresh failed: could not extract token');
       _lastRefreshFailureWasAuth = true;
       _refreshCompleter!.complete(null);
       return null;
@@ -437,13 +467,13 @@ class ApiClient {
           statusCode != null &&
           statusCode >= 400 &&
           statusCode < 500;
-      debugPrint('[API] Token refresh error: $e');
+      if (kDebugMode) debugPrint('[API] Token refresh error: $e');
       debugPrintStack(stackTrace: stackTrace, maxFrames: 5);
       _refreshCompleter!.complete(null);
       return null;
     } catch (e, stackTrace) {
       _lastRefreshFailureWasAuth = false;
-      debugPrint('[API] Token refresh error: $e');
+      if (kDebugMode) debugPrint('[API] Token refresh error: $e');
       debugPrintStack(stackTrace: stackTrace, maxFrames: 5);
       _refreshCompleter!.complete(null);
       return null;
@@ -481,7 +511,7 @@ class ApiClient {
   /// 触发登出
   void _triggerLogout() {
     if (_isDisposed) return;
-    debugPrint('[API] Token expired, triggering logout');
+    if (kDebugMode) debugPrint('[API] Token expired, triggering logout');
     _token = null;
     if (PlatformUtils.isWeb) {
       SharedPreferences.getInstance().then((prefs) {
@@ -506,8 +536,18 @@ class ApiClient {
   }
 
   /// 释放资源
+  /// 节点切换时由 ApiConfig.updateServer 调用
+  @override
+  void updateBaseUrl(String newServerUrl) {
+    final newBase = '$newServerUrl/api/v1';
+    _dio.options.baseUrl = newBase;
+    _authDio.options.baseUrl = newBase;
+    if (kDebugMode) debugPrint('[ApiClient] baseUrl updated: $newBase');
+  }
+
   void dispose() {
     _isDisposed = true;
+    ApiConfig.unregisterClient(this);
 
     // 清理正在进行的 token 刷新
     if (_refreshCompleter != null && !_refreshCompleter!.isCompleted) {
@@ -558,7 +598,7 @@ class ApiClient {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      debugPrint('[API] Unexpected error in GET $path: $e');
+      if (kDebugMode) debugPrint('[API] Unexpected error in GET $path: $e');
       return ApiResponse(code: -1, message: '发生未知错误');
     }
   }
@@ -584,7 +624,7 @@ class ApiClient {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      debugPrint('[API] Unexpected error in POST $path: $e');
+      if (kDebugMode) debugPrint('[API] Unexpected error in POST $path: $e');
       return ApiResponse(code: -1, message: '发生未知错误');
     }
   }
@@ -609,7 +649,7 @@ class ApiClient {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      debugPrint('[API] Unexpected error in PUT $path: $e');
+      if (kDebugMode) debugPrint('[API] Unexpected error in PUT $path: $e');
       return ApiResponse(code: -1, message: '发生未知错误');
     }
   }
@@ -634,7 +674,7 @@ class ApiClient {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      debugPrint('[API] Unexpected error in DELETE $path: $e');
+      if (kDebugMode) debugPrint('[API] Unexpected error in DELETE $path: $e');
       return ApiResponse(code: -1, message: '发生未知错误');
     }
   }
@@ -666,7 +706,7 @@ class ApiClient {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      debugPrint('[API] Unexpected error in UPLOAD $path: $e');
+      if (kDebugMode) debugPrint('[API] Unexpected error in UPLOAD $path: $e');
       return ApiResponse(code: -1, message: '发生未知错误');
     }
   }
@@ -912,7 +952,7 @@ class TokenStorage {
         _migrateKey(prefs, _userDataKey),
       ]);
     } catch (e) {
-      debugPrint('[TokenStorage] Migration error: $e');
+      if (kDebugMode) debugPrint('[TokenStorage] Migration error: $e');
     }
   }
 
