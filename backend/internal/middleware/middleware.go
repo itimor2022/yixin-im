@@ -381,7 +381,7 @@ func RateLimit(cache *cache.Cache) gin.HandlerFunc {
 		key := "ip:" + c.ClientIP()
 
 		// 每秒100个请求
-		allowed, err := cache.RateLimit(c.Request.Context(), key, 10000, time.Second)
+		allowed, err := cache.RateLimit(c.Request.Context(), key, 100000, time.Second)
 		if err != nil {
 			log.Printf("Rate limit error: %v", err)
 			c.Next()

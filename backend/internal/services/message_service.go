@@ -314,7 +314,7 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 
 	// 6. 发布到消息队列（异步处理推送等）
 	s.publishSyncMessage(msg)
-	s.publishUserChatSync(msg) // ★ 异步更新 user_chats 预览，不阻塞主流程
+	go s.publishUserChatSync(msg) // ★ 异步更新 user_chats 预览，不阻塞主流程
 
 	// 7. ★ 集群改造：群聊走 BroadcastToGroupCluster（Redis Set 在线成员，避免传全量uid）
 	// 私聊保持 SendToUsersCluster（成员少，直接推效率更高）

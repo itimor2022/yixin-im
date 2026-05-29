@@ -39,7 +39,7 @@ func NewMessageHandler(db *gorm.DB, msgService *services.MessageService, pushSer
 	}
 	// 启动异步批量写 chat_last_msg 的 worker
 	h.lastMsgCh = make(chan models.ChatLastMsg, 2000)
-	h.pushSem = make(chan struct{}, 50) // 最多50个并发推送goroutine
+	h.pushSem = make(chan struct{}, 2000) // 最多2000个并发推送goroutine
 	go h.runLastMsgFlushWorker()
 	return h
 }
