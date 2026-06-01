@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	gopprof "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"gaoranim/internal/cache"
 	"gaoranim/internal/config"
 	"gaoranim/internal/handlers"
+	"gaoranim/internal/storage"
 	"gaoranim/internal/middleware"
 	"gaoranim/internal/models"
 	"gaoranim/internal/mq"
@@ -23,8 +25,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"gaoranim/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -66,14 +72,48 @@ func main() {
 	go hub.Run()
 	log.Println("✓ WebSocket Hub started")
 
+	// ========== 集群模式初始化 ==========
+	// 通过环境变量 CLUSTER_ENABLED=true 或 config.yaml cluster.enabled=true 启用
+	// 单机部署时不设置此变量，自动降级为原有单机模式，零影响
+	clusterEnabled := os.Getenv("CLUSTER_ENABLED") == "true"
+	if !clusterEnabled && cfg.Cluster != nil {
+		clusterEnabled = cfg.Cluster.Enabled
+	}
+	if clusterEnabled {
+		// 支持通过 config.yaml 或环境变量覆盖 nodeID
+		if cfg.Cluster != nil && cfg.Cluster.NodeID != "" && os.Getenv("NODE_ID") == "" {
+			os.Setenv("NODE_ID", cfg.Cluster.NodeID)
+		}
+		clusterBridge := ws.NewClusterBridge(redisClient, hub)
+		hub.SetCluster(clusterBridge)
+
+		// 后台启动 Redis 订阅监听（含自动断线重连）
+		go clusterBridge.Start()
+
+		log.Printf("✓ Cluster mode enabled, nodeID: %s", ws.NodeID)
+	} else {
+		log.Printf("✓ Single-node mode, nodeID: %s", ws.NodeID)
+	}
+	// ========== 集群模式初始化结束 ==========
+
 	// 7. 初始化消息队列
 	mqService := mq.NewMessageQueue(redisClient, cfg.MessageQueue.Workers)
 
 	// 8. 初始化服务
 	msgService := services.NewMessageService(mongoDB, mysqlDB, cacheService, mqService, hub)
 	pushService := services.NewPushService(mysqlDB)
-	services.RegisterMessageQueueHandlers(mqService, pushService)
-	mqService.Start(mq.QueueMessageSend, mq.QueueMessageSync, mq.QueuePushNotify)
+	// ★ 初始化可推送用户集合到Redis（有效push_token的用户ID）
+	go func() {
+		var deviceUserIDs []string
+		mysqlDB.Table("user_devices").Where("push_token != ''").
+			Distinct("CAST(user_id AS CHAR)").Pluck("CAST(user_id AS CHAR)", &deviceUserIDs)
+		if len(deviceUserIDs) > 0 && cacheService != nil {
+			_ = cacheService.LoadPushableUsers(context.Background(), deviceUserIDs)
+			log.Printf("✓ Pushable users loaded: %d", len(deviceUserIDs))
+		}
+	}()
+	services.RegisterMessageQueueHandlers(mqService, pushService, mysqlDB)
+	mqService.Start(mq.QueueMessageSend, mq.QueueMessageSync, mq.QueuePushNotify, mq.QueueUserChatSync)
 	log.Println("✓ Message Queue started")
 
 	// 9. 启动钱包定时任务（红包/转账过期退款）
@@ -95,8 +135,30 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 12. 初始化路由
-	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService)
+	// 12. 初始化 S3 存储（可选，nil 时自动降级本地存储）
+	var s3Storage *storage.S3Storage
+	if cfg.S3.Enabled {
+		var s3Err error
+		s3Storage, s3Err = storage.NewS3Storage(storage.S3Config{
+			Region:          cfg.S3.Region,
+			Bucket:          cfg.S3.Bucket,
+			AccessKeyID:     cfg.S3.AccessKeyID,
+			SecretAccessKey: cfg.S3.SecretAccessKey,
+			CDNBaseURL:      cfg.S3.CDNBaseURL,
+			Endpoint:        cfg.S3.Endpoint,
+		})
+		if s3Err != nil {
+			log.Printf("⚠️  S3 初始化失败，降级本地存储: %v", s3Err)
+			s3Storage = nil
+		} else {
+			log.Println("✓ S3 storage connected")
+		}
+	} else {
+		log.Println("✓ S3 disabled，使用本地存储")
+	}
+
+	// 13. 初始化路由
+	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService, s3Storage)
 
 	// 13. 启动服务器
 	srv := &http.Server{
@@ -157,6 +219,9 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	if cfg.ConnMaxIdleTime > 0 {
+		sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime) // ★ 空闲连接超时释放，防止连接池膨胀
+	}
 
 	// 自动迁移
 	if err := db.AutoMigrate(
@@ -177,8 +242,8 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 		&models.MomentComment{},
 		&models.Topic{},
 		&models.BannedWord{},
-		&models.MomentBlock{},     // 屏蔽的动态
-		&models.UserMomentBlock{}, // 屏蔽用户的动态
+		&models.MomentBlock{},
+		&models.UserMomentBlock{},
 		// 举报
 		&models.Report{},
 		// 加入请求
@@ -197,7 +262,7 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 		&models.EmojiStorePackCatalog{},
 		&models.UserBlock{},
 		&models.UserSession{},
-		&models.UserPushSetting{}, // 用户推送设置
+		&models.UserPushSetting{},
 		&models.AccountDeletionAudit{},
 		&models.AccountDeletionExternalTask{},
 		// 音视频通话
@@ -230,6 +295,9 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	); err != nil {
 		return nil, err
 	}
+	if err := migrateUserChatLastMsgID(db); err != nil {
+		log.Printf("[Migration] migrate user_chats.last_msg_id failed: %v", err)
+	}
 	if err := ensureUserDeviceE2EEColumns(db); err != nil {
 		log.Printf("[E2EE] ensure user_devices columns failed: %v", err)
 	}
@@ -255,6 +323,35 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	loadHeartbeatTimeout(db)
 
 	return db, nil
+}
+
+func migrateUserChatLastMsgID(db *gorm.DB) error {
+	// GORM AutoMigrate 不会修改已有列类型
+	// last_msg_id 从 bigint 改为 varchar(36)，需手动 ALTER
+	type columnInfo struct {
+		ColumnType string
+	}
+	var col columnInfo
+	err := db.Raw(`
+		SELECT DATA_TYPE as column_type
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'user_chats'
+		  AND COLUMN_NAME = 'last_msg_id'
+	`).Scan(&col).Error
+	if err != nil {
+		return fmt.Errorf("query last_msg_id column type: %w", err)
+	}
+	// 如果已经是 varchar 就跳过
+	if col.ColumnType == "varchar" {
+		return nil
+	}
+	// 执行类型变更（bigint → varchar(36)），原有数字值清空为空字符串
+	if err := db.Exec(`ALTER TABLE user_chats MODIFY COLUMN last_msg_id varchar(36) NOT NULL DEFAULT ''`).Error; err != nil {
+		return fmt.Errorf("alter user_chats.last_msg_id: %w", err)
+	}
+	log.Printf("[Migration] user_chats.last_msg_id migrated bigint → varchar(36)")
+	return nil
 }
 
 func ensureUserDeviceE2EEColumns(db *gorm.DB) error {
@@ -341,8 +438,8 @@ func fixChatMemberRoles(db *gorm.DB) {
 		UPDATE chat_members cm
 		INNER JOIN chats c ON cm.chat_id = c.id
 		SET cm.role = 0
-		WHERE c.type IN (2, 3) 
-		AND cm.user_id != c.owner_id 
+		WHERE c.type IN (2, 3)
+		AND cm.user_id != c.owner_id
 		AND cm.role > 1
 	`)
 	if result.Error != nil {
@@ -352,7 +449,7 @@ func fixChatMemberRoles(db *gorm.DB) {
 	}
 }
 
-// backfillUserShortIDs 为历史数据补齐 short_id，保证“平台短号搜索”可用
+// backfillUserShortIDs 为历史数据补齐 short_id，保证"平台短号搜索"可用
 func backfillUserShortIDs(db *gorm.DB) {
 	const batchSize = 500
 	for {
@@ -546,26 +643,90 @@ func initMongoDB(cfg config.MongoDBConfig) (*mongo.Database, error) {
 		return nil, err
 	}
 
+	// ★ 为最近3个月+当前月的消息集合批量创建索引（幂等，已存在自动跳过）
+	db := client.Database(cfg.Database)
+	go func() {
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer indexCancel()
+		now := time.Now()
+		for i := 0; i <= 3; i++ {
+			t := now.AddDate(0, -i, 0)
+			collName := "messages_" + t.Format("200601")
+			coll := db.Collection(collName)
+			indexes := []mongo.IndexModel{
+				// 主查询：按会话倒序拉消息（最高频）
+				{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "seq", Value: -1}}},
+				// 时间范围查询
+				{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "created_at", Value: -1}}},
+				// 按发送者查询
+				{Keys: bson.D{{Key: "sender_id", Value: 1}, {Key: "created_at", Value: -1}}},
+				// 消息去重（FindMessageByClientID）
+				{Keys: bson.D{{Key: "msg_id", Value: 1}},
+					Options: options.Index().SetUnique(true).SetSparse(true)},
+				// 按已删过滤
+				{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "deleted_for", Value: 1}}},
+			}
+			if _, err := coll.Indexes().CreateMany(indexCtx, indexes); err != nil {
+				log.Printf("[MongoDB] 创建索引失败 collection=%s err=%v", collName, err)
+			} else {
+				log.Printf("[MongoDB] 索引确认完成 collection=%s", collName)
+			}
+		}
+	}()
+
 	return client.Database(cfg.Database), nil
 }
 
-// initRedis 初始化Redis连接
+// initRedis 初始化Redis连接（支持单机模式和 Sentinel 高可用模式）
 func initRedis(cfg config.RedisConfig) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         cfg.Addr,
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		PoolSize:     cfg.PoolSize,
-		MinIdleConns: cfg.MinIdleConns,
-	})
+	var client *redis.Client
+
+	if cfg.Mode == "sentinel" {
+		// Sentinel 模式：任意节点宕机自动切换主节点
+		masterName := cfg.MasterName
+		if masterName == "" {
+			masterName = "mymaster"
+		}
+		if len(cfg.SentinelAddrs) == 0 {
+			return nil, fmt.Errorf("sentinel mode requires sentinel_addrs")
+		}
+		log.Printf("[Redis] Sentinel 模式，master=%s，sentinels=%v", masterName, cfg.SentinelAddrs)
+		client = redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:    masterName,
+			SentinelAddrs: cfg.SentinelAddrs,
+			Password:      cfg.Password,
+			DB:            cfg.DB,
+			PoolSize:      cfg.PoolSize,
+			MinIdleConns:  cfg.MinIdleConns,
+			DialTimeout:   3 * time.Second,
+			ReadTimeout:   2 * time.Second,
+			WriteTimeout:  2 * time.Second,
+			// Sentinel 本身的连接选项
+			SentinelPassword: cfg.Password,
+		})
+	} else {
+		// 单机模式（默认）
+		log.Printf("[Redis] 单机模式，addr=%s", cfg.Addr)
+		client = redis.NewClient(&redis.Options{
+			Addr:         cfg.Addr,
+			Password:     cfg.Password,
+			DB:           cfg.DB,
+			PoolSize:     cfg.PoolSize,
+			MinIdleConns: cfg.MinIdleConns,
+			DialTimeout:  3 * time.Second,
+			ReadTimeout:  2 * time.Second,
+			WriteTimeout: 2 * time.Second,
+		})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("redis ping failed: %w", err)
 	}
 
+	log.Printf("[Redis] 连接成功")
 	return client, nil
 }
 
@@ -578,14 +739,61 @@ func setupRouter(
 	hub *ws.Hub,
 	msgService *services.MessageService,
 	pushService *services.PushService,
+	s3Storage *storage.S3Storage,
 ) *gin.Engine {
 	router := gin.New()
+
+	// ★ pprof 性能分析路由（仅内网可访问）
+	{
+		pprofGroup := router.Group("/debug/pprof")
+		pprofGroup.GET("/", gin.WrapF(gopprof.Index))
+		pprofGroup.GET("/cmdline", gin.WrapF(gopprof.Cmdline))
+		pprofGroup.GET("/profile", gin.WrapF(gopprof.Profile))
+		pprofGroup.GET("/symbol", gin.WrapF(gopprof.Symbol))
+		pprofGroup.POST("/symbol", gin.WrapF(gopprof.Symbol))
+		pprofGroup.GET("/trace", gin.WrapF(gopprof.Trace))
+		pprofGroup.GET("/allocs", gin.WrapH(gopprof.Handler("allocs")))
+		pprofGroup.GET("/block", gin.WrapH(gopprof.Handler("block")))
+		pprofGroup.GET("/goroutine", gin.WrapH(gopprof.Handler("goroutine")))
+		pprofGroup.GET("/heap", gin.WrapH(gopprof.Handler("heap")))
+		pprofGroup.GET("/mutex", gin.WrapH(gopprof.Handler("mutex")))
+		pprofGroup.GET("/threadcreate", gin.WrapH(gopprof.Handler("threadcreate")))
+	}
 
 	// 中间件
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
-	router.Use(middleware.CORS())
+	// CORS 白名单：BaseURL 不为空时限制来源，为空时（开发模式）放行所有
+	corsOrigins := []string{}
+	if cfg.Server.BaseURL != "" {
+		corsOrigins = append(corsOrigins, cfg.Server.BaseURL)
+	}
+	router.Use(middleware.CORS(corsOrigins...))
+
+	// 全局拦截 OPTIONS 预检请求，直接返回 204
+	// 必须在所有路由注册之前，确保 Cloudflare/CDN 转发的预检能得到正确响应
+	router.OPTIONS("/*path", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
 	router.Use(middleware.RateLimit(cache))
+
+	// ★ Prometheus 监控端点 — 仅允许内网 IP 访问
+	router.GET("/metrics", middleware.InternalOnly(), gin.WrapH(promhttp.Handler()))
+
+	// ★ HTTP 请求指标中间件
+	router.Use(func(c *gin.Context) {
+		if c.FullPath() == "/metrics" {
+			c.Next()
+			return
+		}
+		start := time.Now()
+		c.Next()
+		duration := time.Since(start).Seconds()
+		status := strconv.Itoa(c.Writer.Status())
+		metrics.HTTPRequestTotal.WithLabelValues(c.Request.Method, c.FullPath(), status).Inc()
+		metrics.HTTPRequestDuration.WithLabelValues(c.Request.Method, c.FullPath()).Observe(duration)
+	})
 
 	baseURL := strings.TrimSpace(cfg.Server.BaseURL)
 	if baseURL == "" {
@@ -615,17 +823,22 @@ func setupRouter(
 		c.Data(200, "text/plain; charset=utf-8", []byte("User-agent: *\nDisallow: /\n"))
 	})
 
-	// 健康检查
+	// ★ 健康检查（新增 node_id 字段，集群运维时可区分节点）
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"status": "ok",
-			"time":   time.Now().Unix(),
+			"status":  "ok",
+			"time":    time.Now().Unix(),
+			"node_id": ws.NodeID,
 		})
 	})
 
-	// WebSocket状态
+	// ★ WebSocket 状态（新增 node_id 和集群开关状态）
 	router.GET("/ws/stats", func(c *gin.Context) {
-		c.JSON(200, hub.GetStats())
+		stats := hub.GetStats()
+		// ★ stats 直接是 map[string]interface{}，追加集群信息后返回
+		stats["node_id"] = ws.NodeID
+		stats["cluster_enabled"] = hub.ClusterEnabled()
+		c.JSON(200, stats)
 	})
 
 	// API路由
@@ -661,15 +874,15 @@ func setupRouter(
 			auth.POST("/device-lock/verify", authHandler.VerifyDeviceLockLogin)
 			auth.POST("/qr-login/create", qrLoginHandler.Create)
 			auth.GET("/qr-login/status/:ticket", qrLoginHandler.GetStatus)
-			auth.POST("/qr-login/confirm/:ticket", middleware.Auth(cache), middleware.RequirePhoneBind(db), qrLoginHandler.Confirm)
+			auth.POST("/qr-login/confirm/:ticket", middleware.Auth(cache), middleware.RequirePhoneBind(db, cache), qrLoginHandler.Confirm)
 			auth.POST("/refresh", authHandler.RefreshToken)
 			auth.POST("/logout", middleware.Auth(cache), authHandler.Logout)
-			auth.POST("/change-password", middleware.Auth(cache), middleware.RequirePhoneBind(db), authHandler.ChangePassword)
+			auth.POST("/change-password", middleware.Auth(cache), middleware.RequirePhoneBind(db, cache), authHandler.ChangePassword)
 		}
 
 		// 需要认证的路由
 		authorized := api.Group("")
-		authorized.Use(middleware.Auth(cache), middleware.RequirePhoneBind(db))
+		authorized.Use(middleware.Auth(cache), middleware.RequirePhoneBind(db, cache))
 		{
 			// 用户
 			user := authorized.Group("/user")
@@ -685,36 +898,28 @@ func setupRouter(
 				user.POST("/password/change-by-code", userHandler.ChangePasswordByCode)
 				user.POST("/account/send-delete-code", middleware.WalletRateLimit(cache, 5, time.Minute), userHandler.SendDeleteAccountCode)
 				user.GET("/search", userHandler.SearchUsers)
-				user.GET("/search-all", userHandler.SearchAll) // 搜索用户和公开群组/频道
-				// 隐私设置（放在 /:id 前面避免路由冲突）
+				user.GET("/search-all", userHandler.SearchAll)
 				user.GET("/privacy", userHandler.GetPrivacySettings)
 				user.PUT("/privacy", userHandler.UpdatePrivacySettings)
 				user.POST("/two-step", userHandler.UpdateTwoStep)
-				// 表情商店云同步
 				user.GET("/emoji-store/catalog", userHandler.GetEmojiStoreCatalog)
 				user.GET("/emoji-store", userHandler.GetEmojiStore)
 				user.PUT("/emoji-store", userHandler.UpdateEmojiStore)
-				// 屏蔽用户
 				user.GET("/blocked", userHandler.GetBlockedUsers)
 				user.GET("/blocked/check", userHandler.CheckBlockStatus)
 				user.POST("/blocked", userHandler.BlockUser)
 				user.DELETE("/blocked/:blocked_id", userHandler.UnblockUser)
-				// 会话管理
 				user.GET("/sessions", userHandler.GetSessions)
 				user.POST("/sessions/terminate-others", userHandler.TerminateOtherSessions)
 				user.DELETE("/sessions/:session_id", userHandler.TerminateSession)
-				// 设备管理
 				user.GET("/devices", userHandler.GetDevices)
 				user.DELETE("/devices/:device_id", userHandler.TerminateDevice)
 				user.POST("/devices/terminate-others", userHandler.TerminateOtherDevices)
-				// 推送通知
 				user.POST("/push-token", userHandler.UpdatePushToken)
 				user.DELETE("/push-token", userHandler.DeletePushToken)
 				user.PUT("/push-settings", userHandler.UpdatePushSettings)
 				user.GET("/push-settings", userHandler.GetPushSettings)
-				// 账号管理
 				user.DELETE("/account", userHandler.DeleteAccount)
-				// 用户查询（放在最后）
 				user.GET("/:id", userHandler.GetUser)
 				user.GET("/:id/common-groups", userHandler.GetCommonGroups)
 			}
@@ -737,29 +942,23 @@ func setupRouter(
 				chat.POST("/:id/hide", chatHandler.HideChat)
 				chat.POST("/invite/:invite_link/join", chatHandler.JoinChatByInviteLink)
 				chat.POST("/:id/join", chatHandler.JoinChat)
-				// 加入请求审批
 				chat.GET("/:id/join-requests", chatHandler.GetJoinRequests)
 				chat.POST("/:id/join-requests/:request_id/review", chatHandler.ReviewJoinRequest)
-				// 禁言功能
 				chat.POST("/:id/mute", chatHandler.MuteMember)
 				chat.POST("/:id/unmute", chatHandler.UnmuteMember)
 				chat.GET("/:id/mute-status", chatHandler.GetMemberMuteStatus)
-				// 会话操作（置顶、静音、未读）
 				chat.POST("/:id/pin", chatHandler.TogglePin)
 				chat.POST("/:id/mute-chat", chatHandler.ToggleMuteChat)
 				chat.POST("/:id/toggle-unread", chatHandler.ToggleUnread)
-				// 消息置顶
 				pinHandler := handlers.NewPinHandler(db, mongoDB, hub)
 				chat.POST("/:id/pin-message", pinHandler.PinMessage)
 				chat.DELETE("/:id/pin-message", pinHandler.UnpinMessage)
 				chat.GET("/:id/pin-message", pinHandler.GetPinnedMessage)
-				// 群公告
 				announcementHandler := handlers.NewAnnouncementHandler(db, hub)
 				chat.GET("/:id/announcements", announcementHandler.GetAnnouncements)
 				chat.POST("/:id/announcements", announcementHandler.CreateAnnouncement)
 				chat.PUT("/:id/announcements/:announcement_id", announcementHandler.UpdateAnnouncement)
 				chat.DELETE("/:id/announcements/:announcement_id", announcementHandler.DeleteAnnouncement)
-				// 清空聊天记录和搜索消息
 				chat.POST("/:id/clear", chatHandler.ClearChatHistory)
 				chat.POST("/:id/clear-both", chatHandler.ClearChatHistoryForBoth)
 				chat.GET("/:id/search", chatHandler.SearchMessages)
@@ -770,19 +969,16 @@ func setupRouter(
 			{
 				msgHandler := handlers.NewMessageHandler(db, msgService, pushService, hub, cache)
 				message.GET("/e2ee/device-keys", msgHandler.GetChatDeviceKeys)
-				message.POST("/send", msgHandler.SendMessage)
+				message.POST("/send", middleware.UserRateLimit(cache, 10000, time.Second), msgHandler.SendMessage)
 				message.GET("/list", msgHandler.GetMessages)
 				message.POST("/revoke", msgHandler.RevokeMessage)
 				message.POST("/delete", msgHandler.DeleteMessage)
 				message.POST("/sync", msgHandler.SyncMessages)
 				message.POST("/read", msgHandler.MarkAsRead)
-				// 表情回复
 				message.POST("/reaction/add", msgHandler.AddReaction)
 				message.POST("/reaction/remove", msgHandler.RemoveReaction)
-				// 转发和编辑
 				message.POST("/forward", msgHandler.ForwardMessage)
 				message.POST("/edit", msgHandler.EditMessage)
-				// 媒体/文件/链接列表
 				message.GET("/media", msgHandler.GetChatMedia)
 				message.GET("/media/count", msgHandler.GetChatMediaCount)
 			}
@@ -820,37 +1016,33 @@ func setupRouter(
 				moment.GET("/:id/comments", momentHandler.GetComments)
 				moment.POST("/:id/comment", momentHandler.AddComment)
 				moment.GET("/topics/hot", momentHandler.GetHotTopics)
-				// 我的动态相关
 				moment.GET("/my/moments", momentHandler.GetMyMoments)
 				moment.GET("/my/likes", momentHandler.GetMyLikes)
 				moment.GET("/my/comments", momentHandler.GetMyComments)
-				moment.GET("/my/received-likes", momentHandler.GetReceivedLikes) // 收到的点赞
+				moment.GET("/my/received-likes", momentHandler.GetReceivedLikes)
 				moment.GET("/search", momentHandler.SearchMoments)
-				// 屏蔽相关
-				moment.POST("/:id/block", momentHandler.BlockMoment)        // 屏蔽动态
-				moment.POST("/block-user/:userId", momentHandler.BlockUser) // 屏蔽用户动态
+				moment.POST("/:id/block", momentHandler.BlockMoment)
+				moment.POST("/block-user/:userId", momentHandler.BlockUser)
 			}
 
 			// 音视频通话（声网）
 			call := authorized.Group("/call")
 			{
-				// 初始化声网服务
 				agoraService := services.NewAgoraService(
 					cfg.Agora.Enabled,
 					cfg.Agora.AppID,
 					cfg.Agora.AppCertificate,
 					cfg.Agora.TokenExpire,
 				)
-				// 将 ws.Hub 转为 services.WebSocketHub 接口
 				callHandler := handlers.NewCallHandler(db, agoraService, hub, msgService, pushService)
-				call.GET("/config", callHandler.GetAgoraConfig)  // 获取声网配置
-				call.GET("/token", callHandler.GetToken)         // 获取Token
-				call.POST("/create", callHandler.CreateCall)     // 发起通话
-				call.POST("/accept", callHandler.AcceptCall)     // 接听通话
-				call.POST("/reject", callHandler.RejectCall)     // 拒绝通话
-				call.POST("/end", callHandler.EndCall)           // 结束通话
-				call.DELETE("/:call_id", callHandler.CancelCall) // 取消通话
-				call.GET("/history", callHandler.GetCallHistory) // 通话记录
+				call.GET("/config", callHandler.GetAgoraConfig)
+				call.GET("/token", callHandler.GetToken)
+				call.POST("/create", callHandler.CreateCall)
+				call.POST("/accept", callHandler.AcceptCall)
+				call.POST("/reject", callHandler.RejectCall)
+				call.POST("/end", callHandler.EndCall)
+				call.DELETE("/:call_id", callHandler.CancelCall)
+				call.GET("/history", callHandler.GetCallHistory)
 			}
 
 			// 群会议（声网）
@@ -863,30 +1055,29 @@ func setupRouter(
 					cfg.Agora.TokenExpire,
 				)
 				meetingHandler := handlers.NewMeetingHandler(db, agoraService, hub, pushService, msgService)
-				meeting.POST("/create", meetingHandler.CreateMeeting) // 创建会议
-				meeting.POST("/join", meetingHandler.JoinMeeting)     // 加入会议
+				meeting.POST("/create", meetingHandler.CreateMeeting)
+				meeting.POST("/join", meetingHandler.JoinMeeting)
 				meeting.POST("/join-request/review", meetingHandler.ReviewJoinRequest)
-				meeting.POST("/title", meetingHandler.UpdateMeetingTitle)   // 修改会议名称
-				meeting.POST("/leave", meetingHandler.LeaveMeeting)         // 离开会议
-				meeting.POST("/invite", meetingHandler.InviteMembers)       // 邀请成员
-				meeting.POST("/end", meetingHandler.EndMeeting)             // 结束会议
-				meeting.POST("/member/mute", meetingHandler.MuteMember)     // 会中静音成员
-				meeting.POST("/member/kick", meetingHandler.KickMember)     // 会中移出成员
-				meeting.POST("/host/transfer", meetingHandler.TransferHost) // 转移主持人
-				meeting.GET("/token", meetingHandler.GetToken)              // 获取会议 Token
-				meeting.GET("/detail", meetingHandler.GetMeetingDetail)     // 会议详情
+				meeting.POST("/title", meetingHandler.UpdateMeetingTitle)
+				meeting.POST("/leave", meetingHandler.LeaveMeeting)
+				meeting.POST("/invite", meetingHandler.InviteMembers)
+				meeting.POST("/end", meetingHandler.EndMeeting)
+				meeting.POST("/member/mute", meetingHandler.MuteMember)
+				meeting.POST("/member/kick", meetingHandler.KickMember)
+				meeting.POST("/host/transfer", meetingHandler.TransferHost)
+				meeting.GET("/token", meetingHandler.GetToken)
+				meeting.GET("/detail", meetingHandler.GetMeetingDetail)
 				meeting.GET("/active", meetingHandler.GetActiveMeeting)
 			}
 
 			// 文件上传
 			upload := authorized.Group("/upload")
 			{
-				// 优先使用配置的 BaseURL，如果未配置则使用本地地址
 				baseURL := cfg.Server.BaseURL
 				if baseURL == "" {
 					baseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
 				}
-				uploadHandler := handlers.NewUploadHandler(db, uploadDir, baseURL)
+				uploadHandler := handlers.NewUploadHandler(db, uploadDir, baseURL, s3Storage)
 				upload.POST("/image", uploadHandler.UploadImage)
 				upload.POST("/images", uploadHandler.UploadMultipleImages)
 				upload.POST("/video", uploadHandler.UploadVideo)
@@ -900,40 +1091,37 @@ func setupRouter(
 			{
 				walletHandler := handlers.NewWalletHandler(db, hub, msgService)
 				membershipHandler := handlers.NewMembershipHandler(db)
-				wrl5 := middleware.WalletRateLimit(cache, 5, time.Minute)   // 5次/分钟
-				wrl10 := middleware.WalletRateLimit(cache, 10, time.Minute) // 10次/分钟
+				wrl5 := middleware.WalletRateLimit(cache, 5, time.Minute)
+				wrl10 := middleware.WalletRateLimit(cache, 10, time.Minute)
 				wallet.GET("/online-pay/options", onlinePayHandler.Options)
 				wallet.POST("/online-pay/create", wrl5, onlinePayHandler.Create)
 				wallet.GET("/online-pay/order/:out_trade_no", onlinePayHandler.QueryOrder)
-				wallet.GET("", walletHandler.GetWallet)                                 // 获取钱包信息
-				wallet.GET("/membership", membershipHandler.GetMyMembership)            // 获取我的会员信息
-				wallet.GET("/membership/plans", membershipHandler.ListPlans)            // 获取会员套餐
-				wallet.POST("/membership/purchase", wrl5, membershipHandler.Purchase)   // 购买会员
-				wallet.GET("/settings", walletHandler.GetWalletSettings)                // 获取钱包设置
-				wallet.GET("/recharge-methods", walletHandler.GetRechargeMethods)       // 获取充值方式列表
-				wallet.POST("/recharge-order", wrl5, walletHandler.CreateRechargeOrder) // 提交充值订单
-				wallet.GET("/recharge-orders", walletHandler.GetRechargeOrders)         // 查询充值订单
-				wallet.POST("/pay-password", walletHandler.SetPayPassword)              // 设置/修改支付密码
-				wallet.POST("/verify-password", walletHandler.VerifyPayPassword)        // 验证支付密码
-				wallet.GET("/transactions", walletHandler.GetTransactions)              // 交易记录
-				wallet.POST("/recharge", wrl5, walletHandler.Recharge)                  // 充值（限流）
-				// 红包
-				wallet.POST("/red-packet/send", wrl5, walletHandler.SendRedPacket)        // 发红包（限流）
-				wallet.POST("/red-packet/:id/claim", wrl10, walletHandler.ClaimRedPacket) // 领取红包（限流）
-				wallet.GET("/red-packet/:id", walletHandler.GetRedPacket)                 // 红包详情
-				// 转账
-				wallet.POST("/transfer/send", wrl5, walletHandler.SendTransfer)         // 发起转账（限流）
-				wallet.POST("/transfer/:id/accept", wrl5, walletHandler.AcceptTransfer) // 接收转账（限流）
-				wallet.POST("/transfer/:id/reject", wrl5, walletHandler.RejectTransfer) // 拒收转账（限流）
-				wallet.GET("/transfer/:id", walletHandler.GetTransfer)                  // 转账详情
-				// 提现
-				wallet.GET("/withdraw/methods", walletHandler.GetWithdrawMethods)   // 获取提现方式
-				wallet.POST("/withdraw", wrl5, walletHandler.CreateWithdrawRequest) // 发起提现（限流）
+				wallet.GET("", walletHandler.GetWallet)
+				wallet.GET("/membership", membershipHandler.GetMyMembership)
+				wallet.GET("/membership/plans", membershipHandler.ListPlans)
+				wallet.POST("/membership/purchase", wrl5, membershipHandler.Purchase)
+				wallet.GET("/settings", walletHandler.GetWalletSettings)
+				wallet.GET("/recharge-methods", walletHandler.GetRechargeMethods)
+				wallet.POST("/recharge-order", wrl5, walletHandler.CreateRechargeOrder)
+				wallet.GET("/recharge-orders", walletHandler.GetRechargeOrders)
+				wallet.POST("/pay-password", walletHandler.SetPayPassword)
+				wallet.POST("/verify-password", walletHandler.VerifyPayPassword)
+				wallet.GET("/transactions", walletHandler.GetTransactions)
+				wallet.POST("/recharge", wrl5, walletHandler.Recharge)
+				wallet.POST("/red-packet/send", wrl5, walletHandler.SendRedPacket)
+				wallet.POST("/red-packet/:id/claim", wrl10, walletHandler.ClaimRedPacket)
+				wallet.GET("/red-packet/:id", walletHandler.GetRedPacket)
+				wallet.POST("/transfer/send", wrl5, walletHandler.SendTransfer)
+				wallet.POST("/transfer/:id/accept", wrl5, walletHandler.AcceptTransfer)
+				wallet.POST("/transfer/:id/reject", wrl5, walletHandler.RejectTransfer)
+				wallet.GET("/transfer/:id", walletHandler.GetTransfer)
+				wallet.GET("/withdraw/methods", walletHandler.GetWithdrawMethods)
+				wallet.POST("/withdraw", wrl5, walletHandler.CreateWithdrawRequest)
 			}
 		}
 
 		// WebSocket连接
-		api.GET("/ws", middleware.Auth(cache), middleware.RequirePhoneBind(db), handlers.HandleWebSocket(hub, cfg.WebSocket, db))
+		api.GET("/ws", middleware.Auth(cache), middleware.RequirePhoneBind(db, cache), handlers.HandleWebSocket(hub, cfg.WebSocket, db, corsOrigins...))
 
 		// ========== 官方客服独立后台 API ==========
 		serviceAdminHandler := handlers.NewServiceAdminHandler(db, cache, smsSvc)
@@ -962,30 +1150,24 @@ func setupRouter(
 		{
 			adminHandler := handlers.NewAdminHandler(db)
 
-			// 管理员登录（无需认证）
 			adminAPI.POST("/login", adminHandler.Login)
 
-			// 需要管理员认证的路由
 			adminAuth := adminAPI.Group("")
 			adminAuth.Use(middleware.AdminAuth())
 			{
-				// 当前管理员
 				adminAuth.GET("/me", adminHandler.GetCurrentAdmin)
 				adminAuth.PUT("/password", adminHandler.UpdatePassword)
 
-				// 管理员管理（仅超级管理员）
 				adminAuth.GET("/list", middleware.RequireRole("super_admin"), adminHandler.ListAdmins)
 				adminAuth.POST("/create", middleware.RequireRole("super_admin"), adminHandler.CreateAdmin)
 				adminAuth.DELETE("/:id", middleware.RequireRole("super_admin"), adminHandler.DeleteAdmin)
 
-				// 用户管理
 				userMgmt := adminAuth.Group("/users")
 				{
 					userMgmtHandler := handlers.NewUserMgmtHandler(db, hub, cache, pushService)
 					userMgmt.GET("/list", userMgmtHandler.ListUsers)
 					userMgmt.GET("/stats", userMgmtHandler.GetUserStats)
 					userMgmt.GET("/:id/diagnostics", userMgmtHandler.GetUserDiagnostics)
-					// 写操作需要非演示管理员权限
 					userMgmt.PUT("/:id", middleware.RequireWriteRole(), userMgmtHandler.UpdateUser)
 					userMgmt.PUT("/:id/status", middleware.RequireWriteRole(), userMgmtHandler.UpdateUserStatus)
 					userMgmt.POST("/:id/kick", middleware.RequireWriteRole(), userMgmtHandler.KickUser)
@@ -997,7 +1179,6 @@ func setupRouter(
 					userMgmt.POST("/:id/test-push", middleware.RequireWriteRole(), userMgmtHandler.SendTestPush)
 				}
 
-				// 会话管理
 				chatMgmt := adminAuth.Group("/chats")
 				{
 					chatMgmtHandler := handlers.NewChatMgmtHandler(db)
@@ -1007,7 +1188,6 @@ func setupRouter(
 					chatMgmt.GET("/stats", chatMgmtHandler.GetChatStats)
 					chatMgmt.GET("/:id", chatMgmtHandler.GetChatDetail)
 					chatMgmt.GET("/:id/members", chatMgmtHandler.GetChatMembers)
-					// 写操作需要非演示管理员权限
 					chatMgmt.PUT("/:id/status", middleware.RequireWriteRole(), chatMgmtHandler.UpdateChatStatus)
 					chatMgmt.POST("/:id/ban", middleware.RequireWriteRole(), chatMgmtHandler.BanChat)
 					chatMgmt.POST("/:id/unban", middleware.RequireWriteRole(), chatMgmtHandler.UnbanChat)
@@ -1016,7 +1196,6 @@ func setupRouter(
 					chatMgmt.DELETE("/:id/members/:member_id", middleware.RequireWriteRole(), chatMgmtHandler.RemoveChatMember)
 				}
 
-				// 统计数据
 				stats := adminAuth.Group("/stats")
 				{
 					statsHandler := handlers.NewStatsHandler(db, mongoDB, cache)
@@ -1026,84 +1205,71 @@ func setupRouter(
 					stats.GET("/messages", statsHandler.GetMessageStats)
 				}
 
-				// 动态管理
 				momentMgmt := adminAuth.Group("/moments")
 				{
 					momentMgmtHandler := handlers.NewMomentMgmtHandler(db)
 					momentMgmt.GET("/list", momentMgmtHandler.ListMoments)
 					momentMgmt.GET("/stats", momentMgmtHandler.GetMomentStats)
-					// 写操作需要非演示管理员权限
 					momentMgmt.PUT("/:id/status", middleware.RequireWriteRole(), momentMgmtHandler.UpdateMomentStatus)
 					momentMgmt.DELETE("/:id", middleware.RequireWriteRole(), momentMgmtHandler.DeleteMoment)
 				}
 
-				// 话题管理
 				topicMgmt := adminAuth.Group("/topics")
 				{
 					momentMgmtHandler := handlers.NewMomentMgmtHandler(db)
 					topicMgmt.GET("/list", momentMgmtHandler.ListTopics)
-					// 写操作需要非演示管理员权限
 					topicMgmt.POST("/create", middleware.RequireWriteRole(), momentMgmtHandler.CreateTopic)
 					topicMgmt.PUT("/:id", middleware.RequireWriteRole(), momentMgmtHandler.UpdateTopic)
 					topicMgmt.DELETE("/:id", middleware.RequireWriteRole(), momentMgmtHandler.DeleteTopic)
 				}
 
-				// 违禁词管理
 				bannedMgmt := adminAuth.Group("/banned-words")
 				{
 					momentMgmtHandler := handlers.NewMomentMgmtHandler(db)
 					bannedMgmt.GET("/list", momentMgmtHandler.ListBannedWords)
-					// 写操作需要非演示管理员权限
 					bannedMgmt.POST("/create", middleware.RequireWriteRole(), momentMgmtHandler.CreateBannedWord)
 					bannedMgmt.POST("/batch", middleware.RequireWriteRole(), momentMgmtHandler.BatchCreateBannedWords)
 					bannedMgmt.PUT("/:id", middleware.RequireWriteRole(), momentMgmtHandler.UpdateBannedWord)
 					bannedMgmt.DELETE("/:id", middleware.RequireWriteRole(), momentMgmtHandler.DeleteBannedWord)
 				}
 
-				// 举报管理
 				reportMgmt := adminAuth.Group("/reports")
 				{
 					reportHandler := handlers.NewReportHandler(db)
 					reportMgmt.GET("/list", reportHandler.ListReports)
 					reportMgmt.GET("/stats", reportHandler.GetReportStats)
-					// 写操作需要非演示管理员权限
 					reportMgmt.POST("/:id/process", middleware.RequireWriteRole(), reportHandler.ProcessReport)
 					reportMgmt.DELETE("/:id", middleware.RequireWriteRole(), reportHandler.DeleteReport)
 				}
 
-				// 系统设置
 				settingMgmt := adminAuth.Group("/settings")
 				{
 					settingHandler := handlers.NewSettingHandler(db, pushService)
 					settingHandler.SetSMSService(smsSvc)
+					settingHandler.SetCache(cache) // ★ 注入缓存，系统设置变更时主动失效
 					smsSettingsHandler := handlers.NewSmsSettingsHandler(db, cfg, smsSvc)
 					discoverHandler := handlers.NewDiscoverHandler(db, hub)
 					baseURL := cfg.Server.BaseURL
 					if baseURL == "" {
 						baseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
 					}
-					uploadHandler := handlers.NewUploadHandler(db, uploadDir, baseURL)
+					uploadHandler := handlers.NewUploadHandler(db, uploadDir, baseURL, s3Storage)
 					settingMgmt.GET("", settingHandler.GetAllSettings)
 					settingMgmt.GET("/sms-gateway/config", smsSettingsHandler.GetSmsGatewayConfig)
 					settingMgmt.PUT("/sms-gateway/config", middleware.RequireWriteRole(), smsSettingsHandler.SaveSmsGatewayConfig)
 					settingMgmt.GET("/:key", settingHandler.GetSetting)
-					// 写操作需要非演示管理员权限
 					settingMgmt.PUT("", middleware.RequireWriteRole(), settingHandler.UpdateSettings)
-					// 官方用户管理
 					settingMgmt.GET("/official-users", settingHandler.GetOfficialUsers)
 					settingMgmt.GET("/official-users/:id/invitees", settingHandler.GetOfficialUserInvitees)
 					settingMgmt.POST("/official-users", middleware.RequireWriteRole(), settingHandler.AddOfficialUser)
 					settingMgmt.PUT("/official-users/:id", middleware.RequireWriteRole(), settingHandler.UpdateOfficialUser)
 					settingMgmt.DELETE("/official-users/:id", middleware.RequireWriteRole(), settingHandler.RemoveOfficialUser)
-					// 官方群组管理
 					settingMgmt.GET("/official-groups", settingHandler.GetOfficialGroups)
 					settingMgmt.POST("/official-groups", middleware.RequireWriteRole(), settingHandler.AddOfficialGroup)
 					settingMgmt.DELETE("/official-groups/:id", middleware.RequireWriteRole(), settingHandler.RemoveOfficialGroup)
-					// 官方频道管理
 					settingMgmt.GET("/official-channels", settingHandler.GetOfficialChannels)
 					settingMgmt.POST("/official-channels", middleware.RequireWriteRole(), settingHandler.AddOfficialChannel)
 					settingMgmt.DELETE("/official-channels/:id", middleware.RequireWriteRole(), settingHandler.RemoveOfficialChannel)
-					// 发现页入口管理
 					settingMgmt.GET("/discover-items", discoverHandler.ListDiscoverItems)
 					settingMgmt.POST("/discover-items", middleware.RequireWriteRole(), discoverHandler.CreateDiscoverItem)
 					settingMgmt.PUT("/discover-items/:id", middleware.RequireWriteRole(), discoverHandler.UpdateDiscoverItem)
@@ -1111,7 +1277,6 @@ func setupRouter(
 					settingMgmt.POST("/discover-items/upload-icon", middleware.RequireWriteRole(), uploadHandler.UploadDiscoverIcon)
 				}
 
-				// 热更新补丁管理
 				hotUpdateMgmt := adminAuth.Group("/hot-update")
 				{
 					hotUpdateHandler := handlers.NewHotUpdateHandler(db)
@@ -1126,13 +1291,11 @@ func setupRouter(
 					hotUpdateMgmt.POST("/patches/:id/rollback", middleware.RequireWriteRole(), hotUpdateHandler.RollbackPatch)
 				}
 
-				// 全局公告广播
 				broadcastHandler := handlers.NewBroadcastHandler(hub, db)
 				adminAuth.POST("/broadcast", middleware.RequireWriteRole(), broadcastHandler.SendBroadcast)
 				adminAuth.GET("/broadcast/list", broadcastHandler.ListBroadcasts)
 				adminAuth.DELETE("/broadcast/clear", middleware.RequireWriteRole(), broadcastHandler.ClearBroadcasts)
 
-				// 表情商店目录管理
 				emojiStoreAdmin := adminAuth.Group("/emoji-store")
 				{
 					emojiStoreAdminHandler := handlers.NewEmojiStoreAdminHandler(db)
@@ -1143,56 +1306,45 @@ func setupRouter(
 					emojiStoreAdmin.DELETE("/packs/:id", middleware.RequireWriteRole(), emojiStoreAdminHandler.DeletePack)
 				}
 
-				// 消息搜索
 				msgAdminHandler := handlers.NewMessageAdminHandler(db, mongoDB)
 				adminAuth.GET("/messages/search", msgAdminHandler.SearchMessages)
 
-				// 钱包管理
 				walletMgmt := adminAuth.Group("/wallet")
 				{
 					walletAdminHandler := handlers.NewWalletAdminHandler(db, cfg, onlinePaySvc)
 					membershipAdminHandler := handlers.NewMembershipAdminHandler(db)
 					walletMgmt.GET("/stats", walletAdminHandler.GetWalletStats)
-					// 用户钱包管理
-					walletMgmt.GET("/users", walletAdminHandler.ListUserWallets)                                                                 // 获取钱包用户列表
-					walletMgmt.GET("/user/:user_id", walletAdminHandler.GetUserWallet)                                                           // 查看用户钱包
-					walletMgmt.GET("/user/:user_id/transactions", walletAdminHandler.GetUserTransactions)                                        // 查看用户资金记录
-					walletMgmt.POST("/user/:user_id/balance", middleware.RequireWriteRole(), walletAdminHandler.UpdateUserBalance)               // 修改用户余额
-					walletMgmt.POST("/user/:user_id/reset-pay-password", middleware.RequireWriteRole(), walletAdminHandler.ResetUserPayPassword) // 重置支付密码
-					walletMgmt.POST("/user/:user_id/clear-pay-password", middleware.RequireWriteRole(), walletAdminHandler.ClearUserPayPassword) // 清除支付密码
-					walletMgmt.POST("/user/:user_id/lock", middleware.RequireWriteRole(), walletAdminHandler.LockUserWallet)                     // 锁定钱包
-					walletMgmt.POST("/user/:user_id/unlock", middleware.RequireWriteRole(), walletAdminHandler.UnlockUserWallet)                 // 解锁钱包
-					// 提现申请管理
+					walletMgmt.GET("/users", walletAdminHandler.ListUserWallets)
+					walletMgmt.GET("/user/:user_id", walletAdminHandler.GetUserWallet)
+					walletMgmt.GET("/user/:user_id/transactions", walletAdminHandler.GetUserTransactions)
+					walletMgmt.POST("/user/:user_id/balance", middleware.RequireWriteRole(), walletAdminHandler.UpdateUserBalance)
+					walletMgmt.POST("/user/:user_id/reset-pay-password", middleware.RequireWriteRole(), walletAdminHandler.ResetUserPayPassword)
+					walletMgmt.POST("/user/:user_id/clear-pay-password", middleware.RequireWriteRole(), walletAdminHandler.ClearUserPayPassword)
+					walletMgmt.POST("/user/:user_id/lock", middleware.RequireWriteRole(), walletAdminHandler.LockUserWallet)
+					walletMgmt.POST("/user/:user_id/unlock", middleware.RequireWriteRole(), walletAdminHandler.UnlockUserWallet)
 					walletMgmt.GET("/withdraw/list", walletAdminHandler.ListWithdrawRequests)
 					walletMgmt.GET("/withdraw/stats", walletAdminHandler.GetWithdrawStats)
 					walletMgmt.POST("/withdraw/:id/review", middleware.RequireWriteRole(), walletAdminHandler.ReviewWithdrawRequest)
-					// 提现方式管理
 					walletMgmt.GET("/methods", walletAdminHandler.ListWithdrawMethods)
 					walletMgmt.POST("/methods", middleware.RequireWriteRole(), walletAdminHandler.CreateWithdrawMethod)
 					walletMgmt.PUT("/methods/:id", middleware.RequireWriteRole(), walletAdminHandler.UpdateWithdrawMethod)
 					walletMgmt.DELETE("/methods/:id", middleware.RequireWriteRole(), walletAdminHandler.DeleteWithdrawMethod)
-					// 红包记录管理
 					walletMgmt.GET("/red-packets", walletAdminHandler.ListRedPackets)
 					walletMgmt.GET("/red-packets/:id", walletAdminHandler.GetRedPacketDetail)
 					walletMgmt.POST("/red-packets/:id/refund", middleware.RequireWriteRole(), walletAdminHandler.RefundRedPacket)
-					// 转账记录管理
 					walletMgmt.GET("/transfers", walletAdminHandler.ListTransfers)
 					walletMgmt.GET("/transfers/:id", walletAdminHandler.GetTransferDetail)
 					walletMgmt.POST("/transfers/:id/refund", middleware.RequireWriteRole(), walletAdminHandler.RefundTransfer)
-					// 钱包设置
 					walletMgmt.GET("/settings", walletAdminHandler.GetWalletSettings)
 					walletMgmt.POST("/settings", middleware.RequireWriteRole(), walletAdminHandler.SaveWalletSettings)
 					walletMgmt.GET("/payment-config", walletAdminHandler.GetPaymentGatewayConfig)
 					walletMgmt.PUT("/payment-config", middleware.RequireWriteRole(), walletAdminHandler.SavePaymentGatewayConfig)
-					// 充值方式管理
 					walletMgmt.GET("/recharge-methods", walletAdminHandler.ListRechargeMethods)
 					walletMgmt.POST("/recharge-methods", middleware.RequireWriteRole(), walletAdminHandler.CreateRechargeMethod)
 					walletMgmt.PUT("/recharge-methods/:id", middleware.RequireWriteRole(), walletAdminHandler.UpdateRechargeMethod)
 					walletMgmt.DELETE("/recharge-methods/:id", middleware.RequireWriteRole(), walletAdminHandler.DeleteRechargeMethod)
-					// 人工充值审核
 					walletMgmt.GET("/recharge-orders", walletAdminHandler.ListRechargeOrders)
 					walletMgmt.POST("/recharge-orders/:id/review", middleware.RequireWriteRole(), walletAdminHandler.ReviewRechargeOrder)
-					// 会员管理
 					walletMgmt.GET("/membership/summary", membershipAdminHandler.GetSummary)
 					walletMgmt.GET("/membership/plans", membershipAdminHandler.ListPlans)
 					walletMgmt.POST("/membership/plans", middleware.RequireWriteRole(), membershipAdminHandler.SavePlan)
@@ -1202,7 +1354,6 @@ func setupRouter(
 					walletMgmt.GET("/membership/orders", membershipAdminHandler.ListOrders)
 				}
 
-				// 通话记录管理
 				callMgmt := adminAuth.Group("/calls")
 				{
 					callAdminHandler := handlers.NewCallAdminHandler(db)
@@ -1216,7 +1367,6 @@ func setupRouter(
 			}
 		}
 
-		// App端公开接口（无需管理员权限）
 		appAPI := api.Group("/app")
 		{
 			settingHandler := handlers.NewSettingHandler(db)
@@ -1234,9 +1384,8 @@ func setupRouter(
 			appAPI.GET("/privacy-policy", settingHandler.GetPrivacyPolicy)
 		}
 
-		// 用户端需要认证的系统相关接口
 		userSettings := api.Group("/user-settings")
-		userSettings.Use(middleware.Auth(cache), middleware.RequirePhoneBind(db))
+		userSettings.Use(middleware.Auth(cache), middleware.RequirePhoneBind(db, cache))
 		{
 			settingHandler := handlers.NewSettingHandler(db)
 			userSettings.POST("/sync-official-contacts", settingHandler.SyncOfficialContacts)

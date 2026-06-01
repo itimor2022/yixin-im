@@ -146,7 +146,7 @@ func (h *ContactHandler) GetContacts(c *gin.Context) {
 		if onlineVisibility[row.UserID] {
 			lastSeen = row.LastSeen
 			if h.hub != nil {
-				isOnline = h.hub.IsUserOnline(row.UUID)
+				isOnline = h.hub.IsUserOnlineCluster(row.UUID)
 			} else {
 				isOnline = isUserOnline(h.db, row.UserID)
 			}

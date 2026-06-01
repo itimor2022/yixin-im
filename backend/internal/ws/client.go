@@ -17,7 +17,7 @@ import (
 const (
 	writeWait        = 10 * time.Second
 	maxMessageSize   = 65536
-	sendBufferSize   = 512
+	sendBufferSize   = 4096
 	chatAuthCacheTTL = 2 * time.Second
 )
 
@@ -140,6 +140,12 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+			// ========== 新增：心跳时续期 Redis 路由 TTL ==========
+			// 保持用户路由在 Redis 中不过期，防止长连接被误判为离线
+			if c.hub != nil && c.hub.cluster != nil {
+				c.hub.cluster.RefreshUserTTL(c.UserID)
+			}
+			// ========== 新增结束 ==========
 		}
 	}
 }
@@ -381,6 +387,13 @@ func (c *Client) handleSubscribe(data json.RawMessage) {
 		c.hub.SubscribeChat(c, chatID)
 		c.authResultCache[chatID] = true
 		c.authCheckedAt[chatID] = time.Now()
+
+		// ========== 新增：订阅会话时同步加入集群群在线成员 ==========
+		// 让其他节点也能感知到该用户在此群在线
+		if c.hub.cluster != nil {
+			c.hub.cluster.JoinGroupOnlineOne(c.UserID, chatID)
+		}
+		// ========== 新增结束 ==========
 	}
 	for _, chatID := range rejectedChatIDs {
 		c.authResultCache[chatID] = false
@@ -405,6 +418,12 @@ func (c *Client) handleUnsubscribe(data json.RawMessage) {
 		c.hub.UnsubscribeChat(c, chatID)
 		delete(c.authResultCache, chatID)
 		delete(c.authCheckedAt, chatID)
+
+		// ========== 新增：取消订阅时同步退出集群群在线成员 ==========
+		if c.hub.cluster != nil {
+			c.hub.cluster.LeaveGroupOnlineOne(c.UserID, chatID)
+		}
+		// ========== 新增结束 ==========
 	}
 
 	c.sendSuccess("unsubscribed", map[string]interface{}{
@@ -467,14 +486,17 @@ func (c *Client) handleTyping(data json.RawMessage) {
 		}
 	}
 
-	// 广播给会话其他成员
-	c.hub.SendToChat(req.ChatID, map[string]interface{}{
+	// ========== 改动：typing 广播改用集群模式，跨节点通知会话所有成员 ==========
+	// 改造前：c.hub.SendToChat(req.ChatID, ..., c.ID)  仅本节点
+	// 改造后：BroadcastToGroupCluster 自动跨节点路由
+	c.hub.BroadcastToGroupCluster(req.ChatID, map[string]interface{}{
 		"type":      "typing",
 		"chat_id":   req.ChatID,
 		"user_id":   c.UserID,
 		"user_name": userName,
 		"action":    req.Action,
-	}, c.ID)
+	})
+	// ========== 改动结束 ==========
 }
 
 // 已读回执请求
@@ -508,13 +530,16 @@ func (c *Client) handleReadReceipt(data json.RawMessage) {
 		return
 	}
 
-	// 广播已读状态
-	c.hub.SendToChat(req.ChatID, map[string]interface{}{
+	// ========== 改动：已读回执广播改用集群模式，跨节点通知会话所有成员 ==========
+	// 改造前：c.hub.SendToChat(req.ChatID, ..., c.ID)  仅本节点
+	// 改造后：BroadcastToGroupCluster 自动跨节点路由
+	c.hub.BroadcastToGroupCluster(req.ChatID, map[string]interface{}{
 		"type":    "read",
 		"chat_id": req.ChatID,
 		"user_id": c.UserID,
 		"msg_seq": req.MsgSeq,
-	}, c.ID)
+	})
+	// ========== 改动结束 ==========
 }
 
 // handleOnlineStatus 处理在线状态查询
@@ -533,7 +558,11 @@ func (c *Client) handleOnlineStatus(data json.RawMessage) {
 			status[uid] = false
 			continue
 		}
-		status[uid] = c.hub.IsUserOnline(uid)
+		// ========== 改动：在线状态查询改用集群模式，跨所有节点判断 ==========
+		// 改造前：c.hub.IsUserOnline(uid)  仅本节点
+		// 改造后：IsUserOnlineCluster 查 Redis，感知全集群在线状态
+		status[uid] = c.hub.IsUserOnlineCluster(uid)
+		// ========== 改动结束 ==========
 	}
 
 	c.sendSuccess("online_status", status)

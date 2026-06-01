@@ -1,35 +1,49 @@
 {
     "name": "壹信IM",
     "short_name": "壹信IM",
-    "start_url": ".",
+    "description": "安全、快速、稳定的即时通讯应用",
+    "lang": "zh-CN",
+    "dir": "ltr",
+    "start_url": "./",
+    "scope": "/",
     "display": "standalone",
+    "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+    "orientation": "portrait-primary",
     "background_color": "#ffffff",
     "theme_color": "#1a1a1a",
-    "description": "A Telegram-style instant messaging app built with Flutter.",
-    "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "categories": ["social", "communication"],
     "icons": [
+        {"src": "icons/Icon-48.png",   "sizes": "48x48",   "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-72.png",   "sizes": "72x72",   "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-96.png",   "sizes": "96x96",   "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-128.png",  "sizes": "128x128", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-144.png",  "sizes": "144x144", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-152.png",  "sizes": "152x152", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-192.png",  "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-384.png",  "sizes": "384x384", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-512.png",  "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+        {"src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    ],
+    "shortcuts": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
+            "name": "发起聊天",
+            "short_name": "聊天",
+            "description": "快速打开聊天列表",
+            "url": "/?action=chat",
+            "icons": [{"src": "icons/Icon-192.png", "sizes": "192x192"}]
         }
-    ]
+    ],
+    "share_target": {
+        "action": "/share-target",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [{"name": "files", "accept": ["image/*", "video/*", "audio/*", ".pdf"]}]
+        }
+    }
 }

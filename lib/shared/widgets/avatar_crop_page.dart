@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:crop_your_image/crop_your_image.dart';
 
@@ -26,7 +26,7 @@ Future<String?> showAvatarCropDialog({
     try {
       bytes = await crop_io.readFileBytes(imagePath);
     } catch (e) {
-      debugPrint('Failed to read file: $e');
+      if (kDebugMode) debugPrint('Failed to read file: $e');
       return null;
     }
   }

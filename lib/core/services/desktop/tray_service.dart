@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,7 +42,7 @@ class TrayService with TrayListener {
         await rootBundle.load(iconPath);
         await trayManager.setIcon(iconPath);
       } catch (e) {
-        debugPrint('[Tray] Icon not found at $iconPath, using fallback');
+        if (kDebugMode) debugPrint('[Tray] Icon not found at $iconPath, using fallback');
         // 使用默认应用图标作为后备
         if (PlatformUtils.isMacOS) {
           // macOS 可以使用应用图标
@@ -70,9 +71,9 @@ class TrayService with TrayListener {
       trayManager.addListener(this);
 
       _initialized = true;
-      debugPrint('[Tray] Initialized');
+      if (kDebugMode) debugPrint('[Tray] Initialized');
     } catch (e) {
-      debugPrint('[Tray] Failed to initialize: $e');
+      if (kDebugMode) debugPrint('[Tray] Failed to initialize: $e');
     }
   }
 
@@ -85,7 +86,7 @@ class TrayService with TrayListener {
         _appDisplayName = settings.displayName;
       }
     } catch (e) {
-      debugPrint('[Tray] Failed to load app name: $e');
+      if (kDebugMode) debugPrint('[Tray] Failed to load app name: $e');
     }
   }
 
@@ -104,7 +105,7 @@ class TrayService with TrayListener {
     try {
       await trayManager.setToolTip(tooltip);
     } catch (e) {
-      debugPrint('[Tray] Failed to update tooltip: $e');
+      if (kDebugMode) debugPrint('[Tray] Failed to update tooltip: $e');
     }
   }
 
@@ -174,10 +175,10 @@ class TrayService with TrayListener {
         trayManager.removeListener(this);
         await trayManager.destroy();
       } catch (e) {
-        debugPrint('[Tray] Dispose error: $e');
+        if (kDebugMode) debugPrint('[Tray] Dispose error: $e');
       }
     }
     _initialized = false;
-    debugPrint('[Tray] Disposed');
+    if (kDebugMode) debugPrint('[Tray] Disposed');
   }
 }

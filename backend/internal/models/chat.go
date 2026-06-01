@@ -77,13 +77,14 @@ type UserChat struct {
 	UserID      uint64     `gorm:"index:idx_user_chat;not null" json:"user_id"`
 	ChatID      uint64     `gorm:"index:idx_user_chat;not null" json:"chat_id"`
 	TargetID    uint64     `gorm:"index" json:"target_id"` // 私聊对方ID
-	LastMsgID     uint64     `gorm:"default:0" json:"last_msg_id"`
+	LastMsgID     string     `gorm:"type:varchar(36);default:''" json:"last_msg_id"` // MongoDB msg_id (UUID)
 	LastMsgSeq    uint64     `gorm:"default:0" json:"last_msg_seq"`
 	LastMsgTime   time.Time  `gorm:"type:datetime" json:"last_msg_time"`
 	LastMsgText   string     `gorm:"type:varchar(200)" json:"last_msg_text"`
 	LastMsgType   int        `gorm:"default:1" json:"last_msg_type"`   // 最后消息类型
 	LastMsgSender string     `gorm:"type:varchar(100)" json:"last_msg_sender"` // 最后消息发送者名称（群聊预览用）
-	UnreadCount int        `gorm:"default:0" json:"unread_count"`
+	UnreadCount  int        `gorm:"default:0" json:"unread_count"`
+	LastReadSeq  uint64     `gorm:"default:0" json:"last_read_seq"` // 最后已读消息序号
 	IsPinned    bool       `gorm:"default:false" json:"is_pinned"`
 	IsMuted     bool       `gorm:"default:false" json:"is_muted"`
 	IsArchived  bool       `gorm:"default:false" json:"is_archived"`
@@ -120,3 +121,19 @@ const (
 func (JoinRequest) TableName() string {
 	return "join_requests"
 }
+
+// ChatLastMsg 群/私聊最新消息摘要（每个会话只有1行，读扩散架构核心表）
+type ChatLastMsg struct {
+	ChatID        uint64    `gorm:"primaryKey" json:"chat_id"`
+	LastSeq       uint64    `gorm:"default:0" json:"last_seq"`
+	LastMsgTime   time.Time `gorm:"type:datetime" json:"last_msg_time"`
+	LastMsgText   string    `gorm:"type:varchar(200)" json:"last_msg_text"`
+	LastMsgType   int       `gorm:"default:1" json:"last_msg_type"`
+	LastMsgSender string    `gorm:"type:varchar(100)" json:"last_msg_sender"`
+	UpdatedAt     time.Time `gorm:"type:datetime;not null" json:"updated_at"`
+}
+
+func (ChatLastMsg) TableName() string {
+	return "chat_last_msg"
+}
+

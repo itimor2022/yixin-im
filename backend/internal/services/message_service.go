@@ -15,7 +15,6 @@ import (
 	"gaoranim/internal/cache"
 	"gaoranim/internal/models"
 	"gaoranim/internal/mq"
-	"gaoranim/internal/shard"
 	"gaoranim/internal/ws"
 
 	"github.com/google/uuid"
@@ -33,7 +32,7 @@ type MessageService struct {
 	cache   *cache.Cache
 	mq      *mq.MessageQueue
 	hub     *ws.Hub
-	seqLock *shard.ShardedLock // 消息序号分片锁
+	mongoCh chan mongoWriteTask // 异步批量写MongoDB channel
 }
 
 // NewMessageService 创建消息服务
@@ -44,14 +43,16 @@ func NewMessageService(
 	mq *mq.MessageQueue,
 	hub *ws.Hub,
 ) *MessageService {
-	return &MessageService{
+	s := &MessageService{
 		mongoDB: mongoDB,
 		db:      db,
 		cache:   cache,
 		mq:      mq,
 		hub:     hub,
-		seqLock: shard.NewShardedLock(64),
 	}
+	s.mongoCh = make(chan mongoWriteTask, 5000)
+	go s.runMongoFlushWorker()
+	return s
 }
 
 // getChatMemberUUIDs 查询会话所有成员的 UUID（用于按用户推送，确保多设备都能收到）
@@ -83,6 +84,7 @@ type SendMessageParams struct {
 	Mentions         []string                        `json:"mentions,omitempty"`
 	BurnAfterRead    bool                            `json:"burn_after_read,omitempty"`
 	BurnAfterSeconds int                             `json:"burn_after_seconds,omitempty"`
+	ChatType         int                             `json:"chat_type,omitempty"`
 }
 
 // ReplyInfo 回复信息
@@ -117,14 +119,7 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 		}
 	}
 
-	// 1. 获取消息序号（使用分片锁保证原子性）
-	s.seqLock.Lock(params.ChatID)
-	locked := true
-	defer func() {
-		if locked {
-			s.seqLock.Unlock(params.ChatID)
-		}
-	}()
+	// 1. 获取消息序号（Redis INCR 原子操作，无需额外锁）
 	if clientMsgID != "" {
 		if existing, ok, err := s.FindMessageByClientID(ctx, params.ChatID, params.SenderID, clientMsgID); err != nil {
 			return nil, err
@@ -297,35 +292,46 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 		UpdatedAt:           now,
 	}
 
-	// 5. 存储到MongoDB（按月分表）
+
+	// 5. ★ 异步写MongoDB（seq分配后立即释放锁，不再阻塞后续消息）
+
+	// 异步持久化到MongoDB，失败时记录日志（消息已通过Redis/WS下发，不影响实时性）
 	collectionName := models.GetMessageCollection(params.ChatID, now)
-	collection := s.mongoDB.Collection(collectionName)
-	if _, err := collection.InsertOne(ctx, msg); err != nil {
-		log.Printf("[MessageService] insert message failed collection=%s chatID=%s msgID=%s senderID=%s type=%d err=%v",
-			collectionName, params.ChatID, msg.MsgID, params.SenderID, params.Type, err)
-		return nil, err
+	// ★ 发送到批量写channel（worker每20ms批量InsertMany，消除高频单条写磁盘IO）
+	select {
+	case s.mongoCh <- mongoWriteTask{collName: collectionName, msg: msg}:
+	default:
+		// channel满时降级为单条异步写，防止消息丢失
+		go func(cName string, m *models.Message) {
+			coll := s.mongoDB.Collection(cName)
+			if _, err := coll.InsertOne(context.Background(), m); err != nil {
+				log.Printf("[MessageService] fallback insert failed coll=%s msgID=%s err=%v",
+					cName, m.MsgID, err)
+			}
+		}(collectionName, msg)
 	}
-	s.seqLock.Unlock(params.ChatID)
-	locked = false
+
 
 	// 6. 发布到消息队列（异步处理推送等）
 	s.publishSyncMessage(msg)
+	go s.publishUserChatSync(msg) // ★ 异步更新 user_chats 预览，不阻塞主流程
 
-	// 7. 通过WebSocket实时推送给目标用户
+	// 7. ★ 集群改造：群聊走 BroadcastToGroupCluster（Redis Set 在线成员，避免传全量uid）
+	// 私聊保持 SendToUsersCluster（成员少，直接推效率更高）
 	wsPayload := map[string]interface{}{
 		"type":    "new_message",
 		"message": msg,
 	}
-
-	// 推送给目标用户 + 发送者自己（多设备同步）
-	// 发送者的发送设备通过 HTTP 响应已拿到消息，WS 推送由 Flutter 端 msgId 去重处理
-	// 使用新 slice 避免修改调用方传入的 targetUserIDs 底层数组
-	wsPushIDs := append(append([]string{}, targetUserIDs...), params.SenderID)
-	s.hub.Broadcast(&ws.BroadcastMessage{
-		Type:    "new_message",
-		UserIDs: wsPushIDs,
-		Data:    wsPayload,
-	})
+	if params.ChatType == 2 {
+		// 群聊：走 chatID 广播，只推在线成员，不需要传全量 uid 列表
+		s.hub.BroadcastToGroupCluster(params.ChatID, wsPayload)
+		// 发送者其他设备多设备同步
+		s.hub.SendToUsersCluster([]string{params.SenderID}, wsPayload)
+	} else {
+		// 私聊：直接推双方
+		wsPushIDs := append(append([]string{}, targetUserIDs...), params.SenderID)
+		s.hub.SendToUsersCluster(wsPushIDs, wsPayload)
+	}
 
 	return &SendMessageResult{Message: msg}, nil
 }
@@ -348,6 +354,113 @@ func (s *MessageService) publishSyncMessage(msg *models.Message) {
 		Payload: payload,
 	}); err != nil {
 		log.Printf("[MessageService] publish sync_message failed: chatId=%s msgId=%s err=%v", msg.ChatID, msg.MsgID, err)
+	}
+}
+
+
+// buildMsgPreviewText 根据消息类型生成会话列表预览文本
+func buildMsgPreviewText(msg *models.Message) string {
+	switch msg.Type {
+	case 1:
+		text := msg.Content.Text
+		runes := []rune(text)
+		if len(runes) > 50 {
+			return string(runes[:50]) + "..."
+		}
+		return text
+	case 2:
+		if msg.Content.Media != nil {
+			mime := msg.Content.Media.MimeType
+			if strings.HasPrefix(mime, "video/") {
+				return "[视频]"
+			}
+			if mime == "image/gif" {
+				return "[动图]"
+			}
+		}
+		return "[图片]"
+	case 3:
+		return "[语音]"
+	case 4:
+		if msg.Content.File != nil && msg.Content.File.Name != "" {
+			return "[文件] " + msg.Content.File.Name
+		}
+		return "[文件]"
+	case 5:
+		if msg.Content.Location != nil && msg.Content.Location.Title != "" {
+			return "[位置] " + msg.Content.Location.Title
+		}
+		return "[位置]"
+	case 6:
+		if msg.Content.Contact != nil && msg.Content.Contact.Nickname != "" {
+			return "[名片] " + msg.Content.Contact.Nickname
+		}
+		return "[名片]"
+	case 7:
+		return "[贴纸]"
+	case 10:
+		return ""
+	default:
+		return "[消息]"
+	}
+}
+
+// publishUserChatSync 异步投递 user_chats 预览更新任务
+// 不阻塞发消息主流程，由 MQ 消费者批量写入 MySQL
+func (s *MessageService) publishUserChatSync(msg *models.Message) {
+	if s == nil || s.mq == nil || msg == nil {
+		return
+	}
+	if msg.Type == 10 {
+		return
+	}
+	previewText := buildMsgPreviewText(msg)
+
+	var dbChat struct{ ID uint64 }
+	if err := s.db.Table("chats").Where("uuid = ?", msg.ChatID).Select("id").Scan(&dbChat).Error; err != nil || dbChat.ID == 0 {
+		log.Printf("[MessageService] publishUserChatSync: chat not found chatUUID=%s", msg.ChatID)
+		return
+	}
+
+	var dbSender struct{ ID uint64 }
+	if err := s.db.Table("users").Where("uuid = ?", msg.SenderID).Select("id").Scan(&dbSender).Error; err != nil || dbSender.ID == 0 {
+		log.Printf("[MessageService] publishUserChatSync: sender not found senderUUID=%s", msg.SenderID)
+		return
+	}
+
+	type syncPayload struct {
+		ChatID        uint64 `json:"chat_id"`
+		SenderID      uint64 `json:"sender_id"`
+		LastMsgID     string `json:"last_msg_id"`
+		LastMsgSeq    uint64 `json:"last_msg_seq"`
+		LastMsgTime   int64  `json:"last_msg_time"`
+		LastMsgText   string `json:"last_msg_text"`
+		LastMsgType   int    `json:"last_msg_type"`
+		LastMsgSender string `json:"last_msg_sender"`
+	}
+
+	payload, err := json.Marshal(&syncPayload{
+		ChatID:        dbChat.ID,
+		SenderID:      dbSender.ID,
+		LastMsgID:     msg.MsgID,
+		LastMsgSeq:    msg.Seq,
+		LastMsgTime:   msg.CreatedAt.UnixMilli(),
+		LastMsgText:   previewText,
+		LastMsgType:   msg.Type,
+		LastMsgSender: msg.SenderName,
+	})
+	if err != nil {
+		log.Printf("[MessageService] publishUserChatSync marshal failed: %v", err)
+		return
+	}
+
+	publishCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.mq.Publish(publishCtx, mq.QueueUserChatSync, &mq.QueueMessage{
+		Type:    "user_chat_sync",
+		Payload: payload,
+	}); err != nil {
+		log.Printf("[MessageService] publishUserChatSync failed: chatID=%d err=%v", dbChat.ID, err)
 	}
 }
 
@@ -662,7 +775,7 @@ func (s *MessageService) RevokeMessage(ctx context.Context, chatID, msgID, userI
 		}
 	}
 
-	// 广播撤回通知给所有成员的所有设备（多端同步）
+	// ★ 集群改造：广播撤回通知给所有成员的所有设备（跨节点多端同步）
 	revokePayload := map[string]interface{}{
 		"type":       "message_revoked",
 		"chat_id":    chatID,
@@ -671,13 +784,9 @@ func (s *MessageService) RevokeMessage(ctx context.Context, chatID, msgID, userI
 		"msg_seq":    revokedSeq,
 	}
 	if memberUUIDs := s.getChatMemberUUIDs(chatID); len(memberUUIDs) > 0 {
-		s.hub.Broadcast(&ws.BroadcastMessage{
-			Type:    "message_revoked",
-			UserIDs: memberUUIDs,
-			Data:    revokePayload,
-		})
+		s.hub.SendToUsersCluster(memberUUIDs, revokePayload)
 	} else {
-		s.hub.SendToChat(chatID, revokePayload, "")
+		s.hub.BroadcastToGroupCluster(chatID, revokePayload)
 	}
 
 	// 更新聊天列表预览为撤回提示（仅当被撤回消息是最后一条消息时才更新，区分撤回者本人和其他成员）
@@ -751,13 +860,13 @@ func (s *MessageService) DeleteMessageForUser(ctx context.Context, chatID, msgID
 
 // MarkAsRead 标记已读（广播给聊天订阅者）
 func (s *MessageService) MarkAsRead(ctx context.Context, chatID, userID string, msgSeq uint64) error {
-	// 广播已读状态
-	s.hub.SendToChat(chatID, map[string]interface{}{
+	// ★ 集群改造：使用集群版群组广播，确保跨节点推送
+	s.hub.BroadcastToGroupCluster(chatID, map[string]interface{}{
 		"type":    "read_receipt",
 		"chat_id": chatID,
 		"user_id": userID,
 		"msg_seq": msgSeq,
-	}, "")
+	})
 
 	return nil
 }
@@ -771,11 +880,8 @@ func (s *MessageService) BroadcastReadReceipt(chatID, userID string, msgSeq int,
 		"msg_seq": msgSeq,
 	}
 
-	s.hub.Broadcast(&ws.BroadcastMessage{
-		Type:    "read",
-		UserIDs: targetUserIDs,
-		Data:    payload,
-	})
+	// ★ 集群改造：使用集群版多用户推送，确保跨节点投递
+	s.hub.SendToUsersCluster(targetUserIDs, payload)
 }
 
 // MarkMessagesAsRead 将对方发送的消息标记为已读（持久化到 MongoDB）
@@ -830,8 +936,9 @@ func (s *MessageService) MarkMessagesAsRead(ctx context.Context, chatID, readerI
 		}
 	}
 
+	// ★ 集群改造：阅后即焚通知使用集群版单用户推送（跨节点投递到 readerID 所在节点）
 	if burnApplied && s.hub != nil {
-		s.hub.SendToUser(readerID, map[string]interface{}{
+		s.hub.SendToUserCluster(readerID, map[string]interface{}{
 			"type":    "message_burned",
 			"chat_id": chatID,
 			"user_id": readerID,
@@ -1076,7 +1183,7 @@ func (s *MessageService) RemoveReaction(ctx context.Context, chatID, msgID, user
 	return nil
 }
 
-// broadcastReaction 广播表情回复事件给所有成员的所有设备（多端同步）
+// broadcastReaction 广播表情回复事件给所有成员的所有设备（跨节点多端同步）
 func (s *MessageService) broadcastReaction(chatID, msgID, userID, userName, emoji, action string) {
 	reactionPayload := map[string]interface{}{
 		"type":      "reaction",
@@ -1087,14 +1194,11 @@ func (s *MessageService) broadcastReaction(chatID, msgID, userID, userName, emoj
 		"emoji":     emoji,
 		"action":    action,
 	}
+	// ★ 集群改造：优先按成员 UUID 列表精确推送，回退时使用群组广播
 	if memberUUIDs := s.getChatMemberUUIDs(chatID); len(memberUUIDs) > 0 {
-		s.hub.Broadcast(&ws.BroadcastMessage{
-			Type:    "reaction",
-			UserIDs: memberUUIDs,
-			Data:    reactionPayload,
-		})
+		s.hub.SendToUsersCluster(memberUUIDs, reactionPayload)
 	} else {
-		s.hub.SendToChat(chatID, reactionPayload, "")
+		s.hub.BroadcastToGroupCluster(chatID, reactionPayload)
 	}
 }
 
@@ -1131,12 +1235,10 @@ func (s *MessageService) ForwardMessage(ctx context.Context, sourceChatID, sourc
 	}
 
 	// 获取新序号
-	s.seqLock.Lock(targetChatID)
 	seq, err := s.cache.GetNextMsgSeq(ctx, targetChatID)
 	if err == nil {
 		seq = s.repairNextMsgSeqIfNeeded(ctx, targetChatID, seq)
 	}
-	s.seqLock.Unlock(targetChatID)
 	if err != nil {
 		return nil, err
 	}
@@ -1166,17 +1268,11 @@ func (s *MessageService) ForwardMessage(ctx context.Context, sourceChatID, sourc
 		return nil, err
 	}
 
-	// 通过 WebSocket 推送新消息（含发送者自己，用于多设备同步）
-	// Data 必须包含 "type" 字段，因为 hub 只序列化 Data（不含 BroadcastMessage.Type）
-	// 使用新 slice 避免修改调用方传入的 targetUserIDs 底层数组
+	// ★ 集群改造：通过集群版多用户推送（含发送者自己，用于多设备同步）
 	fwdPushIDs := append(append([]string{}, targetUserIDs...), senderID)
-	s.hub.Broadcast(&ws.BroadcastMessage{
-		Type:    "new_message",
-		UserIDs: fwdPushIDs,
-		Data: map[string]interface{}{
-			"type":    "new_message",
-			"message": newMsg,
-		},
+	s.hub.SendToUsersCluster(fwdPushIDs, map[string]interface{}{
+		"type":    "new_message",
+		"message": newMsg,
 	})
 
 	return newMsg, nil
@@ -1274,14 +1370,11 @@ func (s *MessageService) EditMessage(ctx context.Context, chatID, msgID, userID,
 			})
 	}
 
+	// ★ 集群改造：优先按成员 UUID 列表精确推送，回退时使用群组广播
 	if memberUUIDs := s.getChatMemberUUIDs(chatID); len(memberUUIDs) > 0 {
-		s.hub.Broadcast(&ws.BroadcastMessage{
-			Type:    "message_edited",
-			UserIDs: memberUUIDs,
-			Data:    editPayload,
-		})
+		s.hub.SendToUsersCluster(memberUUIDs, editPayload)
 	} else {
-		s.hub.SendToChat(chatID, editPayload, "")
+		s.hub.BroadcastToGroupCluster(chatID, editPayload)
 	}
 
 	return nil
@@ -1449,4 +1542,63 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 	}
 
 	return counts, nil
+}
+
+// mongoWriteTask 单条消息写入任务
+type mongoWriteTask struct {
+	collName string
+	msg      *models.Message
+}
+
+// runMongoFlushWorker 后台批量写MongoDB
+// 每20ms或积累50条时触发一次InsertMany，大幅减少磁盘IO次数
+func (s *MessageService) runMongoFlushWorker() {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+
+	// 按collection分组缓冲
+	type collBuf struct {
+		msgs []interface{}
+	}
+	buf := make(map[string]*collBuf)
+
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		for collName, cb := range buf {
+			if len(cb.msgs) == 0 {
+				continue
+			}
+			coll := s.mongoDB.Collection(collName)
+			if _, err := coll.InsertMany(context.Background(), cb.msgs); err != nil {
+				log.Printf("[MongoFlush] InsertMany error coll=%s count=%d err=%v",
+					collName, len(cb.msgs), err)
+			}
+		}
+		buf = make(map[string]*collBuf)
+	}
+
+	totalBuf := 0
+	for {
+		select {
+		case task, ok := <-s.mongoCh:
+			if !ok {
+				flush()
+				return
+			}
+			if buf[task.collName] == nil {
+				buf[task.collName] = &collBuf{}
+			}
+			buf[task.collName].msgs = append(buf[task.collName].msgs, task.msg)
+			totalBuf++
+			if totalBuf >= 50 {
+				flush()
+				totalBuf = 0
+			}
+		case <-ticker.C:
+			flush()
+			totalBuf = 0
+		}
+	}
 }

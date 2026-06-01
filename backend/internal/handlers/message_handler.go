@@ -27,6 +27,8 @@ type MessageHandler struct {
 	pushService *services.PushService
 	hub         *ws.Hub
 	cache       *cache.Cache
+	lastMsgCh   chan models.ChatLastMsg // 异步批量写channel
+	pushSem     chan struct{}          // 推送并发限制信号量
 }
 
 // NewMessageHandler 创建消息处理器
@@ -35,22 +37,232 @@ func NewMessageHandler(db *gorm.DB, msgService *services.MessageService, pushSer
 	if len(c) > 0 && c[0] != nil {
 		h.cache = c[0]
 	}
+	// 启动异步批量写 chat_last_msg 的 worker
+	h.lastMsgCh = make(chan models.ChatLastMsg, 2000)
+	h.pushSem = make(chan struct{}, 2000) // 最多2000个并发推送goroutine
+	go h.runLastMsgFlushWorker()
 	return h
 }
 
-// getIntSetting 读取整型配置，优先从 Redis 缓存取（TTL 60s），避免每次查 DB
-func (h *MessageHandler) getIntSetting(key string, defaultVal int) int {
-	cacheKey := "setting:" + key
+// runLastMsgFlushWorker 后台批量写 chat_last_msg 到 MySQL
+// 每50ms或积累50条时触发一次批量 UPSERT，大幅减少 MySQL 写压力
+func (h *MessageHandler) runLastMsgFlushWorker() {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	buf := make(map[uint64]models.ChatLastMsg) // chatID → 最新一条
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		rows := make([]models.ChatLastMsg, 0, len(buf))
+		for _, v := range buf {
+			rows = append(rows, v)
+		}
+		buf = make(map[uint64]models.ChatLastMsg)
+		// 批量 UPSERT：同一 chatID 只保留最新一条
+		if err := h.db.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "chat_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"last_seq", "last_msg_time", "last_msg_text",
+				"last_msg_type", "last_msg_sender", "updated_at",
+			}),
+		}).Create(&rows).Error; err != nil {
+			log.Printf("[LastMsgFlush] batch upsert error: %v", err)
+		}
+	}
+	for {
+		select {
+		case msg, ok := <-h.lastMsgCh:
+			if !ok {
+				flush()
+				return
+			}
+			// 同一 chatID 只保留最新（seq最大）的
+			if existing, ok2 := buf[msg.ChatID]; !ok2 || msg.LastSeq > existing.LastSeq {
+				buf[msg.ChatID] = msg
+			}
+			// 积累超过50条立即flush
+			if len(buf) >= 50 {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
 
-	// 尝试从缓存读取
+// ★ --- 缓存辅助方法 ---
+
+// getChatByUUID 获取群组信息，优先走缓存
+func (h *MessageHandler) getChatByUUID(ctx context.Context, uuid string) (*models.Chat, error) {
 	if h.cache != nil {
-		var cached int
-		if err := h.cache.Get(context.Background(), cacheKey, &cached); err == nil {
-			return cached
+		var chat models.Chat
+		if err := h.cache.GetChatInfo(ctx, uuid, &chat); err == nil {
+			return &chat, nil
+		}
+	}
+	var chat models.Chat
+	if err := h.db.Where("uuid = ?", uuid).First(&chat).Error; err != nil {
+		return nil, err
+	}
+	if h.cache != nil {
+		_ = h.cache.SetChatInfo(ctx, uuid, &chat)
+	}
+	return &chat, nil
+}
+
+// getSenderByUUID 获取用户信息，优先走缓存
+func (h *MessageHandler) getSenderByUUID(ctx context.Context, uuid string) (*models.User, error) {
+	if h.cache != nil {
+		var user models.User
+		if err := h.cache.GetUserInfo(ctx, uuid, &user); err == nil {
+			return &user, nil
+		}
+	}
+	var user models.User
+	if err := h.db.Where("uuid = ?", uuid).First(&user).Error; err != nil {
+		return nil, err
+	}
+	if h.cache != nil {
+		_ = h.cache.SetUserInfo(ctx, uuid, &user)
+	}
+	return &user, nil
+}
+
+// getChatMember 获取成员信息，优先走缓存
+func (h *MessageHandler) getChatMember(ctx context.Context, chatID, userID uint64) (*models.ChatMember, error) {
+	chatIDStr := strconv.FormatUint(chatID, 10)
+	userIDStr := strconv.FormatUint(userID, 10)
+	if h.cache != nil {
+		var member models.ChatMember
+		if err := h.cache.GetChatMemberInfo(ctx, chatIDStr, userIDStr, &member); err == nil {
+			return &member, nil
+		}
+	}
+	var member models.ChatMember
+	if err := h.db.Where("chat_id = ? AND user_id = ?", chatID, userID).First(&member).Error; err != nil {
+		return nil, err
+	}
+	if h.cache != nil {
+		_ = h.cache.SetChatMemberInfo(ctx, chatIDStr, userIDStr, &member)
+	}
+	return &member, nil
+}
+
+// getChatTargetUUIDs 获取群内所有成员UUID（排除sender），优先走缓存
+func (h *MessageHandler) getChatTargetUUIDs(ctx context.Context, chatID, senderUserID uint64) ([]uint64, []string) {
+	chatIDStr := strconv.FormatUint(chatID, 10)
+
+	if h.cache != nil {
+		allIDStrs, err := h.cache.GetChatMemberAllIDs(ctx, chatIDStr)
+		if err == nil && len(allIDStrs) > 0 {
+			senderIDStr := strconv.FormatUint(senderUserID, 10)
+			targetIDStrs := make([]string, 0, len(allIDStrs)-1)
+			for _, id := range allIDStrs {
+				if id != senderIDStr {
+					targetIDStrs = append(targetIDStrs, id)
+				}
+			}
+			uuids, err2 := h.cache.GetChatMemberUUIDs(ctx, chatIDStr, targetIDStrs)
+			if err2 == nil {
+				memberIDs := make([]uint64, 0, len(targetIDStrs))
+				for _, idStr := range targetIDStrs {
+					if id, err := strconv.ParseUint(idStr, 10, 64); err == nil {
+						memberIDs = append(memberIDs, id)
+					}
+				}
+				return memberIDs, uuids
+			}
 		}
 	}
 
-	// 缓存未命中，查数据库
+	// 缓存未命中：查 MySQL
+	var memberUserIDs []uint64
+	h.db.Model(&models.ChatMember{}).
+		Where("chat_id = ? AND user_id != ?", chatID, senderUserID).
+		Pluck("user_id", &memberUserIDs)
+
+	var targetUserIDs []string
+	if len(memberUserIDs) > 0 {
+		h.db.Model(&models.User{}).Where("id IN ?", memberUserIDs).Pluck("uuid", &targetUserIDs)
+	}
+
+	// 异步回填缓存
+	if h.cache != nil && len(memberUserIDs) > 0 {
+		go func() {
+			bgCtx := context.Background()
+			type idUUID struct {
+				ID   uint64
+				UUID string
+			}
+			var allPairs []idUUID
+			h.db.Model(&models.User{}).
+				Select("id, uuid").
+				Where("id IN (SELECT user_id FROM chat_members WHERE chat_id = ?)", chatID).
+				Find(&allPairs)
+			allIDStrs := make([]string, 0, len(allPairs))
+			idToUUID := make(map[string]string, len(allPairs))
+			for _, p := range allPairs {
+				idStr := strconv.FormatUint(p.ID, 10)
+				allIDStrs = append(allIDStrs, idStr)
+				idToUUID[idStr] = p.UUID
+			}
+			_ = h.cache.SetChatMemberAllIDs(bgCtx, chatIDStr, allIDStrs)
+			_ = h.cache.SetChatMemberIDMap(bgCtx, chatIDStr, idToUUID)
+		}()
+	}
+
+	return memberUserIDs, targetUserIDs
+}
+
+// getChatMutedMap 获取群内所有muted用户ID map，优先走缓存
+func (h *MessageHandler) getChatMutedMap(ctx context.Context, chatID uint64) map[uint64]bool {
+	chatIDStr := strconv.FormatUint(chatID, 10)
+	if h.cache != nil {
+		if mutedMap, loaded := h.cache.GetChatMutedIDs(ctx, chatIDStr); loaded {
+			result := make(map[uint64]bool, len(mutedMap))
+			for idStr := range mutedMap {
+				if id, err := strconv.ParseUint(idStr, 10, 64); err == nil {
+					result[id] = true
+				}
+			}
+			return result
+		}
+	}
+	var mutedUserIDs []uint64
+	h.db.Model(&models.UserChat{}).
+		Where("chat_id = ? AND is_muted = ?", chatID, true).
+		Pluck("user_id", &mutedUserIDs)
+	if h.cache != nil {
+		mutedStrs := make([]string, len(mutedUserIDs))
+		for i, id := range mutedUserIDs {
+			mutedStrs[i] = strconv.FormatUint(id, 10)
+		}
+		_ = h.cache.SetChatMutedIDs(ctx, chatIDStr, mutedStrs)
+	}
+	result := make(map[uint64]bool, len(mutedUserIDs))
+	for _, id := range mutedUserIDs {
+		result[id] = true
+	}
+	return result
+}
+
+
+// getIntSetting 读取整型配置，优先从 Redis 缓存取，避免每次查 DB
+// ★ 统一使用 cache.GetSystemSetting/SetSystemSetting，与 RequirePhoneBind 共享同一缓存命名空间
+func (h *MessageHandler) getIntSetting(key string, defaultVal int) int {
+	ctx := context.Background()
+
+	// 1. 读缓存
+	if h.cache != nil {
+		if val, found := h.cache.GetSystemSetting(ctx, key); found && val != "" {
+			if v, err := strconv.Atoi(val); err == nil {
+				return v
+			}
+		}
+	}
+
+	// 2. 缓存未命中，查数据库
 	var s models.SystemSetting
 	if err := h.db.Where("`key` = ?", key).First(&s).Error; err != nil {
 		return defaultVal
@@ -60,27 +272,30 @@ func (h *MessageHandler) getIntSetting(key string, defaultVal int) int {
 		val = v
 	}
 
-	// 写入缓存，60 秒过期
+	// 3. 回写缓存
 	if h.cache != nil {
-		_ = h.cache.Set(context.Background(), cacheKey, val, 60*time.Second)
+		_ = h.cache.SetSystemSetting(ctx, key, strconv.Itoa(val))
 	}
 
 	return val
 }
 
+// getStringSetting 读取字符串配置，优先从 Redis 缓存取，避免每次查 DB
+// ★ 统一使用 cache.GetSystemSetting/SetSystemSetting，与 RequirePhoneBind 共享同一缓存命名空间
 func (h *MessageHandler) getStringSetting(key, defaultVal string) string {
-	cacheKey := "setting:" + key
+	ctx := context.Background()
 
+	// 1. 读缓存
 	if h.cache != nil {
-		var cached string
-		if err := h.cache.Get(context.Background(), cacheKey, &cached); err == nil {
-			if strings.TrimSpace(cached) != "" {
-				return cached
+		if val, found := h.cache.GetSystemSetting(ctx, key); found {
+			if strings.TrimSpace(val) != "" {
+				return val
 			}
 			return defaultVal
 		}
 	}
 
+	// 2. 缓存未命中，查数据库
 	var s models.SystemSetting
 	if err := h.db.Where("`key` = ?", key).First(&s).Error; err != nil {
 		return defaultVal
@@ -90,8 +305,9 @@ func (h *MessageHandler) getStringSetting(key, defaultVal string) string {
 		val = defaultVal
 	}
 
+	// 3. 回写缓存
 	if h.cache != nil {
-		_ = h.cache.Set(context.Background(), cacheKey, val, 60*time.Second)
+		_ = h.cache.SetSystemSetting(ctx, key, val)
 	}
 
 	return val
@@ -383,12 +599,14 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// 获取发送者信息
-	var sender models.User
-	if err := h.db.Where("uuid = ?", userID).First(&sender).Error; err != nil {
+	// 获取发送者信息（优先走缓存）
+	ctx := c.Request.Context()
+	senderPtr, err := h.getSenderByUUID(ctx, userID)
+	if err != nil {
 		response.NotFound(c, "用户不存在")
 		return
 	}
+	sender := *senderPtr
 
 	// 检查用户是否被封禁（封禁状态可以登录但不能发消息）
 	if sender.Status == models.UserStatusBanned {
@@ -406,12 +624,13 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// 获取会话信息和成员列表
-	var chat models.Chat
-	if err := h.db.Where("uuid = ?", req.ChatID).First(&chat).Error; err != nil {
+	// 获取会话信息（优先走缓存）
+	chatPtr, err := h.getChatByUUID(ctx, req.ChatID)
+	if err != nil {
 		response.NotFound(c, "会话不存在")
 		return
 	}
+	chat := *chatPtr
 
 	// 检查会话是否被封禁或解散
 	if chat.Status == models.ChatStatusBanned {
@@ -423,12 +642,14 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// 群组和频道检查禁言状态和权限
+	// 获取发送者成员信息（优先走缓存）
 	var senderMember models.ChatMember
-	if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, sender.ID).First(&senderMember).Error; err != nil {
+	senderMemberPtr, err := h.getChatMember(ctx, chat.ID, sender.ID)
+	if err != nil {
 		response.Forbidden(c, "您不是该会话成员")
 		return
 	}
+	senderMember = *senderMemberPtr
 
 	if chat.Type != 1 { // 非私聊
 		// 频道模式: 仅管理员和创建者可发言（类似 Telegram）
@@ -471,17 +692,15 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		}
 	}
 
-	// 获取目标用户 UUID 列表（排除发送者），批量查询避免 N+1
+	// 获取目标用户 UUID 列表（优先走缓存，排除发送者）
+	// 群聊跳过全量成员查询，BroadcastToGroupCluster 走 Redis 在线集合，无需全量 UUID
 	var memberUserIDs []uint64
-	h.db.Model(&models.ChatMember{}).Where("chat_id = ? AND user_id != ?", chat.ID, sender.ID).Pluck("user_id", &memberUserIDs)
-
 	var targetUserIDs []string
-	if len(memberUserIDs) > 0 {
-		h.db.Model(&models.User{}).Where("id IN ?", memberUserIDs).Pluck("uuid", &targetUserIDs)
+	if chat.Type == 1 {
+		// 私聊：需要 targetUserIDs 做屏蔽检查和 WS 推送
+		memberUserIDs, targetUserIDs = h.getChatTargetUUIDs(ctx, chat.ID, sender.ID)
 	}
-	if err := h.ensureUserChatRecords(&chat, append([]uint64{sender.ID}, memberUserIDs...), time.Now()); err != nil {
-		log.Printf("[Message] ensure user_chats before send failed chatID=%d err=%v", chat.ID, err)
-	}
+
 
 	// 私聊：检查对方是否已将发送者加入屏蔽列表
 	if chat.Type == 1 && len(memberUserIDs) > 0 {
@@ -539,6 +758,7 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		Mentions:         req.Mentions,
 		BurnAfterRead:    req.BurnAfterRead,
 		BurnAfterSeconds: req.BurnAfterSeconds,
+		ChatType:         int(chat.Type),
 	}, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
 
 	if err != nil {
@@ -581,21 +801,74 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		}
 	}
 
-	h.db.Model(&models.UserChat{}).
-		Where("chat_id = ?", chat.ID).
-		Updates(map[string]interface{}{
-			"last_msg_text":   lastMsgText,
-			"last_msg_type":   msg.Type,
-			"last_msg_time":   msg.CreatedAt,
-			"last_msg_seq":    msg.Seq,
-			"last_msg_sender": sender.Nickname,
-			"sort_time":       msg.CreatedAt,
-		})
 
-	// 更新对方的未读数
-	h.db.Model(&models.UserChat{}).
-		Where("chat_id = ? AND user_id != ?", chat.ID, sender.ID).
-		UpdateColumn("unread_count", gorm.Expr("unread_count + 1"))
+	// ★ 阶段二：chat_last_msg 先写Redis（<1ms），异步刷MySQL（不阻塞响应）
+	chatIDStr := strconv.FormatUint(chat.ID, 10)
+	chatLastMsgData := map[string]interface{}{
+		"chat_id":        chat.ID,
+		"last_seq":       msg.Seq,
+		"last_msg_time":  msg.CreatedAt,
+		"last_msg_text":  lastMsgText,
+		"last_msg_type":  msg.Type,
+		"last_msg_sender": sender.Nickname,
+		"updated_at":     msg.CreatedAt,
+	}
+	// 1. 同步写 Redis（会话列表实时更新）
+	if h.cache != nil {
+		_ = h.cache.SetChatLastMsg(ctx, chatIDStr, chatLastMsgData)
+	}
+	// 2. 发送到批量写channel（worker每50ms批量UPSERT，消除高频单行写压力）
+	if h.lastMsgCh != nil {
+		select {
+		case h.lastMsgCh <- models.ChatLastMsg{
+			ChatID:        chat.ID,
+			LastSeq:       msg.Seq,
+			LastMsgTime:   msg.CreatedAt,
+			LastMsgText:   lastMsgText,
+			LastMsgType:   msg.Type,
+			LastMsgSender: sender.Nickname,
+			UpdatedAt:     msg.CreatedAt,
+		}:
+		default:
+			// channel满时降级为单条异步写，防止数据丢失
+			go func() {
+				h.db.Save(&models.ChatLastMsg{
+					ChatID:        chat.ID,
+					LastSeq:       msg.Seq,
+					LastMsgTime:   msg.CreatedAt,
+					LastMsgText:   lastMsgText,
+					LastMsgType:   msg.Type,
+					LastMsgSender: sender.Nickname,
+					UpdatedAt:     msg.CreatedAt,
+				})
+			}()
+		}
+	}
+
+
+	// 3. 更新 user_chats（按群规模分策略，memberCount 直接用缓存字段，无需 COUNT 查询）
+	memberCount := int64(chat.MemberCount)
+
+	if memberCount <= 50 {
+		// 小群/私聊（≤50人）：同步更新，兼容旧客户端
+		h.db.Model(&models.UserChat{}).
+			Where("chat_id = ?", chat.ID).
+			Updates(map[string]interface{}{
+				"last_msg_text":   lastMsgText,
+				"last_msg_type":   msg.Type,
+				"last_msg_time":   msg.CreatedAt,
+				"last_msg_seq":    msg.Seq,
+				"last_msg_sender": sender.Nickname,
+				"sort_time":       msg.CreatedAt,
+			})
+		h.db.Model(&models.UserChat{}).
+			Where("chat_id = ? AND user_id != ?", chat.ID, sender.ID).
+			UpdateColumn("unread_count", gorm.Expr("unread_count + 1"))
+	} else {
+		// 大群（>50人）：完全跳过 user_chats 批量更新，零写入
+		// sort_time/last_msg_* 从 Redis chat:lastmsg 实时读取
+		// unread_count 用 chat_last_msg.last_seq - user_chats.last_read_seq 差值计算
+	}
 
 	pushPreviewText := lastMsgText
 	if req.BurnAfterRead {
@@ -607,41 +880,103 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 	// 向离线用户发送推送通知（批量查询，避免 N+1）
 	if h.pushService != nil {
 		go func() {
+			// 非阻塞获取推送信号量，满了直接跳过（推送非核心路径）
+			select {
+			case h.pushSem <- struct{}{}:
+				defer func() { <-h.pushSem }()
+			default:
+				log.Printf("[Push] pushSem full, skip push for chat=%s", req.ChatID)
+				return
+			}
 			log.Printf("[Push] Checking push for %d targets", len(targetUserIDs))
 			if len(targetUserIDs) == 0 {
 				return
 			}
 			// 批量获取用户 ID，只推送离线用户
+			// ★ 直接用已缓存的 memberUserIDs/targetUserIDs，避免再查一次5000行
 			type userIDPair struct {
 				ID   uint64
 				UUID string
 			}
-			var pairs []userIDPair
-			h.db.Model(&models.User{}).Where("uuid IN ?", targetUserIDs).Select("id, uuid").Find(&pairs)
-
-			userIDs := make([]uint64, 0, len(pairs))
-			for _, p := range pairs {
-				userIDs = append(userIDs, p.ID)
+			pairs := make([]userIDPair, 0, len(memberUserIDs))
+			for idx, uid := range memberUserIDs {
+				if idx < len(targetUserIDs) {
+					pairs = append(pairs, userIDPair{ID: uid, UUID: targetUserIDs[idx]})
+				}
 			}
-			mutedUsers := make(map[uint64]bool)
-			if len(userIDs) > 0 {
-				var mutedUserIDs []uint64
-				h.db.Model(&models.UserChat{}).
-					Where("chat_id = ? AND user_id IN ? AND is_muted = ?", chat.ID, userIDs, true).
-					Pluck("user_id", &mutedUserIDs)
-				for _, id := range mutedUserIDs {
+
+				// 获取muted用户（优先走缓存）
+				mutedUsers64 := h.getChatMutedMap(context.Background(), chat.ID)
+				mutedUsers := make(map[uint64]bool, len(mutedUsers64))
+				for id := range mutedUsers64 {
 					mutedUsers[id] = true
 				}
-			}
 
+			// 批量查询推送设置，避免 N 次单行查询打爆数据库
 			pushChatType := chatPushType(chat.Type)
-			for _, p := range pairs {
-				if mutedUsers[p.ID] {
-					continue
+				// ★ 先用Redis过滤有效推送用户，避免对无设备用户做无效查询
+				pushUIDs := make([]uint64, 0, len(pairs))
+				for _, p := range pairs {
+					if !mutedUsers[p.ID] {
+						pushUIDs = append(pushUIDs, p.ID)
+					}
 				}
-				h.pushService.PushNewMessage(p.ID, sender.Nickname, pushPreviewText, req.ChatID, pushChatType)
-			}
-		}()
+				// Redis过滤：只保留有有效push_token的用户
+				if h.cache != nil && h.cache.IsPushableUsersLoaded(context.Background()) {
+					filtered, _ := h.cache.FilterPushableUsers(context.Background(), pushUIDs)
+					pushUIDs = filtered
+				}
+				if len(pushUIDs) > 0 {
+					// 批量查推送设置（优先Redis缓存）
+					showPreviewMap := make(map[uint64]bool)
+					missUIDs := make([]uint64, 0)
+					if h.cache != nil {
+						for _, uid := range pushUIDs {
+							uidStr := strconv.FormatUint(uid, 10)
+							if sp, found := h.cache.GetUserPushSetting(context.Background(), uidStr); found {
+								showPreviewMap[uid] = sp
+							} else {
+								missUIDs = append(missUIDs, uid)
+							}
+						}
+					} else {
+						missUIDs = pushUIDs
+					}
+					// miss的从MySQL补查并回填缓存
+					if len(missUIDs) > 0 {
+						var pushSettings []models.UserPushSetting
+						h.db.Where("user_id IN ?", missUIDs).Find(&pushSettings)
+						for _, ps := range pushSettings {
+							showPreviewMap[ps.UserID] = ps.ShowPreview
+							if h.cache != nil {
+								_ = h.cache.SetUserPushSetting(context.Background(),
+									strconv.FormatUint(ps.UserID, 10), ps.ShowPreview)
+							}
+						}
+					}
+					// 构建批量推送列表
+					batchUsers := make([]services.BatchPushUser, 0, len(pushUIDs))
+					for _, p := range pairs {
+						if mutedUsers[p.ID] {
+							continue
+						}
+						showPreview := true
+						if sp, ok := showPreviewMap[p.ID]; ok {
+							showPreview = sp
+						}
+						body := pushPreviewText
+						if !showPreview {
+							body = "您收到一条新消息"
+						}
+						batchUsers = append(batchUsers, services.BatchPushUser{
+							UserID:     p.ID,
+							SenderName: sender.Nickname,
+							Body:       body,
+						})
+					}
+					h.pushService.PushNewMessageBatch(batchUsers, req.ChatID, pushChatType)
+				}
+	}()
 	}
 
 	log.Printf("[Message] Sent message: chatId=%s, msgId=%s, seq=%d, type=%d",
@@ -965,10 +1300,14 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 		return
 	}
 
-	// 清除未读计数
+	// 清除未读计数，同步更新 last_read_seq
+	updateFields := map[string]interface{}{"unread_count": 0}
+	if req.MsgSeq > 0 {
+		updateFields["last_read_seq"] = req.MsgSeq
+	}
 	result := h.db.Model(&models.UserChat{}).
 		Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
-		Update("unread_count", 0)
+		Updates(updateFields)
 
 	if result.Error != nil {
 		response.ServerError(c, "更新失败")
@@ -999,7 +1338,7 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 		h.msgService.BroadcastReadReceipt(req.ChatID, userID, req.MsgSeq, targetUserIDs)
 	}
 
-	// 同步已读状态到当前用户的其他设备
+	// ★ 集群改造：同步已读状态到当前用户的其他设备（使用集群版，跨节点投递）
 	if h.hub != nil {
 		selfSyncPayload := map[string]interface{}{
 			"type":         "read_sync",
@@ -1008,7 +1347,7 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 			"msg_seq":      req.MsgSeq,
 			"unread_count": 0,
 		}
-		h.hub.SendToUser(userID, selfSyncPayload)
+		h.hub.SendToUserCluster(userID, selfSyncPayload)
 	}
 
 	response.Success(c, gin.H{
@@ -1187,9 +1526,6 @@ func (h *MessageHandler) ForwardMessage(c *gin.Context) {
 	if len(fwdMemberIDs) > 0 {
 		h.db.Model(&models.User{}).Where("id IN ?", fwdMemberIDs).Pluck("uuid", &targetUserIDs)
 	}
-	if err := h.ensureUserChatRecords(&targetChat, append([]uint64{sender.ID}, fwdMemberIDs...), time.Now()); err != nil {
-		log.Printf("[Message] ensure user_chats before forward failed chatID=%d err=%v", targetChat.ID, err)
-	}
 
 	// 转发消息
 	msg, err := h.msgService.ForwardMessage(c.Request.Context(), req.SourceChatID, req.SourceMsgID, req.TargetChatID, userID, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
@@ -1236,16 +1572,12 @@ func (h *MessageHandler) ForwardMessage(c *gin.Context) {
 			for _, p := range pairs {
 				userIDs = append(userIDs, p.ID)
 			}
-			mutedUsers := make(map[uint64]bool)
-			if len(userIDs) > 0 {
-				var mutedUserIDs []uint64
-				h.db.Model(&models.UserChat{}).
-					Where("chat_id = ? AND user_id IN ? AND is_muted = ?", targetChat.ID, userIDs, true).
-					Pluck("user_id", &mutedUserIDs)
-				for _, id := range mutedUserIDs {
+				// 获取muted用户（优先走缓存）
+				mutedUsers64 := h.getChatMutedMap(context.Background(), targetChat.ID)
+				mutedUsers := make(map[uint64]bool, len(mutedUsers64))
+				for id := range mutedUsers64 {
 					mutedUsers[id] = true
 				}
-			}
 
 			pushChatType := chatPushType(targetChat.Type)
 			for _, p := range pairs {

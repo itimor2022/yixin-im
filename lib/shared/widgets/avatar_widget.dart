@@ -172,7 +172,7 @@ class _AvatarWidgetState extends State<AvatarWidget>
         _cacheChecked = true;
       });
     } catch (e) {
-      debugPrint('[Avatar] cache lookup failed, fallback to network: $e');
+      if (kDebugMode) debugPrint('[Avatar] cache lookup failed, fallback to network: $e');
       if (!mounted) return;
       setState(() {
         _cachedFile = null;

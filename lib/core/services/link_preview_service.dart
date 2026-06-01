@@ -62,7 +62,7 @@ final linkPreviewProvider =
       }
     }
   } catch (e) {
-    debugPrint('[LinkPreview] 获取失败 $url: $e');
+    if (kDebugMode) debugPrint('[LinkPreview] 获取失败 $url: $e');
   }
   return null;
 });

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -967,17 +968,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    debugPrint('[Login] response.code: ${response.code}');
-    debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
-    debugPrint('[Login] response.message: ${response.message}');
+    if (kDebugMode) debugPrint('[Login] response.code: ${response.code}');
+    if (kDebugMode) debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
+    if (kDebugMode) debugPrint('[Login] response.message: ${response.message}');
 
     if (response.isSuccess) {
-      debugPrint('[Login] Navigating to /home');
+      if (kDebugMode) debugPrint('[Login] Navigating to /home');
       context.go('/home');
     } else if (response.code == 1001) {
       await _handleDeviceLockChallenge(response);
     } else {
-      debugPrint('[Login] Login failed: ${response.message}');
+      if (kDebugMode) debugPrint('[Login] Login failed: ${response.message}');
       _showError(response.message);
     }
   }

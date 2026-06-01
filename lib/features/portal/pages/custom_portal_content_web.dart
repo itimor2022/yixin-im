@@ -1,7 +1,6 @@
-// ignore_for_file: avoid_web_libraries_in_flutter
-
-import 'dart:html' as html;
+import 'dart:js_interop';
 import 'dart:ui_web' as ui_web;
+import 'package:web/web.dart' as web;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -58,7 +57,7 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
   String _registerIframe(String url) {
     final viewType = 'custom-portal-iframe-${_viewCounter++}';
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
-      return html.IFrameElement()
+      final iframe = web.HTMLIFrameElement()
         ..src = url
         ..style.border = '0'
         ..style.width = '100%'
@@ -67,6 +66,7 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
         ..allow =
             'autoplay; camera; clipboard-read; clipboard-write; fullscreen; geolocation; microphone; payment'
         ..referrerPolicy = 'strict-origin-when-cross-origin';
+      return iframe;
     });
     return viewType;
   }

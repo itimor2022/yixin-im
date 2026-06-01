@@ -124,7 +124,7 @@ class OfflineMessageQueue {
     // 检查初始网络状态
     final results = await _connectivity.checkConnectivity();
     _isOnline = !results.contains(ConnectivityResult.none);
-    debugPrint(
+    if (kDebugMode) debugPrint(
         '[OfflineQueue] Initial network status: ${_isOnline ? "online" : "offline"}');
 
     // 监听网络变化
@@ -133,7 +133,7 @@ class OfflineMessageQueue {
       final wasOnline = _isOnline;
       _isOnline = !results.contains(ConnectivityResult.none);
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
           '[OfflineQueue] Network changed: ${_isOnline ? "online" : "offline"}');
 
       onNetworkStatusChanged?.call(_isOnline);
@@ -159,7 +159,7 @@ class OfflineMessageQueue {
     onSendMessage = null;
     onMessageFailed = null;
     onNetworkStatusChanged = null;
-    debugPrint('[OfflineQueue] Disposed');
+    if (kDebugMode) debugPrint('[OfflineQueue] Disposed');
   }
 
   /// 当前是否在线
@@ -175,7 +175,7 @@ class OfflineMessageQueue {
   Future<void> enqueue(OfflineMessage message) async {
     _queue.add(message);
     await _saveQueue();
-    debugPrint(
+    if (kDebugMode) debugPrint(
         '[OfflineQueue] Enqueued message: ${message.id} (queue: ${_queue.length})');
 
     // 如果在线，立即尝试发送
@@ -195,7 +195,7 @@ class OfflineMessageQueue {
     if (_isProcessing || _queue.isEmpty || onSendMessage == null) return;
 
     _isProcessing = true;
-    debugPrint('[OfflineQueue] Processing ${_queue.length} queued messages');
+    if (kDebugMode) debugPrint('[OfflineQueue] Processing ${_queue.length} queued messages');
 
     try {
       // 复制队列避免并发修改
@@ -203,7 +203,7 @@ class OfflineMessageQueue {
 
       for (final message in messages) {
         if (!_isOnline) {
-          debugPrint('[OfflineQueue] Network lost, stopping');
+          if (kDebugMode) debugPrint('[OfflineQueue] Network lost, stopping');
           break;
         }
 
@@ -212,31 +212,31 @@ class OfflineMessageQueue {
 
           if (result == OfflineMessageSendResult.success) {
             await dequeue(message.id);
-            debugPrint('[OfflineQueue] Sent successfully: ${message.id}');
+            if (kDebugMode) debugPrint('[OfflineQueue] Sent successfully: ${message.id}');
           } else if (result == OfflineMessageSendResult.permanentFailure) {
-            debugPrint(
+            if (kDebugMode) debugPrint(
                 '[OfflineQueue] Permanent failure, marking failed: ${message.id}');
             await onMessageFailed?.call(message);
             await dequeue(message.id);
           } else {
             message.retryCount++;
             if (message.retryCount >= _maxRetryCount) {
-              debugPrint(
+              if (kDebugMode) debugPrint(
                   '[OfflineQueue] Max retries reached, marking failed: ${message.id}');
               await onMessageFailed?.call(message);
               await dequeue(message.id);
             } else {
-              debugPrint(
+              if (kDebugMode) debugPrint(
                   '[OfflineQueue] Retry ${message.retryCount}/$_maxRetryCount: ${message.id}');
               await _saveQueue();
               await Future.delayed(_retryDelay);
             }
           }
         } catch (e) {
-          debugPrint('[OfflineQueue] Send error: $e');
+          if (kDebugMode) debugPrint('[OfflineQueue] Send error: $e');
           message.retryCount++;
           if (message.retryCount >= _maxRetryCount) {
-            debugPrint(
+            if (kDebugMode) debugPrint(
                 '[OfflineQueue] Max retries reached after error, marking failed: ${message.id}');
             await onMessageFailed?.call(message);
             await dequeue(message.id);
@@ -257,7 +257,7 @@ class OfflineMessageQueue {
       final jsonList = _queue.map((m) => jsonEncode(m.toJson())).toList();
       await prefs.setStringList(_storageKey, jsonList);
     } catch (e) {
-      debugPrint('[OfflineQueue] Save error: $e');
+      if (kDebugMode) debugPrint('[OfflineQueue] Save error: $e');
     }
   }
 
@@ -275,10 +275,10 @@ class OfflineMessageQueue {
         } catch (_) {}
       }
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
           '[OfflineQueue] Loaded ${_queue.length} messages from storage');
     } catch (e) {
-      debugPrint('[OfflineQueue] Load error: $e');
+      if (kDebugMode) debugPrint('[OfflineQueue] Load error: $e');
     }
   }
 

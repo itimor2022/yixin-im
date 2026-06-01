@@ -202,9 +202,9 @@ class NotificationSoundService extends StateNotifier<NotificationSoundSettings> 
       await api.put('/user/push-settings', data: {
         'show_preview': showPreview,
       });
-      debugPrint('[NotificationService] Push settings synced: showPreview=$showPreview');
+      if (kDebugMode) debugPrint('[NotificationService] Push settings synced: showPreview=$showPreview');
     } catch (e) {
-      debugPrint('[NotificationService] Failed to sync push settings: $e');
+      if (kDebugMode) debugPrint('[NotificationService] Failed to sync push settings: $e');
     }
   }
   

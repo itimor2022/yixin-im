@@ -16,7 +16,7 @@ class AppBadgeService {
     try {
       final supported = await FlutterAppBadger.isAppBadgeSupported();
       if (!supported) {
-        debugPrint('[AppBadge] badge is not supported by current launcher');
+        if (kDebugMode) debugPrint('[AppBadge] badge is not supported by current launcher');
         return;
       }
 
@@ -26,7 +26,7 @@ class AppBadgeService {
         await FlutterAppBadger.removeBadge();
       }
     } catch (e) {
-      debugPrint('[AppBadge] Failed to update badge: $e');
+      if (kDebugMode) debugPrint('[AppBadge] Failed to update badge: $e');
     }
   }
 

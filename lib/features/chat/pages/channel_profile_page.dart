@@ -1,4 +1,5 @@
 import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2224,7 +2225,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
         setState(() => _isInitialized = true);
         _controller.play();
       }).catchError((e) {
-        debugPrint('[Video] Init error: $e');
+        if (kDebugMode) debugPrint('[Video] Init error: $e');
       });
     _controller.addListener(() {
       if (mounted) setState(() {});

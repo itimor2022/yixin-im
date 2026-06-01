@@ -982,7 +982,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
     final tokenResp = await _meetingService.getMeetingToken(widget.meetingId);
     if (!mounted) return;
     if (!tokenResp.isSuccess || tokenResp.data == null) {
-      debugPrint('[Meeting] get token failed: ${tokenResp.message}');
+      if (kDebugMode) debugPrint('[Meeting] get token failed: ${tokenResp.message}');
       _rtcConnecting = false;
       _rtcStatusHint = _friendlyMeetingError(
         tokenResp.message,
@@ -1077,7 +1077,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       await WakelockPlus.enable();
       return true;
     } catch (e) {
-      debugPrint('[Meeting] join rtc error: $e');
+      if (kDebugMode) debugPrint('[Meeting] join rtc error: $e');
       _rtcConnecting = false;
       _rtcStatusHint = '音视频连接失败，正在重试';
       if (mounted) {
@@ -1140,7 +1140,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
         setState(() {});
       },
       onError: (code, msg) {
-        debugPrint('[Meeting] Agora error: $code - $msg');
+        if (kDebugMode) debugPrint('[Meeting] Agora error: $code - $msg');
       },
       onConnectionStateChanged: (connection, state, reason) {
         if (!mounted) return;
@@ -1223,7 +1223,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       await _teardownRtc(disableAutoReconnect: false);
       await _joinRtcByToken();
     } catch (e) {
-      debugPrint('[Meeting] reconnect rtc error: $e');
+      if (kDebugMode) debugPrint('[Meeting] reconnect rtc error: $e');
       _scheduleRtcReconnect();
     }
   }
@@ -1235,7 +1235,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
     final tokenResp = await _meetingService.getMeetingToken(widget.meetingId);
     if (!mounted) return;
     if (!tokenResp.isSuccess || tokenResp.data == null) {
-      debugPrint('[Meeting] renew token failed: ${tokenResp.message}');
+      if (kDebugMode) debugPrint('[Meeting] renew token failed: ${tokenResp.message}');
       _rtcStatusHint = '音视频凭证续期失败，正在重试';
       if (mounted) setState(() {});
       _scheduleRtcReconnect();
@@ -1246,7 +1246,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       _rtcStatusHint = null;
       if (mounted) setState(() {});
     } catch (e) {
-      debugPrint('[Meeting] renew token error: $e');
+      if (kDebugMode) debugPrint('[Meeting] renew token error: $e');
       _rtcStatusHint = '音视频凭证续期失败，正在重试';
       if (mounted) setState(() {});
       _scheduleRtcReconnect();
@@ -1288,7 +1288,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       await engine.stopPreview();
       await engine.release();
     } catch (e) {
-      debugPrint('[Meeting] teardown rtc error: $e');
+      if (kDebugMode) debugPrint('[Meeting] teardown rtc error: $e');
     } finally {
       _rtcEngine = null;
       _rtcEventHandler = null;
@@ -1324,7 +1324,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       if (!mounted) return;
       setState(() => _audioMuted = next);
     } catch (e) {
-      debugPrint('[Meeting] mute audio error: $e');
+      if (kDebugMode) debugPrint('[Meeting] mute audio error: $e');
     }
   }
 
@@ -1352,7 +1352,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
       if (!mounted) return;
       setState(() => _videoMuted = next);
     } catch (e) {
-      debugPrint('[Meeting] mute video error: $e');
+      if (kDebugMode) debugPrint('[Meeting] mute video error: $e');
     }
   }
 
@@ -1362,7 +1362,7 @@ class _MeetingPageState extends ConsumerState<MeetingPage> {
     try {
       await engine.switchCamera();
     } catch (e) {
-      debugPrint('[Meeting] switch camera error: $e');
+      if (kDebugMode) debugPrint('[Meeting] switch camera error: $e');
     }
   }
 

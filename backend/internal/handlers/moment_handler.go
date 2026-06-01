@@ -538,7 +538,7 @@ func (h *MomentHandler) LikeMoment(c *gin.Context) {
 		// 获取动态作者的 UUID
 		var author models.User
 		if err := h.db.First(&author, moment.UserID).Error; err == nil {
-			h.hub.SendToUser(author.UUID, map[string]interface{}{
+			h.hub.SendToUserCluster(author.UUID, map[string]interface{}{
 				"type":        "moment_like",
 				"moment_id":   mid,
 				"user_id":     uid,
@@ -759,7 +759,7 @@ func (h *MomentHandler) AddComment(c *gin.Context) {
 			if h.db.First(&parentComment, *req.ReplyToID).Error == nil && parentComment.UserID != uid {
 				var targetUser models.User
 				if h.db.First(&targetUser, parentComment.UserID).Error == nil {
-					h.hub.SendToUser(targetUser.UUID, map[string]interface{}{
+					h.hub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
 						"type":        "moment_reply",
 						"moment_id":   mid,
 						"comment_id":  comment.ID,
@@ -774,7 +774,7 @@ func (h *MomentHandler) AddComment(c *gin.Context) {
 			// 评论：通知动态作者
 			var author models.User
 			if h.db.First(&author, moment.UserID).Error == nil {
-				h.hub.SendToUser(author.UUID, map[string]interface{}{
+				h.hub.SendToUserCluster(author.UUID, map[string]interface{}{
 					"type":        "moment_comment",
 					"moment_id":   mid,
 					"comment_id":  comment.ID,

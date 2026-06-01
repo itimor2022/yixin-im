@@ -320,7 +320,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final raw = data['message'];
         if (raw == null) return;
         if (raw is! Map) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Chat] WS new_message: expected message object, got ${raw.runtimeType}',
           );
           return;
@@ -331,7 +331,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           );
           _handleNewMessage(message);
         } catch (e, st) {
-          debugPrint('[Chat] WS new_message fromJson failed: $e');
+          if (kDebugMode) debugPrint('[Chat] WS new_message fromJson failed: $e');
           debugPrintStack(stackTrace: st, maxFrames: 12);
         }
       }),
@@ -346,7 +346,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听新会话
     _wsHandlerIds.add(
-      _wsService.registerHandler('new_chat', (data) {
+      _wsService.registerHandler(WSMessageType.newChat, (data) {
         _handleNewChat(data);
       }),
     );
@@ -354,7 +354,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     // 监听重连事件 → 静默刷新会话列表，并对本地会话做增量预取写入 Isar（无需再进会话才拉到断网期间消息）
     _wsHandlerIds.add(
       _wsService.registerHandler(WSMessageType.reconnected, (data) {
-        debugPrint('[Chat] WS reconnected, silent refreshing chat list...');
+        if (kDebugMode) debugPrint('[Chat] WS reconnected, silent refreshing chat list...');
         unawaited(_onWebSocketReconnectedResume());
       }),
     );
@@ -364,19 +364,19 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler('read', (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          debugPrint('[Chat] Received read receipt for chat: $chatId');
+          if (kDebugMode) debugPrint('[Chat] Received read receipt for chat: $chatId');
         }
       }),
     );
 
     // 监听自己其他设备的已读同步（type: "read_sync"）
     _wsHandlerIds.add(
-      _wsService.registerHandler('read_sync', (data) {
+      _wsService.registerHandler(WSMessageType.readSync, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
           final chat = _findChatById(chatId);
           if (chat != null && chat.unreadCount > 0) {
-            debugPrint('[Chat] read_sync: clearing unread for chat $chatId');
+            if (kDebugMode) debugPrint('[Chat] read_sync: clearing unread for chat $chatId');
             updateChat(chat.copyWith(unreadCount: 0));
           }
         }
@@ -385,10 +385,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听群组被解散（type: "chat_deleted"）
     _wsHandlerIds.add(
-      _wsService.registerHandler('chat_deleted', (data) {
+      _wsService.registerHandler(WSMessageType.chatDeleted, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          debugPrint('[Chat] Chat deleted: $chatId');
+          if (kDebugMode) debugPrint('[Chat] Chat deleted: $chatId');
           removeChat(chatId);
         }
       }),
@@ -396,10 +396,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听当前用户在其他设备上隐藏/删除了会话（多端同步，type: "chat_hidden"）
     _wsHandlerIds.add(
-      _wsService.registerHandler('chat_hidden', (data) {
+      _wsService.registerHandler(WSMessageType.chatHidden, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          debugPrint('[Chat] Chat hidden on another device, syncing: $chatId');
+          if (kDebugMode) debugPrint('[Chat] Chat hidden on another device, syncing: $chatId');
           _clearTypingForChat(chatId);
           // 从本地列表移除（不再调用后端，避免循环）
           state = state.copyWith(
@@ -447,10 +447,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听自己退出群组/被踢出（type: "chat_left"）
     _wsHandlerIds.add(
-      _wsService.registerHandler('chat_left', (data) {
+      _wsService.registerHandler(WSMessageType.chatLeft, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          debugPrint('[Chat] Chat left: $chatId');
+          if (kDebugMode) debugPrint('[Chat] Chat left: $chatId');
           removeChat(chatId);
         }
       }),
@@ -458,8 +458,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听个人资料更新（其他设备编辑后同步，type: "profile_updated"）
     _wsHandlerIds.add(
-      _wsService.registerHandler('profile_updated', (data) {
-        debugPrint('[Chat] Profile updated from another device');
+      _wsService.registerHandler(WSMessageType.profileUpdated, (data) {
+        if (kDebugMode) debugPrint('[Chat] Profile updated from another device');
         // 刷新当前用户信息
         _ref.read(authServiceProvider.notifier).getCurrentUser();
         // 同步刷新聊天列表，确保自己的会员状态变更后相关会话样式及时更新
@@ -492,10 +492,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听加入申请通过
     _wsHandlerIds.add(
-      _wsService.registerHandler('join_approved', (data) {
+      _wsService.registerHandler(WSMessageType.joinApproved, (data) {
         final chatId = data['chat_id'] as String?;
         final name = data['name'] as String?;
-        debugPrint('[Chat] Join request approved for chat: $chatId ($name)');
+        if (kDebugMode) debugPrint('[Chat] Join request approved for chat: $chatId ($name)');
         loadFromServer();
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
@@ -505,10 +505,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听加入申请被拒绝
     _wsHandlerIds.add(
-      _wsService.registerHandler('join_rejected', (data) {
+      _wsService.registerHandler(WSMessageType.joinRejected, (data) {
         final chatId = data['chat_id'] as String?;
         final name = data['name'] as String?;
-        debugPrint('[Chat] Join request rejected for chat: $chatId ($name)');
+        if (kDebugMode) debugPrint('[Chat] Join request rejected for chat: $chatId ($name)');
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
         }
@@ -517,9 +517,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听群组/频道成员变化
     _wsHandlerIds.add(
-      _wsService.registerHandler('chat_update', (data) {
+      _wsService.registerHandler(WSMessageType.chatUpdate, (data) {
         final chatId = data['chat_id'] as String?;
-        debugPrint('[Chat] Chat updated: $chatId');
+        if (kDebugMode) debugPrint('[Chat] Chat updated: $chatId');
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
           _ref.invalidate(chatMembersProvider(chatId));
@@ -530,11 +530,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 监听用户在线状态变化 — 只刷新匹配的私聊，避免 N 次 API 请求
     _wsHandlerIds.add(
-      _wsService.registerHandler('user_status', (data) {
+      _wsService.registerHandler(WSMessageType.userStatus, (data) {
         final userId = data['user_id'] as String?;
         final isOnline = data['is_online'] as bool? ?? false;
         if (userId == null) return;
-        debugPrint('[Chat] User status changed: $userId, isOnline=$isOnline');
+        if (kDebugMode) debugPrint('[Chat] User status changed: $userId, isOnline=$isOnline');
 
         // 只找到与该用户的私聊并刷新（O(1) 而不是 O(N)）
         final allChats = [...state.regularChats, ...state.pinnedChats];
@@ -567,7 +567,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             );
             return;
           } catch (e) {
-            debugPrint('[Chat] parse edited message failed: $e');
+            if (kDebugMode) debugPrint('[Chat] parse edited message failed: $e');
           }
         }
         final chatId = data['chat_id']?.toString();
@@ -622,7 +622,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             : data;
         final chatId = payload['chat_id'] as String?;
         final userId = payload['user_id'] as String?;
-        debugPrint(
+        if (kDebugMode) debugPrint(
           '[Chat] Member mute status changed: chatId=$chatId, userId=$userId',
         );
         if (chatId != null && userId != null) {
@@ -639,7 +639,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final message = data['message'] as Map<String, dynamic>?;
         final chatId =
             message?['chat_id'] as String? ?? data['chat_id'] as String?;
-        debugPrint('[Chat] Chat permissions updated: chatId=$chatId');
+        if (kDebugMode) debugPrint('[Chat] Chat permissions updated: chatId=$chatId');
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
         }
@@ -742,7 +742,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             );
           });
         } catch (e) {
-          debugPrint('[Chat] Failed to persist user profile update: $e');
+          if (kDebugMode) debugPrint('[Chat] Failed to persist user profile update: $e');
         }
       });
     }
@@ -969,7 +969,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   /// 处理新消息
   void _handleNewMessage(api.Message message) {
     if (!_rememberMessageId(message.msgId)) {
-      debugPrint('[Chat] Skip duplicate new_message: ${message.msgId}');
+      if (kDebugMode) debugPrint('[Chat] Skip duplicate new_message: ${message.msgId}');
       return;
     }
 
@@ -1079,11 +1079,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
       soundService.playNotification(notificationType, isInApp: true).catchError(
         (e) {
-          debugPrint('[Chat] Play notification sound async error: $e');
+          if (kDebugMode) debugPrint('[Chat] Play notification sound async error: $e');
         },
       );
     } catch (e) {
-      debugPrint('[Chat] Play notification sound failed: $e');
+      if (kDebugMode) debugPrint('[Chat] Play notification sound failed: $e');
     }
   }
 
@@ -1123,7 +1123,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         unreadCount: unreadCount,
       );
     } catch (e) {
-      debugPrint('[ChatProvider] Background notification error: $e');
+      if (kDebugMode) debugPrint('[ChatProvider] Background notification error: $e');
     }
   }
 
@@ -1163,7 +1163,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         payload: chat.id,
       );
     } catch (e) {
-      debugPrint('[ChatProvider] Desktop notification error: $e');
+      if (kDebugMode) debugPrint('[ChatProvider] Desktop notification error: $e');
     }
   }
 
@@ -1184,13 +1184,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     if (chatId == null) return;
 
-    debugPrint(
+    if (kDebugMode) debugPrint(
       '[Chat] Received new_chat notification: $chatId, name: $name, type: $chatType',
     );
 
     // 检查是否已存在
     if (_findChatById(chatId) != null) {
-      debugPrint('[Chat] Chat already exists, skipping');
+      if (kDebugMode) debugPrint('[Chat] Chat already exists, skipping');
       return;
     }
 
@@ -1210,7 +1210,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     if (_isDisposed) return;
     state = state.copyWith(regularChats: [chat, ...state.regularChats]);
 
-    debugPrint('[Chat] Added new chat to list');
+    if (kDebugMode) debugPrint('[Chat] Added new chat to list');
   }
 
   /// 移动聊天到列表顶部
@@ -1248,7 +1248,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           await IsarService.instance.isar.chatModels.put(model);
         });
       } catch (e) {
-        debugPrint('[Chat] Failed to update chat in cache: $e');
+        if (kDebugMode) debugPrint('[Chat] Failed to update chat in cache: $e');
       }
     });
   }
@@ -1300,7 +1300,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         );
       }
     } catch (e) {
-      debugPrint('[Chat] Failed to load from cache: $e');
+      if (kDebugMode) debugPrint('[Chat] Failed to load from cache: $e');
     }
   }
 
@@ -1554,7 +1554,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               await IsarService.instance.isar.chatModels.putAll(models);
             });
           } catch (e) {
-            debugPrint('[Chat] Failed to cache chats: $e');
+            if (kDebugMode) debugPrint('[Chat] Failed to cache chats: $e');
           }
         });
 
@@ -1711,7 +1711,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               await IsarService.instance.isar.chatModels.putAll(models);
             });
           } catch (e) {
-            debugPrint('[Chat] Failed to cache chats in silent refresh: $e');
+            if (kDebugMode) debugPrint('[Chat] Failed to cache chats in silent refresh: $e');
           }
         });
       } else {
@@ -1722,7 +1722,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       }
     } catch (e) {
       // 静默刷新失败记录日志但不显示错误
-      debugPrint('[Chat] Silent refresh failed: $e');
+      if (kDebugMode) debugPrint('[Chat] Silent refresh failed: $e');
       if (!_isDisposed) {
         state = state.copyWith(isSilentLoading: false);
       }
@@ -1777,11 +1777,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               .map((m) => MessageItem.fromApiMessage(m, uid))
               .toList();
           await persistMessageItemsToIsarCache(items);
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Chat] Reconnect prefetch: ${items.length} messages → Isar, chat=${chat.id}',
           );
         } catch (e) {
-          debugPrint(
+          if (kDebugMode) debugPrint(
             '[Chat] Reconnect prefetch failed for chat ${chat.id}: $e',
           );
         }
@@ -2296,9 +2296,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               .idEqualTo(chatId)
               .deleteAll();
         });
-        debugPrint('[ChatProvider] 已清空聊天 $chatId 的本地记录');
+        if (kDebugMode) debugPrint('[ChatProvider] 已清空聊天 $chatId 的本地记录');
       } catch (e) {
-        debugPrint('[ChatProvider] 删除本地消息失败: $e');
+        if (kDebugMode) debugPrint('[ChatProvider] 删除本地消息失败: $e');
       }
     }
 
@@ -2306,7 +2306,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     try {
       await _chatService.hideChat(chatId);
     } catch (e) {
-      debugPrint('[ChatProvider] 通知后端隐藏聊天失败: $e');
+      if (kDebugMode) debugPrint('[ChatProvider] 通知后端隐藏聊天失败: $e');
     }
   }
 
@@ -2526,7 +2526,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             state = state.copyWith(
               regularChats: [chatItem, ...state.regularChats],
             );
-            debugPrint('[Chat] Added joined chat to list: ${chat.name}');
+            if (kDebugMode) debugPrint('[Chat] Added joined chat to list: ${chat.name}');
           }
         }
         // 同时刷新列表确保数据同步

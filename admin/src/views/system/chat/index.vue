@@ -109,6 +109,7 @@
         :data="data"
         :columns="columns"
         :pagination="pagination"
+        tableLayout="auto"
         @pagination:size-change="handleSizeChange"
         @pagination:current-change="handleCurrentChange"
       >
@@ -249,7 +250,7 @@
                     )
                   : h(ElAvatar, {
                       size: 44,
-                      src: getAvatarUrl(undefined, row.uuid),
+                      src: getAvatarUrl(null, row.uuid),
                       class: 'rounded-xl'
                     }),
                 h('div', { class: 'ml-4' }, [
@@ -329,6 +330,17 @@
           formatter: (row) => {
             if (row.type === 1) return h('span', { class: 'text-g-400' }, '2')
             return h('span', { class: 'font-medium' }, row.memberCount)
+          }
+        },
+        {
+          prop: 'onlineCount',
+          label: '在线',
+          width: 70,
+          align: 'center',
+          formatter: (row) => {
+            if (row.type === 1) return h('span', { class: 'text-g-300' }, '—')
+            if (!row.onlineCount) return h('span', { class: 'text-g-300' }, '0')
+            return h('span', { class: 'text-green-500 font-medium' }, String(row.onlineCount))
           }
         },
         {

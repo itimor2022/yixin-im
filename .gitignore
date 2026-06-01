@@ -2,6 +2,7 @@
 /server
 *.exe
 *.dll
+*.zip
 
 # 上传目录（运行时生成）
 baota/uploads/
@@ -28,3 +29,17 @@ admin/dist-ssr/
 docs/app_literals_snippets.txt
 docs/garbled_literals.txt
 docs/encoding_candidates.txt
+
+
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/.idea/
+android/.vscode/
+android/.DS_Store
+android/*.log
+android/*.tmp
+android/data.db
+
+.darts_tool/

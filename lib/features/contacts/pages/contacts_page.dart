@@ -168,7 +168,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                       id: 'search_users',
                     );
                   } else {
-                    debugPrint(
+                    if (kDebugMode) debugPrint(
                       '[Contacts] Add button pressed, pushing /search-users',
                     );
                     context.push('/search-users');

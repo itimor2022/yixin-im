@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -378,7 +379,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
         _handleMomentNotification(NotificationType.momentReply);
       });
     } catch (e) {
-      debugPrint('设置动态 WebSocket 处理器失败: $e');
+      if (kDebugMode) debugPrint('设置动态 WebSocket 处理器失败: $e');
     }
   }
 
@@ -414,7 +415,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final soundService = _ref.read(notificationSoundServiceProvider.notifier);
       soundService.playNotification(type, isInApp: true);
     } catch (e) {
-      debugPrint('[Moment] Play notification sound failed: $e');
+      if (kDebugMode) debugPrint('[Moment] Play notification sound failed: $e');
     }
   }
 
@@ -597,7 +598,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
         state = state.copyWith(hotTopics: list);
       }
     } catch (e) {
-      debugPrint('[Moment] Load hot topics failed: $e');
+      if (kDebugMode) debugPrint('[Moment] Load hot topics failed: $e');
     }
   }
 
@@ -619,7 +620,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
     }
 
     try {
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Moment] Publishing: type=$contentTypeValue, urlCount=${mediaUrls?.length ?? 0}',
       );
 
@@ -636,7 +637,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
         },
       );
 
-      debugPrint(
+      if (kDebugMode) debugPrint(
         '[Moment] Publish response: code=${response.code}, success=${response.isSuccess}',
       );
 
@@ -665,11 +666,11 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final errMsg = response.message.isNotEmpty
           ? response.message
           : '发布失败，请重试';
-      debugPrint('[Moment] Publish failed: $errMsg');
+      if (kDebugMode) debugPrint('[Moment] Publish failed: $errMsg');
       state = state.copyWith(error: errMsg);
       return false;
     } catch (e) {
-      debugPrint('[Moment] Publish error: $e');
+      if (kDebugMode) debugPrint('[Moment] Publish error: $e');
       state = state.copyWith(error: '发布失败，请检查网络连接');
       return false;
     }
@@ -738,7 +739,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       }
       return false;
     } catch (e) {
-      debugPrint('[Moment] Block moment error: $e');
+      if (kDebugMode) debugPrint('[Moment] Block moment error: $e');
       return false;
     }
   }
@@ -755,7 +756,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       }
       return false;
     } catch (e) {
-      debugPrint('[Moment] Block user error: $e');
+      if (kDebugMode) debugPrint('[Moment] Block user error: $e');
       return false;
     }
   }
@@ -890,7 +891,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       }
       return [];
     } catch (e) {
-      debugPrint('[Moment] Get comments error: $e');
+      if (kDebugMode) debugPrint('[Moment] Get comments error: $e');
       return [];
     }
   }
@@ -925,11 +926,11 @@ class MomentNotifier extends StateNotifier<MomentState> {
 
         return Comment.fromJson(response.data as Map<String, dynamic>);
       }
-      debugPrint('[Moment] Add comment failed: ${response.message}');
+      if (kDebugMode) debugPrint('[Moment] Add comment failed: ${response.message}');
       state = state.copyWith(error: response.message ?? '评论失败');
       return null;
     } catch (e) {
-      debugPrint('[Moment] Add comment error: $e');
+      if (kDebugMode) debugPrint('[Moment] Add comment error: $e');
       state = state.copyWith(error: '评论失败，请检查网络连接');
       return null;
     }

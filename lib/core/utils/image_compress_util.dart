@@ -48,11 +48,11 @@ class ImageCompressUtil {
       
       // 小于阈值的图片不压缩
       if (fileSize < compressThreshold) {
-        debugPrint('[ImageCompress] Skip: file size ${_formatSize(fileSize)} < threshold');
+        if (kDebugMode) debugPrint('[ImageCompress] Skip: file size ${_formatSize(fileSize)} < threshold');
         return filePath;
       }
       
-      debugPrint('[ImageCompress] Compressing: ${_formatSize(fileSize)}');
+      if (kDebugMode) debugPrint('[ImageCompress] Compressing: ${_formatSize(fileSize)}');
       
       // 获取临时目录
       final tempDir = await getTemporaryDirectory();
@@ -70,25 +70,25 @@ class ImageCompressUtil {
       );
       
       if (result == null) {
-        debugPrint('[ImageCompress] Failed, using original');
+        if (kDebugMode) debugPrint('[ImageCompress] Failed, using original');
         return filePath;
       }
       
       final compressedSize = await result.length();
       final ratio = ((1 - compressedSize / fileSize) * 100).toStringAsFixed(1);
       
-      debugPrint('[ImageCompress] Done: ${_formatSize(fileSize)} -> ${_formatSize(compressedSize)} (-$ratio%)');
+      if (kDebugMode) debugPrint('[ImageCompress] Done: ${_formatSize(fileSize)} -> ${_formatSize(compressedSize)} (-$ratio%)');
       
       // 如果压缩后反而更大，返回原图
       if (compressedSize >= fileSize) {
-        debugPrint('[ImageCompress] Compressed larger, using original');
+        if (kDebugMode) debugPrint('[ImageCompress] Compressed larger, using original');
         await File(targetPath).delete().catchError((_) {});
         return filePath;
       }
       
       return result.path;
     } catch (e) {
-      debugPrint('[ImageCompress] Error: $e');
+      if (kDebugMode) debugPrint('[ImageCompress] Error: $e');
       return filePath; // 出错时返回原图
     }
   }
@@ -111,7 +111,7 @@ class ImageCompressUtil {
       );
       return result;
     } catch (e) {
-      debugPrint('[ImageCompress] Error: $e');
+      if (kDebugMode) debugPrint('[ImageCompress] Error: $e');
       return null;
     }
   }

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gaoranim/internal/cache"
 	"gaoranim/internal/config"
 	"gaoranim/internal/middleware"
 	"gaoranim/internal/models"
@@ -50,6 +51,7 @@ type SettingHandler struct {
 	db          *gorm.DB
 	pushService PushConfigReloader
 	smsSvc      *services.SMSService
+	cache       *cache.Cache // ★ 用于系统设置缓存失效
 }
 
 func defaultServiceWelcomeMessage() string {
@@ -153,6 +155,11 @@ func NewSettingHandler(db *gorm.DB, pushService ...*services.PushService) *Setti
 
 func (h *SettingHandler) SetSMSService(smsSvc *services.SMSService) {
 	h.smsSvc = smsSvc
+}
+
+// SetCache 注入缓存实例，用于系统设置变更时主动失效缓存
+func (h *SettingHandler) SetCache(c *cache.Cache) {
+	h.cache = c
 }
 
 // ==================== 系统设置 ====================
@@ -295,6 +302,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				"value": valueStr,
 				"type":  valueType,
 			})
+		}
+	}
+
+	// ★ 批量清除系统设置缓存，保证 RequirePhoneBind/getIntSetting/getStringSetting 读到最新值
+	if h.cache != nil {
+		ctx := c.Request.Context()
+		for key := range req {
+			_ = h.cache.DeleteSystemSetting(ctx, key)
 		}
 	}
 

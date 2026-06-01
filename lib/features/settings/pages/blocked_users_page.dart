@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -35,7 +36,7 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
         _blockedUsers = list.map((e) => BlockedUser.fromJson(e)).toList();
       }
     } catch (e) {
-      debugPrint('[BlockedUsers] Load error: $e');
+      if (kDebugMode) debugPrint('[BlockedUsers] Load error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../core/utils/platform_utils.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -470,6 +473,11 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
 
   @override
   Widget build(BuildContext context) {
+    // Web 端不支持摄像头扫码，显示上传图片识别界面
+    if (kIsWeb) {
+      return _buildWebFallback(context);
+    }
+
     final overlayColor = Colors.black.withOpacity(0.6);
 
     return Scaffold(
@@ -549,7 +557,7 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 36),
                   child: Text(
-                    Platform.isIOS || Platform.isAndroid
+                    PlatformUtils.isMobile
                         ? '支持扫描好友二维码，识别后可直接加好友或查看资料'
                         : '可通过相册选择二维码图片进行识别',
                     textAlign: TextAlign.center,
@@ -564,6 +572,88 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+  /// Web 端降级：不支持摄像头扫码，提供图片上传识别
+  Widget _buildWebFallback(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        foregroundColor: isDark ? Colors.white : Colors.black,
+        title: const Text('扫描二维码'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  size: 52,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Web 端扫码',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Web 端不支持摄像头扫码\n请上传包含二维码的图片进行识别',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white54 : Colors.black54,
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 36),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isProcessing ? null : _pickFromGallery,
+                  icon: _isProcessing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.photo_library_outlined),
+                  label: Text(_isProcessing ? '识别中...' : '从图片识别二维码'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -724,6 +814,7 @@ class _ScannedUserSheet extends StatelessWidget {
     );
   }
 }
+
 
 class _ScannerOverlayPainter extends CustomPainter {
   final Color overlayColor;

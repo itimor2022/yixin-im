@@ -138,7 +138,7 @@ class HotUpdateSdkAdapter {
         message: 'hot_update_sdk_not_available',
       );
     } catch (e) {
-      debugPrint('[HotUpdateSDK] getSupportStatus error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] getSupportStatus error: $e');
       return HotUpdateSupportStatus(
         available: false,
         sdkIntegrated: false,
@@ -200,7 +200,7 @@ class HotUpdateSdkAdapter {
       final patch = await _shorebirdUpdater.readCurrentPatch();
       return patch?.number;
     } catch (e) {
-      debugPrint('[HotUpdateSDK] readCurrentShorebirdPatchNumber error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] readCurrentShorebirdPatchNumber error: $e');
       return null;
     }
   }
@@ -214,7 +214,7 @@ class HotUpdateSdkAdapter {
       final patch = await _shorebirdUpdater.readNextPatch();
       return patch?.number;
     } catch (e) {
-      debugPrint('[HotUpdateSDK] readNextShorebirdPatchNumber error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] readNextShorebirdPatchNumber error: $e');
       return null;
     }
   }
@@ -373,7 +373,7 @@ class HotUpdateSdkAdapter {
           );
       }
     } catch (e) {
-      debugPrint('[HotUpdateSDK] Shorebird applyPatch error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] Shorebird applyPatch error: $e');
       return HotUpdateApplyResult(
         success: false,
         requiresRestart: false,
@@ -573,14 +573,14 @@ class HotUpdateSdkAdapter {
         defaultRequiresRestart: true,
       );
     } on DioException catch (e) {
-      debugPrint('[HotUpdateSDK] Android patch download failed: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] Android patch download failed: $e');
       return HotUpdateApplyResult(
         success: false,
         requiresRestart: false,
         message: 'patch_download_failed:${e.message ?? 'unknown'}',
       );
     } catch (e) {
-      debugPrint('[HotUpdateSDK] Android applyPatch error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] Android applyPatch error: $e');
       return HotUpdateApplyResult(
         success: false,
         requiresRestart: false,
@@ -735,14 +735,14 @@ class HotUpdateSdkAdapter {
         defaultRequiresRestart: true,
       );
     } on DioException catch (e) {
-      debugPrint('[HotUpdateSDK] iOS patch descriptor download failed: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] iOS patch descriptor download failed: $e');
       return HotUpdateApplyResult(
         success: false,
         requiresRestart: false,
         message: 'patch_download_failed:${e.message ?? 'unknown'}',
       );
     } catch (e) {
-      debugPrint('[HotUpdateSDK] iOS applyPatch error: $e');
+      if (kDebugMode) debugPrint('[HotUpdateSDK] iOS applyPatch error: $e');
       return HotUpdateApplyResult(
         success: false,
         requiresRestart: false,

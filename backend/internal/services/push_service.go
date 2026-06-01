@@ -467,7 +467,73 @@ func (s *PushService) PushNewMessage(userID uint64, senderName, content, chatID,
 	return s.PushToUser(userID, title, body, data)
 }
 
+// PushNewMessageWithBody 发送新消息推送（body 已由调用方计算好，跳过单行查询）
+func (s *PushService) PushNewMessageWithBody(userID uint64, senderName, body, chatID, chatType string) error {
+	data := map[string]interface{}{
+		"type":      "new_message",
+		"chat_id":   chatID,
+		"chat_type": chatType,
+	}
+	return s.PushToUser(userID, senderName, body, data)
+}
+
 // PushCall sends incoming call push.
+// PushNewMessageBatch 批量推送新消息通知（大群优化：一次查所有用户设备，避免 N 次单行查询）
+// users: []struct{ID uint64, body string, senderName string}
+type BatchPushUser struct {
+	UserID     uint64
+	SenderName string
+	Body       string
+}
+
+// PushNewMessageBatch 批量推送新消息（大群优化：一次查所有用户设备，避免N次单行查询）
+func (s *PushService) PushNewMessageBatch(users []BatchPushUser, chatID, chatType string) {
+	if len(users) == 0 {
+		return
+	}
+
+	// 一次查所有用户的设备
+	userIDs := make([]uint64, 0, len(users))
+	for _, u := range users {
+		userIDs = append(userIDs, u.UserID)
+	}
+
+	var allDevices []models.UserDevice
+	s.db.Where("user_id IN ? AND push_token != ''", userIDs).Find(&allDevices)
+	if len(allDevices) == 0 {
+		return
+	}
+
+	// 按 userID 分组设备
+	deviceMap := make(map[uint64][]models.UserDevice, len(users))
+	for _, d := range allDevices {
+		deviceMap[d.UserID] = append(deviceMap[d.UserID], d)
+	}
+
+	data := map[string]interface{}{
+		"type":      "new_message",
+		"chat_id":   chatID,
+		"chat_type": chatType,
+	}
+
+	// 并发推送，每个用户复用 PushToUser 逻辑，限制并发20
+	sem := make(chan struct{}, 20)
+	var wg sync.WaitGroup
+	for _, u := range users {
+		if _, hasDevice := deviceMap[u.UserID]; !hasDevice {
+			continue
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(pu BatchPushUser) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			_ = s.PushToUser(pu.UserID, pu.SenderName, pu.Body, data)
+		}(u)
+	}
+	wg.Wait()
+}
+
 func (s *PushService) PushCall(userID uint64, callerName string, callID string, isVideo bool, extras ...map[string]interface{}) error {
 	callType := "语音"
 	if isVideo {

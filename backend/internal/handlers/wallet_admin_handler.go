@@ -46,21 +46,41 @@ func (h *WalletAdminHandler) ListWithdrawRequests(c *gin.Context) {
 		Limit(pageSize).
 		Find(&requests)
 
+	// ★ 批量查询 user 和 withdrawMethod，避免双倍 N+1
+	wdUserIDs := make([]uint64, 0, len(requests))
+	wdMethodIDs := make([]uint64, 0, len(requests))
+	for _, r := range requests {
+		wdUserIDs = append(wdUserIDs, r.UserID)
+		wdMethodIDs = append(wdMethodIDs, r.MethodID)
+	}
+	var wdUsers []models.User
+	if len(wdUserIDs) > 0 {
+		h.db.Where("id IN ?", wdUserIDs).Find(&wdUsers)
+	}
+	wdUserMap := make(map[uint64]models.User, len(wdUsers))
+	for _, u := range wdUsers {
+		wdUserMap[u.ID] = u
+	}
+	var wdMethods []models.WithdrawMethod
+	if len(wdMethodIDs) > 0 {
+		h.db.Where("id IN ?", wdMethodIDs).Find(&wdMethods)
+	}
+	wdMethodMap := make(map[uint64]models.WithdrawMethod, len(wdMethods))
+	for _, m := range wdMethods {
+		wdMethodMap[m.ID] = m
+	}
+
 	// 获取用户和方式信息
 	result := make([]gin.H, len(requests))
 	for i, req := range requests {
-		var user models.User
-		h.db.First(&user, req.UserID)
-
-		var method models.WithdrawMethod
-		h.db.First(&method, req.MethodID)
-
+		u := wdUserMap[req.UserID]
+		method := wdMethodMap[req.MethodID]
 		item := gin.H{
 			"id":            req.ID,
-			"user_id":       user.UUID,
-			"user_name":     user.Nickname,
-			"username":      user.Username,
-			"avatar":        user.Avatar,
+			"user_id":       u.UUID,
+			"user_name":     u.Nickname,
+			"username":      u.Username,
+			"avatar":        u.Avatar,
 			"method_name":   method.Name,
 			"amount":        req.Amount,
 			"fee":           req.Fee,
@@ -818,15 +838,43 @@ func (h *WalletAdminHandler) ListRedPackets(c *gin.Context) {
 		Limit(pageSize).
 		Find(&redPackets)
 
+	// ★ 批量查询 sender，避免 N+1
+	rpSenderIDs := make([]uint64, 0, len(redPackets))
+	rpIDs := make([]uint64, 0, len(redPackets))
+	for _, rp := range redPackets {
+		rpSenderIDs = append(rpSenderIDs, rp.SenderID)
+		rpIDs = append(rpIDs, rp.ID)
+	}
+	var rpSenders []models.User
+	if len(rpSenderIDs) > 0 {
+		h.db.Where("id IN ?", rpSenderIDs).Find(&rpSenders)
+	}
+	rpSenderMap := make(map[uint64]models.User, len(rpSenders))
+	for _, u := range rpSenders {
+		rpSenderMap[u.ID] = u
+	}
+
+	// ★ 批量查询领取数，避免 N+1（GROUP BY 一次汇总）
+	type claimCountRow struct {
+		RedPacketID uint64
+		Count       int64
+	}
+	var claimCounts []claimCountRow
+	if len(rpIDs) > 0 {
+		h.db.Model(&models.RedPacketClaim{}).
+			Select("red_packet_id, COUNT(*) as count").
+			Where("red_packet_id IN ?", rpIDs).
+			Group("red_packet_id").
+			Scan(&claimCounts)
+	}
+	claimCountMap := make(map[uint64]int64, len(claimCounts))
+	for _, cc := range claimCounts {
+		claimCountMap[cc.RedPacketID] = cc.Count
+	}
+
 	result := make([]gin.H, len(redPackets))
 	for i, rp := range redPackets {
-		var sender models.User
-		h.db.First(&sender, rp.SenderID)
-
-		// 获取领取数
-		var claimCount int64
-		h.db.Model(&models.RedPacketClaim{}).Where("red_packet_id = ?", rp.ID).Count(&claimCount)
-
+		sender := rpSenderMap[rp.SenderID]
 		result[i] = gin.H{
 			"id":               rp.UUID,
 			"sender_id":        sender.UUID,
@@ -838,7 +886,7 @@ func (h *WalletAdminHandler) ListRedPackets(c *gin.Context) {
 			"total_count":      rp.TotalCount,
 			"remaining_amount": rp.RemainingAmount,
 			"remaining_count":  rp.RemainingCount,
-			"claim_count":      claimCount,
+			"claim_count":      claimCountMap[rp.ID],
 			"message":          rp.Message,
 			"status":           rp.Status,
 			"expired_at":       rp.ExpiredAt,
@@ -871,14 +919,27 @@ func (h *WalletAdminHandler) GetRedPacketDetail(c *gin.Context) {
 	var claims []models.RedPacketClaim
 	h.db.Where("red_packet_id = ?", redPacket.ID).Order("created_at").Find(&claims)
 
+	// ★ 批量查询领取用户，避免 N+1
+	claimUserIDs := make([]uint64, 0, len(claims))
+	for _, cl := range claims {
+		claimUserIDs = append(claimUserIDs, cl.UserID)
+	}
+	var claimUsers []models.User
+	if len(claimUserIDs) > 0 {
+		h.db.Where("id IN ?", claimUserIDs).Find(&claimUsers)
+	}
+	claimUserMap := make(map[uint64]models.User, len(claimUsers))
+	for _, u := range claimUsers {
+		claimUserMap[u.ID] = u
+	}
+
 	claimList := make([]gin.H, len(claims))
 	for i, claim := range claims {
-		var user models.User
-		h.db.First(&user, claim.UserID)
+		u := claimUserMap[claim.UserID]
 		claimList[i] = gin.H{
-			"user_id":     user.UUID,
-			"user_name":   user.Nickname,
-			"user_avatar": user.Avatar,
+			"user_id":     u.UUID,
+			"user_name":   u.Nickname,
+			"user_avatar": u.Avatar,
 			"amount":      claim.Amount,
 			"is_best":     claim.IsBest,
 			"created_at":  claim.CreatedAt,
@@ -1021,12 +1082,24 @@ func (h *WalletAdminHandler) ListTransfers(c *gin.Context) {
 		Limit(pageSize).
 		Find(&transfers)
 
+	// ★ 批量查询 sender/receiver，避免双倍 N+1
+	tfUserIDs := make([]uint64, 0, len(transfers)*2)
+	for _, tf := range transfers {
+		tfUserIDs = append(tfUserIDs, tf.SenderID, tf.ReceiverID)
+	}
+	var tfUsers []models.User
+	if len(tfUserIDs) > 0 {
+		h.db.Where("id IN ?", tfUserIDs).Find(&tfUsers)
+	}
+	tfUserMap := make(map[uint64]models.User, len(tfUsers))
+	for _, u := range tfUsers {
+		tfUserMap[u.ID] = u
+	}
+
 	result := make([]gin.H, len(transfers))
 	for i, tf := range transfers {
-		var sender, receiver models.User
-		h.db.First(&sender, tf.SenderID)
-		h.db.First(&receiver, tf.ReceiverID)
-
+		sender := tfUserMap[tf.SenderID]
+		receiver := tfUserMap[tf.ReceiverID]
 		result[i] = gin.H{
 			"id":              tf.UUID,
 			"sender_id":       sender.UUID,
@@ -1399,15 +1472,37 @@ func (h *WalletAdminHandler) ListRechargeOrders(c *gin.Context) {
 	var orders []models.RechargeOrder
 	query.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&orders)
 
+	// ★ 批量查询 user 和 rechargeMethod，避免双倍 N+1
+	orderUserIDs := make([]uint64, 0, len(orders))
+	orderMethodIDs := make([]uint64, 0, len(orders))
+	for _, o := range orders {
+		orderUserIDs = append(orderUserIDs, o.UserID)
+		orderMethodIDs = append(orderMethodIDs, o.MethodID)
+	}
+	var orderUsers []models.User
+	if len(orderUserIDs) > 0 {
+		h.db.Where("id IN ?", orderUserIDs).Find(&orderUsers)
+	}
+	orderUserMap := make(map[uint64]models.User, len(orderUsers))
+	for _, u := range orderUsers {
+		orderUserMap[u.ID] = u
+	}
+	var orderMethods []models.RechargeMethod
+	if len(orderMethodIDs) > 0 {
+		h.db.Where("id IN ?", orderMethodIDs).Find(&orderMethods)
+	}
+	orderMethodMap := make(map[uint64]models.RechargeMethod, len(orderMethods))
+	for _, m := range orderMethods {
+		orderMethodMap[m.ID] = m
+	}
+
 	result := make([]gin.H, len(orders))
 	for i, o := range orders {
-		var user models.User
-		h.db.First(&user, o.UserID)
-		var method models.RechargeMethod
-		h.db.First(&method, o.MethodID)
+		u := orderUserMap[o.UserID]
+		method := orderMethodMap[o.MethodID]
 		result[i] = gin.H{
-			"id": o.ID, "user_id": user.UUID, "user_name": user.Nickname,
-			"username": user.Username, "avatar": user.Avatar,
+			"id": o.ID, "user_id": u.UUID, "user_name": u.Nickname,
+			"username": u.Username, "avatar": u.Avatar,
 			"method_name": method.Name, "amount": o.Amount,
 			"proof_image": o.ProofImage, "status": o.Status,
 			"remark": o.Remark, "reviewed_by": o.ReviewedBy,

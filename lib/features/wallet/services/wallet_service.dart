@@ -99,7 +99,7 @@ extension TransactionTypeExtension on TransactionType {
       case 'recharge_rejected':
         return TransactionType.rechargeRejected;
       default:
-        debugPrint('[Wallet] Unknown transaction type: $value');
+        if (kDebugMode) debugPrint('[Wallet] Unknown transaction type: $value');
         return TransactionType.unknown;
     }
   }

@@ -1,4 +1,5 @@
 import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
@@ -136,7 +137,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         });
       }
     } catch (e) {
-      debugPrint('获取设备信息失败: $e');
+      if (kDebugMode) debugPrint('获取设备信息失败: $e');
     }
   }
 
@@ -165,7 +166,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      debugPrint('获取设备列表失败: $e');
+      if (kDebugMode) debugPrint('获取设备列表失败: $e');
       setState(() => _isLoading = false);
     }
   }

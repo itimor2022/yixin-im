@@ -117,7 +117,7 @@ class E2EEService {
           ifAbsent: () => 1,
         );
       } catch (e) {
-        debugPrint(
+        if (kDebugMode) debugPrint(
             '[E2EE] Skip invalid public key for ${device.userId}/${device.deviceId}: $e');
       }
     }
@@ -267,7 +267,7 @@ class E2EEService {
         newPublicJwk = webKeyPair?['publicJwk'];
         newPrivateJwk = webKeyPair?['privateJwk'];
       } catch (e) {
-        debugPrint('[E2EE] WebCrypto key generation failed, fallback: $e');
+        if (kDebugMode) debugPrint('[E2EE] WebCrypto key generation failed, fallback: $e');
       }
     }
 

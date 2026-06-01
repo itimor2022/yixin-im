@@ -180,3 +180,15 @@ ON DUPLICATE KEY UPDATE updated_at = NOW();
 ALTER TABLE users ADD INDEX idx_created_at (created_at);
 ALTER TABLE chats ADD INDEX idx_created_at (created_at);
 ALTER TABLE user_chats ADD INDEX idx_updated_at (updated_at);
+
+-- chat_last_msg 群/私聊最新消息摘要表
+CREATE TABLE IF NOT EXISTS `chat_last_msg` (
+  `chat_id` varchar(36) NOT NULL,
+  `last_seq` bigint unsigned NOT NULL DEFAULT '0',
+  `last_msg_time` datetime NOT NULL,
+  `last_msg_text` varchar(200) DEFAULT '',
+  `last_msg_type` int NOT NULL DEFAULT '1',
+  `last_msg_sender` varchar(100) DEFAULT '',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`chat_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

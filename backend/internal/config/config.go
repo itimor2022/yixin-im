@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	S3       S3Config  `yaml:"s3"`
 	Server       ServerConfig       `yaml:"server"`
 	MySQL        MySQLConfig        `yaml:"mysql"`
 	MongoDB      MongoDBConfig      `yaml:"mongodb"`
@@ -19,18 +20,36 @@ type Config struct {
 	Agora        AgoraConfig        `yaml:"agora"`
 	Payment      PaymentConfig      `yaml:"payment"`
 	SMS          SMSConfig          `yaml:"sms"`
+	// ========== 新增：集群配置 ==========
+	// 对应 config.yaml 中的 cluster 字段
+	// 单机部署时不配置此项，程序自动降级为单机模式
+	Cluster *ClusterConfig `yaml:"cluster"`
+	// ========== 新增结束 ==========
 }
+
+// ========== 新增：ClusterConfig 集群配置 ==========
+type ClusterConfig struct {
+	// Enabled 是否启用集群模式
+	// 也可通过环境变量 CLUSTER_ENABLED=true 覆盖
+	Enabled bool `yaml:"enabled"`
+
+	// NodeID 当前节点唯一标识，留空则自动读取环境变量 NODE_ID 或 hostname
+	// 集群内每个节点必须唯一，建议命名规范：gateway-1 / gateway-2 / ...
+	NodeID string `yaml:"node_id"`
+}
+
+// ========== 新增结束 ==========
 
 type ServerConfig struct {
 	Port                        int           `yaml:"port"`
 	Mode                        string        `yaml:"mode"`
 	ReadTimeout                 time.Duration `yaml:"read_timeout"`
 	WriteTimeout                time.Duration `yaml:"write_timeout"`
-	BaseURL                     string        `yaml:"base_url"`                       // 服务器外部访问地址
-	RegisterBaseURL             string        `yaml:"register_base_url"`              // 注册页外部访问地址，留空则回退到 BaseURL
-	UploadDir                   string        `yaml:"upload_dir"`                     // 上传文件存储目录，默认 ./uploads
-	ExternalCleanupHTTPDelete   bool          `yaml:"external_cleanup_http_delete"`   // 是否允许服务端对外链执行 HTTP DELETE（默认 false）
-	ExternalCleanupAllowedHosts []string      `yaml:"external_cleanup_allowed_hosts"` // 允许执行外部清理的主机白名单
+	BaseURL                     string        `yaml:"base_url"`
+	RegisterBaseURL             string        `yaml:"register_base_url"`
+	UploadDir                   string        `yaml:"upload_dir"`
+	ExternalCleanupHTTPDelete   bool          `yaml:"external_cleanup_http_delete"`
+	ExternalCleanupAllowedHosts []string      `yaml:"external_cleanup_allowed_hosts"`
 }
 
 type MySQLConfig struct {
@@ -42,6 +61,19 @@ type MySQLConfig struct {
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
+	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time"` // ★ 空闲连接超时释放
+	ReplicaDSN     string        `yaml:"replica_dsn"`      // ★ 从库DSN，配置后启用读写分离
+}
+
+// S3Config AWS S3 存储配置
+type S3Config struct {
+	Enabled         bool   `yaml:"enabled"`          // false 时退回本地存储
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	CDNBaseURL      string `yaml:"cdn_base_url"`     // CloudFront 域名，可选
+	Endpoint        string `yaml:"endpoint"`          // 兼容 MinIO，可选
 }
 
 type MongoDBConfig struct {
@@ -52,7 +84,15 @@ type MongoDBConfig struct {
 }
 
 type RedisConfig struct {
-	Addr         string `yaml:"addr"`
+	// 单机模式
+	Addr string `yaml:"addr"`
+
+	// Sentinel 模式（Mode=sentinel 时生效）
+	Mode          string   `yaml:"mode"`           // "single"（默认）或 "sentinel"
+	MasterName    string   `yaml:"master_name"`    // Sentinel 主节点名，默认 mymaster
+	SentinelAddrs []string `yaml:"sentinel_addrs"` // Sentinel 节点列表
+
+	// 通用
 	Password     string `yaml:"password"`
 	DB           int    `yaml:"db"`
 	PoolSize     int    `yaml:"pool_size"`
@@ -92,8 +132,7 @@ type AgoraConfig struct {
 	TokenExpire    int    `yaml:"token_expire"`
 }
 
-// PaymentConfig 微信/支付宝在线充值（notify_base_url 为公网可访问的根，如 https://api.example.com）
-// 管理后台可将密钥以 PEM 文本写入 private_key_pem / app_private_key_pem 等字段；与 yaml 文件配置二选一或互补。
+// PaymentConfig 微信/支付宝在线充值
 type PaymentConfig struct {
 	Enabled       bool    `json:"enabled" yaml:"enabled"`
 	NotifyBaseURL string  `json:"notify_base_url" yaml:"notify_base_url"`
@@ -124,14 +163,14 @@ type PaymentConfig struct {
 	} `json:"alipay" yaml:"alipay"`
 }
 
-// SMSConfig 短信发送（绑定手机号验证码）；provider: smsbao | aliyun | tencent
+// SMSConfig 短信发送（绑定手机号验证码）
 type SMSConfig struct {
 	Enabled         bool   `json:"enabled" yaml:"enabled"`
-	Provider        string `json:"provider" yaml:"provider"`                 // smsbao | aliyun | tencent
-	MessageTemplate string `json:"message_template" yaml:"message_template"` // 仅短信宝：正文，需含占位符 {code}
+	Provider        string `json:"provider" yaml:"provider"`
+	MessageTemplate string `json:"message_template" yaml:"message_template"`
 	SMSBao          struct {
 		User     string `json:"user" yaml:"user"`
-		Password string `json:"password" yaml:"password"` // 登录密码，传输 MD5
+		Password string `json:"password" yaml:"password"`
 	} `json:"smsbao" yaml:"smsbao"`
 	Aliyun struct {
 		AccessKeyID     string `json:"access_key_id" yaml:"access_key_id"`

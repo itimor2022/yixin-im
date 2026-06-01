@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -10,6 +11,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../app.dart';
+import '../core/services/server_discovery.dart';
 import '../core/services/background_service.dart';
 import '../core/services/desktop/hotkey_service.dart';
 import '../core/services/desktop/tray_service.dart';
@@ -25,7 +27,7 @@ import '../core/utils/platform_utils.dart';
 
 @pragma('vm:entry-point')
 Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
-  debugPrint(
+  if (kDebugMode) debugPrint(
     '[FCM] Background message: ${message.messageId}, type: ${message.data['type']}',
   );
 }
@@ -57,10 +59,10 @@ Future<void> bootstrapApp() async {
 
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
-    debugPrint('[FlutterError] ${details.exceptionAsString()}');
+    if (kDebugMode) debugPrint('[FlutterError] ${details.exceptionAsString()}');
   };
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
-    debugPrint('[Uncaught] $error\n$stack');
+    if (kDebugMode) debugPrint('[Uncaught] $error\n$stack');
     return true;
   };
 
@@ -69,7 +71,7 @@ Future<void> bootstrapApp() async {
       await Firebase.initializeApp();
       FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
     } catch (e) {
-      debugPrint('[Main] Firebase init error: $e');
+      if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
     }
   }
 
@@ -87,7 +89,7 @@ Future<void> bootstrapApp() async {
     );
     IsarService.instance.setIsar(_isar!);
   } catch (e) {
-    debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
+    if (kDebugMode) debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
     try {
       final dir = await getApplicationDocumentsDirectory();
       await _deleteIsarFiles(dir.path);
@@ -96,9 +98,9 @@ Future<void> bootstrapApp() async {
         directory: dir.path,
       );
       IsarService.instance.setIsar(_isar!);
-      debugPrint('[Main] Isar reopened after cleanup');
+      if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
     } catch (retryError) {
-      debugPrint('[Main] Isar retry also failed: $retryError');
+      if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
     }
   }
 
@@ -106,12 +108,12 @@ Future<void> bootstrapApp() async {
     try {
       await WindowService.instance.initialize();
     } catch (e) {
-      debugPrint('[Main] WindowService init error: $e');
+      if (kDebugMode) debugPrint('[Main] WindowService init error: $e');
     }
     try {
       await DesktopNotificationService().initialize();
     } catch (e) {
-      debugPrint('[Main] DesktopNotification init error: $e');
+      if (kDebugMode) debugPrint('[Main] DesktopNotification init error: $e');
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -132,6 +134,13 @@ Future<void> bootstrapApp() async {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+  }
+
+  // 服务发现：选出最快可用节点，写入 ApiConfig
+  try {
+    await ServerDiscovery.instance.initialize();
+  } catch (e) {
+    if (kDebugMode) debugPrint('[Bootstrap] ServerDiscovery failed, using default: \$e');
   }
 
   final container = ProviderContainer();

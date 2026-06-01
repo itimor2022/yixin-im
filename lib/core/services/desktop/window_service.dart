@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
@@ -41,7 +42,7 @@ class WindowService with WindowListener {
         return settings.displayName;
       }
     } catch (e) {
-      debugPrint('[Window] Failed to load app name: $e');
+      if (kDebugMode) debugPrint('[Window] Failed to load app name: $e');
     }
     return kDefaultAppDisplayName;
   }
@@ -85,13 +86,13 @@ class WindowService with WindowListener {
     final fallbackTimer = Timer(const Duration(seconds: 5), () async {
       if (!shown) {
         shown = true;
-        debugPrint('[Window] Fallback: force showing window after timeout');
+        if (kDebugMode) debugPrint('[Window] Fallback: force showing window after timeout');
         try {
           await windowManager.center();
           await windowManager.show();
           await windowManager.focus();
         } catch (e) {
-          debugPrint('[Window] Fallback show error: $e');
+          if (kDebugMode) debugPrint('[Window] Fallback show error: $e');
         }
       }
     });
@@ -105,7 +106,7 @@ class WindowService with WindowListener {
         if (isOnScreen) {
           await windowManager.setPosition(Offset(savedX, savedY));
         } else {
-          debugPrint('[Window] Saved position off-screen ($savedX, $savedY), centering');
+          if (kDebugMode) debugPrint('[Window] Saved position off-screen ($savedX, $savedY), centering');
           await windowManager.center();
         }
       }
@@ -122,7 +123,7 @@ class WindowService with WindowListener {
     windowManager.addListener(this);
 
     _initialized = true;
-    debugPrint('[Window] Initialized with size: ${savedWidth}x$savedHeight');
+    if (kDebugMode) debugPrint('[Window] Initialized with size: ${savedWidth}x$savedHeight');
   }
 
   /// 检测坐标是否在任何一块屏幕的可见区域内
@@ -140,7 +141,7 @@ class WindowService with WindowListener {
         }
       }
     } catch (e) {
-      debugPrint('[Window] Screen retriever error: $e');
+      if (kDebugMode) debugPrint('[Window] Screen retriever error: $e');
     }
     return false;
   }
@@ -163,9 +164,9 @@ class WindowService with WindowListener {
         await prefs.setDouble(_keyWindowY, position.dy);
       }
       await prefs.setBool(_keyWindowMaximized, isMaximized);
-      debugPrint('[Window] State saved successfully');
+      if (kDebugMode) debugPrint('[Window] State saved successfully');
     } catch (e) {
-      debugPrint('[Window] Failed to save state: $e');
+      if (kDebugMode) debugPrint('[Window] Failed to save state: $e');
     }
   }
 
@@ -293,10 +294,10 @@ class WindowService with WindowListener {
         await _saveWindowState();
         windowManager.removeListener(this);
       } catch (e) {
-        debugPrint('[Window] Dispose error: $e');
+        if (kDebugMode) debugPrint('[Window] Dispose error: $e');
       }
     }
     _initialized = false;
-    debugPrint('[Window] Disposed');
+    if (kDebugMode) debugPrint('[Window] Disposed');
   }
 }

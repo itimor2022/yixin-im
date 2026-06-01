@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"fmt"
+	"crypto/sha256"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -268,7 +271,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			if isSettingTrue(followOfficialSetting.Value) {
 				// 获取启用中的官方用户
 				var officialUsers []models.OfficialUser
-				tx.Where("is_service_enabled = ?", true).Find(&officialUsers)
+				if err := tx.Where("is_service_enabled = ?", true).Find(&officialUsers).Error; err != nil {
+					log.Printf("[AuthHandler] Register: query officialUsers failed: %v", err)
+				}
 
 				for _, official := range officialUsers {
 					// 跳过自己
@@ -297,7 +302,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err := h.db.Where("`key` = ?", models.SettingNewUserJoinGroup).First(&joinGroupSetting).Error; err == nil {
 		if isSettingTrue(joinGroupSetting.Value) {
 			var officialGroups []models.OfficialGroup
-			tx.Find(&officialGroups)
+			if err := tx.Find(&officialGroups).Error; err != nil {
+				log.Printf("[AuthHandler] Register: query officialGroups failed: %v", err)
+			}
 			now := time.Now()
 
 			for _, og := range officialGroups {
@@ -344,7 +351,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err := h.db.Where("`key` = ?", models.SettingNewUserJoinChannel).First(&joinChannelSetting).Error; err == nil {
 		if isSettingTrue(joinChannelSetting.Value) {
 			var officialChannels []models.OfficialChannel
-			tx.Find(&officialChannels)
+			if err := tx.Find(&officialChannels).Error; err != nil {
+				log.Printf("[AuthHandler] Register: query officialChannels failed: %v", err)
+			}
 			now := time.Now()
 
 			for _, oc := range officialChannels {
@@ -450,10 +459,23 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 验证密码
-	if !user.CheckPassword(req.Password) {
-		response.Error(c, 400, "用户名或密码错误")
-		return
+	// 验证密码（先查Redis缓存，避免每次走bcrypt）
+	pwCacheKey := fmt.Sprintf("pw:ok:%d:%x", user.ID, sha256.Sum256([]byte(req.Password)))
+	pwCacheHit := false
+	if h.cache != nil {
+		if val, err := h.cache.GetRaw(c, pwCacheKey); err == nil && val == "1" {
+			pwCacheHit = true
+		}
+	}
+	if !pwCacheHit {
+		if !user.CheckPassword(req.Password) {
+			response.Error(c, 400, "用户名或密码错误")
+			return
+		}
+		// 验证成功，缓存5分钟
+		if h.cache != nil {
+			h.cache.SetRaw(c, pwCacheKey, "1", 5*60)
+		}
 	}
 
 	// 检查用户状态

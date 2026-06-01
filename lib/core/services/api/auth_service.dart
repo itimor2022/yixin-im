@@ -172,7 +172,7 @@ class AuthService extends StateNotifier<AuthState> {
               .read(systemSettingsServiceProvider)
               .getSettings();
           if (settings.messageCryptoMode.isPlain) {
-            debugPrint('[Auth] Skip eager E2EE registration in plain mode');
+            if (kDebugMode) debugPrint('[Auth] Skip eager E2EE registration in plain mode');
             return;
           }
           if (PlatformUtils.isWeb) {
@@ -180,7 +180,7 @@ class AuthService extends StateNotifier<AuthState> {
           }
           await _ref.read(e2eeServiceProvider).ensureDeviceKeyRegistered();
         } catch (e) {
-          debugPrint('[Auth] E2EE device registration skipped: $e');
+          if (kDebugMode) debugPrint('[Auth] E2EE device registration skipped: $e');
         }
       }),
     );
@@ -209,7 +209,7 @@ class AuthService extends StateNotifier<AuthState> {
         state = state.copyWith(status: AuthStatus.unauthenticated);
       }
     } catch (e) {
-      debugPrint('[Auth] Init error: $e');
+      if (kDebugMode) debugPrint('[Auth] Init error: $e');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         error: '初始化失败',
@@ -269,7 +269,7 @@ class AuthService extends StateNotifier<AuthState> {
         );
       }
     } catch (e) {
-      debugPrint('[Auth] Session recovery on resume failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Session recovery on resume failed: $e');
     } finally {
       _isRecoveringSession = false;
     }
@@ -311,7 +311,7 @@ class AuthService extends StateNotifier<AuthState> {
         await logout();
       }
     } catch (e) {
-      debugPrint('[Auth] Get user with token failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Get user with token failed: $e');
       // 区分网络异常和其他异常
       // 网络异常时保持登录状态，等待网络恢复
       final isNetworkError =
@@ -380,7 +380,7 @@ class AuthService extends StateNotifier<AuthState> {
         return true;
       }
     } catch (e) {
-      debugPrint('[Auth] Restore cached user failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Restore cached user failed: $e');
     }
     return false;
   }
@@ -405,8 +405,8 @@ class AuthService extends StateNotifier<AuthState> {
       },
     );
 
-    debugPrint('[Auth] Login response.code: ${response.code}');
-    debugPrint('[Auth] Login response.isSuccess: ${response.isSuccess}');
+    if (kDebugMode) debugPrint('[Auth] Login response.code: ${response.code}');
+    if (kDebugMode) debugPrint('[Auth] Login response.isSuccess: ${response.isSuccess}');
 
     if (response.code == 1001) {
       // Device lock challenge. Keep response payload for UI to continue verify flow.
@@ -424,7 +424,7 @@ class AuthService extends StateNotifier<AuthState> {
         final userData = data['user'] as Map<String, dynamic>;
         final user = User.fromJson(userData);
 
-        debugPrint('[Auth] Login success!');
+        if (kDebugMode) debugPrint('[Auth] Login success!');
 
         if (user.avatar != null && user.avatar!.isNotEmpty) {
           AvatarCacheManager.prefetch(user.avatar!);
@@ -443,14 +443,14 @@ class AuthService extends StateNotifier<AuthState> {
         );
         _kickoffE2EERegistration();
       } catch (e) {
-        debugPrint('[Auth] Login parse error: $e');
+        if (kDebugMode) debugPrint('[Auth] Login parse error: $e');
         state = state.copyWith(
           status: AuthStatus.unauthenticated,
           error: 'Parse error: $e',
         );
       }
     } else {
-      debugPrint('[Auth] Login failed: ${response.message}');
+      if (kDebugMode) debugPrint('[Auth] Login failed: ${response.message}');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         error: response.message,
@@ -470,7 +470,7 @@ class AuthService extends StateNotifier<AuthState> {
       await _getCurrentUserWithToken(token);
       return state.status == AuthStatus.authenticated;
     } catch (e) {
-      debugPrint('[Auth] QR login failed: $e');
+      if (kDebugMode) debugPrint('[Auth] QR login failed: $e');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         token: null,
@@ -546,7 +546,7 @@ class AuthService extends StateNotifier<AuthState> {
 
       return response;
     } catch (e) {
-      debugPrint('[Auth] Register error: $e');
+      if (kDebugMode) debugPrint('[Auth] Register error: $e');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         error: '注册失败，请稍后重试',
@@ -563,7 +563,7 @@ class AuthService extends StateNotifier<AuthState> {
         data: {'phone': phone},
       );
     } catch (e) {
-      debugPrint('[Auth] sendPhoneBindCode: $e');
+      if (kDebugMode) debugPrint('[Auth] sendPhoneBindCode: $e');
       return ApiResponse(code: -1, message: '发送失败');
     }
   }
@@ -580,7 +580,7 @@ class AuthService extends StateNotifier<AuthState> {
       }
       return response;
     } catch (e) {
-      debugPrint('[Auth] bindPhone: $e');
+      if (kDebugMode) debugPrint('[Auth] bindPhone: $e');
       return ApiResponse(code: -1, message: '绑定失败');
     }
   }
@@ -615,7 +615,7 @@ class AuthService extends StateNotifier<AuthState> {
       }
       return response;
     } catch (e) {
-      debugPrint('[Auth] verifyDeviceLockLogin: $e');
+      if (kDebugMode) debugPrint('[Auth] verifyDeviceLockLogin: $e');
       return ApiResponse(code: -1, message: '验证失败');
     }
   }
@@ -624,7 +624,7 @@ class AuthService extends StateNotifier<AuthState> {
     try {
       return await _api.post('/user/password/send-change-code');
     } catch (e) {
-      debugPrint('[Auth] sendPasswordChangeCode: $e');
+      if (kDebugMode) debugPrint('[Auth] sendPasswordChangeCode: $e');
       return ApiResponse(code: -1, message: '发送失败');
     }
   }
@@ -639,7 +639,7 @@ class AuthService extends StateNotifier<AuthState> {
         data: {'code': code, 'new_password': newPassword},
       );
     } catch (e) {
-      debugPrint('[Auth] changePasswordByCode: $e');
+      if (kDebugMode) debugPrint('[Auth] changePasswordByCode: $e');
       return ApiResponse(code: -1, message: '修改失败');
     }
   }
@@ -651,7 +651,7 @@ class AuthService extends StateNotifier<AuthState> {
         data: {'phone': phone},
       );
     } catch (e) {
-      debugPrint('[Auth] sendPasswordResetCode: $e');
+      if (kDebugMode) debugPrint('[Auth] sendPasswordResetCode: $e');
       return ApiResponse(code: -1, message: '发送失败');
     }
   }
@@ -667,7 +667,7 @@ class AuthService extends StateNotifier<AuthState> {
         data: {'phone': phone, 'code': code, 'new_password': newPassword},
       );
     } catch (e) {
-      debugPrint('[Auth] resetPasswordByCode: $e');
+      if (kDebugMode) debugPrint('[Auth] resetPasswordByCode: $e');
       return ApiResponse(code: -1, message: '重置失败');
     }
   }
@@ -676,7 +676,7 @@ class AuthService extends StateNotifier<AuthState> {
     try {
       return await _api.post('/user/account/send-delete-code');
     } catch (e) {
-      debugPrint('[Auth] sendDeleteAccountCode: $e');
+      if (kDebugMode) debugPrint('[Auth] sendDeleteAccountCode: $e');
       return ApiResponse(code: -1, message: '发送失败');
     }
   }
@@ -700,7 +700,7 @@ class AuthService extends StateNotifier<AuthState> {
       }
       // 不再在失败时登出，保持当前状态
     } catch (e) {
-      debugPrint('[Auth] Get current user failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Get current user failed: $e');
       // 保持当前状态，不更新
     }
   }
@@ -718,7 +718,7 @@ class AuthService extends StateNotifier<AuthState> {
 
       return response;
     } catch (e) {
-      debugPrint('[Auth] Change password failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Change password failed: $e');
       return ApiResponse(code: -1, message: '修改密码失败');
     }
   }
@@ -779,7 +779,7 @@ class AuthService extends StateNotifier<AuthState> {
 
       return response;
     } catch (e) {
-      debugPrint('[Auth] Update profile failed: $e');
+      if (kDebugMode) debugPrint('[Auth] Update profile failed: $e');
       return ApiResponse(code: -1, message: '更新资料失败');
     }
   }
@@ -795,14 +795,14 @@ class AuthService extends StateNotifier<AuthState> {
       final pushService = _ref.read(pushNotificationServiceProvider);
       await pushService.clearToken();
     } catch (e) {
-      debugPrint('[Auth] Failed to clear push token: $e');
+      if (kDebugMode) debugPrint('[Auth] Failed to clear push token: $e');
     }
 
     // 重置动态状态（清除旧账号的点赞等状态）
     try {
       _ref.read(momentProvider.notifier).reset();
     } catch (e) {
-      debugPrint('[Auth] Failed to reset moment provider: $e');
+      if (kDebugMode) debugPrint('[Auth] Failed to reset moment provider: $e');
     }
 
     // 清除 Token 存储
@@ -819,7 +819,7 @@ class AuthService extends StateNotifier<AuthState> {
         await TokenStorage.clear();
       }
     } catch (e) {
-      debugPrint('[Auth] Failed to clear token storage: $e');
+      if (kDebugMode) debugPrint('[Auth] Failed to clear token storage: $e');
     }
     _api.clearToken();
 
@@ -827,7 +827,7 @@ class AuthService extends StateNotifier<AuthState> {
     try {
       await OfflineMessageQueue().clear();
     } catch (e) {
-      debugPrint('[Auth] Failed to clear offline message queue: $e');
+      if (kDebugMode) debugPrint('[Auth] Failed to clear offline message queue: $e');
     }
 
     // Web 端没有初始化 Isar，跳过本地缓存清理
@@ -837,7 +837,7 @@ class AuthService extends StateNotifier<AuthState> {
           await IsarService.instance.isar.clear();
         });
       } catch (e) {
-        debugPrint('[Auth] Failed to clear Isar cache: $e');
+        if (kDebugMode) debugPrint('[Auth] Failed to clear Isar cache: $e');
       }
     }
 

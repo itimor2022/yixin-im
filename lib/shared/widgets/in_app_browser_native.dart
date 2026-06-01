@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
@@ -143,7 +144,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
             _updateNavigationState();
           },
           onWebResourceError: (error) {
-            debugPrint('[WebView] Error: ${error.description}');
+            if (kDebugMode) debugPrint('[WebView] Error: ${error.description}');
           },
           onNavigationRequest: (request) async {
             final uri = Uri.tryParse(request.url);
@@ -161,7 +162,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
             // 明确拒绝危险 scheme（javascript:、file:、data: 等）
             if (uri.scheme != 'http' && uri.scheme != 'https') {
-              debugPrint('[WebView] Blocked dangerous scheme: ${uri.scheme}');
+              if (kDebugMode) debugPrint('[WebView] Blocked dangerous scheme: ${uri.scheme}');
               return NavigationDecision.prevent;
             }
 
@@ -205,10 +206,10 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        debugPrint('[WebView] Failed to launch external url: $uri');
+        if (kDebugMode) debugPrint('[WebView] Failed to launch external url: $uri');
       }
     } catch (error) {
-      debugPrint('[WebView] External launch failed: $error');
+      if (kDebugMode) debugPrint('[WebView] External launch failed: $error');
     }
   }
 
@@ -265,7 +266,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
           .whereType<String>()
           .toList();
     } catch (error) {
-      debugPrint('[WebView] File selection failed: $error');
+      if (kDebugMode) debugPrint('[WebView] File selection failed: $error');
       return <String>[];
     }
   }
@@ -316,7 +317,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
       _showDownloadSuccess(file);
     } catch (error) {
-      debugPrint('[WebView] Download failed: $error');
+      if (kDebugMode) debugPrint('[WebView] Download failed: $error');
       _showMessage('文件下载失败');
     }
   }

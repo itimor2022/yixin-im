@@ -39,7 +39,8 @@ func (h *BroadcastHandler) SendBroadcast(c *gin.Context) {
 
 	onlineCount := h.hub.GetOnlineCount()
 
-	h.hub.SendToAll(map[string]interface{}{
+	// ★ 集群改造：使用 SendToAllCluster 确保广播到所有节点的在线用户
+	h.hub.SendToAllCluster(map[string]interface{}{
 		"type":    "system_announcement",
 		"title":   req.Title,
 		"content": req.Content,
