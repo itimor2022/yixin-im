@@ -723,7 +723,7 @@ func chatLastSeqKey(chatID string) string {
 }
 
 func chatLastMsgKey(chatID string) string {
-	return "chat:last_msg:" + chatID
+	return "chat:lastmsg:" + chatID
 }
 
 // SetChatLastSeq 更新群最新消息序号
