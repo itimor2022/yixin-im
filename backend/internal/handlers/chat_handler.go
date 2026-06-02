@@ -192,8 +192,8 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 		h.db.Where("id IN ?", chatIDs).Find(&chats)
 	}
 
-	// ★ F-04B 时间线模型：优先读Redis(chat:lastmsg:{uuid})，miss再从chat_last_msg兜底
-	// Redis key 统一用 chat UUID，与发消息写入保持一致
+	// ★ F-04B 时间线模型 v2：Pipeline 批量读 Redis(chat:lastmsg + chat:last_seq)
+	// miss 再从 chat_last_msg 兜底，异步回填 Redis，O(1) 次网络往返
 	type lastMsgRow struct {
 		ChatID        uint64
 		LastSeq       uint64
@@ -203,57 +203,69 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 		LastMsgSender string
 	}
 	chatLastMsgMap := make(map[uint64]lastMsgRow)
+	chatLastSeqMap := make(map[uint64]uint64) // 用于 unread_count 计算，比 lastmsg 里的 seq 更实时
 
 	if len(chatIDs) > 0 {
-		// chatID(数字) -> UUID 映射，Redis key 用 UUID
+		// chatID(数字) -> UUID 映射
 		chatIDToUUID := make(map[uint64]string, len(chats))
+		uuids := make([]string, 0, len(chats))
 		for _, ch := range chats {
 			chatIDToUUID[ch.ID] = ch.UUID
+			uuids = append(uuids, ch.UUID)
 		}
 
 		missChatIDs := make([]uint64, 0)
-
 		if h.cache != nil {
-			for _, cid := range chatIDs {
-				uuid, hasUUID := chatIDToUUID[cid]
-				if !hasUUID {
-					missChatIDs = append(missChatIDs, cid)
+			// Pipeline 批量读 last_seq（O(1) 次网络往返）
+			seqMap, _ := h.cache.BatchGetChatLastSeq(c.Request.Context(), uuids)
+			for _, ch := range chats {
+				if seq, ok := seqMap[ch.UUID]; ok {
+					chatLastSeqMap[ch.ID] = seq
+				}
+			}
+
+			// Pipeline 批量读 last_msg（O(1) 次网络往返）
+			rawMsgMap, _ := h.cache.BatchGetChatLastMsg(c.Request.Context(), uuids)
+			for _, ch := range chats {
+				raw, ok := rawMsgMap[ch.UUID]
+				if !ok {
+					missChatIDs = append(missChatIDs, ch.ID)
 					continue
 				}
 				var cached map[string]interface{}
-				if err := h.cache.GetChatLastMsg(c.Request.Context(), uuid, &cached); err == nil {
-					row := lastMsgRow{ChatID: cid}
-					if v, ok := cached["seq"]; ok {
-						switch n := v.(type) {
-						case float64:
-							row.LastSeq = uint64(n)
-						case json.Number:
-							if i, e := n.Int64(); e == nil { row.LastSeq = uint64(i) }
-						}
-					}
-					if v, ok := cached["text"]; ok { row.LastMsgText, _ = v.(string) }
-					if v, ok := cached["type"]; ok {
-						if n, ok2 := v.(float64); ok2 { row.LastMsgType = int(n) }
-					}
-					if v, ok := cached["sender_name"]; ok { row.LastMsgSender, _ = v.(string) }
-					if v, ok := cached["time"]; ok {
-						switch t := v.(type) {
-						case string:
-							if pt, e := time.Parse(time.RFC3339Nano, t); e == nil { row.LastMsgTime = pt }
-						case float64:
-							row.LastMsgTime = time.UnixMilli(int64(t))
-						}
-					}
-					chatLastMsgMap[cid] = row
-				} else {
-					missChatIDs = append(missChatIDs, cid)
+				if err := json.Unmarshal(raw, &cached); err != nil {
+					missChatIDs = append(missChatIDs, ch.ID)
+					continue
 				}
+				row := lastMsgRow{ChatID: ch.ID}
+				if v, ok := cached["seq"]; ok {
+					switch n := v.(type) {
+					case float64:
+						row.LastSeq = uint64(n)
+					case json.Number:
+						if i, e := n.Int64(); e == nil { row.LastSeq = uint64(i) }
+					}
+				}
+				if v, ok := cached["text"]; ok { row.LastMsgText, _ = v.(string) }
+				if v, ok := cached["type"]; ok {
+					if n, ok2 := v.(float64); ok2 { row.LastMsgType = int(n) }
+				}
+				if v, ok := cached["sender_name"]; ok { row.LastMsgSender, _ = v.(string) }
+				if v, ok := cached["time"]; ok {
+					switch t := v.(type) {
+					case string:
+						if pt, e := time.Parse(time.RFC3339Nano, t); e == nil { row.LastMsgTime = pt }
+					case float64:
+						row.LastMsgTime = time.UnixMilli(int64(t))
+					}
+				}
+				chatLastMsgMap[ch.ID] = row
 			}
 		} else {
 			missChatIDs = chatIDs
 		}
 
-		// miss 从 chat_last_msg 兜底，回填 Redis
+		// miss 从 chat_last_msg 兜底，异步回填 Redis
 		if len(missChatIDs) > 0 {
 			type dbLastMsg struct {
 				ChatID        uint64    `gorm:"column:chat_id"`
@@ -274,22 +286,30 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 					LastMsgType:   lm.LastMsgType,
 					LastMsgSender: lm.LastMsgSender,
 				}
-				// 回填 Redis，key 用 UUID
+				if chatLastSeqMap[lm.ChatID] == 0 {
+					chatLastSeqMap[lm.ChatID] = lm.LastSeq
+				}
+				// 异步回填 Redis，不阻塞响应
 				if h.cache != nil {
 					if uuid, ok := chatIDToUUID[lm.ChatID]; ok {
-						_ = h.cache.SetChatLastMsg(c.Request.Context(), uuid, map[string]interface{}{
-							"seq":         lm.LastSeq,
-							"time":        lm.LastMsgTime.UnixMilli(),
-							"text":        lm.LastMsgText,
-							"type":        lm.LastMsgType,
-							"sender_name": lm.LastMsgSender,
-						})
+						lmCopy := lm
+						uuidCopy := uuid
+						go func() {
+							ctx := context.Background()
+							_ = h.cache.SetChatLastSeq(ctx, uuidCopy, lmCopy.LastSeq)
+							_ = h.cache.SetChatLastMsg(ctx, uuidCopy, map[string]interface{}{
+								"seq":         lmCopy.LastSeq,
+								"time":        lmCopy.LastMsgTime.UnixMilli(),
+								"text":        lmCopy.LastMsgText,
+								"type":        lmCopy.LastMsgType,
+								"sender_name": lmCopy.LastMsgSender,
+							})
+						}()
 					}
 				}
 			}
 		}
 	}
-
 
 	// 构建聊天 ID 到聊天的映射
 	chatMap := make(map[uint64]models.Chat)
@@ -394,7 +414,7 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"last_msg_time":         func() interface{} { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && !lm.LastMsgTime.IsZero() { return lm.LastMsgTime }; return optionalTimeValue(userChat.LastMsgTime) }(),
 			"last_msg_seq":          func() uint64 { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastSeq }; return userChat.LastMsgSeq }(),
 			"last_msg_sender":       func() string { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgSender }; return userChat.LastMsgSender }(),
-			"unread_count":          func() int { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && lm.LastSeq > userChat.LastReadSeq { return int(lm.LastSeq - userChat.LastReadSeq) }; return userChat.UnreadCount }(),
+			"unread_count":          func() int { if seq, ok := chatLastSeqMap[userChat.ChatID]; ok && seq > userChat.LastReadSeq { return int(seq - userChat.LastReadSeq) }; if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && lm.LastSeq > userChat.LastReadSeq { return int(lm.LastSeq - userChat.LastReadSeq) }; return userChat.UnreadCount }(),
 			"is_pinned":             userChat.IsPinned,
 			"is_muted":              userChat.IsMuted,
 			"is_archived":           userChat.IsArchived,
