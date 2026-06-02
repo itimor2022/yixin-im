@@ -1298,14 +1298,17 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 		return
 	}
 
-	// 清除未读计数，同步更新 last_read_seq
-	updateFields := map[string]interface{}{"unread_count": 0}
+	// ★ F-04B：只更新 last_read_seq，unread_count 由 last_seq-last_read_seq 实时计算，无需写入
+	var result *gorm.DB
 	if req.MsgSeq > 0 {
-		updateFields["last_read_seq"] = req.MsgSeq
+		result = h.db.Model(&models.UserChat{}).
+			Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
+			Update("last_read_seq", req.MsgSeq)
+	} else {
+		result = h.db.Model(&models.UserChat{}).
+			Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
+			Update("unread_count", 0)
 	}
-	result := h.db.Model(&models.UserChat{}).
-		Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
-		Updates(updateFields)
 
 	if result.Error != nil {
 		response.ServerError(c, "更新失败")
