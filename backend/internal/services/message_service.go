@@ -27,6 +27,7 @@ import (
 
 // MessageService 消息服务
 type MessageService struct {
+	searchSvc *SearchService // ES搜索服务，nil时降级
 	mongoDB *mongo.Database
 	db      *gorm.DB
 	cache   *cache.Cache
@@ -308,13 +309,24 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 				log.Printf("[MessageService] fallback insert failed coll=%s msgID=%s err=%v",
 					cName, m.MsgID, err)
 			}
+	// 异步写入ES搜索索引（仅文字消息，ES未配置自动跳过）
+	if msg.Type == models.MsgTypeText && s.searchSvc != nil {
+		s.searchSvc.IndexMessage(ESMessageDoc{
+			MsgID:      msg.MsgID,
+			ChatID:     msg.ChatID,
+			SenderID:   msg.SenderID,
+			SenderName: msg.SenderName,
+			Content:    msg.Content.Text,
+			SentAt:     msg.CreatedAt,
+		})
+	}
 		}(collectionName, msg)
 	}
 
 
 	// 6. 发布到消息队列（异步处理推送等）
 	s.publishSyncMessage(msg)
-	go s.publishUserChatSync(msg) // ★ 异步更新 user_chats 预览，不阻塞主流程
+	go s.publishUserChatSync(msg)
 
 	// 7. ★ 集群改造：群聊走 BroadcastToGroupCluster（Redis Set 在线成员，避免传全量uid）
 	// 私聊保持 SendToUsersCluster（成员少，直接推效率更高）
@@ -405,8 +417,8 @@ func buildMsgPreviewText(msg *models.Message) string {
 	}
 }
 
-// publishUserChatSync 异步投递 user_chats 预览更新任务
-// 不阻塞发消息主流程，由 MQ 消费者批量写入 MySQL
+// publishUserChatSync F-04B 时间线模型：只写 Redis，不查 MySQL
+// 去掉两次 DB 查询（chat uuid→id, sender uuid→id），发消息延迟大幅降低
 func (s *MessageService) publishUserChatSync(msg *models.Message) {
 	if s == nil || s.mq == nil || msg == nil {
 		return
@@ -416,21 +428,8 @@ func (s *MessageService) publishUserChatSync(msg *models.Message) {
 	}
 	previewText := buildMsgPreviewText(msg)
 
-	var dbChat struct{ ID uint64 }
-	if err := s.db.Table("chats").Where("uuid = ?", msg.ChatID).Select("id").Scan(&dbChat).Error; err != nil || dbChat.ID == 0 {
-		log.Printf("[MessageService] publishUserChatSync: chat not found chatUUID=%s", msg.ChatID)
-		return
-	}
-
-	var dbSender struct{ ID uint64 }
-	if err := s.db.Table("users").Where("uuid = ?", msg.SenderID).Select("id").Scan(&dbSender).Error; err != nil || dbSender.ID == 0 {
-		log.Printf("[MessageService] publishUserChatSync: sender not found senderUUID=%s", msg.SenderID)
-		return
-	}
-
 	type syncPayload struct {
-		ChatID        uint64 `json:"chat_id"`
-		SenderID      uint64 `json:"sender_id"`
+		ChatUUID      string `json:"chat_uuid"`
 		LastMsgID     string `json:"last_msg_id"`
 		LastMsgSeq    uint64 `json:"last_msg_seq"`
 		LastMsgTime   int64  `json:"last_msg_time"`
@@ -440,8 +439,7 @@ func (s *MessageService) publishUserChatSync(msg *models.Message) {
 	}
 
 	payload, err := json.Marshal(&syncPayload{
-		ChatID:        dbChat.ID,
-		SenderID:      dbSender.ID,
+		ChatUUID:      msg.ChatID,
 		LastMsgID:     msg.MsgID,
 		LastMsgSeq:    msg.Seq,
 		LastMsgTime:   msg.CreatedAt.UnixMilli(),
@@ -460,10 +458,9 @@ func (s *MessageService) publishUserChatSync(msg *models.Message) {
 		Type:    "user_chat_sync",
 		Payload: payload,
 	}); err != nil {
-		log.Printf("[MessageService] publishUserChatSync failed: chatID=%d err=%v", dbChat.ID, err)
+		log.Printf("[MessageService] publishUserChatSync failed: chatUUID=%s err=%v", msg.ChatID, err)
 	}
 }
-
 // SendMessage 发送消息
 func (s *MessageService) SendMessage(ctx context.Context, params *SendMessageParams, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar string, targetUserIDs []string) (*models.Message, error) {
 	result, err := s.SendMessageWithResult(ctx, params, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar, targetUserIDs)
@@ -1601,4 +1598,58 @@ func (s *MessageService) runMongoFlushWorker() {
 			totalBuf = 0
 		}
 	}
+}
+
+// SearchMessagesGlobal 全局搜索文字消息（ES降级方案，MongoDB正则）
+func (s *MessageService) SearchMessagesGlobal(ctx context.Context, keyword string, limit int) ([]*models.Message, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	escapedKeyword := regexp.QuoteMeta(keyword)
+	collections, err := s.mongoDB.ListCollectionNames(ctx, bson.M{
+		"name": bson.M{"$regex": "^messages_"},
+	})
+	if err != nil || len(collections) == 0 {
+		collections = []string{"messages"}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(collections)))
+
+	filter := bson.M{
+		"type":       models.MsgTypeText,
+		"is_revoked": false,
+		"content.text": bson.M{
+			"$regex":   escapedKeyword,
+			"$options": "i",
+		},
+	}
+	findOptions := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(int64(limit))
+
+	var allMessages []*models.Message
+	seen := make(map[string]struct{})
+	for _, name := range collections {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		cursor, err := s.mongoDB.Collection(name).Find(ctx, filter, findOptions)
+		if err != nil {
+			continue
+		}
+		var msgs []*models.Message
+		if err := cursor.All(ctx, &msgs); err != nil {
+			cursor.Close(ctx)
+			continue
+		}
+		cursor.Close(ctx)
+		allMessages = append(allMessages, msgs...)
+		if len(allMessages) >= limit {
+			break
+		}
+	}
+	if len(allMessages) > limit {
+		allMessages = allMessages[:limit]
+	}
+	return allMessages, nil
 }

@@ -388,75 +388,122 @@ func (cb *ClusterBridge) IsUserOnlineCluster(uid string) bool {
 // 大群推送（4万人群聊专用，分批并发，不打爆系统）
 // ============================================================
 
-// BroadcastToGroup 向群内所有在线成员推送消息
-// 自动分批，控制并发，适合4万人群聊
+// BroadcastToGroup 向群内所有在线成员推送消息（F-04 大群分批异步推送优化）
+// 优化点：
+//   1. SScan流式读取，避免SMembers一次性加载5万成员
+//   2. 路由查询直接按节点分组，不再重复查路由
+//   3. 本节点推送用固定goroutine池，减少goroutine创建开销
+//   4. 跨节点Publish合并Pipeline，减少Redis网络往返
 func (cb *ClusterBridge) BroadcastToGroup(groupID string, data json.RawMessage) {
-	onlineMembers, err := cb.GetGroupOnlineMembers(groupID)
-	if err != nil || len(onlineMembers) == 0 {
+	const (
+		scanCount   = 500  // 每次SScan读取500个成员
+		batchSize   = 300  // 每批推送300人
+		maxWorkers  = 32   // 本节点推送goroutine池大小
+		pipelineCap = 1000 // Pipeline批量GET上限
+	)
+
+	ctx := cb.ctx
+	key := redisGroupOnlineKey(groupID)
+
+	// 按节点分组：key=nodeID, value=uid列表
+	nodeUsers := make(map[string][]string, 4)
+
+	// ★ 优化1：SScan流式读取，每次500个，避免一次性加载全部成员
+	var cursor uint64
+	pipeBuf := make([]string, 0, pipelineCap)
+
+	flushPipeline := func(uids []string) {
+		if len(uids) == 0 {
+			return
+		}
+		// ★ 优化2：Pipeline批量查路由，直接按节点分组
+		pipe := cb.rdb.Pipeline()
+		cmds := make([]*redis.StringCmd, len(uids))
+		for i, uid := range uids {
+			cmds[i] = pipe.Get(ctx, redisRouteKey(uid))
+		}
+		pipe.Exec(ctx)
+		for i, cmd := range cmds {
+			nodeID, err := cmd.Result()
+			if err != nil {
+				continue
+			}
+			nodeUsers[nodeID] = append(nodeUsers[nodeID], uids[i])
+		}
+	}
+
+	for {
+		var members []string
+		var err error
+		members, cursor, err = cb.rdb.SScan(ctx, key, cursor, "*", scanCount).Result()
+		if err != nil {
+			break
+		}
+		pipeBuf = append(pipeBuf, members...)
+		// 积累到pipelineCap时批量查路由
+		if len(pipeBuf) >= pipelineCap {
+			flushPipeline(pipeBuf)
+			pipeBuf = pipeBuf[:0]
+		}
+		if cursor == 0 {
+			break
+		}
+	}
+	// 处理剩余
+	flushPipeline(pipeBuf)
+
+	if len(nodeUsers) == 0 {
 		return
 	}
 
-	// ★ 优化：先分离本节点用户和远程节点用户
-	// 本节点用户直接内存推送（零网络开销），远程用户走Redis Publish
-	localUsers := make([]string, 0, len(onlineMembers))
-	remoteUsers := make([]string, 0, len(onlineMembers))
-	// ★ Pipeline批量查路由，N次串行GET → 1次网络往返
-	pipe := cb.rdb.Pipeline()
-	rtCmds := make([]*redis.StringCmd, len(onlineMembers))
-	for i, uid := range onlineMembers {
-		rtCmds[i] = pipe.Get(cb.ctx, redisRouteKey(uid))
-	}
-	pipe.Exec(cb.ctx)
-	for i, cmd := range rtCmds {
-		nodeID, err := cmd.Result()
-		if err != nil {
-			continue
-		}
-		if nodeID == cb.nodeID {
-			localUsers = append(localUsers, onlineMembers[i])
-		} else {
-			remoteUsers = append(remoteUsers, onlineMembers[i])
-		}
-	}
-
-
-	const batchSize = 200   // 每批200人，减少单批处理时间
-	const maxConcurrent = 16 // 提高并发度，充分利用多核
-
-	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
-	// 本节点用户并行推送（直接内存操作，极低延迟）
-	for i := 0; i < len(localUsers); i += batchSize {
-		endIdx := i + batchSize
-		if endIdx > len(localUsers) {
-			endIdx = len(localUsers)
-		}
-		batch := localUsers[i:endIdx]
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(b []string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			for _, uid := range b {
-				cb.hub.sendToUserLocal(uid, data)
+	// ★ 优化3：本节点用固定大小goroutine池并行推送
+	if localUsers, ok := nodeUsers[cb.nodeID]; ok && len(localUsers) > 0 {
+		sem := make(chan struct{}, maxWorkers)
+		for i := 0; i < len(localUsers); i += batchSize {
+			end := i + batchSize
+			if end > len(localUsers) {
+				end = len(localUsers)
 			}
-		}(batch)
+			batch := localUsers[i:end]
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(b []string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				for _, uid := range b {
+					cb.hub.sendToUserLocal(uid, data)
+				}
+			}(batch)
+		}
+		delete(nodeUsers, cb.nodeID)
 	}
 
-	// 远程节点用户：按节点分组后批量Publish
-	if len(remoteUsers) > 0 {
+	// ★ 优化4：跨节点按目标节点分组，合并Pipeline一次Publish
+	if len(nodeUsers) > 0 {
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
-			defer func() { <-sem }()
-			cb.SendToUsers(remoteUsers, data)
+			pipe := cb.rdb.Pipeline()
+			for nodeID, users := range nodeUsers {
+				// 每个目标节点一条Publish（已按节点分组，无需再拆分）
+				for i := 0; i < len(users); i += batchSize {
+					end := i + batchSize
+					if end > len(users) {
+						end = len(users)
+					}
+					payload, _ := json.Marshal(clusterPushMsg{UIDs: users[i:end], Data: data})
+					pipe.Publish(ctx, redisPushChannel(nodeID), payload)
+				}
+			}
+			pipe.Exec(ctx)
 		}()
 	}
 
 	wg.Wait()
 }
+
 
 // BroadcastToAll 向集群内所有节点的所有在线用户广播消息
 // 通过发布到 redisBroadcastChannel，每个节点收到后本地执行 SendToAll
