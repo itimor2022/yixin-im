@@ -192,26 +192,38 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 		h.db.Where("id IN ?", chatIDs).Find(&chats)
 	}
 
-	// ★ 阶段二：chat_last_msg 优先读Redis，miss再批量查MySQL
+	// ★ F-04B 时间线模型：优先读Redis(chat:lastmsg:{uuid})，miss再从chat_last_msg兜底
+	// Redis key 统一用 chat UUID，与发消息写入保持一致
 	type lastMsgRow struct {
-		ChatID        uint64    `gorm:"column:chat_id"`
-		LastSeq       uint64    `gorm:"column:last_seq"`
-		LastMsgTime   time.Time `gorm:"column:last_msg_time"`
-		LastMsgText   string    `gorm:"column:last_msg_text"`
-		LastMsgType   int       `gorm:"column:last_msg_type"`
-		LastMsgSender string    `gorm:"column:last_msg_sender"`
+		ChatID        uint64
+		LastSeq       uint64
+		LastMsgTime   time.Time
+		LastMsgText   string
+		LastMsgType   int
+		LastMsgSender string
 	}
 	chatLastMsgMap := make(map[uint64]lastMsgRow)
+
 	if len(chatIDs) > 0 {
-		// 先从 Redis 批量读取
+		// chatID(数字) -> UUID 映射，Redis key 用 UUID
+		chatIDToUUID := make(map[uint64]string, len(chats))
+		for _, ch := range chats {
+			chatIDToUUID[ch.ID] = ch.UUID
+		}
+
 		missChatIDs := make([]uint64, 0)
+
 		if h.cache != nil {
 			for _, cid := range chatIDs {
-				cidStr := strconv.FormatUint(cid, 10)
+				uuid, hasUUID := chatIDToUUID[cid]
+				if !hasUUID {
+					missChatIDs = append(missChatIDs, cid)
+					continue
+				}
 				var cached map[string]interface{}
-				if err := h.cache.GetChatLastMsg(c.Request.Context(), cidStr, &cached); err == nil {
+				if err := h.cache.GetChatLastMsg(c.Request.Context(), uuid, &cached); err == nil {
 					row := lastMsgRow{ChatID: cid}
-					if v, ok := cached["last_seq"]; ok {
+					if v, ok := cached["seq"]; ok {
 						switch n := v.(type) {
 						case float64:
 							row.LastSeq = uint64(n)
@@ -219,14 +231,17 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 							if i, e := n.Int64(); e == nil { row.LastSeq = uint64(i) }
 						}
 					}
-					if v, ok := cached["last_msg_text"]; ok { row.LastMsgText, _ = v.(string) }
-					if v, ok := cached["last_msg_type"]; ok {
+					if v, ok := cached["text"]; ok { row.LastMsgText, _ = v.(string) }
+					if v, ok := cached["type"]; ok {
 						if n, ok2 := v.(float64); ok2 { row.LastMsgType = int(n) }
 					}
-					if v, ok := cached["last_msg_sender"]; ok { row.LastMsgSender, _ = v.(string) }
-					if v, ok := cached["last_msg_time"]; ok {
-						if ts, ok2 := v.(string); ok2 {
-							if t, e := time.Parse(time.RFC3339Nano, ts); e == nil { row.LastMsgTime = t }
+					if v, ok := cached["sender_name"]; ok { row.LastMsgSender, _ = v.(string) }
+					if v, ok := cached["time"]; ok {
+						switch t := v.(type) {
+						case string:
+							if pt, e := time.Parse(time.RFC3339Nano, t); e == nil { row.LastMsgTime = pt }
+						case float64:
+							row.LastMsgTime = time.UnixMilli(int64(t))
 						}
 					}
 					chatLastMsgMap[cid] = row
@@ -237,23 +252,39 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 		} else {
 			missChatIDs = chatIDs
 		}
-		// miss 的从 MySQL 补查
+
+		// miss 从 chat_last_msg 兜底，回填 Redis
 		if len(missChatIDs) > 0 {
-			var lastMsgs []lastMsgRow
-			h.db.Table("chat_last_msg").Where("chat_id IN ?", missChatIDs).Find(&lastMsgs)
-			for _, lm := range lastMsgs {
-				chatLastMsgMap[lm.ChatID] = lm
-				// 回填 Redis
+			type dbLastMsg struct {
+				ChatID        uint64    `gorm:"column:chat_id"`
+				LastSeq       uint64    `gorm:"column:last_seq"`
+				LastMsgTime   time.Time `gorm:"column:last_msg_time"`
+				LastMsgText   string    `gorm:"column:last_msg_text"`
+				LastMsgType   int       `gorm:"column:last_msg_type"`
+				LastMsgSender string    `gorm:"column:last_msg_sender"`
+			}
+			var dbMsgs []dbLastMsg
+			h.db.Table("chat_last_msg").Where("chat_id IN ?", missChatIDs).Find(&dbMsgs)
+			for _, lm := range dbMsgs {
+				chatLastMsgMap[lm.ChatID] = lastMsgRow{
+					ChatID:        lm.ChatID,
+					LastSeq:       lm.LastSeq,
+					LastMsgTime:   lm.LastMsgTime,
+					LastMsgText:   lm.LastMsgText,
+					LastMsgType:   lm.LastMsgType,
+					LastMsgSender: lm.LastMsgSender,
+				}
+				// 回填 Redis，key 用 UUID
 				if h.cache != nil {
-					cidStr := strconv.FormatUint(lm.ChatID, 10)
-					_ = h.cache.SetChatLastMsg(c.Request.Context(), cidStr, map[string]interface{}{
-						"chat_id":         lm.ChatID,
-						"last_seq":        lm.LastSeq,
-						"last_msg_time":   lm.LastMsgTime.Format(time.RFC3339Nano),
-						"last_msg_text":   lm.LastMsgText,
-						"last_msg_type":   lm.LastMsgType,
-						"last_msg_sender": lm.LastMsgSender,
-					})
+					if uuid, ok := chatIDToUUID[lm.ChatID]; ok {
+						_ = h.cache.SetChatLastMsg(c.Request.Context(), uuid, map[string]interface{}{
+							"seq":         lm.LastSeq,
+							"time":        lm.LastMsgTime.UnixMilli(),
+							"text":        lm.LastMsgText,
+							"type":        lm.LastMsgType,
+							"sender_name": lm.LastMsgSender,
+						})
+					}
 				}
 			}
 		}

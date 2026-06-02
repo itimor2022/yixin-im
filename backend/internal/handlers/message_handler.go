@@ -804,20 +804,16 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 
 
 	// ★ 阶段二：chat_last_msg 先写Redis（<1ms），异步刷MySQL（不阻塞响应）
-	chatIDStr := strconv.FormatUint(chat.ID, 10)
-	chatLastMsgData := map[string]interface{}{
-		"chat_id":        chat.ID,
-		"last_seq":       msg.Seq,
-		"last_msg_time":  msg.CreatedAt,
-		"last_msg_text":  lastMsgText,
-		"last_msg_type":  msg.Type,
-		"last_msg_sender": sender.Nickname,
-		"updated_at":     msg.CreatedAt,
-	}
-	// 1. 同步写 Redis（会话列表实时更新）
-	if h.cache != nil {
-		_ = h.cache.SetChatLastMsg(ctx, chatIDStr, chatLastMsgData)
-	}
+        // ★ F-04B：写 Redis key 用 chat UUID，与 GetChatList 读取保持一致
+        if h.cache != nil {
+                _ = h.cache.SetChatLastMsg(ctx, chat.UUID, map[string]interface{}{
+                        "seq":         msg.Seq,
+                        "time":        msg.CreatedAt.UnixMilli(),
+                        "text":        lastMsgText,
+                        "type":        msg.Type,
+                        "sender_name": sender.Nickname,
+                })
+        }
 	// [F-04B] 以下MySQL异步写入已禁用
 	// // 2. 发送到批量写channel（worker每50ms批量UPSERT，消除高频单行写压力）
 	// if h.lastMsgCh != nil {
