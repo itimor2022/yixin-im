@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	PongWait   = 60 * time.Second
+	PongWait   = 90 * time.Second
 	PingPeriod = (PongWait * 9) / 10
 )
 
@@ -197,6 +197,7 @@ func (c *Client) handleMessage(data []byte) {
 
 	switch msg.Type {
 	case "ping":
+		c.conn.SetReadDeadline(time.Now().Add(PongWait))
 		c.sendPong(msg.Seq)
 
 	case "subscribe":
