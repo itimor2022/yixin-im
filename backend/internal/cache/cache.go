@@ -708,3 +708,79 @@ func (c *Cache) GetUserPushSetting(ctx context.Context, userID string) (bool, bo
 	}
 	return val == "1", true
 }
+
+// ============================================================
+// F-04B 时间线模型 - 大群消息预览缓存
+// ============================================================
+
+const (
+	chatLastSeqTTL = 7 * 24 * time.Hour // 7天
+	chatLastMsgTTL = 7 * 24 * time.Hour
+)
+
+func chatLastSeqKey(chatID string) string {
+	return "chat:last_seq:" + chatID
+}
+
+func chatLastMsgKey(chatID string) string {
+	return "chat:last_msg:" + chatID
+}
+
+// SetChatLastSeq 更新群最新消息序号
+func (c *Cache) SetChatLastSeq(ctx context.Context, chatID string, seq uint64) error {
+	return c.client.Set(ctx, chatLastSeqKey(chatID), seq, chatLastSeqTTL).Err()
+}
+
+// GetChatLastSeq 获取群最新消息序号
+func (c *Cache) GetChatLastSeq(ctx context.Context, chatID string) (uint64, error) {
+	val, err := c.client.Get(ctx, chatLastSeqKey(chatID)).Uint64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return val, err
+}
+
+
+// BatchGetChatLastSeq Pipeline批量获取多个群的最新序号
+func (c *Cache) BatchGetChatLastSeq(ctx context.Context, chatIDs []string) (map[string]uint64, error) {
+	if len(chatIDs) == 0 {
+		return nil, nil
+	}
+	pipe := c.client.Pipeline()
+	cmds := make([]*redis.StringCmd, len(chatIDs))
+	for i, id := range chatIDs {
+		cmds[i] = pipe.Get(ctx, chatLastSeqKey(id))
+	}
+	pipe.Exec(ctx)
+
+	result := make(map[string]uint64, len(chatIDs))
+	for i, cmd := range cmds {
+		val, err := cmd.Uint64()
+		if err == nil {
+			result[chatIDs[i]] = val
+		}
+	}
+	return result, nil
+}
+
+// BatchGetChatLastMsg Pipeline批量获取多个群的最新消息预览
+func (c *Cache) BatchGetChatLastMsg(ctx context.Context, chatIDs []string) (map[string][]byte, error) {
+	if len(chatIDs) == 0 {
+		return nil, nil
+	}
+	pipe := c.client.Pipeline()
+	cmds := make([]*redis.StringCmd, len(chatIDs))
+	for i, id := range chatIDs {
+		cmds[i] = pipe.Get(ctx, chatLastMsgKey(id))
+	}
+	pipe.Exec(ctx)
+
+	result := make(map[string][]byte, len(chatIDs))
+	for i, cmd := range cmds {
+		val, err := cmd.Bytes()
+		if err == nil {
+			result[chatIDs[i]] = val
+		}
+	}
+	return result, nil
+}

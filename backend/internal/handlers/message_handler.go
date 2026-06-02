@@ -40,7 +40,8 @@ func NewMessageHandler(db *gorm.DB, msgService *services.MessageService, pushSer
 	// 启动异步批量写 chat_last_msg 的 worker
 	h.lastMsgCh = make(chan models.ChatLastMsg, 2000)
 	h.pushSem = make(chan struct{}, 2000) // 最多2000个并发推送goroutine
-	go h.runLastMsgFlushWorker()
+	// [F-04B] MySQL写入已禁用，仅写Redis
+	// go h.runLastMsgFlushWorker()
 	return h
 }
 
@@ -817,33 +818,34 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 	if h.cache != nil {
 		_ = h.cache.SetChatLastMsg(ctx, chatIDStr, chatLastMsgData)
 	}
-	// 2. 发送到批量写channel（worker每50ms批量UPSERT，消除高频单行写压力）
-	if h.lastMsgCh != nil {
-		select {
-		case h.lastMsgCh <- models.ChatLastMsg{
-			ChatID:        chat.ID,
-			LastSeq:       msg.Seq,
-			LastMsgTime:   msg.CreatedAt,
-			LastMsgText:   lastMsgText,
-			LastMsgType:   msg.Type,
-			LastMsgSender: sender.Nickname,
-			UpdatedAt:     msg.CreatedAt,
-		}:
-		default:
-			// channel满时降级为单条异步写，防止数据丢失
-			go func() {
-				h.db.Save(&models.ChatLastMsg{
-					ChatID:        chat.ID,
-					LastSeq:       msg.Seq,
-					LastMsgTime:   msg.CreatedAt,
-					LastMsgText:   lastMsgText,
-					LastMsgType:   msg.Type,
-					LastMsgSender: sender.Nickname,
-					UpdatedAt:     msg.CreatedAt,
-				})
-			}()
-		}
-	}
+	// [F-04B] 以下MySQL异步写入已禁用
+	// // 2. 发送到批量写channel（worker每50ms批量UPSERT，消除高频单行写压力）
+	// if h.lastMsgCh != nil {
+	// select {
+	// case h.lastMsgCh <- models.ChatLastMsg{
+	// ChatID:        chat.ID,
+	// LastSeq:       msg.Seq,
+	// LastMsgTime:   msg.CreatedAt,
+	// LastMsgText:   lastMsgText,
+	// LastMsgType:   msg.Type,
+	// LastMsgSender: sender.Nickname,
+	// UpdatedAt:     msg.CreatedAt,
+	// }:
+	// default:
+	// // channel满时降级为单条异步写，防止数据丢失
+	// go func() {
+	// h.db.Save(&models.ChatLastMsg{
+	// ChatID:        chat.ID,
+	// LastSeq:       msg.Seq,
+	// LastMsgTime:   msg.CreatedAt,
+	// LastMsgText:   lastMsgText,
+	// LastMsgType:   msg.Type,
+	// LastMsgSender: sender.Nickname,
+	// UpdatedAt:     msg.CreatedAt,
+	// })
+	// }()
+	// }
+	// }
 
 
 	// 3. 更新 user_chats（按群规模分策略，memberCount 直接用缓存字段，无需 COUNT 查询）

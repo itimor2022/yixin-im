@@ -24,6 +24,7 @@ type Config struct {
 	// 对应 config.yaml 中的 cluster 字段
 	// 单机部署时不配置此项，程序自动降级为单机模式
 	Cluster *ClusterConfig `yaml:"cluster"`
+	Elasticsearch *ElasticsearchConfig `yaml:"elasticsearch"`
 	// ========== 新增结束 ==========
 }
 
@@ -188,6 +189,16 @@ type SMSConfig struct {
 		TemplateID string `json:"template_id" yaml:"template_id"`
 	} `json:"tencent" yaml:"tencent"`
 }
+
+// ElasticsearchConfig ES搜索配置
+// ES机器未部署时留空，搜索功能自动降级为MongoDB正则搜索
+type ElasticsearchConfig struct {
+        Addresses []string `yaml:"addresses"` // ES节点地址列表，如 ["http://172.31.x.x:9200"]
+        Username  string   `yaml:"username"`   // 默认 elastic
+        Password  string   `yaml:"password"`
+        Index     string   `yaml:"index"`      // 索引名，默认 yixin_messages
+}
+
 
 var GlobalConfig *Config
 

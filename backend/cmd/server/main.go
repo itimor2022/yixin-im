@@ -112,7 +112,7 @@ func main() {
 			log.Printf("✓ Pushable users loaded: %d", len(deviceUserIDs))
 		}
 	}()
-	services.RegisterMessageQueueHandlers(mqService, pushService, mysqlDB)
+	services.RegisterMessageQueueHandlers(mqService, pushService, mysqlDB, cacheService)
 	mqService.Start(mq.QueueMessageSend, mq.QueueMessageSync, mq.QueuePushNotify, mq.QueueUserChatSync)
 	log.Println("✓ Message Queue started")
 
@@ -158,7 +158,19 @@ func main() {
 	}
 
 	// 13. 初始化路由
-	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService, s3Storage)
+	// 初始化搜索服务（ES未配置时自动降级为MongoDB正则搜索）
+	var searchSvc *services.SearchService
+	if cfg.Elasticsearch != nil && len(cfg.Elasticsearch.Addresses) > 0 {
+		searchSvc = services.NewSearchService(
+			cfg.Elasticsearch.Addresses,
+			cfg.Elasticsearch.Username,
+			cfg.Elasticsearch.Password,
+			cfg.Elasticsearch.Index,
+		)
+	} else {
+		searchSvc = services.NewSearchService(nil, "", "", "")
+	}
+	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService, s3Storage, searchSvc)
 
 	// 13. 启动服务器
 	srv := &http.Server{
@@ -740,6 +752,7 @@ func setupRouter(
 	msgService *services.MessageService,
 	pushService *services.PushService,
 	s3Storage *storage.S3Storage,
+	searchSvc *services.SearchService,
 ) *gin.Engine {
 	router := gin.New()
 
