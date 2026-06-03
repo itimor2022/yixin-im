@@ -45,7 +45,7 @@ class _GroupEditPageState extends ConsumerState<GroupEditPage> {
   bool _canSendLinks = true;
   bool _canAddMembers = false;
   bool _canPinMessages = false;
-  bool _memberProtection = false;
+  bool _memberProtection = true;
   
   // 公开/私密设置
   bool _isPublic = false;

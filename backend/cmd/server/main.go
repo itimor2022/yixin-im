@@ -1135,7 +1135,7 @@ func setupRouter(
 		}
 
 		// WebSocket连接
-		api.GET("/ws", middleware.Auth(cache), middleware.RequirePhoneBind(db, cache), handlers.HandleWebSocket(hub, cfg.WebSocket, db, corsOrigins...))
+		api.GET("/ws", middleware.Auth(cache)/* , middleware.RequirePhoneBind(db, cache) */, handlers.HandleWebSocket(hub, cfg.WebSocket, db, corsOrigins...))
 
 		// ========== 官方客服独立后台 API ==========
 		serviceAdminHandler := handlers.NewServiceAdminHandler(db, cache, smsSvc)

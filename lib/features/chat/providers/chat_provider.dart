@@ -1738,8 +1738,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   /// 根据本地 Isar 中各会话最大 seq 调用 `/message/sync`，把断线期间消息写入缓存。
   /// Web 端无 Isar，跳过；当前会话仍由 [MessageListNotifier] 的 reconnected 增量合并内存列表。
   Future<void> _prefetchMissedMessagesAfterReconnect() async {
-    if (_isDisposed || PlatformUtils.isWeb || !IsarService.instance.isAvailable)
-      return;
+    if (_isDisposed) return;
+    // Web端不依赖Isar，允许继续执行
     if (_prefetchMissedMessagesRunning) return;
     _prefetchMissedMessagesRunning = true;
 
@@ -1760,12 +1760,17 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       for (final chat in chats) {
         if (_isDisposed) break;
         try {
-          final last = await IsarService.instance.isar.messageModels
-              .filter()
-              .chatIdEqualTo(chat.id)
-              .sortBySeqDesc()
-              .findFirst();
-          final maxSeq = last?.seq ?? 0;
+          int maxSeq = 0;
+          if (!PlatformUtils.isWeb && IsarService.instance.isAvailable) {
+            final last = await IsarService.instance.isar.messageModels
+                .filter()
+                .chatIdEqualTo(chat.id)
+                .sortBySeqDesc()
+                .findFirst();
+            maxSeq = last?.seq ?? 0;
+          } else {
+            maxSeq = chat.lastMessageSeq;
+          }
           final resp = await _chatService.syncMessages(
             chat.id,
             lastSeq: maxSeq,
@@ -1776,7 +1781,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           final items = resp.data!
               .map((m) => MessageItem.fromApiMessage(m, uid))
               .toList();
-          await persistMessageItemsToIsarCache(items);
+          if (!PlatformUtils.isWeb && IsarService.instance.isAvailable) {
+            await persistMessageItemsToIsarCache(items);
+          }
+          // Web端和App端都更新内存消息列表
+          for (final msg in resp.data!) {
+            _handleNewMessage(msg);
+          }
           if (kDebugMode) debugPrint(
             '[Chat] Reconnect prefetch: ${items.length} messages → Isar, chat=${chat.id}',
           );

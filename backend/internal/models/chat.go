@@ -29,7 +29,7 @@ type Chat struct {
 	CanSendLinks     bool `gorm:"default:true" json:"can_send_links"`     // 成员可发送链接
 	CanAddMembers    bool `gorm:"default:false" json:"can_add_members"`   // 成员可添加成员
 	CanPinMessages     bool   `gorm:"default:false" json:"can_pin_messages"`     // 成员可置顶消息
-	MemberProtection   bool   `gorm:"default:false" json:"member_protection"`   // 开启后普通成员仅可见管理员/群主，且不可打开成员资料
+	MemberProtection   bool   `gorm:"default:true" json:"member_protection"`   // 开启后普通成员仅可见管理员/群主，且不可打开成员资料
 	PinnedMessageID    string `gorm:"type:varchar(36);default:''" json:"pinned_message_id"` // 置顶消息ID (msg_id UUID)
 	PinnedMessageText  string `gorm:"type:varchar(500)" json:"pinned_message_text"` // 置顶消息预览文本
 	PinnedMessageBy    uint64 `gorm:"default:0" json:"pinned_message_by"`       // 置顶操作者ID

@@ -528,12 +528,8 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 			// 确保双方都有 UserChat 记录，并更新 TargetID
 			var userChat1 models.UserChat
 			if err := h.db.Where("chat_id = ? AND user_id = ?", existingChat.ID, currentUser.ID).First(&userChat1).Error; err != nil {
-				h.db.Create(&models.UserChat{
-					UserID:   currentUser.ID,
-					ChatID:   existingChat.ID,
-					TargetID: targetUser.ID,
-					SortTime: now,
-				})
+				_ = h.ensureUserChatRecord(h.db, currentUser.ID, existingChat.ID, now)
+				h.db.Model(&models.UserChat{}).Where("chat_id = ? AND user_id = ?", existingChat.ID, currentUser.ID).Update("target_id", targetUser.ID)
 			} else if userChat1.TargetID == 0 {
 				// 更新 TargetID
 				h.db.Model(&userChat1).Update("target_id", targetUser.ID)
@@ -541,12 +537,8 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 
 			var userChat2 models.UserChat
 			if err := h.db.Where("chat_id = ? AND user_id = ?", existingChat.ID, targetUser.ID).First(&userChat2).Error; err != nil {
-				h.db.Create(&models.UserChat{
-					UserID:   targetUser.ID,
-					ChatID:   existingChat.ID,
-					TargetID: currentUser.ID,
-					SortTime: now,
-				})
+				_ = h.ensureUserChatRecord(h.db, targetUser.ID, existingChat.ID, now)
+				h.db.Model(&models.UserChat{}).Where("chat_id = ? AND user_id = ?", existingChat.ID, targetUser.ID).Update("target_id", currentUser.ID)
 			} else if userChat2.TargetID == 0 {
 				// 更新 TargetID
 				h.db.Model(&userChat2).Update("target_id", currentUser.ID)
@@ -592,7 +584,13 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 				SortTime: now,
 			},
 		}
-		h.db.Create(&userChats)
+		// 逐条 upsert 防止唯一索引冲突
+		for _, uc := range userChats {
+			_ = h.ensureUserChatRecord(h.db, uc.UserID, uc.ChatID, uc.SortTime)
+			if uc.TargetID > 0 {
+				h.db.Model(&models.UserChat{}).Where("chat_id = ? AND user_id = ?", uc.ChatID, uc.UserID).Update("target_id", uc.TargetID)
+			}
+		}
 
 		// 通过 WebSocket 通知对方有新会话
 		h.hub.SendToUsersCluster([]string{targetUser.UUID}, map[string]interface{}{
@@ -669,16 +667,11 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 	}
 	h.db.Create(&ownerMember)
 
-	// 为创建者创建 user_chats 记录
-	ownerUserChat := models.UserChat{
-		UserID:    currentUser.ID,
-		ChatID:    chat.ID,
-		IsPinned:  false,
-		IsMuted:   false,
-		SortTime:  now,
-		UpdatedAt: now,
+	// 为创建者创建 user_chats 记录（使用 ensureUserChatRecord 防止唯一索引冲突）
+	if err := h.ensureUserChatRecord(h.db, currentUser.ID, chat.ID, now); err != nil {
+		response.ServerError(c, "创建会话记录失败")
+		return
 	}
-	h.db.Create(&ownerUserChat)
 
 	// 收集所有需要通知的成员ID
 	var notifyUserIDs []string
@@ -751,16 +744,8 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 			}
 			h.db.Create(&member)
 
-			// 创建 user_chats 记录
-			userChat := models.UserChat{
-				UserID:    u.ID,
-				ChatID:    chat.ID,
-				IsPinned:  false,
-				IsMuted:   false,
-				SortTime:  now,
-				UpdatedAt: now,
-			}
-			h.db.Create(&userChat)
+			// 创建 user_chats 记录（使用 ensureUserChatRecord 防止唯一索引冲突）
+			_ = h.ensureUserChatRecord(h.db, u.ID, chat.ID, now)
 
 			notifyUserIDs = append(notifyUserIDs, u.UUID)
 		}
@@ -1471,7 +1456,10 @@ func (h *ChatHandler) AddMembers(c *gin.Context) {
 	// 批量插入（2 条 SQL 替代 2N 条）
 	if len(newMembers) > 0 {
 		h.db.Create(&newMembers)
-		h.db.Create(&newUserChats)
+		// 逐条 upsert 防止唯一索引冲突
+		for _, uc := range newUserChats {
+			_ = h.ensureUserChatRecord(h.db, uc.UserID, uc.ChatID, uc.SortTime)
+		}
 	}
 
 	// 更新成员数
@@ -1969,7 +1957,7 @@ func (h *ChatHandler) JoinChat(c *gin.Context) {
 		TargetID:  0,
 		UpdatedAt: now,
 	}
-	h.db.Create(&userChat)
+	_ = h.ensureUserChatRecord(h.db, userChat.UserID, userChat.ChatID, userChat.SortTime)
 
 	// 用户主动加入不发送系统消息
 	// 只有被邀请加入时才发送系统消息
@@ -2359,7 +2347,7 @@ func (h *ChatHandler) ReviewJoinRequest(c *gin.Context) {
 			TargetID:  0,
 			UpdatedAt: now,
 		}
-		if err := approveTx.Create(&userChat).Error; err != nil {
+		if err := h.ensureUserChatRecord(approveTx, userChat.UserID, userChat.ChatID, userChat.SortTime); err != nil {
 			approveTx.Rollback()
 			response.ServerError(c, "审批失败")
 			return
