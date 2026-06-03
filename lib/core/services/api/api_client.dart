@@ -13,12 +13,11 @@ abstract class BaseUrlUpdatable {
   void updateBaseUrl(String newServerUrl);
 }
 
-
 /// API 配置
 class ApiConfig {
   // ── 编译期 Fallback（ServerDiscovery 未完成时使用） ──────
   // 本地开发时可临时改这里，生产由 ServerDiscovery 动态写入
-  static const String _defaultServerUrl = 'https://vvs.unf58.icu';
+  static const String _defaultServerUrl = 'https://vvs.r1grv.icu';
 
   // ── 运行时可变节点（由 ServerDiscovery.updateServer 写入）──
   static String _serverUrl = _defaultServerUrl;
@@ -43,7 +42,8 @@ class ApiConfig {
         ? newServerUrl.substring(0, newServerUrl.length - 1)
         : newServerUrl;
     if (url == _serverUrl) return;
-    if (kDebugMode) debugPrint('[ApiConfig] Server switched: \$_serverUrl → \$url');
+    if (kDebugMode)
+      debugPrint('[ApiConfig] Server switched: \$_serverUrl → \$url');
     _serverUrl = url;
     // 通知所有已注册的 ApiClient 实例更新
     for (final client in _registeredClients) {
@@ -53,8 +53,9 @@ class ApiConfig {
 
   // ── ApiClient 注册表（节点切换时批量更新）───────────────
   static final List<BaseUrlUpdatable> _registeredClients = [];
-  static void registerClient(BaseUrlUpdatable c)   => _registeredClients.add(c);
-  static void unregisterClient(BaseUrlUpdatable c) => _registeredClients.remove(c);
+  static void registerClient(BaseUrlUpdatable c) => _registeredClients.add(c);
+  static void unregisterClient(BaseUrlUpdatable c) =>
+      _registeredClients.remove(c);
 
   /// 获取完整的媒体 URL（处理相对路径，支持 http/https）
   static String getMediaUrl(String? url) {
@@ -118,9 +119,8 @@ class ApiResponse<T> {
   ) {
     // 兼容后端返回数字或字符串 code（如 0 / "0" / 200 / "200"）
     final rawCode = json['code'];
-    final code = rawCode is int
-        ? rawCode
-        : int.tryParse(rawCode?.toString() ?? '') ?? 0;
+    final code =
+        rawCode is int ? rawCode : int.tryParse(rawCode?.toString() ?? '') ?? 0;
     return ApiResponse(
       code: code,
       message: json['message'] ?? '',
@@ -172,7 +172,8 @@ class ApiClient implements BaseUrlUpdatable {
   late final Dio _authDio;
 
   ApiClient() {
-    if (kDebugMode) debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
+    if (kDebugMode)
+      debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
@@ -210,7 +211,8 @@ class ApiClient implements BaseUrlUpdatable {
 
             // 检查是否有相同请求正在进行
             if (_pendingRequests.containsKey(key)) {
-              if (kDebugMode) debugPrint('[API] Request dedup: waiting for $key');
+              if (kDebugMode)
+                debugPrint('[API] Request dedup: waiting for $key');
               try {
                 final response = await _pendingRequests[key]!.future;
                 return handler.resolve(response);
@@ -296,15 +298,17 @@ class ApiClient implements BaseUrlUpdatable {
           return handler.next(options);
         },
         onResponse: (response, handler) {
-          if (kDebugMode) debugPrint(
-            '[API] Response: ${response.statusCode} ${response.requestOptions.path}',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[API] Response: ${response.statusCode} ${response.requestOptions.path}',
+            );
           return handler.next(response);
         },
         onError: (error, handler) async {
-          if (kDebugMode) debugPrint(
-            '[API] Error: ${error.message} URL: ${error.requestOptions.uri}',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[API] Error: ${error.message} URL: ${error.requestOptions.uri}',
+            );
 
           // 处理 401 错误 - 使用 Completer 模式避免竞态条件
           if (_shouldRefreshToken(error)) {
@@ -339,9 +343,10 @@ class ApiClient implements BaseUrlUpdatable {
           if (_shouldRetryOnError(error)) {
             final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
             if (retryCount < 3) {
-              if (kDebugMode) debugPrint(
-                '[API] Retrying request (attempt ${retryCount + 1}/3): ${error.requestOptions.path}',
-              );
+              if (kDebugMode)
+                debugPrint(
+                  '[API] Retrying request (attempt ${retryCount + 1}/3): ${error.requestOptions.path}',
+                );
 
               // 指数退避延迟
               final retryNum = retryCount is int ? retryCount : 0;
@@ -422,7 +427,8 @@ class ApiClient implements BaseUrlUpdatable {
     }
 
     if (_token == null || _isDisposed) {
-      if (kDebugMode) debugPrint('[API] Cannot refresh: token is null or disposed');
+      if (kDebugMode)
+        debugPrint('[API] Cannot refresh: token is null or disposed');
       return null;
     }
 
@@ -440,7 +446,8 @@ class ApiClient implements BaseUrlUpdatable {
         options: Options(headers: {'Authorization': 'Bearer $_token'}),
       );
 
-      if (kDebugMode) debugPrint('[API] Refresh response status: ${response.statusCode}');
+      if (kDebugMode)
+        debugPrint('[API] Refresh response status: ${response.statusCode}');
 
       final newToken = _extractToken(response);
       if (newToken != null) {
@@ -456,14 +463,14 @@ class ApiClient implements BaseUrlUpdatable {
         return newToken;
       }
 
-      if (kDebugMode) debugPrint('[API] Token refresh failed: could not extract token');
+      if (kDebugMode)
+        debugPrint('[API] Token refresh failed: could not extract token');
       _lastRefreshFailureWasAuth = true;
       _refreshCompleter!.complete(null);
       return null;
     } on DioException catch (e, stackTrace) {
       final statusCode = e.response?.statusCode;
-      _lastRefreshFailureWasAuth =
-          e.type == DioExceptionType.badResponse &&
+      _lastRefreshFailureWasAuth = e.type == DioExceptionType.badResponse &&
           statusCode != null &&
           statusCode >= 400 &&
           statusCode < 500;
@@ -810,15 +817,14 @@ class ApiClient implements BaseUrlUpdatable {
       final code = rawCode is int
           ? rawCode
           : int.tryParse(rawCode?.toString() ?? '') ??
-                e.response?.statusCode ??
-                -1;
+              e.response?.statusCode ??
+              -1;
       _maybeNotifyPhoneBindRequired(code, message);
       return ApiResponse(code: code, message: message);
     }
 
     final fallbackStatusCode = e.response?.statusCode ?? 0;
-    final fallbackMessage =
-        _httpStatusMessages[fallbackStatusCode] ??
+    final fallbackMessage = _httpStatusMessages[fallbackStatusCode] ??
         (fallbackStatusCode >= 500 ? '服务器繁忙，请稍后重试' : '请求失败');
     _maybeNotifyPhoneBindRequired(fallbackStatusCode, fallbackMessage);
     return ApiResponse(code: fallbackStatusCode, message: fallbackMessage);
