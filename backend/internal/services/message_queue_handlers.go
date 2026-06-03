@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	appCache "gaoranim/internal/cache"
 	"gaoranim/internal/models"
@@ -92,6 +93,24 @@ func RegisterMessageQueueHandlers(queue *mq.MessageQueue, pushService *PushServi
                 if err := cache.SetChatLastMsg(ctx, payload.ChatUUID, lastMsg); err != nil {
                         return fmt.Errorf("SetChatLastMsg failed: %w", err)
                 }
+
+				// ★ 同步写 MySQL chat_last_msg 表，作为 Redis 过期后的兜底
+				if db != nil {
+					var chatRow struct{ ID uint64 }
+					if err2 := db.Table("chats").Select("id").Where("uuid = ?", payload.ChatUUID).Scan(&chatRow).Error; err2 == nil && chatRow.ID > 0 {
+						msgTime := time.UnixMilli(payload.LastMsgTime)
+						db.Exec(`INSERT INTO chat_last_msg (chat_id, last_seq, last_msg_time, last_msg_text, last_msg_type, last_msg_sender, updated_at)
+							VALUES (?, ?, ?, ?, ?, ?, NOW())
+							ON DUPLICATE KEY UPDATE
+								last_seq = IF(VALUES(last_seq) >= last_seq, VALUES(last_seq), last_seq),
+								last_msg_time = IF(VALUES(last_seq) >= last_seq, VALUES(last_msg_time), last_msg_time),
+								last_msg_text = IF(VALUES(last_seq) >= last_seq, VALUES(last_msg_text), last_msg_text),
+								last_msg_type = IF(VALUES(last_seq) >= last_seq, VALUES(last_msg_type), last_msg_type),
+								last_msg_sender = IF(VALUES(last_seq) >= last_seq, VALUES(last_msg_sender), last_msg_sender),
+								updated_at = NOW()`,
+							chatRow.ID, payload.LastMsgSeq, msgTime, payload.LastMsgText, payload.LastMsgType, payload.LastMsgSender)
+					}
+				}
 
                 return nil
         })
