@@ -460,6 +460,22 @@ func (s *MessageService) publishUserChatSync(msg *models.Message) {
 	}); err != nil {
 		log.Printf("[MessageService] publishUserChatSync failed: chatUUID=%s err=%v", msg.ChatID, err)
 	}
+
+	// ★ 双保险：MQ 异步之外，同步直写 Redis，防止 MQ 延迟/失败导致缓存落后
+	if s.cache != nil {
+		cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cacheCancel()
+		lastMsg := map[string]interface{}{
+			"msg_id":      msg.MsgID,
+			"seq":         msg.Seq,
+			"time":        msg.CreatedAt.UnixMilli(),
+			"text":        previewText,
+			"type":        msg.Type,
+			"sender_name": msg.SenderName,
+		}
+		_ = s.cache.SetChatLastSeq(cacheCtx, msg.ChatID, msg.Seq)
+		_ = s.cache.SetChatLastMsg(cacheCtx, msg.ChatID, lastMsg)
+	}
 }
 // SendMessage 发送消息
 func (s *MessageService) SendMessage(ctx context.Context, params *SendMessageParams, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar string, targetUserIDs []string) (*models.Message, error) {
