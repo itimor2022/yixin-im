@@ -35,7 +35,7 @@ func (h *SearchHandler) SearchMessages(c *gin.Context) {
 
 	// ES可用走ES，否则降级MongoDB
 	if h.searchSvc.IsEnabled() {
-		results, total, err := h.searchSvc.Search(ctx, keyword, page, size)
+		results, total, err := h.searchSvc.Search(ctx, keyword, "", page, size)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "搜索失败"})
 			return

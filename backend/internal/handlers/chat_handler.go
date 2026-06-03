@@ -30,11 +30,12 @@ type ChatHandler struct {
 	cache      *cache.Cache
 	hub        *ws.Hub
 	msgService *services.MessageService
+	searchSvc  *services.SearchService
 }
 
 // NewChatHandler 创建聊天处理器
-func NewChatHandler(db *gorm.DB, cache *cache.Cache, hub *ws.Hub, msgService *services.MessageService) *ChatHandler {
-	return &ChatHandler{db: db, cache: cache, hub: hub, msgService: msgService}
+func NewChatHandler(db *gorm.DB, cache *cache.Cache, hub *ws.Hub, msgService *services.MessageService, searchSvc *services.SearchService) *ChatHandler {
+	return &ChatHandler{db: db, cache: cache, hub: hub, msgService: msgService, searchSvc: searchSvc}
 }
 
 func (h *ChatHandler) isGroupInviteRequireFriendEnabled() bool {
@@ -3114,17 +3115,32 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 		}
 	}
 
-	// 从 MongoDB 搜索消息
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// 优先走 ES 搜索，降级到 MongoDB 正则搜索
+	if h.searchSvc != nil && h.searchSvc.IsEnabled() {
+		results, total, err := h.searchSvc.Search(ctx, keyword, chat.UUID, 1, 50)
+		if err == nil {
+			response.Success(c, gin.H{
+				"list":   results,
+				"total":  total,
+				"engine": "elasticsearch",
+			})
+			return
+		}
+		log.Printf("[Search] ES搜索失败，降级MongoDB: %v", err)
+	}
+
+	// 降级：MongoDB 正则搜索
 	messages, err := h.msgService.SearchMessages(ctx, chat.UUID, keyword, 50)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "搜索失败")
 		return
 	}
-
 	response.Success(c, gin.H{
-		"list":  messages,
-		"total": len(messages),
+		"list":   messages,
+		"total":  len(messages),
+		"engine": "mongodb",
 	})
 }

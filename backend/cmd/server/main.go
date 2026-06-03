@@ -99,8 +99,22 @@ func main() {
 	// 7. 初始化消息队列
 	mqService := mq.NewMessageQueue(redisClient, cfg.MessageQueue.Workers)
 
+	// 13. 初始化路由
+	// 初始化搜索服务（ES未配置时自动降级为MongoDB正则搜索）
+	var searchSvc *services.SearchService
+	if cfg.Elasticsearch != nil && len(cfg.Elasticsearch.Addresses) > 0 {
+		searchSvc = services.NewSearchService(
+			cfg.Elasticsearch.Addresses,
+			cfg.Elasticsearch.Username,
+			cfg.Elasticsearch.Password,
+			cfg.Elasticsearch.Index,
+		)
+	} else {
+		searchSvc = services.NewSearchService(nil, "", "", "")
+	}
+
 	// 8. 初始化服务
-	msgService := services.NewMessageService(mongoDB, mysqlDB, cacheService, mqService, hub)
+	msgService := services.NewMessageService(mongoDB, mysqlDB, cacheService, mqService, hub, searchSvc)
 	pushService := services.NewPushService(mysqlDB)
 	// ★ 初始化可推送用户集合到Redis（有效push_token的用户ID）
 	go func() {
@@ -157,19 +171,6 @@ func main() {
 		log.Println("✓ S3 disabled，使用本地存储")
 	}
 
-	// 13. 初始化路由
-	// 初始化搜索服务（ES未配置时自动降级为MongoDB正则搜索）
-	var searchSvc *services.SearchService
-	if cfg.Elasticsearch != nil && len(cfg.Elasticsearch.Addresses) > 0 {
-		searchSvc = services.NewSearchService(
-			cfg.Elasticsearch.Addresses,
-			cfg.Elasticsearch.Username,
-			cfg.Elasticsearch.Password,
-			cfg.Elasticsearch.Index,
-		)
-	} else {
-		searchSvc = services.NewSearchService(nil, "", "", "")
-	}
 	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService, s3Storage, searchSvc)
 
 	// 13. 启动服务器
@@ -940,7 +941,7 @@ func setupRouter(
 			// 会话
 			chat := authorized.Group("/chat")
 			{
-				chatHandler := handlers.NewChatHandler(db, cache, hub, msgService)
+				chatHandler := handlers.NewChatHandler(db, cache, hub, msgService, searchSvc)
 				chat.GET("/list", chatHandler.GetChatList)
 				chat.POST("/create", chatHandler.CreateChat)
 				chat.GET("/:id", chatHandler.GetChat)

@@ -43,13 +43,15 @@ func NewMessageService(
 	cache *cache.Cache,
 	mq *mq.MessageQueue,
 	hub *ws.Hub,
+	searchSvc *SearchService,
 ) *MessageService {
 	s := &MessageService{
-		mongoDB: mongoDB,
-		db:      db,
-		cache:   cache,
-		mq:      mq,
-		hub:     hub,
+		mongoDB:   mongoDB,
+		db:        db,
+		cache:     cache,
+		mq:        mq,
+		hub:       hub,
+		searchSvc: searchSvc,
 	}
 	s.mongoCh = make(chan mongoWriteTask, 5000)
 	go s.runMongoFlushWorker()
@@ -309,6 +311,10 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 				log.Printf("[MessageService] fallback insert failed coll=%s msgID=%s err=%v",
 					cName, m.MsgID, err)
 			}
+		}(collectionName, msg)
+	}
+
+
 	// 异步写入ES搜索索引（仅文字消息，ES未配置自动跳过）
 	if msg.Type == models.MsgTypeText && s.searchSvc != nil {
 		s.searchSvc.IndexMessage(ESMessageDoc{
@@ -316,13 +322,13 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 			ChatID:     msg.ChatID,
 			SenderID:   msg.SenderID,
 			SenderName: msg.SenderName,
+			Type:       msg.Type,
 			Content:    msg.Content.Text,
-			SentAt:     msg.CreatedAt,
+			Seq:        msg.Seq,
+			CreatedAt:  msg.CreatedAt.UnixMilli(),
+			IsRevoked:  false,
 		})
 	}
-		}(collectionName, msg)
-	}
-
 
 	// 6. 发布到消息队列（异步处理推送等）
 	s.publishSyncMessage(msg)

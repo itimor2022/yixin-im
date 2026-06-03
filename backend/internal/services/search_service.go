@@ -15,23 +15,27 @@ import (
 
 // ESMessageDoc ES中存储的消息文档
 type ESMessageDoc struct {
-	MsgID      string    `json:"msg_id"`
-	ChatID     string    `json:"chat_id"`
-	SenderID   string    `json:"sender_id"`
-	SenderName string    `json:"sender_name"`
-	Content    string    `json:"content"`
-	SentAt     time.Time `json:"sent_at"`
+	MsgID      string `json:"msg_id"`
+	ChatID     string `json:"chat_id"`
+	SenderID   string `json:"sender_id"`
+	SenderName string `json:"sender_name"`
+	Type       int    `json:"type"`
+	Content    string `json:"content"`
+	Seq        uint64 `json:"seq"`
+	CreatedAt  int64  `json:"created_at"`
+	IsRevoked  bool   `json:"is_revoked"`
 }
 
 // SearchResult 搜索结果
 type SearchResult struct {
-	MsgID      string    `json:"msg_id"`
-	ChatID     string    `json:"chat_id"`
-	SenderID   string    `json:"sender_id"`
-	SenderName string    `json:"sender_name"`
-	Content    string    `json:"content"`
-	Highlight  string    `json:"highlight"`
-	SentAt     time.Time `json:"sent_at"`
+	MsgID      string `json:"msg_id"`
+	ChatID     string `json:"chat_id"`
+	SenderID   string `json:"sender_id"`
+	SenderName string `json:"sender_name"`
+	Content    string `json:"content"`
+	Highlight  string `json:"highlight"`
+	Seq        uint64 `json:"seq"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 // SearchService 搜索服务，ES未配置时自动降级
@@ -155,7 +159,7 @@ func (s *SearchService) IndexMessage(doc ESMessageDoc) {
 }
 
 // Search 全局搜索文字消息，支持分页和关键词高亮
-func (s *SearchService) Search(ctx context.Context, keyword string, page, size int) ([]*SearchResult, int64, error) {
+func (s *SearchService) Search(ctx context.Context, keyword, chatID string, page, size int) ([]*SearchResult, int64, error) {
 	if !s.enabled {
 		return nil, 0, nil
 	}
@@ -167,17 +171,40 @@ func (s *SearchService) Search(ctx context.Context, keyword string, page, size i
 	}
 	from := (page - 1) * size
 
-	query := map[string]interface{}{
-		"from": from,
-		"size": size,
-		"query": map[string]interface{}{
+	// 构建查询：按 chat_id 过滤 + 全文搜索
+	var queryClause interface{}
+	if chatID != "" {
+		queryClause = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": map[string]interface{}{
+					"match": map[string]interface{}{
+						"content": map[string]interface{}{
+							"query":    keyword,
+							"operator": "and",
+						},
+					},
+				},
+				"filter": map[string]interface{}{
+					"term": map[string]interface{}{
+						"chat_id": chatID,
+					},
+				},
+			},
+		}
+	} else {
+		queryClause = map[string]interface{}{
 			"match": map[string]interface{}{
 				"content": map[string]interface{}{
 					"query":    keyword,
 					"operator": "and",
 				},
 			},
-		},
+		}
+	}
+	query := map[string]interface{}{
+		"from":  from,
+		"size":  size,
+		"query": queryClause,
 		"highlight": map[string]interface{}{
 			"fields": map[string]interface{}{
 				"content": map[string]interface{}{
@@ -189,7 +216,7 @@ func (s *SearchService) Search(ctx context.Context, keyword string, page, size i
 			},
 		},
 		"sort": []interface{}{
-			map[string]interface{}{"sent_at": map[string]interface{}{"order": "desc"}},
+			map[string]interface{}{"created_at": map[string]interface{}{"order": "desc"}},
 		},
 	}
 
@@ -233,7 +260,8 @@ func (s *SearchService) Search(ctx context.Context, keyword string, page, size i
 			SenderID:   hit.Source.SenderID,
 			SenderName: hit.Source.SenderName,
 			Content:    hit.Source.Content,
-			SentAt:     hit.Source.SentAt,
+				Seq:        hit.Source.Seq,
+				CreatedAt:  hit.Source.CreatedAt,
 			Highlight:  hit.Source.Content,
 		}
 		if hl, ok := hit.Highlight["content"]; ok && len(hl) > 0 {
