@@ -67,3 +67,8 @@ gradlew.bat
 gradlew
 keystore.properties
 local.properties
+
+windows/flutter/ephemeral/
+windows/flutter/.flutter-plugins-dependencies
+windows/flutter/.dart_tool/
+windows/flutter/.flutter-plugins
