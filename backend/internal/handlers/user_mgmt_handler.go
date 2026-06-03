@@ -115,6 +115,16 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 		query = query.Where("status = ?", status)
 	}
 
+	// onlineOnly 模式：先从 Redis SCAN 拿在线 UUID，再查 MySQL，避免全表扫描
+	if onlineOnly {
+		onlineUUIDs, err := h.cache.GetOnlineUserUUIDs(c.Request.Context())
+		if err != nil || len(onlineUUIDs) == 0 {
+			response.Success(c, gin.H{"total": 0, "list": []interface{}{}})
+			return
+		}
+		query = query.Where("uuid IN ?", onlineUUIDs)
+	}
+
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "查询失败")
@@ -122,10 +132,7 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	}
 
 	var users []models.User
-	userQuery := query.Order("created_at DESC")
-	if !onlineOnly {
-		userQuery = userQuery.Offset(offset).Limit(pageSize)
-	}
+	userQuery := query.Order("created_at DESC").Offset(offset).Limit(pageSize)
 	if err := userQuery.Find(&users).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "查询失败")
 		return

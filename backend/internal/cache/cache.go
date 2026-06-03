@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -824,4 +825,29 @@ func (c *Cache) GetChatMessages(ctx context.Context, chatID string) ([]string, b
 // DeleteChatMessages 清除某会话消息缓存（撤回/删除消息时调用）
 func (c *Cache) DeleteChatMessages(ctx context.Context, chatID string) error {
 	return c.client.Del(ctx, chatMsgsKey(chatID)).Err()
+}
+
+// ── 在线用户 UUID 集合 ────────────────────────────────────────────
+// GetOnlineUserUUIDs 通过 SCAN ws:route:* 获取所有在线用户 UUID 列表
+func (c *Cache) GetOnlineUserUUIDs(ctx context.Context) ([]string, error) {
+	var uuids []string
+	var cursor uint64
+	for {
+		keys, nextCursor, err := c.client.Scan(ctx, cursor, "ws:route:*", 500).Result()
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			// key 格式：ws:route:{uuid}
+			uuid := strings.TrimPrefix(k, "ws:route:")
+			if uuid != "" {
+				uuids = append(uuids, uuid)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return uuids, nil
 }
