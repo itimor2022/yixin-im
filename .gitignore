@@ -12,6 +12,7 @@ uploads/
 .env
 *.local.yaml
 *.jks
+*.jar
 
 # IDE / 系统
 .idea/
