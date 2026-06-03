@@ -784,3 +784,44 @@ func (c *Cache) BatchGetChatLastMsg(ctx context.Context, chatIDs []string) (map[
 	}
 	return result, nil
 }
+
+// ── 聊天消息热数据缓存 ──────────────────────────────────────────
+// key: chat:msgs:{chatUUID}  Redis List，最新消息在头部，保留200条
+
+const chatMsgsCacheSize = 200
+const chatMsgsTTL = 2 * time.Hour
+
+func chatMsgsKey(chatID string) string {
+	return "chat:msgs:" + chatID
+}
+
+// PushChatMessage 发消息时写入缓存头部，LTRIM 保留最近200条
+func (c *Cache) PushChatMessage(ctx context.Context, chatID string, msg interface{}) error {
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	key := chatMsgsKey(chatID)
+	pipe := c.client.Pipeline()
+	pipe.LPush(ctx, key, string(b))
+	pipe.LTrim(ctx, key, 0, chatMsgsCacheSize-1)
+	pipe.Expire(ctx, key, chatMsgsTTL)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+// GetChatMessages 读取缓存消息，返回 JSON 字符串列表（头部=最新）
+// 返回 (msgs, hit)，hit=false 表示缓存不存在需要回源
+func (c *Cache) GetChatMessages(ctx context.Context, chatID string) ([]string, bool) {
+	key := chatMsgsKey(chatID)
+	vals, err := c.client.LRange(ctx, key, 0, chatMsgsCacheSize-1).Result()
+	if err != nil || len(vals) == 0 {
+		return nil, false
+	}
+	return vals, true
+}
+
+// DeleteChatMessages 清除某会话消息缓存（撤回/删除消息时调用）
+func (c *Cache) DeleteChatMessages(ctx context.Context, chatID string) error {
+	return c.client.Del(ctx, chatMsgsKey(chatID)).Err()
+}

@@ -315,6 +315,14 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 	}
 
 
+
+	// ★ 写入Redis热数据缓存（最近200条，优先内存读取，降低MongoDB读压力）
+	go func(m *models.Message) {
+		if err := s.cache.PushChatMessage(context.Background(), m.ChatID, m); err != nil {
+			log.Printf("[MessageService] PushChatMessage chatID=%s err=%v", m.ChatID, err)
+		}
+	}(msg)
+
 	// 异步写入ES搜索索引（仅文字消息，ES未配置自动跳过）
 	if msg.Type == models.MsgTypeText && s.searchSvc != nil {
 		s.searchSvc.IndexMessage(ESMessageDoc{
@@ -546,6 +554,33 @@ func (s *MessageService) getMessagesBySeq(
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+
+	// ★ 优先读 Redis 热数据缓存（最近200条，beforeSeq=0 表示拉最新消息）
+	if beforeSeq == 0 {
+		if vals, hit := s.cache.GetChatMessages(ctx, chatID); hit {
+			var cached []*models.Message
+			for _, v := range vals {
+				var m models.Message
+				if err := json.Unmarshal([]byte(v), &m); err == nil {
+					// 过滤已删除消息
+					if userID != "" {
+						deleted := false
+						for _, uid := range m.DeletedFor {
+							if uid == userID { deleted = true; break }
+						}
+						if deleted { continue }
+					}
+					// 过滤 clearedAt
+					if clearedAt != nil && !m.CreatedAt.After(*clearedAt) { continue }
+					cached = append(cached, &m)
+				}
+			}
+			if len(cached) > limit { cached = cached[:limit] }
+			log.Printf("[Message] Redis cache hit chatID=%s count=%d", chatID, len(cached))
+			return cached, nil
+		}
+	}
+
 
 	// 构建查询条件
 	filter := bson.M{"chat_id": chatID}
