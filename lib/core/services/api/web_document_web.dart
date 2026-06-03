@@ -1,12 +1,20 @@
 import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 
+final Map<dynamic, JSFunction> _callbackMap = {};
+
 void webAddEventListener(String type, dynamic callback) {
-  web.document.addEventListener(type, (callback as JSFunction));
+  final void Function() voidFn = () { (callback as Function)(); };
+  final jsFunc = voidFn.toJS;
+  _callbackMap[callback] = jsFunc;
+  web.document.addEventListener(type, jsFunc);
 }
 
 void webRemoveEventListener(String type, dynamic callback) {
-  web.document.removeEventListener(type, (callback as JSFunction));
+  final jsFunc = _callbackMap.remove(callback);
+  if (jsFunc != null) {
+    web.document.removeEventListener(type, jsFunc);
+  }
 }
 
 bool webDocumentHidden() => web.document.hidden;

@@ -292,7 +292,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     // 使用 dart:js_interop 注册 visibilitychange 事件
     // 避免引入 dart:html，与项目已有的 package:web 迁移方向一致
     try {
-      _webVisibilityCallback = (dynamic _) {
+      _webVisibilityCallback = () {
         _onWebVisibilityChanged();
       };
       webAddEventListener('visibilitychange', _webVisibilityCallback);
