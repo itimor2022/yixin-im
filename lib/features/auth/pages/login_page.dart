@@ -29,7 +29,7 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _usernameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
@@ -54,7 +54,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   void dispose() {
     _qrLoginPollTimer?.cancel();
-    _usernameController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -285,7 +285,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (result is Map && result['username'] is String) {
       final username = (result['username'] as String).trim();
       if (username.isNotEmpty) {
-        _usernameController.text = username;
+        _phoneController.text = username;
         _clearError();
       }
     }
@@ -346,7 +346,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
   }
 
-  /// 用户名输入框 - 完全禁用中文输入
+  /// 手机号输入框
   Widget _buildUsernameField(bool isDark, AppLocalizations l10n) {
     return Container(
       decoration: BoxDecoration(
@@ -354,8 +354,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
-        controller: _usernameController,
-        keyboardType: TextInputType.visiblePassword,
+        controller: _phoneController,
+        keyboardType: TextInputType.phone,
         autocorrect: false,
         enableSuggestions: false,
         enableIMEPersonalizedLearning: false,
@@ -365,12 +365,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           color: isDark ? Colors.white : Colors.black,
         ),
         decoration: InputDecoration(
-          hintText: l10n.usernameLabel,
+          hintText: '请输入手机号',
           hintStyle: TextStyle(
             color: isDark ? Colors.white30 : Colors.black38,
           ),
           prefixIcon: Icon(
-            Icons.person_outline_rounded,
+            Icons.phone_outlined,
             color: isDark ? Colors.white30 : Colors.black38,
             size: 22,
           ),
@@ -379,7 +379,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         inputFormatters: [
-          LengthLimitingTextInputFormatter(20),
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(15),
         ],
       ),
     );
@@ -915,21 +916,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    final username = _usernameController.text.trim();
+    final phone = _phoneController.text.trim();
 
-    if (username.isEmpty) {
-      _showError(l10n.pleaseEnterUsername);
+    if (phone.isEmpty) {
+      _showError('请输入手机号');
       return;
     }
 
-    // 验证用户名格式（只允许英文、数字、下划线）
-    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
-      _showError(l10n.get('username_format_error') ?? '用户名只能包含英文、数字和下划线');
+    // 验证手机号格式（只允许数字）
+    if (!RegExp(r'^[0-9]+$').hasMatch(phone)) {
+      _showError(l10n.get('phone_format_error') ?? '手机号只能包含数字');
       return;
     }
 
-    if (username.length < 3) {
-      _showError(l10n.get('username_min_length') ?? '用户名至少3位');
+    if (phone.length < 7) {
+      _showError(l10n.get('phone_min_length') ?? '手机号至少7位');
       return;
     }
 
@@ -958,7 +959,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     // 调用后端 API 登录
     final authService = ref.read(authServiceProvider.notifier);
     final response = await authService.login(
-      username: username,
+      phone: phone,
       password: _passwordController.text.trim(),
       deviceId: deviceId,
       deviceType: deviceType,
