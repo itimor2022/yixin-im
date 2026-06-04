@@ -40,9 +40,19 @@ func redisPushChannel(nodeID string) string {
 // redisBroadcastChannel 全局广播频道（所有节点共同订阅）
 const redisBroadcastChannel = "ws:broadcast:all"
 
-// redisRouteKey 用户路由的 Redis Key（uid → nodeID）
+// redisRouteKey 用户路由的 Redis Key（uid → nodeID），单设备兼容
 func redisRouteKey(uid string) string {
 	return "ws:route:" + uid
+}
+
+// redisDeviceRouteKey 设备维度路由 Key（uid:deviceID → nodeID），多设备支持
+func redisDeviceRouteKey(uid, deviceID string) string {
+	return "ws:route:" + uid + ":" + deviceID
+}
+
+// redisUserDevicesKey 用户所有设备集合 Key（uid → Set of deviceIDs）
+func redisUserDevicesKey(uid string) string {
+	return "ws:devices:" + uid
 }
 
 // redisGroupOnlineKey 群在线成员的 Redis Key
@@ -171,8 +181,13 @@ func (cb *ClusterBridge) handleRemotePush(payload string) {
 // TTL = 心跳周期(54s) × 3 = 162s，心跳时续期
 func (cb *ClusterBridge) RegisterUser(uid, deviceID string) {
 	pipe := cb.rdb.Pipeline()
-	// 路由表：uid → nodeID
+	// 路由表：uid → nodeID（兼容单设备查询）
 	pipe.Set(cb.ctx, redisRouteKey(uid), cb.nodeID, 162*time.Second)
+	// 设备维度路由：uid:deviceID → nodeID（多设备精确路由）
+	pipe.Set(cb.ctx, redisDeviceRouteKey(uid, deviceID), cb.nodeID, 162*time.Second)
+	// 用户设备集合：记录所有在线设备
+	pipe.SAdd(cb.ctx, redisUserDevicesKey(uid), deviceID)
+	pipe.Expire(cb.ctx, redisUserDevicesKey(uid), 162*time.Second)
 	// 在线状态（与 cache 层保持一致）
 	pipe.HSet(cb.ctx, "user:online:"+uid, deviceID, time.Now().Unix())
 	pipe.Expire(cb.ctx, "user:online:"+uid, 162*time.Second)
@@ -184,6 +199,10 @@ func (cb *ClusterBridge) RegisterUser(uid, deviceID string) {
 // UnregisterUser 用户断开，注销路由
 // 注意：多设备场景下，只有最后一个设备断开才注销路由
 func (cb *ClusterBridge) UnregisterUser(uid, deviceID string) {
+	// 清理设备维度路由
+	cb.rdb.Del(cb.ctx, redisDeviceRouteKey(uid, deviceID))
+	cb.rdb.SRem(cb.ctx, redisUserDevicesKey(uid), deviceID)
+
 	pipe := cb.rdb.Pipeline()
 	pipe.HDel(cb.ctx, "user:online:"+uid, deviceID)
 	// 检查是否还有其他设备在线
@@ -198,8 +217,21 @@ func (cb *ClusterBridge) UnregisterUser(uid, deviceID string) {
 
 // RefreshUserTTL 心跳时续期路由 TTL（防止用户在线但路由过期）
 func (cb *ClusterBridge) RefreshUserTTL(uid string) {
-	cb.rdb.Expire(cb.ctx, redisRouteKey(uid), 162*time.Second)
-	cb.rdb.Expire(cb.ctx, "user:online:"+uid, 162*time.Second)
+	ttl := 162 * time.Second
+	pipe := cb.rdb.Pipeline()
+	pipe.Expire(cb.ctx, redisRouteKey(uid), ttl)
+	pipe.Expire(cb.ctx, "user:online:"+uid, ttl)
+	pipe.Expire(cb.ctx, redisUserDevicesKey(uid), ttl)
+	pipe.Exec(cb.ctx)
+	// 刷新所有设备路由TTL
+	devices, err := cb.rdb.SMembers(cb.ctx, redisUserDevicesKey(uid)).Result()
+	if err == nil && len(devices) > 0 {
+		pipe2 := cb.rdb.Pipeline()
+		for _, deviceID := range devices {
+			pipe2.Expire(cb.ctx, redisDeviceRouteKey(uid, deviceID), ttl)
+		}
+		pipe2.Exec(cb.ctx)
+	}
 }
 
 // ============================================================
@@ -241,23 +273,36 @@ func (cb *ClusterBridge) SendToUsers(uids []string, data json.RawMessage) {
 		return
 	}
 
-	// 批量查路由（Pipeline，一次网络往返）
-	pipe := cb.rdb.Pipeline()
-	cmds := make([]*redis.StringCmd, len(uids))
-	for i, uid := range uids {
-		cmds[i] = pipe.Get(cb.ctx, redisRouteKey(uid))
-	}
-	pipe.Exec(cb.ctx)
-
-	// 按节点分组，减少 Publish 次数
-	// key=nodeID, value=该节点上的用户列表
-	nodeUsers := make(map[string][]string, 4) // 一般不超过几个节点
-	for i, cmd := range cmds {
-		nodeID, err := cmd.Result()
-		if err != nil {
-			continue // 用户不在线
+	// ★ 多设备支持：按设备维度查路由，确保同一用户多设备都能收到
+	nodeUsers := make(map[string][]string, 4)
+	for _, uid := range uids {
+		devices, err := cb.rdb.SMembers(cb.ctx, redisUserDevicesKey(uid)).Result()
+		if err != nil || len(devices) == 0 {
+			// 降级：用单路由key
+			nodeID, err2 := cb.rdb.Get(cb.ctx, redisRouteKey(uid)).Result()
+			if err2 == nil && nodeID != "" {
+				nodeUsers[nodeID] = append(nodeUsers[nodeID], uid)
+			}
+			continue
 		}
-		nodeUsers[nodeID] = append(nodeUsers[nodeID], uids[i])
+		pipe := cb.rdb.Pipeline()
+		cmds := make([]*redis.StringCmd, len(devices))
+		for i, deviceID := range devices {
+			cmds[i] = pipe.Get(cb.ctx, redisDeviceRouteKey(uid, deviceID))
+		}
+		pipe.Exec(cb.ctx)
+		seenNodes := make(map[string]bool)
+		for _, cmd := range cmds {
+			nodeID, err2 := cmd.Result()
+			if err2 != nil || nodeID == "" {
+				continue
+			}
+			if seenNodes[nodeID] {
+				continue
+			}
+			seenNodes[nodeID] = true
+			nodeUsers[nodeID] = append(nodeUsers[nodeID], uid)
+		}
 	}
 
 	// 本节点直接推；其他节点合并为一条 batch Publish，N次→1次 Redis 往返
@@ -416,19 +461,35 @@ func (cb *ClusterBridge) BroadcastToGroup(groupID string, data json.RawMessage) 
 		if len(uids) == 0 {
 			return
 		}
-		// ★ 优化2：Pipeline批量查路由，直接按节点分组
-		pipe := cb.rdb.Pipeline()
-		cmds := make([]*redis.StringCmd, len(uids))
-		for i, uid := range uids {
-			cmds[i] = pipe.Get(ctx, redisRouteKey(uid))
-		}
-		pipe.Exec(ctx)
-		for i, cmd := range cmds {
-			nodeID, err := cmd.Result()
-			if err != nil {
+		// ★ 多设备支持：先查用户设备列表，再按设备查路由
+		for _, uid := range uids {
+			devices, err := cb.rdb.SMembers(ctx, redisUserDevicesKey(uid)).Result()
+			if err != nil || len(devices) == 0 {
+				// 降级：用单路由key
+				nodeID, err2 := cb.rdb.Get(ctx, redisRouteKey(uid)).Result()
+				if err2 == nil && nodeID != "" {
+					nodeUsers[nodeID] = append(nodeUsers[nodeID], uid)
+				}
 				continue
 			}
-			nodeUsers[nodeID] = append(nodeUsers[nodeID], uids[i])
+			pipe := cb.rdb.Pipeline()
+			cmds := make([]*redis.StringCmd, len(devices))
+			for i, deviceID := range devices {
+				cmds[i] = pipe.Get(ctx, redisDeviceRouteKey(uid, deviceID))
+			}
+			pipe.Exec(ctx)
+			seenNodes := make(map[string]bool)
+			for _, cmd := range cmds {
+				nodeID, err2 := cmd.Result()
+				if err2 != nil || nodeID == "" {
+					continue
+				}
+				if seenNodes[nodeID] {
+					continue
+				}
+				seenNodes[nodeID] = true
+				nodeUsers[nodeID] = append(nodeUsers[nodeID], uid)
+			}
 		}
 	}
 

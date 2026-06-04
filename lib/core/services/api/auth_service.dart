@@ -386,7 +386,7 @@ class AuthService extends StateNotifier<AuthState> {
   }
 
   Future<ApiResponse> login({
-    required String username,
+    required String phone,
     required String password,
     required String deviceId,
     String? deviceType,
@@ -397,7 +397,7 @@ class AuthService extends StateNotifier<AuthState> {
     final response = await _api.post(
       '/auth/login',
       data: {
-        'username': username,
+        'phone': phone,
         'password': password,
         'device_id': deviceId,
         'device_type': deviceType ?? 'ios',
@@ -483,7 +483,7 @@ class AuthService extends StateNotifier<AuthState> {
 
   /// 注册
   Future<ApiResponse> register({
-    required String username,
+    required String phone,
     required String password,
     required String nickname,
     required String deviceId,
@@ -495,7 +495,7 @@ class AuthService extends StateNotifier<AuthState> {
 
     try {
       final data = {
-        'username': username,
+        'phone': phone,
         'password': password,
         'nickname': nickname,
         'device_id': deviceId,

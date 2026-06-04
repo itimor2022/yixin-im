@@ -100,7 +100,7 @@ func (h *AuthHandler) CheckUsername(c *gin.Context) {
 
 // RegisterRequest 注册请求
 type RegisterRequest struct {
-	Username   string `json:"username" binding:"required,min=3,max=20"`
+	Phone      string `json:"phone" binding:"required"`
 	Password   string `json:"password" binding:"required,min=6,max=20"`
 	Nickname   string `json:"nickname" binding:"required,min=1,max=50"`
 	InviteCode string `json:"invite_code"` // 邀请码（可选）
@@ -134,16 +134,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.BadRequest(c, "参数错误：用户名3-20位，密码6-20位")
 		return
 	}
-	req.Username = strings.TrimSpace(req.Username)
+	req.Phone = strings.TrimSpace(req.Phone)
 	req.Nickname = strings.TrimSpace(req.Nickname)
 	req.InviteCode = strings.TrimSpace(req.InviteCode)
-	if len(req.Username) < 3 || len(req.Username) > 20 {
-		response.Error(c, 400, "用户名长度需为3-20位")
+	// 验证手机号格式（纯数字，7-15位）
+	if len(req.Phone) < 7 || len(req.Phone) > 15 {
+		response.Error(c, 400, "手机号格式不正确")
 		return
 	}
-	for _, char := range req.Username {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_') {
-			response.Error(c, 400, "用户名只能包含字母、数字和下划线")
+	for _, char := range req.Phone {
+		if char < '0' || char > '9' {
+			response.Error(c, 400, "手机号只能包含数字")
 			return
 		}
 	}
@@ -161,10 +162,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
-	// 检查用户名是否已存在
+	// 检查手机号是否已注册
 	var existUser models.User
-	if err := h.db.Where("username = ?", req.Username).First(&existUser).Error; err == nil {
-		response.Error(c, 400, "用户名已存在")
+	if err := h.db.Where("phone = ?", req.Phone).First(&existUser).Error; err == nil {
+		response.Error(c, 400, "该手机号已注册")
 		return
 	}
 
@@ -178,9 +179,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 创建用户（主流程事务化，避免出现“返回失败但部分写入成功”）
+	// 用手机号后6位+随机数生成唯一username
+	autoUsername := fmt.Sprintf("u%s%04d", req.Phone[len(req.Phone)-6:], time.Now().UnixNano()%10000)
+	phone := req.Phone
 	user := models.User{
 		UUID:     uuid.New().String(),
-		Username: req.Username,
+		Username: autoUsername,
+		Phone:    &phone,
 		Nickname: req.Nickname,
 		Status:   1,
 		LastSeen: time.Now(),
@@ -428,7 +433,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // LoginRequest 登录请求
 type LoginRequest struct {
-	Username   string `json:"username" binding:"required"`
+	Phone      string `json:"phone" binding:"required"`
 	Password   string `json:"password" binding:"required"`
 	DeviceID   string `json:"device_id" binding:"required"`
 	DeviceType string `json:"device_type"` // ios/android/web
@@ -443,14 +448,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	req.Username = strings.TrimSpace(req.Username)
+	req.Phone = strings.TrimSpace(req.Phone)
 
-	// 查找用户
+	// 查找用户（按手机号）
 	var user models.User
-	result := h.db.Where("username = ?", req.Username).First(&user)
+	result := h.db.Where("phone = ?", req.Phone).First(&user)
 
 	if result.Error == gorm.ErrRecordNotFound {
-		response.Error(c, 400, "用户名或密码错误")
+		response.Error(c, 400, "手机号或密码错误")
 		return
 	}
 

@@ -31,7 +31,7 @@ class RegisterPage extends ConsumerStatefulWidget {
 }
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
-  final _usernameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _nicknameController = TextEditingController();
@@ -56,7 +56,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   @override
   void initState() {
     super.initState();
-    _usernameController.addListener(_onUsernameChanged);
+    // phone 不需要实时检测
     _loadRegisterSettings();
   }
 
@@ -76,8 +76,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   @override
   void dispose() {
     _usernameCheckTimer?.cancel();
-    _usernameController.removeListener(_onUsernameChanged);
-    _usernameController.dispose();
+    // _phoneController 无需移除 listener
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _nicknameController.dispose();
@@ -86,7 +86,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   void _onUsernameChanged() {
-    final username = _usernameController.text.trim();
+    final username = _phoneController.text.trim();
 
     // 取消之前的定时器
     _usernameCheckTimer?.cancel();
@@ -549,7 +549,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     );
   }
 
-  /// 用户名输入框 - 完全禁用中文输入
+  /// 手机号输入框
   Widget _buildUsernameField(bool isDark) {
     return Container(
       decoration: BoxDecoration(
@@ -557,36 +557,33 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
-        controller: _usernameController,
-        // 使用 ASCII 类型完全禁用中文输入法
-        keyboardType: TextInputType.visiblePassword,
+        controller: _phoneController,
+        keyboardType: TextInputType.phone,
         autocorrect: false,
         enableSuggestions: false,
-        enableIMEPersonalizedLearning: false,
         onChanged: (_) => _clearError(),
         style: TextStyle(
           fontSize: 16,
           color: isDark ? Colors.white : Colors.black,
         ),
         decoration: InputDecoration(
-          hintText: '用户名（3-20位，仅限英文、数字、下划线）',
+          hintText: '请输入手机号',
           hintStyle: TextStyle(
             color: isDark ? Colors.white30 : Colors.black38,
             fontSize: 15,
           ),
           prefixIcon: Icon(
-            Icons.alternate_email_rounded,
+            Icons.phone_outlined,
             color: isDark ? Colors.white30 : Colors.black38,
             size: 22,
           ),
-          suffixIcon: _buildUsernameStatusIcon(isDark),
           border: InputBorder.none,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_]')),
-          LengthLimitingTextInputFormatter(20),
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(15),
         ],
       ),
     );
@@ -594,7 +591,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   /// 用户名状态图标
   Widget? _buildUsernameStatusIcon(bool isDark) {
-    if (_usernameController.text.trim().length < 3) {
+    if (_phoneController.text.trim().length < 7) {
       return null;
     }
 
@@ -838,25 +835,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   void _nextStep() {
-    // 验证用户名
-    if (_usernameController.text.isEmpty) {
-      _showError('请输入用户名');
+    // 验证手机号
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      _showError('请输入手机号');
       return;
     }
-
-    if (_usernameController.text.length < 3) {
-      _showError('用户名至少3位');
-      return;
-    }
-
-    // 检查用户名可用性
-    if (_isUsernameAvailable == false) {
-      _showError(_usernameMessage ?? '该用户名已被使用');
-      return;
-    }
-
-    if (_isCheckingUsername) {
-      _showError('正在检查用户名可用性...');
+    if (!RegExp(r'^[0-9]{7,15}$').hasMatch(phone)) {
+      _showError('请输入有效的手机号码');
       return;
     }
 
@@ -990,6 +976,15 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       return;
     }
 
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      _showError('请输入手机号');
+      return;
+    }
+    if (!RegExp(r'^[0-9]{7,15}$').hasMatch(phone)) {
+      _showError('请输入有效的手机号码');
+      return;
+    }
     if (_nicknameController.text.isEmpty) {
       _showError('请输入昵称');
       return;
@@ -1015,7 +1010,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     // 调用后端 API 注册
     final authService = ref.read(authServiceProvider.notifier);
     final response = await authService.register(
-      username: _usernameController.text,
+      phone: _phoneController.text.trim(),
       password: _passwordController.text,
       nickname: _nicknameController.text,
       deviceId: deviceId,
