@@ -131,15 +131,7 @@ class SettingsPage extends ConsumerWidget {
                 _SettingsGroup(
                   isDark: isDark,
                   children: [
-                    _SettingsTile(
-                      icon: Icons.workspace_premium_outlined,
-                      iconBgColor: const Color(0xFF7C3AED),
-                      title: 'Premium 会员',
-                      subtitle: '解锁更多高级能力',
-                      isDark: isDark,
-                      onTap: () =>
-                          _openPage(context, const MembershipPage(), ref),
-                    ),
+                    // Premium 会员入口已隐藏
                     _SettingsTile(
                       icon: Icons.account_balance_wallet_outlined,
                       iconBgColor: const Color(0xFFFF9500),

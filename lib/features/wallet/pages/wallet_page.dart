@@ -210,14 +210,6 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                       children: [
                         Expanded(
                           child: _buildActionButton(
-                            icon: Icons.add,
-                            label: '充值',
-                            onTap: () => _navigateToRecharge(context),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildActionButton(
                             icon: Icons.arrow_upward,
                             label: '提现',
                             onTap: () => _navigateToWithdraw(context),

@@ -69,6 +69,9 @@
             <ElButton size="small" type="primary" link @click="showWalletDetail(row)">
               <i class="ri-wallet-line mr-1"></i>管理
             </ElButton>
+            <ElButton size="small" type="success" link @click="showRechargeDialog(row)">
+              <i class="ri-add-line mr-1"></i>充值
+            </ElButton>
             <ElButton size="small" type="warning" link @click="showBalanceDialog(row)">
               <i class="ri-subtract-line mr-1"></i>扣减
             </ElButton>
@@ -131,6 +134,9 @@
 
         <!-- 操作按钮 -->
         <div class="action-buttons mb-6 flex flex-wrap gap-3">
+          <ElButton type="success" @click="showRechargeDialogInner()">
+            <i class="ri-add-line mr-1"></i>充值
+          </ElButton>
           <ElButton type="warning" @click="showBalanceDialogInner()">
             <i class="ri-subtract-line mr-1"></i>扣减
           </ElButton>
@@ -183,6 +189,28 @@
           </ElTable>
         </div>
       </div>
+    </ElDialog>
+
+    <!-- 充值弹窗 -->
+    <ElDialog v-model="rechargeDialogVisible" title="充值（上分）" width="400px">
+      <ElForm :model="rechargeForm" label-width="80px">
+        <ElFormItem label="用户">
+          <span class="font-medium">{{ rechargeTargetUser?.user_name }} (@{{ rechargeTargetUser?.username }})</span>
+        </ElFormItem>
+        <ElFormItem label="当前余额">
+          <span class="text-green-600 font-bold">¥{{ rechargeTargetUser?.balance.toFixed(2) }}</span>
+        </ElFormItem>
+        <ElFormItem label="充值金额">
+          <ElInputNumber v-model="rechargeForm.amount" :min="0.01" :precision="2" :step="10" style="width: 100%" />
+        </ElFormItem>
+        <ElFormItem label="备注">
+          <ElInput v-model="rechargeForm.remark" placeholder="操作备注（可选）" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="rechargeDialogVisible = false">取消</ElButton>
+        <ElButton type="success" @click="handleRechargeSubmit">确认充值</ElButton>
+      </template>
     </ElDialog>
 
     <!-- 余额调整弹窗 -->
@@ -286,6 +314,14 @@
   const transactions = ref<UserTransaction[]>([])
   const transLoading = ref(false)
 
+  // 充值（上分）
+  const rechargeDialogVisible = ref(false)
+  const rechargeTargetUser = ref<UserWalletInfo | null>(null)
+  const rechargeForm = reactive({
+    amount: 100,
+    remark: ''
+  })
+
   // 余额调整
   const balanceDialogVisible = ref(false)
   const balanceTargetUser = ref<UserWalletInfo | null>(null)
@@ -388,6 +424,37 @@
       console.error('获取资金记录失败', e)
     } finally {
       transLoading.value = false
+    }
+  }
+
+  const showRechargeDialog = (row: UserWalletInfo) => {
+    rechargeTargetUser.value = row
+    rechargeForm.amount = 100
+    rechargeForm.remark = ''
+    rechargeDialogVisible.value = true
+  }
+
+  const showRechargeDialogInner = () => {
+    if (currentWallet.value) {
+      showRechargeDialog(currentWallet.value)
+    }
+  }
+
+  const handleRechargeSubmit = async () => {
+    if (!rechargeTargetUser.value) return
+    const amount = rechargeForm.amount  // 正数为充值
+    try {
+      await updateUserBalance(rechargeTargetUser.value.user_id, amount, rechargeForm.remark || '后台充值')
+      ElMessage.success('充值成功')
+      rechargeDialogVisible.value = false
+      fetchData()
+      if (detailVisible.value && currentWallet.value) {
+        const res = await getUserWallet(currentWallet.value.user_id)
+        currentWallet.value = res
+        fetchTransactions()
+      }
+    } catch (e: any) {
+      ElMessage.error(e.message || '充值失败')
     }
   }
 

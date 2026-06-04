@@ -168,7 +168,8 @@ export const walletRoutes: AppRouteRecord = {
       meta: {
         title: '会员管理',
         icon: 'ri:vip-crown-2-line',
-        keepAlive: true
+        keepAlive: true,
+        isHide: true
       }
     },
     {
