@@ -48,6 +48,9 @@ type UserListItem struct {
 	Status            int8    `json:"status"`
 	BanReason         *string `json:"ban_reason"`
 	BannedAt          *string `json:"banned_at"`
+	IsMember         bool    `json:"is_member"`
+	BadgeText        string  `json:"badge_text"`
+	BadgeColor       string  `json:"badge_color"`
 	IsOnline          bool    `json:"is_online"`
 	LastSeen          *string `json:"last_seen"`
 	CreatedAt         string  `json:"created_at"`
@@ -238,6 +241,10 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			bannedAt := u.BannedAt.Format("2006-01-02 15:04:05")
 			item.BannedAt = &bannedAt
 		}
+			// 会员信息
+			item.IsMember = u.IsMember
+			item.BadgeText = u.BadgeText
+			item.BadgeColor = u.BadgeColor
 
 		// 通过 WebSocket Hub 判断实时在线状态
 		if h.hub != nil && h.hub.IsUserOnline(u.UUID) {
@@ -621,4 +628,37 @@ func (h *UserMgmtHandler) ResetUserPassword(c *gin.Context) {
 		"user_id": user.ID,
 		"uuid":    user.UUID,
 	})
+}
+
+// SetMembership sets or clears the member badge for a user.
+// PATCH /api/v1/admin/users/:id/membership
+func (h *UserMgmtHandler) SetMembership(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的用户ID"})
+		return
+	}
+
+	var req struct {
+		IsMember   bool   `json:"is_member"`
+		BadgeText  string `json:"badge_text"`
+		BadgeColor string `json:"badge_color"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"is_member":   req.IsMember,
+		"badge_text":  req.BadgeText,
+		"badge_color": req.BadgeColor,
+	}
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "更新失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success"})
 }

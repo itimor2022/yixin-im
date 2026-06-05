@@ -276,6 +276,10 @@ ChatModel _chatModelDeserialize(
   object.name = reader.readString(offsets[12]);
   object.peerUserId = reader.readStringOrNull(offsets[13]);
   object.premiumType = reader.readStringOrNull(offsets[14]);
+  object.isMember = reader.readBoolOrNull(offsets[18]);
+  object.badgeText = reader.readStringOrNull(offsets[19]);
+  object.badgeColor = reader.readStringOrNull(offsets[20]);
+  object.nicknameColor = reader.readStringOrNull(offsets[21]);
   object.type =
       _ChatModeltypeValueEnumMap[reader.readByteOrNull(offsets[15])] ??
           ChatType.private;

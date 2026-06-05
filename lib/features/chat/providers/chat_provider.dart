@@ -69,6 +69,9 @@ class ChatItem {
   final String? emojiAvatar; // 表情状态
   final String? nicknameColor; // 昵称颜色
   final String? premiumType; // 会员类型
+  final bool isMember; // 是否会员
+  final String? badgeText; // 徽章文字
+  final String? badgeColor; // 徽章颜色
   final int lastMessageSeq; // 最新消息序号，用于判断编辑是否影响预览
 
   const ChatItem({
@@ -99,6 +102,9 @@ class ChatItem {
     this.emojiAvatar,
     this.nicknameColor,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
     this.lastMessageSeq = 0,
   }) : _realMemberCount = realMemberCount;
 
@@ -130,6 +136,9 @@ class ChatItem {
     String? emojiAvatar,
     String? nicknameColor,
     String? premiumType,
+    bool? isMember,
+    String? badgeText,
+    String? badgeColor,
     int? lastMessageSeq,
   }) {
     return ChatItem(
@@ -162,6 +171,9 @@ class ChatItem {
       emojiAvatar: emojiAvatar ?? this.emojiAvatar,
       nicknameColor: nicknameColor ?? this.nicknameColor,
       premiumType: premiumType ?? this.premiumType,
+      isMember: isMember ?? this.isMember,
+      badgeText: badgeText ?? this.badgeText,
+      badgeColor: badgeColor ?? this.badgeColor,
       lastMessageSeq: lastMessageSeq ?? this.lastMessageSeq,
     );
   }
@@ -1359,6 +1371,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       createdAt: m.createdAt,
       targetUserId: m.peerUserId,
       realMemberCount: m.memberCount ?? 0,
+      premiumType: m.premiumType,
+      isMember: m.isMember ?? false,
+      badgeText: m.badgeText,
+      badgeColor: m.badgeColor,
+      nicknameColor: m.nicknameColor,
     );
   }
 
@@ -1416,6 +1433,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       ..draft = c.draft
       ..memberCount = c.memberCount > 0 ? c.memberCount : null
       ..peerUserId = c.targetUserId
+      ..premiumType = c.premiumType
+      ..isMember = c.isMember
+      ..badgeText = c.badgeText
+      ..badgeColor = c.badgeColor
+      ..nicknameColor = c.nicknameColor
       ..createdAt = c.createdAt
       ..updatedAt = now;
   }
@@ -1487,6 +1509,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 emojiAvatar: userChat.emojiAvatar, // 表情状态
                 nicknameColor: userChat.nicknameColor, // 昵称颜色
                 premiumType: userChat.premiumType, // 会员类型
+                isMember: userChat.isMember ?? false,
+                badgeText: userChat.badgeText,
+                badgeColor: userChat.badgeColor,
                 lastMessageSeq: userChat.lastMsgSeq,
               ),
             )

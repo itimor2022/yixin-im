@@ -560,6 +560,9 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       isSelected: isChatActive,
                       isDesktop: widget.isDesktopSidebar,
                       showPendingApprovalDot: chat.hasPendingJoinRequests,
+                      isMember: chat.isMember,
+                      badgeText: chat.badgeText,
+                      badgeColor: chat.badgeColor,
                       onTap: () => _openChat(context, chat),
                       onLongPress: widget.isDesktopSidebar
                           ? null

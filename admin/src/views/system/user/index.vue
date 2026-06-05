@@ -327,6 +327,16 @@
                     { class: 'font-semibold text-base text-g-800' },
                     row.userName || '未设置'
                   ),
+                  // 会员徽章
+                  (row.isMember && row.badgeText) &&
+                    h(
+                      'span',
+                      {
+                        class: 'text-xs px-1.5 py-0.5 rounded text-white font-bold ml-1',
+                        style: { backgroundColor: row.badgeColor || '#3390EC' }
+                      },
+                      row.badgeText
+                    ),
                   row.nickname && h('span', { class: 'text-sm text-g-400' }, `(${row.nickname})`),
                   // 封禁状态标识
                   Number(row.status) === 3 &&

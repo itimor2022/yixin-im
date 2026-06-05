@@ -60,6 +60,18 @@ class ChatModel {
 
   /// 会员类型
   late String? premiumType;
+
+  /// 是否会员（私聊对方）
+  late bool? isMember;
+
+  /// 徽章文字
+  late String? badgeText;
+
+  /// 徽章颜色
+  late String? badgeColor;
+
+  /// 昵称颜色（私聊对方）
+  late String? nicknameColor;
   
   /// 创建时间
   late DateTime createdAt;

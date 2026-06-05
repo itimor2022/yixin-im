@@ -44,6 +44,9 @@ class Chat {
   final String? emojiAvatar; // 表情状态（私聊对方）
   final String? nicknameColor; // 昵称颜色（私聊对方）
   final String? premiumType; // 会员类型（私聊对方）
+  final bool isMember; // 是否会员（私聊对方）
+  final String? badgeText; // 徽章文字
+  final String? badgeColor; // 徽章颜色
   // 权限设置
   final bool canSendMessage;
   final bool canSendMedia;
@@ -73,6 +76,9 @@ class Chat {
     this.emojiAvatar,
     this.nicknameColor,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
     this.canSendMessage = true,
     this.canSendMedia = true,
     this.canSendLinks = true,
@@ -119,6 +125,9 @@ class Chat {
       emojiAvatar: json['emoji_avatar'],
       nicknameColor: json['nickname_color'],
       premiumType: json['premium_type'],
+      isMember: json['is_member'] ?? false,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
       canSendMessage: json['can_send_message'] ?? true,
       canSendMedia: json['can_send_media'] ?? true,
       canSendLinks: json['can_send_links'] ?? true,
@@ -145,6 +154,9 @@ class ChatMember {
   final String? nicknameColor; // 昵称颜色
   final String? emojiAvatar; // 动态表情
   final String? premiumType; // 会员类型
+  final bool isMember; // 是否会员
+  final String? badgeText;
+  final String? badgeColor;
 
   ChatMember({
     required this.userId,
@@ -158,6 +170,9 @@ class ChatMember {
     this.nicknameColor,
     this.emojiAvatar,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
   });
 
   /// 显示名称（优先 nickname）
@@ -206,6 +221,9 @@ class ChatMember {
       nicknameColor: json['nickname_color'],
       emojiAvatar: json['emoji_avatar'],
       premiumType: json['premium_type'],
+      isMember: json['is_member'] ?? false,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
     );
   }
 }
@@ -239,6 +257,9 @@ class UserChat {
   final String? emojiAvatar; // 表情状态
   final String? nicknameColor; // 昵称颜色
   final String? premiumType; // 会员类型
+  final bool isMember;
+  final String? badgeText;
+  final String? badgeColor;
 
   UserChat({
     required this.id,
@@ -264,6 +285,9 @@ class UserChat {
     this.emojiAvatar,
     this.nicknameColor,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
   });
 
   factory UserChat.fromJson(Map<String, dynamic> json) {
@@ -296,6 +320,9 @@ class UserChat {
       emojiAvatar: json['emoji_avatar'],
       nicknameColor: json['nickname_color'],
       premiumType: json['premium_type'],
+      isMember: json['is_member'] ?? false,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
     );
   }
 }
@@ -480,6 +507,9 @@ class ContactCardInfo {
   final String? nicknameColor;
   final String? emojiAvatar;
   final String? premiumType;
+  final bool isMember;
+  final String? badgeText;
+  final String? badgeColor;
 
   ContactCardInfo({
     required this.userId,
@@ -490,6 +520,9 @@ class ContactCardInfo {
     this.nicknameColor,
     this.emojiAvatar,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
   });
 
   factory ContactCardInfo.fromJson(Map<String, dynamic> json) {
@@ -503,6 +536,9 @@ class ContactCardInfo {
       nicknameColor: json['nickname_color'],
       emojiAvatar: json['emoji_avatar'],
       premiumType: json['premium_type'],
+      isMember: json['is_member'] ?? false,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
     );
   }
 

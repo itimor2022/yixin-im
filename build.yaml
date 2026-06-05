@@ -1,0 +1,11 @@
+targets:
+  $default:
+    builders:
+      isar_generator:
+        generate_for:
+          exclude:
+            - lib/core/services/e2ee/web_rsa_keygen_web.dart
+      json_serializable:
+        generate_for:
+          exclude:
+            - lib/core/services/e2ee/web_rsa_keygen_web.dart
