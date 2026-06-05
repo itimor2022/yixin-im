@@ -549,6 +549,17 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           'caller_id': data['caller_id'] ?? '',
         };
         ref.read(callServiceProvider.notifier).handleIncomingCall(callData);
+      } else {
+        // 普通消息：弹本地通知（声音+震动）
+        final title = data['title'] as String? ?? '';
+        final body = data['body'] as String? ?? '';
+        if (title.isNotEmpty || body.isNotEmpty) {
+          pushService.showLocalMessageNotification(
+            title: title.isNotEmpty ? title : '新消息',
+            body: body,
+            data: data,
+          );
+        }
       }
     };
 

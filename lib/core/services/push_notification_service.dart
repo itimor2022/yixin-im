@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api/api_client.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 void _log(String message) {
   if (kDebugMode) debugPrint(message);
@@ -51,6 +52,10 @@ class PushNotificationService {
   static const int _maxRegisterAttempts = 3;
   static const Duration _tokenTimeout = Duration(seconds: 10);
 
+  // 本地通知
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+
   // 通知回调
   Function(Map<String, dynamic>)? onNotificationReceived;
   Function(Map<String, dynamic>)? onNotificationTapped;
@@ -61,6 +66,51 @@ class PushNotificationService {
       _setupIOSMethodChannel();
     } else if (Platform.isAndroid) {
       _setupAndroidVendorMethodChannel();
+    }
+  }
+
+
+  /// 显示本地消息通知（声音+震动），供 app.dart 调用
+  Future<void> showLocalMessageNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    try {
+      if (Platform.isAndroid) {
+        const androidDetails = AndroidNotificationDetails(
+          'gaoranim_messages',
+          '消息通知',
+          channelDescription: '聊天消息通知，包含声音和震动',
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+        );
+        const details = NotificationDetails(android: androidDetails);
+        await _localNotifications.show(
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          title,
+          body,
+          details,
+        );
+      } else if (Platform.isIOS) {
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
+        );
+        const details = NotificationDetails(iOS: iosDetails);
+        await _localNotifications.show(
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          title,
+          body,
+          details,
+        );
+      }
+    } catch (e) {
+      _log('[Push] showLocalMessageNotification error: \$e');
     }
   }
 
