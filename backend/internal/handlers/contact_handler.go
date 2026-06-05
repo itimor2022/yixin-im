@@ -71,6 +71,9 @@ func (h *ContactHandler) GetContacts(c *gin.Context) {
 		EmojiAvatar   string    `gorm:"column:emoji_avatar"`
 		NicknameColor string    `gorm:"column:nickname_color"`
 		PremiumType   string    `gorm:"column:premium_type"`
+		IsMember      bool      `gorm:"column:is_member"`
+		BadgeText     string    `gorm:"column:badge_text"`
+		BadgeColor    string    `gorm:"column:badge_color"`
 	}
 
 	baseQuery := h.db.Table("contacts").
@@ -109,7 +112,10 @@ func (h *ContactHandler) GetContacts(c *gin.Context) {
 				users.last_seen,
 				users.emoji_avatar,
 				users.nickname_color,
-				users.premium_type
+				users.premium_type,
+				users.is_member,
+				users.badge_text,
+				users.badge_color
 			`).
 			Order("CASE WHEN contacts.remark = '' OR contacts.remark IS NULL THEN 1 ELSE 0 END ASC").
 			Order("contacts.remark ASC").
@@ -167,6 +173,9 @@ func (h *ContactHandler) GetContacts(c *gin.Context) {
 			"emoji_avatar":   row.EmojiAvatar,
 			"nickname_color": row.NicknameColor,
 			"premium_type":   row.PremiumType,
+				"is_member":      row.IsMember,
+				"badge_text":     row.BadgeText,
+				"badge_color":    row.BadgeColor,
 		})
 	}
 
