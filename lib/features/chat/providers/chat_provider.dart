@@ -1524,10 +1524,24 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 emojiAvatar: userChat.emojiAvatar, // 表情状态
                 nicknameColor: userChat.nicknameColor, // 昵称颜色
                 premiumType: userChat.premiumType, // 会员类型
-                isMember: userChat.isMember ?? false,
-                badgeText: userChat.badgeText,
-                badgeColor: userChat.badgeColor,
                 lastMessageSeq: userChat.lastMsgSeq,
+                // 会员字段：优先用接口返回值，接口无值时保留内存中已有数据
+                isMember: userChat.isMember ??
+                    state.allChats
+                        .where((c) => c.id == userChat.chatId)
+                        .firstOrNull
+                        ?.isMember ??
+                    false,
+                badgeText: userChat.badgeText ??
+                    state.allChats
+                        .where((c) => c.id == userChat.chatId)
+                        .firstOrNull
+                        ?.badgeText,
+                badgeColor: userChat.badgeColor ??
+                    state.allChats
+                        .where((c) => c.id == userChat.chatId)
+                        .firstOrNull
+                        ?.badgeColor,
               ),
             )
             .where((chat) => seenIds.add(chat.id)) // 去重：只保留第一次出现的
