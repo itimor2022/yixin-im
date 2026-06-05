@@ -693,6 +693,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     final nextNicknameColor = data['nickname_color']?.toString();
     final nextEmojiAvatar = data['emoji_avatar']?.toString();
     final nextPremiumType = data['premium_type']?.toString();
+    final nextIsMember = data['is_member'] == true || data['is_member'] == 1;
+    final nextBadgeText = data['badge_text']?.toString();
+    final nextBadgeColor = data['badge_color']?.toString();
 
     bool changed = false;
     final previousPinned = state.pinnedChats;
@@ -706,6 +709,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         nicknameColor: nextNicknameColor,
         emojiAvatar: nextEmojiAvatar,
         premiumType: nextPremiumType,
+        isMember: nextIsMember,
+        badgeText: nextBadgeText,
+        badgeColor: nextBadgeColor,
       );
       if (!identical(updated, chat)) changed = true;
       return updated;
@@ -720,6 +726,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         nicknameColor: nextNicknameColor,
         emojiAvatar: nextEmojiAvatar,
         premiumType: nextPremiumType,
+        isMember: nextIsMember,
+        badgeText: nextBadgeText,
+        badgeColor: nextBadgeColor,
       );
       if (!identical(updated, chat)) changed = true;
       return updated;
@@ -768,6 +777,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     String? nicknameColor,
     String? emojiAvatar,
     String? premiumType,
+    bool? isMember,
+    String? badgeText,
+    String? badgeColor,
   }) {
     final isTargetUser =
         chat.type == ChatItemType.private &&
@@ -780,6 +792,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       nicknameColor: nicknameColor ?? chat.nicknameColor,
       emojiAvatar: emojiAvatar ?? chat.emojiAvatar,
       premiumType: premiumType ?? chat.premiumType,
+      isMember: isMember ?? chat.isMember,
+      badgeText: badgeText ?? chat.badgeText,
+      badgeColor: badgeColor ?? chat.badgeColor,
     );
   }
 
