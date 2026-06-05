@@ -295,18 +295,26 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                                     16,
                                     6,
                                   ),
-                                  color: isDark
-                                      ? AppColors.darkBackground
-                                      : AppColors.lightBackground,
-                                  child: Text(
-                                    letter,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black54,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  color: letter == '★'
+                                      ? AppColors.primary.withOpacity(isDark ? 0.18 : 0.10)
+                                      : (isDark
+                                          ? AppColors.darkBackground
+                                          : AppColors.lightBackground),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        letter == '★' ? '★ 会员' : letter,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: letter == '★'
+                                              ? AppColors.primary
+                                              : (isDark
+                                                  ? Colors.white54
+                                                  : Colors.black54),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 // 该字母下的联系人
@@ -458,6 +466,13 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
     final grouped = <String, List<ContactItem>>{};
 
     for (final contact in contacts) {
+      // 会员单独放 ★ 分组，排在最前面
+      if (contact.isMember) {
+        grouped.putIfAbsent('★', () => []);
+        grouped['★']!.add(contact);
+        continue;
+      }
+
       String firstLetter = '#';
 
       if (contact.name.isNotEmpty) {
@@ -480,9 +495,11 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       grouped[firstLetter]!.add(contact);
     }
 
-    // 按字母 A-Z 排序，# 放最后
+    // ★ 会员分组排最前，A-Z 其次，# 放最后
     final sortedKeys = grouped.keys.toList()
       ..sort((a, b) {
+        if (a == '★') return -1;
+        if (b == '★') return 1;
         if (a == '#') return 1;
         if (b == '#') return -1;
         return a.compareTo(b);
@@ -804,18 +821,24 @@ class _AlphabetIndexBarState extends State<_AlphabetIndexBar> {
                 width: 16,
                 height: 16,
                 decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  color: isSelected
+                      ? AppColors.primary
+                      : (letter == '★'
+                          ? AppColors.primary.withOpacity(0.15)
+                          : Colors.transparent),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Center(
                   child: Text(
                     letter,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: letter == '★' ? 9 : 10,
                       fontWeight: FontWeight.w600,
                       color: isSelected
                           ? Colors.white
-                          : (widget.isDark ? Colors.white54 : Colors.black54),
+                          : (letter == '★'
+                              ? AppColors.primary
+                              : (widget.isDark ? Colors.white54 : Colors.black54)),
                     ),
                   ),
                 ),
