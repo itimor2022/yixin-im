@@ -572,6 +572,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     if (lifecycleState == AppLifecycleState.resumed) {
       if (state == WSConnectionState.connected) {
+        // resumed 时立即发一次 ping，重置服务端 ReadDeadline
+        send(WSMessage(type: WSMessageType.ping));
         _startPing();
       }
       _checkAndReconnect();
@@ -1373,8 +1375,11 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     state = WSConnectionState.reconnecting;
 
-    final base = (2 << _reconnectAttempts).clamp(2, 60);
-    final jitter = Random().nextInt(5);
+    // 第1次断线立即重连（1秒），后续指数退避，最长60秒
+    final base = _reconnectAttempts == 0
+        ? 1
+        : (2 << (_reconnectAttempts - 1)).clamp(2, 60);
+    final jitter = _reconnectAttempts == 0 ? 0 : Random().nextInt(5);
     final delaySecs = base + jitter;
     _reconnectAttempts++;
 

@@ -303,7 +303,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                                   child: Row(
                                     children: [
                                       Text(
-                                        letter == '★' ? '★ 会员' : letter,
+                                        letter == '★' ? '★' : letter,
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: letter == '★'
