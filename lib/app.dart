@@ -550,15 +550,18 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         };
         ref.read(callServiceProvider.notifier).handleIncomingCall(callData);
       } else {
-        // 普通消息：弹本地通知（声音+震动）
-        final title = data['title'] as String? ?? '';
-        final body = data['body'] as String? ?? '';
-        if (title.isNotEmpty || body.isNotEmpty) {
-          pushService.showLocalMessageNotification(
-            title: title.isNotEmpty ? title : '新消息',
-            body: body,
-            data: data,
-          );
+        // 普通消息：仅在 WS 离线时弹本地通知，在线时 WS 已直推无需重复
+        final wsOnline = ref.read(webSocketServiceProvider.notifier).state == WSConnectionState.connected;
+        if (!wsOnline) {
+          final title = data['title'] as String? ?? '';
+          final body = data['body'] as String? ?? '';
+          if (title.isNotEmpty || body.isNotEmpty) {
+            pushService.showLocalMessageNotification(
+              title: title.isNotEmpty ? title : '新消息',
+              body: body,
+              data: data,
+            );
+          }
         }
       }
     };
