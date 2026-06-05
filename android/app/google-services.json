@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "462874705402",
-    "project_id": "timi-9125c",
-    "storage_bucket": "timi-9125c.firebasestorage.app"
+    "project_number": "636608823824",
+    "project_id": "imtest-1d769",
+    "storage_bucket": "imtest-1d769.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:462874705402:android:1ee89f88de6ab550afb843",
+        "mobilesdk_app_id": "1:636608823824:android:abb5d17022f500e63d4095",
         "android_client_info": {
           "package_name": "com.yixinim.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDXRyyiQh6W0gQKhP0HSRi_grRVaLHMs4k"
+          "current_key": "AIzaSyDme8N43qN8bezN3fBGQpTC0qHo8N6BjGQ"
         }
       ],
       "services": {
