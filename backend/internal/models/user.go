@@ -23,6 +23,9 @@ type User struct {
 	EmojiAvatar   string         `gorm:"type:varchar(100)" json:"emoji_avatar"`
 	NicknameColor string         `gorm:"type:varchar(20)" json:"nickname_color"`
 	PremiumType   string         `gorm:"type:varchar(20)" json:"premium_type"`
+	IsMember      bool           `gorm:"type:tinyint(1);default:0;index" json:"is_member"`
+	BadgeText     string         `gorm:"type:varchar(50)" json:"badge_text"`
+	BadgeColor    string         `gorm:"type:varchar(20)" json:"badge_color"`
 	Status        int8           `gorm:"type:tinyint;default:1" json:"status"`
 	BanReason     string         `gorm:"type:varchar(500)" json:"ban_reason"`
 	BannedAt      *time.Time     `gorm:"type:datetime" json:"banned_at"`

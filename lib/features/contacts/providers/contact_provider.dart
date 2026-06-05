@@ -23,6 +23,9 @@ class ContactItem {
   final DateTime? lastSeen;
   final String? emojiAvatar; // 表情状态
   final String? nicknameColor; // 昵称颜色
+  final bool isMember; // 是否会员
+  final String? badgeText; // 徽章文字
+  final String? badgeColor; // 徽章颜色
   final String? premiumType; // 会员类型
 
   ContactItem({
@@ -38,6 +41,9 @@ class ContactItem {
     this.lastSeen,
     this.emojiAvatar,
     this.nicknameColor,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
     this.premiumType,
   });
 
@@ -84,6 +90,9 @@ class ContactItem {
     DateTime? lastSeen,
     String? emojiAvatar,
     String? nicknameColor,
+    bool? isMember,
+    String? badgeText,
+    String? badgeColor,
     String? premiumType,
   }) {
     return ContactItem(
@@ -99,6 +108,9 @@ class ContactItem {
       lastSeen: lastSeen ?? this.lastSeen,
       emojiAvatar: emojiAvatar ?? this.emojiAvatar,
       nicknameColor: nicknameColor ?? this.nicknameColor,
+      isMember: isMember ?? this.isMember,
+      badgeText: badgeText ?? this.badgeText,
+      badgeColor: badgeColor ?? this.badgeColor,
       premiumType: premiumType ?? this.premiumType,
     );
   }
@@ -124,6 +136,9 @@ class ContactItem {
           : null,
       emojiAvatar: json['emoji_avatar'],
       nicknameColor: json['nickname_color'],
+      isMember: json['is_member'] == true || json['is_member'] == 1,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
       premiumType: json['premium_type'],
     );
   }

@@ -1191,6 +1191,7 @@ func setupRouter(
 					userMgmt.POST("/:id/unfreeze", middleware.RequireWriteRole(), userMgmtHandler.UnfreezeUser)
 					userMgmt.POST("/:id/reset-password", middleware.RequireWriteRole(), userMgmtHandler.ResetUserPassword)
 					userMgmt.POST("/:id/test-push", middleware.RequireWriteRole(), userMgmtHandler.SendTestPush)
+					userMgmt.PUT("/:id/membership", userMgmtHandler.SetMembership)
 				}
 
 				chatMgmt := adminAuth.Group("/chats")

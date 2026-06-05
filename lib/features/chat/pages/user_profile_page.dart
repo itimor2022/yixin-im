@@ -26,6 +26,7 @@ import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/page_transitions.dart';
 import '../../../shared/widgets/premium_widgets.dart';
 import '../../contacts/providers/contact_provider.dart';
@@ -67,6 +68,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   String? _realAvatar;
   String? _nicknameColor; // 用户背景颜色
   String? _premiumType; // 会员类型
+  bool _isMember = false; // 是否会员
+  String? _badgeText; // 徽章文字
+  String? _badgeColor; // 徽章颜色
   String? _emojiAvatar; // 表情状态
   String? _userUuid; // 用户 UUID（用于官方用户检查）
   String? _contactRemark;
@@ -382,6 +386,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           _realAvatar = avatarUrl;
           _nicknameColor = response.data['nickname_color'];
           _premiumType = response.data['premium_type'];
+          _isMember = response.data['is_member'] == true || response.data['is_member'] == 1;
+          _badgeText = response.data['badge_text'];
+          _badgeColor = response.data['badge_color'];
           _emojiAvatar = response.data['emoji_avatar'];
           _userUuid = response.data['id']?.toString();
           _contactRemark = inferredRemark;
@@ -707,6 +714,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                               const SizedBox(width: 6),
                               EmojiStatusWidget(emoji: _emojiAvatar!, size: 26),
                             ],
+                            // 会员徽章
+                            MemberBadgeWidget(
+                              isMember: _isMember,
+                              badgeText: _badgeText,
+                              badgeColor: _badgeColor,
+                              fontSize: 11,
+                              margin: const EdgeInsets.only(left: 6),
+                            ),
                             // 官方认证标识
                             if (isOfficial) ...[
                               const SizedBox(width: 6),

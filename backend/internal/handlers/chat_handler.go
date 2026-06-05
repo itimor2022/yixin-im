@@ -442,6 +442,9 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 				item["emoji_avatar"] = tu.EmojiAvatar
 				item["nickname_color"] = tu.NicknameColor
 				item["premium_type"] = tu.PremiumType
+				item["is_member"] = tu.IsMember
+				item["badge_text"] = tu.BadgeText
+				item["badge_color"] = tu.BadgeColor
 			}
 		} else if chat.JoinApproval {
 			var membership models.ChatMember

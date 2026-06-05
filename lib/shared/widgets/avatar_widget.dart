@@ -62,6 +62,9 @@ class AvatarWidget extends StatefulWidget {
   final double? borderRadius;
   final String? cacheKey;
   final String? premiumType;
+  final bool isMember;
+  final String? memberBadgeText;
+  final String? memberBadgeColor;
 
   const AvatarWidget({
     super.key,
@@ -74,6 +77,9 @@ class AvatarWidget extends StatefulWidget {
     this.borderRadius,
     this.cacheKey,
     this.premiumType,
+    this.isMember = false,
+    this.memberBadgeText,
+    this.memberBadgeColor,
   });
 
   @override
@@ -198,6 +204,20 @@ class _AvatarWidgetState extends State<AvatarWidget>
     final size = widget.size;
     final isPremium = PremiumThemeTokens.isPremium(normalizedPremiumType);
 
+    // 会员圆圈颜色解析
+    Color? memberRingColor;
+    if (widget.isMember && (widget.memberBadgeColor ?? '').isNotEmpty) {
+      try {
+        final hex = widget.memberBadgeColor!.replaceAll('#', '');
+        if (hex.length == 6) {
+          memberRingColor = Color(int.parse('FF' + hex, radix: 16));
+        } else if (hex.length == 8) {
+          memberRingColor = Color(int.parse(hex, radix: 16));
+        }
+      } catch (_) {}
+    }
+    final hasMemberRing = memberRingColor != null && !isPremium;
+
     Widget child;
 
     if (widget.avatar == null || widget.avatar!.isEmpty) {
@@ -305,7 +325,18 @@ class _AvatarWidgetState extends State<AvatarWidget>
                     ),
                   ],
                 )
-              : widget.showBorder
+              : hasMemberRing
+                  ? BoxDecoration(
+                      shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
+                      borderRadius: isRounded
+                          ? BorderRadius.circular((widget.borderRadius ?? 0) + 3)
+                          : null,
+                      border: Border.all(
+                        color: memberRingColor!,
+                        width: 2.5,
+                      ),
+                    )
+                  : widget.showBorder
                   ? BoxDecoration(
                       shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
                       borderRadius: isRounded
@@ -332,6 +363,28 @@ class _AvatarWidgetState extends State<AvatarWidget>
                       )
                     : ClipOval(child: child),
               ),
+              if (hasMemberRing && (widget.memberBadgeText ?? '').isNotEmpty)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: memberRingColor,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white, width: 1),
+                    ),
+                    child: Text(
+                      widget.memberBadgeText!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ),
               if (isPremium)
                 Positioned(
                   right: -2,

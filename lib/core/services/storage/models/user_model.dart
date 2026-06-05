@@ -37,6 +37,15 @@ class UserModel {
 
   /// 会员类型
   late String? premiumType;
+
+  /// 是否会员
+  late bool isMember;
+
+  /// 徽章文字
+  late String? badgeText;
+
+  /// 徽章颜色
+  late String? badgeColor;
   
   /// 是否在线
   late bool isOnline;
@@ -60,6 +69,9 @@ class UserModel {
     isOnline = false;
     isContact = false;
     isBlocked = false;
+    isMember = false;
+    badgeText = null;
+    badgeColor = null;
     createdAt = DateTime.now();
     updatedAt = DateTime.now();
   }

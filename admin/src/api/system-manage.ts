@@ -71,6 +71,10 @@ export interface UserTableListItem {
   serviceUsername?: string
   serviceNickname?: string
   serviceInviteCode?: string
+  // 会员信息
+  isMember: boolean
+  badgeText: string
+  badgeColor: string
 }
 
 /** 获取用户列表（兼容 useTable） */
@@ -114,7 +118,10 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     serviceUserId: item.service_user_id,
     serviceUsername: item.service_username || '',
     serviceNickname: item.service_nickname || '',
-    serviceInviteCode: item.service_invite_code || ''
+    serviceInviteCode: item.service_invite_code || '',
+    isMember: !!item.is_member,
+    badgeText: item.badge_text || '',
+    badgeColor: item.badge_color || '#3390EC'
   }))
 
   return {
@@ -403,5 +410,20 @@ export async function updateDiscoverItem(id: number, data: DiscoverItemPayload) 
 export async function deleteDiscoverItem(id: number) {
   return request.del({
     url: `/admin/settings/discover-items/${id}`
+  })
+}
+
+// ==================== 会员管理 ====================
+
+export interface MembershipPayload {
+  is_member: boolean
+  badge_text: string
+  badge_color: string
+}
+
+export async function setMembership(userId: number, data: MembershipPayload) {
+  return request.put({
+    url: `/admin/users/${userId}/membership`,
+    params: data
   })
 }

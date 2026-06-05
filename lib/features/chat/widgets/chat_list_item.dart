@@ -9,6 +9,7 @@ import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../providers/chat_provider.dart';
 
 /// 左滑操作类型
@@ -24,6 +25,9 @@ class ChatListItem extends StatefulWidget {
   final bool isDesktop; // 是否是桌面端（禁用滑动，启用右键菜单）
   final bool showPendingApprovalDot;
   final String? typingText;
+  final bool isMember;
+  final String? badgeText;
+  final String? badgeColor;
 
   const ChatListItem({
     super.key,
@@ -36,6 +40,9 @@ class ChatListItem extends StatefulWidget {
     this.isDesktop = false,
     this.showPendingApprovalDot = false,
     this.typingText,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
   });
 
   @override
@@ -434,6 +441,9 @@ class _ChatListItemState extends State<ChatListItem>
                   : widget.chat.id,
               size: 54,
               premiumType: widget.chat.premiumType,
+              isMember: widget.chat.isMember,
+              memberBadgeText: widget.chat.badgeText,
+              memberBadgeColor: widget.chat.badgeColor,
             ),
             // 在线状态
             if (widget.chat.isOnline)
@@ -484,15 +494,15 @@ class _ChatListItemState extends State<ChatListItem>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        // 表情状态
-                        if (widget.chat.emojiAvatar != null &&
-                            widget.chat.emojiAvatar!.isNotEmpty) ...[
-                          const SizedBox(width: 4),
-                          EmojiStatusWidget(
-                            emoji: widget.chat.emojiAvatar!,
-                            size: 18,
+                        // 会员徽章
+                        if (widget.chat.isMember && (widget.chat.badgeText ?? '').isNotEmpty)
+                          MemberBadgeWidget(
+                            isMember: true,
+                            badgeText: widget.chat.badgeText,
+                            badgeColor: widget.chat.badgeColor,
+                            fontSize: 10,
+                            margin: const EdgeInsets.only(left: 4),
                           ),
-                        ],
                         // 官方认证标识（在名字/表情后面）
                         if (widget.isOfficial) ...[
                           const SizedBox(width: 4),

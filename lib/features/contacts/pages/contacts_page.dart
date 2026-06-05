@@ -17,6 +17,7 @@ import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/premium_widgets.dart';
 import '../../../shared/widgets/premium_widgets.dart';
 import '../../chat/widgets/create_sheets.dart';
@@ -697,6 +698,13 @@ class _ContactListItem extends StatelessWidget {
                               size: 18,
                             ),
                           ],
+                          // 会员徽章
+                          MemberBadgeWidget(
+                            isMember: contact.isMember,
+                            badgeText: contact.badgeText,
+                            badgeColor: contact.badgeColor,
+                            fontSize: 10,
+                          ),
                           // 官方认证标识
                           if (isOfficial) ...[
                             const SizedBox(width: 4),
