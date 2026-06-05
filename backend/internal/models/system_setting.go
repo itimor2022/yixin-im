@@ -40,6 +40,7 @@ const (
 	SettingAllowRegister            = "allow_register"              // 是否允许注册
 	SettingRequireInviteCode        = "require_invite_code"         // 注册是否必须填写邀请码
 	SettingRequirePhoneBind         = "require_phone_bind"          // 是否强制绑定手机号
+	SettingMemberOnlyCreateGroup    = "member_only_create_group"     // 仅会员可建群
 	SettingEnableMomentPost         = "enable_moment_post"          // 是否允许发布动态（关闭后用户只能浏览）
 	SettingMomentPostReviewEnabled  = "moment_post_review_enabled"  // 动态发布是否启用审核
 	SettingNewUserFollowOfficial    = "new_user_follow_official"    // 新用户是否强制关注官方用户
