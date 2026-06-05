@@ -87,9 +87,10 @@ type PushService struct {
 	httpClient *http.Client
 	apnsClient *http.Client
 
-	config        *APNsConfig
-	androidConfig AndroidPushConfig
-	configMu      sync.RWMutex
+	config            *APNsConfig
+	androidConfig     AndroidPushConfig
+	configMu          sync.RWMutex
+	configLastLoaded  time.Time
 
 	// APNs JWT cache
 	jwtToken  string
@@ -217,6 +218,7 @@ func (s *PushService) ReloadConfig() {
 	s.oppoAuthToken = ""
 	s.oppoTokenExpiry = time.Time{}
 	s.oppoAPIHost = ""
+	s.configLastLoaded = time.Now()
 	s.configMu.Unlock()
 
 	log.Printf(
@@ -270,6 +272,13 @@ func parseRSAPrivateKey(keyData []byte) (*rsa.PrivateKey, error) {
 
 // PushToUser sends push notification to all devices of one user.
 func (s *PushService) PushToUser(userID uint64, title, body string, data map[string]interface{}) error {
+        // 自动重新加载配置（每5分钟一次），确保集群各节点配置与数据库同步
+        s.configMu.RLock()
+        lastLoaded := s.configLastLoaded
+        s.configMu.RUnlock()
+        if time.Since(lastLoaded) > 5*time.Minute {
+                s.ReloadConfig()
+        }
 	s.configMu.RLock()
 	config := s.config
 	s.configMu.RUnlock()

@@ -590,8 +590,22 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 检查并重新连接
   void _checkAndReconnect() {
     if (_token == null) return;
-    if (state == WSConnectionState.reconnecting ||
-        state == WSConnectionState.connecting) {
+
+    // 正在连接中：跳过（已有进行中的连接尝试）
+    if (state == WSConnectionState.connecting) return;
+
+    // 正在退避重连：取消退避 timer，立即重连（用户已回到页面/前台）
+    if (state == WSConnectionState.reconnecting) {
+      if (_reconnectTimer != null) {
+        if (kDebugMode) debugPrint('[WS] Visible/Resumed: cancel backoff timer, reconnect now');
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        _reconnectCountdown = 0;
+        _reconnectAttempts = 0;
+        unawaited(
+          connect(_token!, deviceType: _deviceType, isReconnectAttempt: true),
+        );
+      }
       return;
     }
 

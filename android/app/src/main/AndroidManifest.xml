@@ -103,7 +103,7 @@
             tools:replace="android:foregroundServiceType">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="messaging_keepalive" />
-        </service
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"
