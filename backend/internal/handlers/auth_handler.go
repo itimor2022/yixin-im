@@ -179,8 +179,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 创建用户（主流程事务化，避免出现“返回失败但部分写入成功”）
-	// 用手机号后6位+随机数生成唯一username
-	autoUsername := fmt.Sprintf("u%s%04d", req.Phone[len(req.Phone)-6:], time.Now().UnixNano()%10000)
+	        // 用手机号作为用户名，确保唯一
+        autoUsername := req.Phone
 	phone := req.Phone
 	user := models.User{
 		UUID:     uuid.New().String(),

@@ -609,6 +609,17 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 		return
 	}
 
+	// 仅会员可建群（读系统设置开关）
+	if req.Type == 2 || req.Type == 3 {
+		var memberOnlySetting models.SystemSetting
+		if err := h.db.Where("`key` = ?", models.SettingMemberOnlyCreateGroup).First(&memberOnlySetting).Error; err == nil {
+			if isSystemSettingTrue(memberOnlySetting.Value) && !currentUser.IsMember {
+				response.Error(c, http.StatusForbidden, "仅会员可创建群组，请联系管理员开通会员")
+				return
+			}
+		}
+	}
+
 	// 群聊/频道创建数量限制
 	if req.Type == 2 || req.Type == 3 {
 		var ownedCount int64

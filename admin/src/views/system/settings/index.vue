@@ -219,6 +219,13 @@
           <ElDivider content-position="left">群组与频道</ElDivider>
           <ElFormItem label="非好友不可拉群">
             <ElSwitch v-model="featureForm.group_invite_require_friend" :disabled="isDemoAdmin" />
+          </ElFormItem>
+          <ElFormItem>
+            <template #label>
+              <span>仅会员可建群</span>
+              <span style="color:#909399;font-size:12px;margin-left:8px;">开启后非会员无法创建群组和频道</span>
+            </template>
+            <ElSwitch v-model="featureForm.member_only_create_group" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">开启后，用户只能邀请自己的联系人加入群聊</span>
           </ElFormItem>
           <ElFormItem label="群组成员上限">
@@ -778,6 +785,7 @@
     new_user_join_group: false,
     new_user_join_channel: false,
     group_invite_require_friend: false,
+    member_only_create_group: false,
     custom_portal_enabled: false,
     custom_portal_title: '',
     custom_portal_url: '',
