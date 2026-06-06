@@ -85,6 +85,7 @@ class SystemSettings {
   final int maxFileSize;
   final int maxVoiceSize;
   final int revokeMessageMinutes;
+  final bool checkinEnabled;
 
   const SystemSettings({
     this.appVersionIOS = '',
@@ -121,6 +122,7 @@ class SystemSettings {
     this.maxFileSize = 100,
     this.maxVoiceSize = 20,
     this.revokeMessageMinutes = 2,
+    this.checkinEnabled = false,
   });
 
   factory SystemSettings.fromJson(Map<String, dynamic> json) {
@@ -165,6 +167,7 @@ class SystemSettings {
       maxFileSize: json['max_file_size'] as int? ?? 100,
       maxVoiceSize: json['max_voice_size'] as int? ?? 20,
       revokeMessageMinutes: json['revoke_message_minutes'] as int? ?? 2,
+      checkinEnabled: json['checkin_enabled'] == true,
     );
   }
 
@@ -203,6 +206,7 @@ class SystemSettings {
         'max_file_size': maxFileSize,
         'max_voice_size': maxVoiceSize,
         'revoke_message_minutes': revokeMessageMinutes,
+        'checkin_enabled': checkinEnabled,
       };
 
   String get displayName {

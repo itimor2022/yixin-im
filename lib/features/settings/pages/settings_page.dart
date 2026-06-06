@@ -29,6 +29,7 @@ import 'devices_page.dart';
 import 'stickers_page.dart';
 import 'faq_page.dart';
 import 'chat_settings_page.dart';
+import 'checkin_page.dart';
 import '../../auth/pages/agreement_page.dart';
 import '../../home/pages/home_desktop_page.dart';
 
@@ -138,6 +139,25 @@ class SettingsPage extends ConsumerWidget {
                       title: '钱包',
                       isDark: isDark,
                       onTap: () => context.push('/wallet'),
+                    ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final s = ref.watch(systemSettingsProvider).valueOrNull;
+                        if (s == null || !s.checkinEnabled) {
+                          return const SizedBox.shrink();
+                        }
+                        return _SettingsTile(
+                          icon: Icons.calendar_today_outlined,
+                          iconBgColor: const Color(0xFF34C759),
+                          title: '每日签到',
+                          isDark: isDark,
+                          onTap: () => _openPage(
+                            context,
+                            const CheckinPage(),
+                            ref,
+                          ),
+                        );
+                      },
                     ),
                     _SettingsTile(
                       icon: Icons.notifications_outlined,
