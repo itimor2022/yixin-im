@@ -748,13 +748,27 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _TGActionButton(
-                              icon: Icons.chat_bubble_outline,
-                              label: l10n.get('message') ?? '消息',
-                              onTap: () => _startChat(context),
-                              isLoading: _isLoading,
-                              lightStyle: true,
-                            ),
+                            // F-12: 非好友且未开启「允许非好友消息」时，显示「加好友」替代「消息」
+                            (!_isContact &&
+                                    !(ref
+                                            .watch(systemSettingsProvider)
+                                            .valueOrNull
+                                            ?.allowStrangerMessage ??
+                                        false))
+                                ? _TGActionButton(
+                                    icon: Icons.person_add_alt_1,
+                                    label: l10n.get('add_contact') ?? '加好友',
+                                    onTap: () => _toggleContact(),
+                                    isLoading: _isLoading,
+                                    lightStyle: true,
+                                  )
+                                : _TGActionButton(
+                                    icon: Icons.chat_bubble_outline,
+                                    label: l10n.get('message') ?? '消息',
+                                    onTap: () => _startChat(context),
+                                    isLoading: _isLoading,
+                                    lightStyle: true,
+                                  ),
                             _TGActionButton(
                               icon: Icons.call_outlined,
                               label: l10n.get('call') ?? '通话',
@@ -1075,6 +1089,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   }
 
   void _startChat(BuildContext context) async {
+    // F-12: 非好友且未开启「允许非好友消息」时，拦截发消息
+    final allowStranger =
+        ref.read(systemSettingsProvider).valueOrNull?.allowStrangerMessage ??
+            false;
+    if (!_isContact && !allowStranger && !_isCurrentUser) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('需要先添加对方为好友才能发送消息'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
     // 桌面端：如果已经在聊天页面了，只需关闭资料面板
     if (widget.isDesktopPanel && widget.chatId != null) {
       ref.read(desktopProfileProvider.notifier).state = DesktopProfileInfo.none;

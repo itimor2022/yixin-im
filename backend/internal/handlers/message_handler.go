@@ -28,7 +28,7 @@ type MessageHandler struct {
 	hub         *ws.Hub
 	cache       *cache.Cache
 	lastMsgCh   chan models.ChatLastMsg // 异步批量写channel
-	pushSem     chan struct{}          // 推送并发限制信号量
+	pushSem     chan struct{}           // 推送并发限制信号量
 }
 
 // NewMessageHandler 创建消息处理器
@@ -247,7 +247,6 @@ func (h *MessageHandler) getChatMutedMap(ctx context.Context, chatID uint64) map
 	}
 	return result
 }
-
 
 // getIntSetting 读取整型配置，优先从 Redis 缓存取，避免每次查 DB
 // ★ 统一使用 cache.GetSystemSetting/SetSystemSetting，与 RequirePhoneBind 共享同一缓存命名空间
@@ -702,7 +701,6 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		memberUserIDs, targetUserIDs = h.getChatTargetUUIDs(ctx, chat.ID, sender.ID)
 	}
 
-
 	// 私聊：检查对方是否已将发送者加入屏蔽列表
 	if chat.Type == 1 && len(memberUserIDs) > 0 {
 		var blockCount int64
@@ -712,6 +710,23 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		if blockCount > 0 {
 			response.Forbidden(c, "对方已将您屏蔽，无法发送消息")
 			return
+		}
+
+		// 私聊：非好友消息校验（受 allow_stranger_message 开关控制）
+		if chat.Type == 1 && len(memberUserIDs) > 0 {
+			allowStranger := isSystemSettingTrue(
+				h.getStringSetting(models.SettingAllowStrangerMessage, "false"),
+			)
+			if !allowStranger {
+				var relCount int64
+				h.db.Model(&models.Contact{}).
+					Where("user_id = ? AND contact_user_id IN ? AND status = ?", sender.ID, memberUserIDs, 1).
+					Count(&relCount)
+				if relCount == 0 {
+					response.Forbidden(c, "对方不是您的好友，无法发送消息")
+					return
+				}
+			}
 		}
 	}
 
@@ -802,18 +817,17 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		}
 	}
 
-
 	// ★ 阶段二：chat_last_msg 先写Redis（<1ms），异步刷MySQL（不阻塞响应）
-        // ★ F-04B：写 Redis key 用 chat UUID，与 GetChatList 读取保持一致
-        if h.cache != nil {
-                _ = h.cache.SetChatLastMsg(ctx, chat.UUID, map[string]interface{}{
-                        "seq":         msg.Seq,
-                        "time":        msg.CreatedAt.UnixMilli(),
-                        "text":        lastMsgText,
-                        "type":        msg.Type,
-                        "sender_name": sender.Nickname,
-                })
-        }
+	// ★ F-04B：写 Redis key 用 chat UUID，与 GetChatList 读取保持一致
+	if h.cache != nil {
+		_ = h.cache.SetChatLastMsg(ctx, chat.UUID, map[string]interface{}{
+			"seq":         msg.Seq,
+			"time":        msg.CreatedAt.UnixMilli(),
+			"text":        lastMsgText,
+			"type":        msg.Type,
+			"sender_name": sender.Nickname,
+		})
+	}
 	// [F-04B] 以下MySQL异步写入已禁用
 	// // 2. 发送到批量写channel（worker每50ms批量UPSERT，消除高频单行写压力）
 	// if h.lastMsgCh != nil {
@@ -842,7 +856,6 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 	// }()
 	// }
 	// }
-
 
 	// 3. 更新 user_chats（按群规模分策略，memberCount 直接用缓存字段，无需 COUNT 查询）
 	memberCount := int64(chat.MemberCount)
@@ -903,78 +916,78 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 				}
 			}
 
-				// 获取muted用户（优先走缓存）
-				mutedUsers64 := h.getChatMutedMap(context.Background(), chat.ID)
-				mutedUsers := make(map[uint64]bool, len(mutedUsers64))
-				for id := range mutedUsers64 {
-					mutedUsers[id] = true
-				}
+			// 获取muted用户（优先走缓存）
+			mutedUsers64 := h.getChatMutedMap(context.Background(), chat.ID)
+			mutedUsers := make(map[uint64]bool, len(mutedUsers64))
+			for id := range mutedUsers64 {
+				mutedUsers[id] = true
+			}
 
 			// 批量查询推送设置，避免 N 次单行查询打爆数据库
 			pushChatType := chatPushType(chat.Type)
-				// ★ 先用Redis过滤有效推送用户，避免对无设备用户做无效查询
-				pushUIDs := make([]uint64, 0, len(pairs))
+			// ★ 先用Redis过滤有效推送用户，避免对无设备用户做无效查询
+			pushUIDs := make([]uint64, 0, len(pairs))
+			for _, p := range pairs {
+				if !mutedUsers[p.ID] {
+					pushUIDs = append(pushUIDs, p.ID)
+				}
+			}
+			// Redis过滤：只保留有有效push_token的用户
+			if h.cache != nil && h.cache.IsPushableUsersLoaded(context.Background()) {
+				filtered, _ := h.cache.FilterPushableUsers(context.Background(), pushUIDs)
+				pushUIDs = filtered
+			}
+			if len(pushUIDs) > 0 {
+				// 批量查推送设置（优先Redis缓存）
+				showPreviewMap := make(map[uint64]bool)
+				missUIDs := make([]uint64, 0)
+				if h.cache != nil {
+					for _, uid := range pushUIDs {
+						uidStr := strconv.FormatUint(uid, 10)
+						if sp, found := h.cache.GetUserPushSetting(context.Background(), uidStr); found {
+							showPreviewMap[uid] = sp
+						} else {
+							missUIDs = append(missUIDs, uid)
+						}
+					}
+				} else {
+					missUIDs = pushUIDs
+				}
+				// miss的从MySQL补查并回填缓存
+				if len(missUIDs) > 0 {
+					var pushSettings []models.UserPushSetting
+					h.db.Where("user_id IN ?", missUIDs).Find(&pushSettings)
+					for _, ps := range pushSettings {
+						showPreviewMap[ps.UserID] = ps.ShowPreview
+						if h.cache != nil {
+							_ = h.cache.SetUserPushSetting(context.Background(),
+								strconv.FormatUint(ps.UserID, 10), ps.ShowPreview)
+						}
+					}
+				}
+				// 构建批量推送列表
+				batchUsers := make([]services.BatchPushUser, 0, len(pushUIDs))
 				for _, p := range pairs {
-					if !mutedUsers[p.ID] {
-						pushUIDs = append(pushUIDs, p.ID)
+					if mutedUsers[p.ID] {
+						continue
 					}
+					showPreview := true
+					if sp, ok := showPreviewMap[p.ID]; ok {
+						showPreview = sp
+					}
+					body := pushPreviewText
+					if !showPreview {
+						body = "您收到一条新消息"
+					}
+					batchUsers = append(batchUsers, services.BatchPushUser{
+						UserID:     p.ID,
+						SenderName: sender.Nickname,
+						Body:       body,
+					})
 				}
-				// Redis过滤：只保留有有效push_token的用户
-				if h.cache != nil && h.cache.IsPushableUsersLoaded(context.Background()) {
-					filtered, _ := h.cache.FilterPushableUsers(context.Background(), pushUIDs)
-					pushUIDs = filtered
-				}
-				if len(pushUIDs) > 0 {
-					// 批量查推送设置（优先Redis缓存）
-					showPreviewMap := make(map[uint64]bool)
-					missUIDs := make([]uint64, 0)
-					if h.cache != nil {
-						for _, uid := range pushUIDs {
-							uidStr := strconv.FormatUint(uid, 10)
-							if sp, found := h.cache.GetUserPushSetting(context.Background(), uidStr); found {
-								showPreviewMap[uid] = sp
-							} else {
-								missUIDs = append(missUIDs, uid)
-							}
-						}
-					} else {
-						missUIDs = pushUIDs
-					}
-					// miss的从MySQL补查并回填缓存
-					if len(missUIDs) > 0 {
-						var pushSettings []models.UserPushSetting
-						h.db.Where("user_id IN ?", missUIDs).Find(&pushSettings)
-						for _, ps := range pushSettings {
-							showPreviewMap[ps.UserID] = ps.ShowPreview
-							if h.cache != nil {
-								_ = h.cache.SetUserPushSetting(context.Background(),
-									strconv.FormatUint(ps.UserID, 10), ps.ShowPreview)
-							}
-						}
-					}
-					// 构建批量推送列表
-					batchUsers := make([]services.BatchPushUser, 0, len(pushUIDs))
-					for _, p := range pairs {
-						if mutedUsers[p.ID] {
-							continue
-						}
-						showPreview := true
-						if sp, ok := showPreviewMap[p.ID]; ok {
-							showPreview = sp
-						}
-						body := pushPreviewText
-						if !showPreview {
-							body = "您收到一条新消息"
-						}
-						batchUsers = append(batchUsers, services.BatchPushUser{
-							UserID:     p.ID,
-							SenderName: sender.Nickname,
-							Body:       body,
-						})
-					}
-					h.pushService.PushNewMessageBatch(batchUsers, req.ChatID, pushChatType)
-				}
-	}()
+				h.pushService.PushNewMessageBatch(batchUsers, req.ChatID, pushChatType)
+			}
+		}()
 	}
 
 	log.Printf("[Message] Sent message: chatId=%s, msgId=%s, seq=%d, type=%d",
@@ -1573,12 +1586,12 @@ func (h *MessageHandler) ForwardMessage(c *gin.Context) {
 			for _, p := range pairs {
 				userIDs = append(userIDs, p.ID)
 			}
-				// 获取muted用户（优先走缓存）
-				mutedUsers64 := h.getChatMutedMap(context.Background(), targetChat.ID)
-				mutedUsers := make(map[uint64]bool, len(mutedUsers64))
-				for id := range mutedUsers64 {
-					mutedUsers[id] = true
-				}
+			// 获取muted用户（优先走缓存）
+			mutedUsers64 := h.getChatMutedMap(context.Background(), targetChat.ID)
+			mutedUsers := make(map[uint64]bool, len(mutedUsers64))
+			for id := range mutedUsers64 {
+				mutedUsers[id] = true
+			}
 
 			pushChatType := chatPushType(targetChat.Type)
 			for _, p := range pairs {

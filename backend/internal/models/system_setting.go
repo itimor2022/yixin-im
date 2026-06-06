@@ -49,6 +49,7 @@ const (
 	SettingNewUserJoinGroup         = "new_user_join_group"         // 新用户是否强制加入官方群组
 	SettingNewUserJoinChannel       = "new_user_join_channel"       // 新用户是否强制订阅官方频道
 	SettingGroupInviteRequireFriend = "group_invite_require_friend" // 开启后只能邀请自己的联系人进群
+	SettingAllowStrangerMessage     = "allow_stranger_message"      // 是否允许非好友直接发消息
 
 	// 客户端自定义栏目
 	SettingCustomPortalEnabled = "custom_portal_enabled"  // 是否启用联系人与发现之间的自定义栏目

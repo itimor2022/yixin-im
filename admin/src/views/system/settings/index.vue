@@ -236,6 +236,14 @@
             <ElSwitch v-model="featureForm.checkin_enabled" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示每日签到入口</span>
           </ElFormItem>
+          <ElFormItem>
+            <template #label>
+              <span>非好友消息</span>
+              <span style="color:#909399;font-size:12px;margin-left:8px;">关闭后非好友只能加好友、不能直接发消息</span>
+            </template>
+            <ElSwitch v-model="featureForm.allow_stranger_message" :disabled="isDemoAdmin" />
+            <span class="ml-2 text-sm text-g-400">开启后陌生人可直接发起私聊</span>
+          </ElFormItem>
           <ElFormItem label="群组成员上限">
             <ElInputNumber
               v-model="featureForm.group_max_members"
@@ -795,6 +803,7 @@
     group_invite_require_friend: false,
     member_only_create_group: false,
     checkin_enabled: false,
+    allow_stranger_message: false,
     custom_portal_enabled: false,
     custom_portal_title: '',
     custom_portal_url: '',
@@ -1032,6 +1041,7 @@
       featureForm.group_invite_require_friend = settings.group_invite_require_friend || false
       featureForm.member_only_create_group = settings.member_only_create_group || false
       featureForm.checkin_enabled = settings.checkin_enabled || false
+      featureForm.allow_stranger_message = settings.allow_stranger_message || false
       featureForm.custom_portal_enabled = settings.custom_portal_enabled || false
       featureForm.custom_portal_title = settings.custom_portal_title || ''
       featureForm.custom_portal_url = settings.custom_portal_url || ''

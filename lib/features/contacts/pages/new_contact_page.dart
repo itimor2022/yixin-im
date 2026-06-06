@@ -160,7 +160,10 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
     );
 
     if (result.type == 'user') {
-      _startChat(result);
+      // F-12: 先进资料页，由资料页按钮控制能否发消息（非好友受 allow_stranger_message 开关约束）
+      context.push(
+        '/user/${result.id}?name=${Uri.encodeComponent(result.name)}${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
+      );
     } else {
       // 群组/频道 - 直接进入聊天页，传递类型参数
       final chatType = result.type == 'group' ? 'group' : 'channel';
