@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -244,18 +244,28 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 					case float64:
 						row.LastSeq = uint64(n)
 					case json.Number:
-						if i, e := n.Int64(); e == nil { row.LastSeq = uint64(i) }
+						if i, e := n.Int64(); e == nil {
+							row.LastSeq = uint64(i)
+						}
 					}
 				}
-				if v, ok := cached["text"]; ok { row.LastMsgText, _ = v.(string) }
-				if v, ok := cached["type"]; ok {
-					if n, ok2 := v.(float64); ok2 { row.LastMsgType = int(n) }
+				if v, ok := cached["text"]; ok {
+					row.LastMsgText, _ = v.(string)
 				}
-				if v, ok := cached["sender_name"]; ok { row.LastMsgSender, _ = v.(string) }
+				if v, ok := cached["type"]; ok {
+					if n, ok2 := v.(float64); ok2 {
+						row.LastMsgType = int(n)
+					}
+				}
+				if v, ok := cached["sender_name"]; ok {
+					row.LastMsgSender, _ = v.(string)
+				}
 				if v, ok := cached["time"]; ok {
 					switch t := v.(type) {
 					case string:
-						if pt, e := time.Parse(time.RFC3339Nano, t); e == nil { row.LastMsgTime = pt }
+						if pt, e := time.Parse(time.RFC3339Nano, t); e == nil {
+							row.LastMsgTime = pt
+						}
 					case float64:
 						row.LastMsgTime = time.UnixMilli(int64(t))
 					}
@@ -410,15 +420,57 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"member_count":          chat.MemberCount,
 			"pending_request":       false,
 			"pending_request_count": 0,
-			"last_msg_text":         func() string { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgText }; return userChat.LastMsgText }(),
-			"last_msg_type":         func() int { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgType }; return userChat.LastMsgType }(),
-			"last_msg_time":         func() interface{} { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && !lm.LastMsgTime.IsZero() { return lm.LastMsgTime }; return optionalTimeValue(userChat.LastMsgTime) }(),
-			"last_msg_seq":          func() uint64 { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastSeq }; return userChat.LastMsgSeq }(),
-			"last_msg_sender":       func() string { if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { return lm.LastMsgSender }; return userChat.LastMsgSender }(),
-			"unread_count":          func() int { if seq, ok := chatLastSeqMap[userChat.ChatID]; ok { if seq <= userChat.LastReadSeq { return 0 }; return int(seq - userChat.LastReadSeq) }; if lm, ok := chatLastMsgMap[userChat.ChatID]; ok { if lm.LastSeq <= userChat.LastReadSeq { return 0 }; return int(lm.LastSeq - userChat.LastReadSeq) }; return userChat.UnreadCount }(),
-			"is_pinned":             userChat.IsPinned,
-			"is_muted":              userChat.IsMuted,
-			"is_archived":           userChat.IsArchived,
+			"last_msg_text": func() string {
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok {
+					return lm.LastMsgText
+				}
+				return userChat.LastMsgText
+			}(),
+			"last_msg_type": func() int {
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok {
+					return lm.LastMsgType
+				}
+				return userChat.LastMsgType
+			}(),
+			"last_msg_time": func() interface{} {
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok && !lm.LastMsgTime.IsZero() {
+					return lm.LastMsgTime
+				}
+				return optionalTimeValue(userChat.LastMsgTime)
+			}(),
+			"last_msg_seq": func() uint64 {
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok {
+					return lm.LastSeq
+				}
+				return userChat.LastMsgSeq
+			}(),
+			"last_msg_sender": func() string {
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok {
+					return lm.LastMsgSender
+				}
+				return userChat.LastMsgSender
+			}(),
+			"unread_count": func() int {
+				if seq, ok := chatLastSeqMap[userChat.ChatID]; ok {
+					if seq <= userChat.LastReadSeq {
+						return 0
+					}
+					return int(seq - userChat.LastReadSeq)
+				}
+				if lm, ok := chatLastMsgMap[userChat.ChatID]; ok {
+					if lm.LastSeq <= userChat.LastReadSeq {
+						return 0
+					}
+					return int(lm.LastSeq - userChat.LastReadSeq)
+				}
+				return userChat.UnreadCount
+			}(),
+			"is_pinned":   userChat.IsPinned,
+			"is_muted":    userChat.IsMuted,
+			"is_archived": userChat.IsArchived,
+			"is_member":   false,
+			"badge_text":  "",
+			"badge_color": "",
 		}
 
 		if chat.Type == 1 {

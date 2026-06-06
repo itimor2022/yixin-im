@@ -1525,13 +1525,16 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 nicknameColor: userChat.nicknameColor, // 昵称颜色
                 premiumType: userChat.premiumType, // 会员类型
                 lastMessageSeq: userChat.lastMsgSeq,
-                // 会员字段：优先用接口返回值，接口无值时保留内存中已有数据
-                isMember: userChat.isMember ??
-                    state.allChats
-                        .where((c) => c.id == userChat.chatId)
-                        .firstOrNull
-                        ?.isMember ??
-                    false,
+                // 会员字段：接口若未携带徽章信息(badgeText/badgeColor 为 null)，
+                // 视为本次未下发会员数据，回退保留内存中已有徽章，避免静默刷新时徽章闪失
+                isMember: (userChat.badgeText != null ||
+                        userChat.badgeColor != null)
+                    ? userChat.isMember
+                    : (state.allChats
+                            .where((c) => c.id == userChat.chatId)
+                            .firstOrNull
+                            ?.isMember ??
+                        userChat.isMember),
                 badgeText: userChat.badgeText ??
                     state.allChats
                         .where((c) => c.id == userChat.chatId)
