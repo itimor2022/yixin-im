@@ -195,3 +195,25 @@ CREATE TABLE IF NOT EXISTS `chat_last_msg` (
 
 -- 关闭 only_full_group_by（MySQL 8.0 兼容）
 SET GLOBAL sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
+
+-- ==================== 签到功能 ====================
+CREATE TABLE IF NOT EXISTS user_checkins (
+    id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    checkin_date DATE NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_user_date (user_id, checkin_date),
+    KEY idx_checkin_date (checkin_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_checkin_stats (
+    id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    total_days INT NOT NULL DEFAULT 0,
+    continuous_days INT NOT NULL DEFAULT 0,
+    last_checkin_date DATE NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

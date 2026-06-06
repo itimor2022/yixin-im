@@ -1007,6 +1007,14 @@ func setupRouter(
 				contact.PUT("/:id/remark", contactHandler.UpdateRemark)
 			}
 
+			// 签到
+			checkin := authorized.Group("/checkin")
+			{
+				checkinHandler := handlers.NewCheckinHandler(db)
+				checkin.POST("", checkinHandler.DoCheckin)
+				checkin.GET("/calendar", checkinHandler.GetCalendar)
+			}
+
 			// 举报
 			reportHandler := handlers.NewReportHandler(db)
 			authorized.POST("/report", reportHandler.CreateReport)
@@ -1255,6 +1263,12 @@ func setupRouter(
 					reportMgmt.GET("/stats", reportHandler.GetReportStats)
 					reportMgmt.POST("/:id/process", middleware.RequireWriteRole(), reportHandler.ProcessReport)
 					reportMgmt.DELETE("/:id", middleware.RequireWriteRole(), reportHandler.DeleteReport)
+				}
+
+				checkinMgmt := adminAuth.Group("/checkins")
+				{
+					checkinHandler := handlers.NewCheckinHandler(db)
+					checkinMgmt.GET("/list", checkinHandler.AdminListCheckins)
 				}
 
 				settingMgmt := adminAuth.Group("/settings")

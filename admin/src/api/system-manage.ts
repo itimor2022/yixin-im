@@ -427,3 +427,61 @@ export async function setMembership(userId: number, data: MembershipPayload) {
     params: data
   })
 }
+
+
+// ==================== 签到记录 ====================
+
+export interface CheckinTableSearchParams {
+  current?: number
+  size?: number
+  keyword?: string
+  date?: string
+}
+
+export interface CheckinTableListItem {
+  id: number
+  userId: number
+  uuid: string
+  username: string
+  nickname: string
+  avatar: string
+  checkinDate: string
+  createdAt: string
+}
+
+export interface CheckinTableList {
+  records: CheckinTableListItem[]
+  current: number
+  size: number
+  total: number
+}
+
+export async function fetchGetCheckinList(
+  params: CheckinTableSearchParams
+): Promise<CheckinTableList> {
+  const res = await request.get<any>({
+    url: '/admin/checkins/list',
+    params: {
+      page: params.current || 1,
+      page_size: params.size || 20,
+      keyword: params.keyword,
+      date: params.date
+    }
+  })
+  const records: CheckinTableListItem[] = (res.list || []).map((item: any) => ({
+    id: item.id,
+    userId: item.user_id,
+    uuid: item.uuid || '',
+    username: item.username || '',
+    nickname: item.nickname || '',
+    avatar: item.avatar || '',
+    checkinDate: item.checkin_date,
+    createdAt: item.created_at
+  }))
+  return {
+    records,
+    current: res.page,
+    size: res.page_size,
+    total: res.total
+  }
+}

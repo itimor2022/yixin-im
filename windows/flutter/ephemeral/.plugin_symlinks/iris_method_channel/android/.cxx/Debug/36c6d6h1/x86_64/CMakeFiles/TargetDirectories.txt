@@ -1,3 +1,0 @@
-/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86_64/CMakeFiles/iris_method_channel.dir
-/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86_64/CMakeFiles/edit_cache.dir
-/Users/li/.pub-cache/hosted/pub.dev/iris_method_channel-2.2.4/android/.cxx/Debug/36c6d6h1/x86_64/CMakeFiles/rebuild_cache.dir

@@ -20,6 +20,16 @@ export const userRoutes: AppRouteRecord = {
         icon: 'ri:team-line',
         keepAlive: true
       }
+    },
+    {
+      path: 'checkin',
+      name: 'CheckinList',
+      component: '/system/checkin',
+      meta: {
+        title: '签到记录',
+        icon: 'ri:calendar-check-line',
+        keepAlive: true
+      }
     }
   ]
 }

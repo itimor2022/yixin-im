@@ -228,6 +228,14 @@
             <ElSwitch v-model="featureForm.member_only_create_group" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">开启后，用户只能邀请自己的联系人加入群聊</span>
           </ElFormItem>
+          <ElFormItem>
+            <template #label>
+              <span>签到功能</span>
+              <span style="color:#909399;font-size:12px;margin-left:8px;">关闭后客户端不显示签到入口</span>
+            </template>
+            <ElSwitch v-model="featureForm.checkin_enabled" :disabled="isDemoAdmin" />
+            <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示每日签到入口</span>
+          </ElFormItem>
           <ElFormItem label="群组成员上限">
             <ElInputNumber
               v-model="featureForm.group_max_members"
@@ -786,6 +794,7 @@
     new_user_join_channel: false,
     group_invite_require_friend: false,
     member_only_create_group: false,
+    checkin_enabled: false,
     custom_portal_enabled: false,
     custom_portal_title: '',
     custom_portal_url: '',
@@ -1021,6 +1030,8 @@
       featureForm.new_user_join_group = settings.new_user_join_group || false
       featureForm.new_user_join_channel = settings.new_user_join_channel || false
       featureForm.group_invite_require_friend = settings.group_invite_require_friend || false
+      featureForm.member_only_create_group = settings.member_only_create_group || false
+      featureForm.checkin_enabled = settings.checkin_enabled || false
       featureForm.custom_portal_enabled = settings.custom_portal_enabled || false
       featureForm.custom_portal_title = settings.custom_portal_title || ''
       featureForm.custom_portal_url = settings.custom_portal_url || ''
