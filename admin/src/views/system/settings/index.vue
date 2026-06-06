@@ -220,29 +220,17 @@
           <ElFormItem label="非好友不可拉群">
             <ElSwitch v-model="featureForm.group_invite_require_friend" :disabled="isDemoAdmin" />
           </ElFormItem>
-          <ElFormItem>
-            <template #label>
-              <span>仅会员可建群</span>
-              <span style="color:#909399;font-size:12px;margin-left:8px;">开启后非会员无法创建群组和频道</span>
-            </template>
+          <ElFormItem label="仅会员可建群">
             <ElSwitch v-model="featureForm.member_only_create_group" :disabled="isDemoAdmin" />
-            <span class="ml-2 text-sm text-g-400">开启后，用户只能邀请自己的联系人加入群聊</span>
+            <span class="ml-2 text-sm text-g-400">开启后非会员无法创建群组和频道</span>
           </ElFormItem>
-          <ElFormItem>
-            <template #label>
-              <span>签到功能</span>
-              <span style="color:#909399;font-size:12px;margin-left:8px;">关闭后客户端不显示签到入口</span>
-            </template>
+          <ElFormItem label="签到功能">
             <ElSwitch v-model="featureForm.checkin_enabled" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示每日签到入口</span>
           </ElFormItem>
-          <ElFormItem>
-            <template #label>
-              <span>非好友消息</span>
-              <span style="color:#909399;font-size:12px;margin-left:8px;">关闭后非好友只能加好友、不能直接发消息</span>
-            </template>
+          <ElFormItem label="非好友消息">
             <ElSwitch v-model="featureForm.allow_stranger_message" :disabled="isDemoAdmin" />
-            <span class="ml-2 text-sm text-g-400">开启后陌生人可直接发起私聊</span>
+            <span class="ml-2 text-sm text-g-400">关闭后非好友只能加好友、不能直接发消息</span>
           </ElFormItem>
           <ElFormItem label="群组成员上限">
             <ElInputNumber
