@@ -86,6 +86,7 @@ class SystemSettings {
   final int maxVoiceSize;
   final int revokeMessageMinutes;
   final bool checkinEnabled;
+  final bool allowStrangerMessage;
 
   const SystemSettings({
     this.appVersionIOS = '',
@@ -123,6 +124,7 @@ class SystemSettings {
     this.maxVoiceSize = 20,
     this.revokeMessageMinutes = 2,
     this.checkinEnabled = false,
+    this.allowStrangerMessage = false,
   });
 
   factory SystemSettings.fromJson(Map<String, dynamic> json) {
@@ -168,6 +170,7 @@ class SystemSettings {
       maxVoiceSize: json['max_voice_size'] as int? ?? 20,
       revokeMessageMinutes: json['revoke_message_minutes'] as int? ?? 2,
       checkinEnabled: json['checkin_enabled'] == true,
+      allowStrangerMessage: json['allow_stranger_message'] == true,
     );
   }
 
