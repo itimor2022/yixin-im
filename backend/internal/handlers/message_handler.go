@@ -875,10 +875,18 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 		h.db.Model(&models.UserChat{}).
 			Where("chat_id = ? AND user_id != ?", chat.ID, sender.ID).
 			UpdateColumn("unread_count", gorm.Expr("unread_count + 1"))
+		// 发送者自己发的消息天然已读,同步推进 last_read_seq,避免自己的消息被算未读
+		h.db.Model(&models.UserChat{}).
+			Where("chat_id = ? AND user_id = ?", chat.ID, sender.ID).
+			Update("last_read_seq", msg.Seq)
 	} else {
 		// 大群（>50人）：完全跳过 user_chats 批量更新，零写入
 		// sort_time/last_msg_* 从 Redis chat:lastmsg 实时读取
 		// unread_count 用 chat_last_msg.last_seq - user_chats.last_read_seq 差值计算
+		// 但发送者自己的 last_read_seq 仍需推进,否则大群里自己发言也会被算未读
+		h.db.Model(&models.UserChat{}).
+			Where("chat_id = ? AND user_id = ?", chat.ID, sender.ID).
+			Update("last_read_seq", msg.Seq)
 	}
 
 	pushPreviewText := lastMsgText
@@ -1313,10 +1321,19 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 
 	// ★ F-04B：只更新 last_read_seq，unread_count 由 last_seq-last_read_seq 实时计算，无需写入
 	var result *gorm.DB
-	if req.MsgSeq > 0 {
+	// 确定本次要拉平到的 seq:优先用前端传的 MsgSeq,否则用 Redis 当前 last_seq 兜底
+	// 解决前端 _isActive 时序导致已读请求漏发、或 Redis last_seq 高于前端可见 seq 的偶发未读残留
+	targetSeq := uint64(req.MsgSeq)
+	if targetSeq == 0 && h.cache != nil {
+		if seq, err := h.cache.GetChatLastSeq(c.Request.Context(), req.ChatID); err == nil && seq > 0 {
+			targetSeq = seq
+		}
+	}
+	if targetSeq > 0 {
+		// 防回退:只在新 seq 更大时才推进 last_read_seq
 		result = h.db.Model(&models.UserChat{}).
-			Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
-			Update("last_read_seq", req.MsgSeq)
+			Where("chat_id = ? AND user_id = ? AND last_read_seq < ?", chat.ID, user.ID, targetSeq).
+			Update("last_read_seq", targetSeq)
 	} else {
 		result = h.db.Model(&models.UserChat{}).
 			Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
@@ -1338,10 +1355,10 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 	}
 
 	// 持久化：将对方发送的消息标记为已读（存储到 MongoDB）
-	if len(targetUserIDs) > 0 && req.MsgSeq > 0 {
+	if len(targetUserIDs) > 0 && targetSeq > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := h.msgService.MarkMessagesAsRead(ctx, req.ChatID, userID, req.MsgSeq, targetUserIDs); err != nil {
+		if err := h.msgService.MarkMessagesAsRead(ctx, req.ChatID, userID, int(targetSeq), targetUserIDs); err != nil {
 			// 记录错误但不影响响应
 			println("[MarkAsRead] Failed to persist read status:", err.Error())
 		}
@@ -1349,7 +1366,7 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 
 	// 通过 WebSocket 广播已读状态给对方用户
 	if len(targetUserIDs) > 0 {
-		h.msgService.BroadcastReadReceipt(req.ChatID, userID, req.MsgSeq, targetUserIDs)
+		h.msgService.BroadcastReadReceipt(req.ChatID, userID, int(targetSeq), targetUserIDs)
 	}
 
 	// ★ 集群改造：同步已读状态到当前用户的其他设备（使用集群版，跨节点投递）
@@ -1358,7 +1375,7 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 			"type":         "read_sync",
 			"chat_id":      req.ChatID,
 			"user_id":      userID,
-			"msg_seq":      req.MsgSeq,
+			"msg_seq":      targetSeq,
 			"unread_count": 0,
 		}
 		h.hub.SendToUserCluster(userID, selfSyncPayload)

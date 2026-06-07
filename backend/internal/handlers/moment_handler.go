@@ -85,6 +85,14 @@ func (h *MomentHandler) GetMomentList(c *gin.Context) {
 
 	// 过滤屏蔽的动态和用户（如果用户已登录）
 	if currentUID > 0 {
+		// 广场只展示好友(+自己)发布的动态
+		var friendIDs []uint64
+		h.db.Model(&models.Contact{}).
+			Where("user_id = ? AND status = 1", currentUID).
+			Pluck("contact_user_id", &friendIDs)
+		friendIDs = append(friendIDs, currentUID) // 包含自己
+		query = query.Where("user_id IN ?", friendIDs)
+
 		// 获取屏蔽的动态ID
 		var blockedMomentIDs []uint64
 		h.db.Model(&models.MomentBlock{}).Where("user_id = ?", currentUID).Pluck("moment_id", &blockedMomentIDs)
