@@ -54,6 +54,16 @@ export const broadcastRoutes: AppRouteRecord = {
         icon: 'ri:notification-3-line',
         keepAlive: true
       }
+    },
+    {
+      path: 'popup',
+      name: 'PopupAnnouncement',
+      component: '/broadcast/popup',
+      meta: {
+        title: '弹窗公告',
+        icon: 'ri:window-2-line',
+        keepAlive: true
+      }
     }
   ]
 }

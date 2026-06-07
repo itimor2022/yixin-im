@@ -485,3 +485,51 @@ export async function fetchGetCheckinList(
     total: res.total
   }
 }
+
+// ==================== 弹窗公告（启动公告） ====================
+
+export interface PopupAnnouncement {
+  id: number
+  title: string
+  content: string
+  image_url: string
+  link_url: string
+  enabled: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PopupAnnouncementPayload {
+  title: string
+  content: string
+  image_url?: string
+  link_url?: string
+  enabled?: boolean
+}
+
+export async function fetchPopupAnnouncements(params?: { page?: number; page_size?: number }) {
+  return request.get<{ list: PopupAnnouncement[]; total: number }>({
+    url: '/admin/popup-announcements',
+    params
+  })
+}
+
+export async function createPopupAnnouncement(data: PopupAnnouncementPayload) {
+  return request.post<PopupAnnouncement>({
+    url: '/admin/popup-announcements',
+    params: data
+  })
+}
+
+export async function updatePopupAnnouncement(id: number, data: PopupAnnouncementPayload) {
+  return request.put<PopupAnnouncement>({
+    url: `/admin/popup-announcements/${id}`,
+    params: data
+  })
+}
+
+export async function deletePopupAnnouncement(id: number) {
+  return request.del({
+    url: `/admin/popup-announcements/${id}`
+  })
+}

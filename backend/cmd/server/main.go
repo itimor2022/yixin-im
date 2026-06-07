@@ -302,6 +302,8 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 		&models.ChatAnnouncement{},
 		// 全局公告记录
 		&models.SystemBroadcast{},
+		// 启动弹窗公告
+		&models.PopupAnnouncement{},
 		// 邀请码
 		&models.InviteCode{},
 		&models.InviteCodeUsage{},
@@ -1018,6 +1020,12 @@ func setupRouter(
 				checkin.GET("/calendar", checkinHandler.GetCalendar)
 			}
 
+			popupAnn := authorized.Group("/popup-announcement")
+			{
+				popupAnnHandler := handlers.NewPopupAnnouncementHandler(db)
+				popupAnn.GET("/active", popupAnnHandler.GetActivePopupAnnouncement)
+			}
+
 			// 举报
 			reportHandler := handlers.NewReportHandler(db)
 			authorized.POST("/report", reportHandler.CreateReport)
@@ -1327,6 +1335,12 @@ func setupRouter(
 				adminAuth.POST("/broadcast", middleware.RequireWriteRole(), broadcastHandler.SendBroadcast)
 				adminAuth.GET("/broadcast/list", broadcastHandler.ListBroadcasts)
 				adminAuth.DELETE("/broadcast/clear", middleware.RequireWriteRole(), broadcastHandler.ClearBroadcasts)
+
+				popupAnnMgmtHandler := handlers.NewPopupAnnouncementHandler(db)
+				adminAuth.GET("/popup-announcements", popupAnnMgmtHandler.AdminListPopupAnnouncements)
+				adminAuth.POST("/popup-announcements", middleware.RequireWriteRole(), popupAnnMgmtHandler.AdminCreatePopupAnnouncement)
+				adminAuth.PUT("/popup-announcements/:id", middleware.RequireWriteRole(), popupAnnMgmtHandler.AdminUpdatePopupAnnouncement)
+				adminAuth.DELETE("/popup-announcements/:id", middleware.RequireWriteRole(), popupAnnMgmtHandler.AdminDeletePopupAnnouncement)
 
 				emojiStoreAdmin := adminAuth.Group("/emoji-store")
 				{
