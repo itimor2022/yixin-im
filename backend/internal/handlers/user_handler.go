@@ -622,6 +622,10 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		"last_seen":      lastSeen,
 		"emoji_avatar":   user.EmojiAvatar,   // 表情状态
 		"nickname_color": user.NicknameColor, // 个人资料背景颜色
+		"premium_type":   user.PremiumType,
+		"is_member":      user.IsMember,
+		"badge_text":     user.BadgeText,
+		"badge_color":    user.BadgeColor,
 	})
 }
 

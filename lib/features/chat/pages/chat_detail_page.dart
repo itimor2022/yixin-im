@@ -29,6 +29,7 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/premium_widgets.dart';
@@ -2261,6 +2262,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         privateContact?.badgeColor ??
         detailChat?.badgeColor ??
         listChat?.badgeColor;
+    final displayBadgeText =
+        privateContact?.badgeText ??
+        detailChat?.badgeText ??
+        listChat?.badgeText;
     final displayNicknameColor =
         privateContact?.nicknameColor ??
         detailChat?.nicknameColor ??
@@ -2341,6 +2346,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
+                                  ),
+                                  MemberBadgeWidget(
+                                    isMember: displayIsMember,
+                                    badgeText: displayBadgeText,
+                                    badgeColor: displayBadgeColor,
+                                    fontSize: 9,
+                                    margin: const EdgeInsets.only(left: 4),
                                   ),
                                   if (displayEmojiAvatar != null &&
                                       displayEmojiAvatar.isNotEmpty)
