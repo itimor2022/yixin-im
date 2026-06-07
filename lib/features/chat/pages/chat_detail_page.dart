@@ -2252,6 +2252,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         privateContact?.premiumType ??
         detailChat?.premiumType ??
         listChat?.premiumType;
+    final displayIsMember =
+        (privateContact?.isMember ??
+            detailChat?.isMember ??
+            listChat?.isMember) ??
+        false;
+    final displayBadgeColor =
+        privateContact?.badgeColor ??
+        detailChat?.badgeColor ??
+        listChat?.badgeColor;
     final displayNicknameColor =
         privateContact?.nicknameColor ??
         detailChat?.nicknameColor ??
@@ -2300,6 +2309,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       userId: displayUserId,
                       size: 40,
                       premiumType: displayPremiumType,
+                      isMember: displayIsMember,
+                      memberBadgeColor: displayBadgeColor,
                     ),
                     const SizedBox(width: 10),
                     Expanded(

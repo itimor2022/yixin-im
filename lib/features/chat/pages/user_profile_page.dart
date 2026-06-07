@@ -679,6 +679,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                             userId: widget.userId,
                             size: 100,
                             premiumType: _premiumType,
+                            isMember: _isMember,
+                            memberBadgeColor: _badgeColor,
                           ),
                         ),
                       ),
