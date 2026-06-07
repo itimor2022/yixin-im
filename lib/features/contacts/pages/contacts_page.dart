@@ -684,6 +684,8 @@ class _ContactListItem extends StatelessWidget {
                     userId: contact.id,
                     size: 46,
                     premiumType: contact.premiumType,
+                    isMember: contact.isMember,
+                    memberBadgeColor: contact.badgeColor,
                   ),
                   if (contact.isOnline)
                     Positioned(
