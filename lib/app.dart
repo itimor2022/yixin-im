@@ -17,6 +17,8 @@ import 'core/services/push_notification_service.dart';
 import 'core/services/notification_sound_service.dart';
 import 'core/services/api/websocket_service.dart';
 import 'core/services/api/api_client.dart' show apiClientProvider;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/services/desktop_notification_service.dart';
 import 'core/services/desktop/tray_service.dart';
 import 'core/services/api/auth_service.dart';
@@ -29,6 +31,7 @@ import 'core/services/device_service.dart';
 import 'core/utils/platform_utils.dart';
 import 'core/utils/browser_title.dart';
 import 'core/services/api/system_settings_service.dart';
+import 'core/services/api/popup_announcement_service.dart';
 import 'features/call/widgets/call_overlay.dart';
 import 'features/meeting/widgets/meeting_overlay.dart';
 import 'features/call/pages/incoming_call_page.dart';
@@ -92,6 +95,11 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         _setupAnnouncementHandler();
       } catch (e) {
         if (kDebugMode) debugPrint('[App] _setupAnnouncementHandler error: $e');
+      }
+      try {
+        _setupPopupAnnouncement();
+      } catch (e) {
+        if (kDebugMode) debugPrint('[App] _setupPopupAnnouncement error: $e');
       }
       try {
         _setupMeetingInviteHandler();
@@ -307,24 +315,69 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     );
   }
 
-  void _showAnnouncementDialog(String title, String content) {
+  void _showAnnouncementDialog(
+    String title,
+    String content, {
+    String? imageUrl,
+    String? linkUrl,
+  }) {
     final ctx = rootNavigatorKey.currentContext;
-    if (ctx != null && ctx.mounted) {
-      showDialog(
-        context: ctx,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(content),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('我知道了'),
-            ),
-          ],
+    if (ctx == null || !ctx.mounted) return;
+
+    final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+    final hasLink = linkUrl != null && linkUrl.trim().isNotEmpty;
+
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasImage)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      imageUrl!.trim(),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              if (content.trim().isNotEmpty) Text(content),
+            ],
+          ),
         ),
-      );
-    }
+        actions: [
+          if (hasLink)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                try {
+                  final uri = Uri.parse(linkUrl!.trim());
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                } catch (e) {
+                  if (kDebugMode) {
+                    debugPrint('[App] announcement link launch error: $e');
+                  }
+                }
+              },
+              child: const Text('查看详情'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _setupForceLogoutHandler() {
@@ -362,6 +415,31 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         );
       },
     );
+  }
+
+  /// F-13 全局弹窗公告:登录后拉取启用中的公告,未读则弹窗(只弹一次)
+  /// 已读判定 key = "id:updated_at",内容更新后重新弹一次
+  Future<void> _setupPopupAnnouncement() async {
+    try {
+      final service = ref.read(popupAnnouncementServiceProvider);
+      final ann = await service.getActive();
+      if (ann == null || ann.enabled != 1) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      const storeKey = 'popup_announcement_read_key';
+      final readKey = prefs.getString(storeKey);
+      if (readKey == ann.readKey) return; // 已读且内容未更新
+
+      _showAnnouncementDialog(
+        ann.title,
+        ann.content,
+        imageUrl: ann.imageUrl,
+        linkUrl: ann.linkUrl,
+      );
+      await prefs.setString(storeKey, ann.readKey);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[App] _setupPopupAnnouncement error: $e');
+    }
   }
 
   void _setupMeetingInviteHandler() {
