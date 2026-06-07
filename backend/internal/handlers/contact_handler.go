@@ -173,9 +173,9 @@ func (h *ContactHandler) GetContacts(c *gin.Context) {
 			"emoji_avatar":   row.EmojiAvatar,
 			"nickname_color": row.NicknameColor,
 			"premium_type":   row.PremiumType,
-				"is_member":      row.IsMember,
-				"badge_text":     row.BadgeText,
-				"badge_color":    row.BadgeColor,
+			"is_member":      row.IsMember,
+			"badge_text":     row.BadgeText,
+			"badge_color":    row.BadgeColor,
 		})
 	}
 
@@ -233,42 +233,58 @@ func (h *ContactHandler) AddContact(c *gin.Context) {
 		return
 	}
 
+	// already friends -> reject duplicate add
 	var exists int64
 	h.db.Model(&models.Contact{}).
 		Where("user_id = ? AND contact_user_id = ? AND status = 1", currentUser.ID, targetUser.ID).
 		Count(&exists)
-
 	if exists > 0 {
-		response.BadRequest(c, "宸茬粡鏄仈绯讳汉")
+		response.BadRequest(c, "对方已经是您的好友")
 		return
 	}
 
 	now := time.Now()
 
+	// already a pending request -> avoid duplicate
+	var pending int64
+	h.db.Model(&models.Contact{}).
+		Where("user_id = ? AND contact_user_id = ? AND status = 0", currentUser.ID, targetUser.ID).
+		Count(&pending)
+	if pending > 0 {
+		response.BadRequest(c, "好友申请已发送，等待对方验证")
+		return
+	}
+
+	// insert a pending request (status=0); no chat, no system message until accepted
 	contact := models.Contact{
 		UserID:        currentUser.ID,
 		ContactUserID: targetUser.ID,
 		Remark:        req.Remark,
-		Status:        1,
+		Status:        0,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	if err := h.db.Create(&contact).Error; err != nil {
+	if err := h.db.Select("UserID", "ContactUserID", "Remark", "Status", "CreatedAt", "UpdatedAt").Create(&contact).Error; err != nil {
 		response.ServerError(c, "failed to add contact")
 		return
 	}
 
-	if err := h.sendContactAddedSystemMessage(c, &currentUser, &targetUser); err != nil {
-		// 鑱旂郴浜烘坊鍔犱互鎴愬姛涓轰富锛岀郴缁熸彁绀哄け璐ヤ粎璁板綍鏃ュ織锛岄伩鍏嶅奖鍝嶄富娴佺▼
-		log.Printf("[Contact] sendContactAddedSystemMessage failed: %v", err)
-	}
+	// notify target via WS: new friend request
+	h.hub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
+		"type": "friend_request",
+		"data": map[string]interface{}{
+			"request_id":  contact.ID,
+			"from_uuid":   currentUser.UUID,
+			"from_name":   currentUser.Nickname,
+			"from_avatar": currentUser.Avatar,
+			"remark":      req.Remark,
+			"created_at":  now,
+		},
+	})
 
 	response.Success(c, gin.H{
-		"id":       targetUser.UUID,
-		"name":     req.Remark,
-		"nickname": targetUser.Nickname,
-		"username": targetUser.Username,
-		"avatar":   targetUser.Avatar,
+		"status":  "pending",
+		"message": "好友申请已发送，等待对方验证",
 	})
 }
 
@@ -485,9 +501,35 @@ func (h *ContactHandler) DeleteContact(c *gin.Context) {
 		return
 	}
 
-	// 鍒犻櫎鑱旂郴浜猴紙浠呭垹闄ゅ綋鍓嶇敤鎴疯嚜宸辩殑鑱旂郴浜鸿褰曪級
-	h.db.Where("user_id = ? AND contact_user_id = ?", currentUser.ID, targetUser.ID).
-		Delete(&models.Contact{})
+	// Bidirectional delete: remove both A->B and B->A contact records
+	h.db.Where(
+		"(user_id = ? AND contact_user_id = ?) OR (user_id = ? AND contact_user_id = ?)",
+		currentUser.ID, targetUser.ID, targetUser.ID, currentUser.ID,
+	).Delete(&models.Contact{})
+
+	// Locate the private chat (type = 1) shared by these two users
+	var privateChat models.Chat
+	err := h.db.Raw(`
+		SELECT c.* FROM chats c
+		JOIN chat_members cm1 ON cm1.chat_id = c.id AND cm1.user_id = ?
+		JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id = ?
+		WHERE c.type = 1
+		LIMIT 1
+	`, currentUser.ID, targetUser.ID).Scan(&privateChat).Error
+
+	if err == nil && privateChat.ID > 0 {
+		// Delete both users' chat list entries (keep message history)
+		h.db.Where("chat_id = ? AND user_id IN (?, ?)",
+			privateChat.ID, currentUser.ID, targetUser.ID).
+			Delete(&models.UserChat{})
+
+		// Silently notify the other side to remove the chat from their list
+		// (chat_hidden carries only the chat UUID; does not reveal who deleted whom)
+		h.hub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
+			"type":    "chat_hidden",
+			"chat_id": privateChat.UUID,
+		})
+	}
 
 	response.Success(c, nil)
 }
@@ -551,4 +593,128 @@ func isUserOnline(db *gorm.DB, userID uint64) bool {
 	err := db.Where("user_id = ? AND last_active > ?", userID, time.Now().Add(-5*time.Minute)).
 		First(&device).Error
 	return err == nil
+}
+
+// GetFriendRequests 待验证好友申请列表(发给我的, status=0)
+func (h *ContactHandler) GetFriendRequests(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var currentUser models.User
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "user not found")
+		return
+	}
+
+	var reqs []models.Contact
+	h.db.Where("contact_user_id = ? AND status = 0", currentUser.ID).
+		Order("created_at DESC").
+		Find(&reqs)
+
+	list := make([]gin.H, 0, len(reqs))
+	for _, r := range reqs {
+		var fromUser models.User
+		if err := h.db.Where("id = ?", r.UserID).First(&fromUser).Error; err != nil {
+			continue
+		}
+		list = append(list, gin.H{
+			"request_id":  r.ID,
+			"from_uuid":   fromUser.UUID,
+			"from_name":   fromUser.Nickname,
+			"from_avatar": fromUser.Avatar,
+			"username":    fromUser.Username,
+			"remark":      r.Remark,
+			"created_at":  r.CreatedAt,
+		})
+	}
+
+	response.Success(c, gin.H{"list": list, "total": len(list)})
+}
+
+// AcceptFriendRequest 同意好友申请: a->b 置为好友, 反向 b->a 插入, 建会话
+func (h *ContactHandler) AcceptFriendRequest(c *gin.Context) {
+	userID := c.GetString("user_id")
+	requestID := c.Param("id")
+
+	var currentUser models.User
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "user not found")
+		return
+	}
+
+	var reqRow models.Contact
+	if err := h.db.Where("id = ? AND contact_user_id = ? AND status = 0", requestID, currentUser.ID).
+		First(&reqRow).Error; err != nil {
+		response.NotFound(c, "好友申请不存在或已处理")
+		return
+	}
+
+	var fromUser models.User
+	if err := h.db.Where("id = ?", reqRow.UserID).First(&fromUser).Error; err != nil {
+		response.NotFound(c, "申请人不存在")
+		return
+	}
+
+	now := time.Now()
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Contact{}).
+			Where("id = ?", reqRow.ID).
+			Updates(map[string]interface{}{"status": 1, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		reverse := models.Contact{
+			UserID:        currentUser.ID,
+			ContactUserID: fromUser.ID,
+			Status:        1,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "contact_user_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"status": 1, "updated_at": now}),
+		}).Create(&reverse).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		response.ServerError(c, "failed to accept friend request")
+		return
+	}
+
+	if err := h.sendContactAddedSystemMessage(c, &fromUser, &currentUser); err != nil {
+		log.Printf("[Contact] AcceptFriendRequest sendContactAddedSystemMessage failed: %v", err)
+	}
+
+	h.hub.SendToUserCluster(fromUser.UUID, map[string]interface{}{
+		"type": "friend_request_accepted",
+		"data": map[string]interface{}{
+			"by_uuid":   currentUser.UUID,
+			"by_name":   currentUser.Nickname,
+			"by_avatar": currentUser.Avatar,
+		},
+	})
+
+	response.Success(c, gin.H{"status": "accepted"})
+}
+
+// RejectFriendRequest 拒绝好友申请: a->b 置为 status=2
+func (h *ContactHandler) RejectFriendRequest(c *gin.Context) {
+	userID := c.GetString("user_id")
+	requestID := c.Param("id")
+
+	var currentUser models.User
+	if err := h.db.Where("uuid = ?", userID).First(&currentUser).Error; err != nil {
+		response.NotFound(c, "user not found")
+		return
+	}
+
+	if err := h.db.Model(&models.Contact{}).
+		Where("id = ? AND contact_user_id = ? AND status = 0", requestID, currentUser.ID).
+		Updates(map[string]interface{}{"status": 2, "updated_at": time.Now()}).Error; err != nil {
+		response.ServerError(c, "failed to reject friend request")
+		return
+	}
+
+	response.Success(c, gin.H{"status": "rejected"})
 }

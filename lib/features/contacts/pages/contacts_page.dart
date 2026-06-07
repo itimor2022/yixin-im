@@ -25,6 +25,7 @@ import '../../chat/providers/chat_provider.dart';
 import '../../chat/pages/chat_detail_page.dart' show ChatType;
 import '../../home/pages/home_desktop_page.dart';
 import '../providers/contact_provider.dart';
+import '../providers/friend_request_provider.dart';
 
 class ContactsPage extends ConsumerStatefulWidget {
   /// 是否作为桌面端侧边栏使用
@@ -58,6 +59,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       final authState = ref.read(authServiceProvider);
       if (authState.status == AuthStatus.authenticated) {
         ref.read(contactListProvider.notifier).initialize();
+        ref.read(friendRequestProvider.notifier).load();
       }
     });
     // 每分钟触发一次重建，使「最近在线 x分钟前」随时间更新
@@ -240,6 +242,13 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
             // 快捷操作 - 透明背景
             Column(
               children: [
+                _TGActionTile(
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: '新的朋友',
+                  isDark: isDark,
+                  badgeCount: ref.watch(friendRequestProvider),
+                  onTap: () => context.push('/friend-requests'),
+                ),
                 _TGActionTile(
                   icon: Icons.group_add_outlined,
                   title: l10n.createGroup,
@@ -574,12 +583,14 @@ class _TGActionTile extends StatelessWidget {
   final String title;
   final bool isDark;
   final VoidCallback onTap;
+  final int badgeCount;
 
   const _TGActionTile({
     required this.icon,
     required this.title,
     required this.isDark,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -608,6 +619,27 @@ class _TGActionTile extends StatelessWidget {
                 ),
               ),
             ),
+            // 未读申请红点
+            if (badgeCount > 0)
+              Container(
+                margin: const EdgeInsets.only(right: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                constraints: const BoxConstraints(minWidth: 18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF3B30),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

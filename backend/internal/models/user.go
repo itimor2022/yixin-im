@@ -157,7 +157,7 @@ type Contact struct {
 	UserID        uint64    `gorm:"index:idx_contact;not null" json:"user_id"`
 	ContactUserID uint64    `gorm:"index:idx_contact;not null" json:"contact_user_id"`
 	Remark        string    `gorm:"type:varchar(100)" json:"remark"`
-	Status        int8      `gorm:"type:tinyint;default:1" json:"status"`
+	Status        int8      `gorm:"type:tinyint" json:"status"`
 	CreatedAt     time.Time `gorm:"type:datetime;not null" json:"created_at"`
 	UpdatedAt     time.Time `gorm:"type:datetime;not null" json:"updated_at"`
 }

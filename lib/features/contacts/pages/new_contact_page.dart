@@ -234,7 +234,7 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         ref.read(contactListProvider.notifier).loadFromServer();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已将 ${user.name} 添加到通讯录'),
+            content: Text('好友申请已发送，等待 ${user.name} 验证'),
             backgroundColor: AppColors.success,
           ),
         );
