@@ -17,6 +17,9 @@ import '../../../core/services/storage/models/chat_model.dart' as storage;
 import '../../../core/services/storage/models/message_model.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../utils/system_message_text.dart';
+import 'package:flutter/material.dart';
+import '../../../core/router/app_router.dart';
+import '../../contacts/providers/friend_request_provider.dart';
 import 'message_provider.dart' show MessageItem, persistMessageItemsToIsarCache;
 
 DateTime? _normalizeChatListTime(DateTime? value) {
@@ -476,6 +479,23 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         _ref.read(authServiceProvider.notifier).getCurrentUser();
         // 同步刷新聊天列表，确保自己的会员状态变更后相关会话样式及时更新
         unawaited(silentRefresh(bypassDebounce: true));
+      }),
+    );
+
+    // 监听好友申请(F-12 双向好友验证)
+    _wsHandlerIds.add(
+      _wsService.registerHandler('friend_request', (data) {
+        _ref.read(friendRequestProvider.notifier).increment();
+        final inner = data['data'];
+        final fromName = (inner is Map && inner['from_name'] != null)
+            ? inner['from_name'].toString()
+            : '有人';
+        final ctx = rootNavigatorKey.currentContext;
+        if (ctx != null) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(content: Text('$fromName 请求添加你为好友')),
+          );
+        }
       }),
     );
 
@@ -1525,26 +1545,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 nicknameColor: userChat.nicknameColor, // 昵称颜色
                 premiumType: userChat.premiumType, // 会员类型
                 lastMessageSeq: userChat.lastMsgSeq,
-                // 会员字段：接口若未携带徽章信息(badgeText/badgeColor 为 null)，
-                // 视为本次未下发会员数据，回退保留内存中已有徽章，避免静默刷新时徽章闪失
-                isMember: (userChat.badgeText != null ||
-                        userChat.badgeColor != null)
-                    ? userChat.isMember
-                    : (state.allChats
-                            .where((c) => c.id == userChat.chatId)
-                            .firstOrNull
-                            ?.isMember ??
-                        userChat.isMember),
-                badgeText: userChat.badgeText ??
-                    state.allChats
-                        .where((c) => c.id == userChat.chatId)
-                        .firstOrNull
-                        ?.badgeText,
-                badgeColor: userChat.badgeColor ??
-                    state.allChats
-                        .where((c) => c.id == userChat.chatId)
-                        .firstOrNull
-                        ?.badgeColor,
+                                // 会员/徽章字段：直接信任接口值（getChatList 已稳定下发 is_member/badge_*）
+                isMember: userChat.isMember,
+                badgeText: userChat.badgeText,
+                badgeColor: userChat.badgeColor,
               ),
             )
             .where((chat) => seenIds.add(chat.id)) // 去重：只保留第一次出现的
@@ -1714,6 +1718,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 nicknameColor: userChat.nicknameColor,
                 premiumType: userChat.premiumType,
                 lastMessageSeq: userChat.lastMsgSeq,
+                // 会员/徽章字段：直接信任接口值，修复静默刷新徽章丢失
+                isMember: userChat.isMember,
+                badgeText: userChat.badgeText,
+                badgeColor: userChat.badgeColor,
               ),
             )
             .where((chat) => seenIds.add(chat.id))

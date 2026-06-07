@@ -24,6 +24,7 @@ import '../../features/contacts/pages/contacts_page.dart';
 import '../../features/discover/pages/discover_page.dart';
 import '../../features/portal/pages/custom_portal_page.dart';
 import '../../features/contacts/pages/new_contact_page.dart';
+import '../../features/contacts/pages/friend_requests_page.dart';
 import '../../features/moments/pages/moments_page.dart';
 import '../../features/settings/pages/settings_page.dart';
 import '../../features/settings/pages/chat_settings_page.dart';
@@ -277,6 +278,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => IOSModalPage(
           key: state.pageKey,
           child: const NewContactPage(),
+        ),
+      ),
+
+      // 新的朋友（好友申请列表）
+      GoRoute(
+        path: '/friend-requests',
+        name: 'friendRequests',
+        pageBuilder: (context, state) => IOSModalPage(
+          key: state.pageKey,
+          child: const FriendRequestsPage(),
         ),
       ),
 

@@ -16,11 +16,11 @@ import (
 	"gaoranim/internal/cache"
 	"gaoranim/internal/config"
 	"gaoranim/internal/handlers"
-	"gaoranim/internal/storage"
 	"gaoranim/internal/middleware"
 	"gaoranim/internal/models"
 	"gaoranim/internal/mq"
 	"gaoranim/internal/services"
+	"gaoranim/internal/storage"
 	"gaoranim/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -1005,6 +1005,9 @@ func setupRouter(
 				contact.POST("/add", contactHandler.AddContact)
 				contact.DELETE("/:id", contactHandler.DeleteContact)
 				contact.PUT("/:id/remark", contactHandler.UpdateRemark)
+				contact.GET("/requests", contactHandler.GetFriendRequests)
+				contact.POST("/requests/:id/accept", contactHandler.AcceptFriendRequest)
+				contact.POST("/requests/:id/reject", contactHandler.RejectFriendRequest)
 			}
 
 			// 签到
@@ -1143,7 +1146,7 @@ func setupRouter(
 		}
 
 		// WebSocket连接
-		api.GET("/ws", middleware.Auth(cache)/* , middleware.RequirePhoneBind(db, cache) */, handlers.HandleWebSocket(hub, cfg.WebSocket, db, corsOrigins...))
+		api.GET("/ws", middleware.Auth(cache) /* , middleware.RequirePhoneBind(db, cache) */, handlers.HandleWebSocket(hub, cfg.WebSocket, db, corsOrigins...))
 
 		// ========== 官方客服独立后台 API ==========
 		serviceAdminHandler := handlers.NewServiceAdminHandler(db, cache, smsSvc)

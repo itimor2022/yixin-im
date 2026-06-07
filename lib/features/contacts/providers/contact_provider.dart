@@ -636,4 +636,32 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
       return c;
     }).toList();
   }
+
+  /// 获取收到的待验证好友申请列表
+  Future<List<Map<String, dynamic>>> getFriendRequests() async {
+    final response = await _api.get('/contact/requests');
+    if (response.isSuccess && response.data != null) {
+      final data = response.data as Map<String, dynamic>;
+      final list = (data['list'] as List?) ?? [];
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
+  /// 同意好友申请
+  Future<bool> acceptFriendRequest(dynamic requestId) async {
+    final response =
+        await _api.post('/contact/requests/$requestId/accept');
+    if (response.isSuccess) {
+      await loadFromServer(force: true);
+    }
+    return response.isSuccess;
+  }
+
+  /// 拒绝好友申请
+  Future<bool> rejectFriendRequest(dynamic requestId) async {
+    final response =
+        await _api.post('/contact/requests/$requestId/reject');
+    return response.isSuccess;
+  }
 }
