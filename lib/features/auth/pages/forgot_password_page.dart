@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/api/auth_service.dart';
+import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../shared/widgets/desktop/auth_desktop_layout.dart';
@@ -110,84 +112,90 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
       children: [
         const SizedBox(height: 36),
         Icon(
-          Icons.lock_reset_rounded,
+          Icons.support_agent_rounded,
           size: 64,
           color: AppColors.primary.withOpacity(0.95),
         ),
         const SizedBox(height: 20),
         Text(
-          '重置登录密码',
+          '找回账号密码',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
             color: isDark ? Colors.white : Colors.black,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Text(
-          '使用已绑定手机号接收验证码',
+          '如需找回账号或重置密码，请联系在线客服协助处理',
+          textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
             color: isDark ? Colors.white54 : Colors.black54,
           ),
         ),
-        const SizedBox(height: 32),
-        _buildPhoneField(isDark),
-        const SizedBox(height: 16),
-        _buildCodeField(isDark),
-        const SizedBox(height: 16),
-        _buildPasswordField(
-          controller: _passwordController,
-          hint: '新密码（6-20位）',
-          obscure: _obscurePassword,
-          onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
-          isDark: isDark,
-        ),
-        const SizedBox(height: 16),
-        _buildPasswordField(
-          controller: _confirmPasswordController,
-          hint: '确认新密码',
-          obscure: _obscureConfirmPassword,
-          onToggle: () => setState(
-            () => _obscureConfirmPassword = !_obscureConfirmPassword,
-          ),
-          isDark: isDark,
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 180),
-          child: _message == null
-              ? const SizedBox.shrink()
-              : Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _message!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color:
-                          _messageIsError ? AppColors.error : AppColors.success,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-        ),
-        const SizedBox(height: 24),
-        _buildSubmitButton(),
-        const SizedBox(height: 16),
-        TextButton(
-          onPressed: _goBack,
-          child: const Text(
-            '返回登录',
-            style: TextStyle(
-              color: AppColors.primary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+        const SizedBox(height: 40),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: _contactService,
+            icon: const Icon(Icons.headset_mic_rounded, size: 20),
+            label: const Text(
+              '联系在线客服',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
+        TextButton(
+          onPressed: _goBack,
+          child: const Text('返回登录'),
+        ),
       ],
     );
+  }
+
+  Future<void> _contactService() async {
+    final url = ref
+            .read(systemSettingsProvider)
+            .valueOrNull
+            ?.customerServiceUrl
+            .trim() ??
+        '';
+    if (url.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('客服暂未配置，请稍后再试')),
+        );
+      }
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('客服地址无效')),
+        );
+      }
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开客服链接')),
+        );
+      }
+    }
   }
 
   Widget _buildPhoneField(bool isDark) {

@@ -200,6 +200,15 @@
             />
             <span class="ml-2 text-sm text-g-400">部分网站会限制内嵌显示；若页面空白，客户端会提供直接打开入口</span>
           </ElFormItem>
+          <ElDivider content-position="left">在线客服</ElDivider>
+          <ElFormItem label="在线客服地址">
+            <ElInput
+              v-model="featureForm.customer_service_url"
+              placeholder="例如：https://kefu.example.com 或 https://t.me/xxx"
+              :disabled="isDemoAdmin"
+            />
+            <span class="ml-2 text-sm text-g-400">App「找回密码」与「常见问题-在线客服」会跳转此地址</span>
+          </ElFormItem>
           <ElDivider content-position="left">新用户设置</ElDivider>
           <ElFormItem label="新用户强制关注官方用户">
             <ElSwitch v-model="featureForm.new_user_follow_official" :disabled="isDemoAdmin" />
@@ -796,6 +805,7 @@
     custom_portal_title: '',
     custom_portal_url: '',
     custom_portal_icon_url: '',
+    customer_service_url: '',
     burn_after_read_enabled: true,
     message_crypto_mode: 'plain',
     group_max_members: 200000,
@@ -1034,6 +1044,7 @@
       featureForm.custom_portal_title = settings.custom_portal_title || ''
       featureForm.custom_portal_url = settings.custom_portal_url || ''
       featureForm.custom_portal_icon_url = settings.custom_portal_icon_url || ''
+      featureForm.customer_service_url = settings.customer_service_url || ''
       featureForm.burn_after_read_enabled = settings.burn_after_read_enabled !== false
       featureForm.message_crypto_mode = settings.message_crypto_mode || 'plain'
       featureForm.group_max_members = settings.group_max_members ?? 200000

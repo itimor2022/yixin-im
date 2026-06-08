@@ -220,14 +220,7 @@ class SettingsPage extends ConsumerWidget {
                       icon: Icons.devices_outlined,
                       iconBgColor: const Color(0xFFFF9500),
                       title: l10n.devices,
-                      subtitle: deviceCountAsync.when(
-                        data: (count) => l10n.language.code == 'en'
-                            ? '$count devices'
-                            : '$count 台设备',
-                        loading: () => '...',
-                        error: (_, __) =>
-                            l10n.language.code == 'en' ? '1 device' : '1 台设备',
-                      ),
+                      subtitle: null, // 隐藏设备数量
                       isDark: isDark,
                       onTap: () => _openPage(
                         context,
