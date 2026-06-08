@@ -164,12 +164,18 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   }
 
   Future<void> _contactService() async {
-    final url = ref
-            .read(systemSettingsProvider)
-            .valueOrNull
-            ?.customerServiceUrl
-            .trim() ??
-        '';
+    String url = '';
+    try {
+      final s = await ref
+          .read(systemSettingsServiceProvider)
+          .getSettings(forceRefresh: true)
+          .timeout(const Duration(seconds: 3));
+      url = s.customerServiceUrl.trim();
+    } catch (_) {
+      // 强刷超时/失败:回退本地缓存
+      final cached = await loadCachedSystemSettings();
+      url = cached?.customerServiceUrl.trim() ?? '';
+    }
     if (url.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
