@@ -1693,6 +1693,9 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
             if (!mounted) return;
             final maxSeq = messages.first.seq;
             _markAsReadUpToSeq(maxSeq);
+            // 双保险:进会话后追加一次纯拉平调用(不传 msgSeq),
+            // 让后端用 Redis last_seq 把系统消息等未进列表的消息也覆盖,避免重开冒未读
+            unawaited(_chatService.markAsRead(chatId));
           });
         }
       }

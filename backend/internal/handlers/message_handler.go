@@ -1324,9 +1324,18 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 	// 确定本次要拉平到的 seq:优先用前端传的 MsgSeq,否则用 Redis 当前 last_seq 兜底
 	// 解决前端 _isActive 时序导致已读请求漏发、或 Redis last_seq 高于前端可见 seq 的偶发未读残留
 	targetSeq := uint64(req.MsgSeq)
-	if targetSeq == 0 && h.cache != nil {
-		if seq, err := h.cache.GetChatLastSeq(c.Request.Context(), req.ChatID); err == nil && seq > 0 {
+	// 总是取 Redis last_seq 与传入 seq 的较大值,确保系统消息/通知等
+	// 未进前端列表的消息也被覆盖,避免重开 App 后差值残留显示未读
+	if h.cache != nil {
+		if seq, err := h.cache.GetChatLastSeq(c.Request.Context(), req.ChatID); err == nil && seq > targetSeq {
 			targetSeq = seq
+		}
+	}
+	// Redis 无值时 fallback 到 MySQL 的 last_msg_seq
+	if targetSeq == 0 {
+		var uc models.UserChat
+		if err := h.db.Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).First(&uc).Error; err == nil && uc.LastMsgSeq > targetSeq {
+			targetSeq = uc.LastMsgSeq
 		}
 	}
 	if targetSeq > 0 {
