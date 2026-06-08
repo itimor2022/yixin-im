@@ -372,6 +372,8 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
                 const SizedBox(height: 35),
 
+                // 活跃会话/其他设备 已隐藏(需求3)
+                if (false) ...[
                 // 活跃会话（其他设备）
                 _buildSectionHeader(
                   l10n.activeSessions,
@@ -417,6 +419,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     cardColor: cardColor,
                     children: [_buildTerminateAllTile(isDark, l10n)],
                   ),
+                ],
                 ],
 
                 const SizedBox(height: 35),

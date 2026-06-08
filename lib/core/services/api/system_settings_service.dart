@@ -72,6 +72,7 @@ class SystemSettings {
   final bool customPortalEnabled;
   final String customPortalTitle;
   final String customPortalUrl;
+  final String customerServiceUrl;
   final String customPortalIconUrl;
   final bool burnAfterReadEnabled;
   final MessageCryptoMode messageCryptoMode;
@@ -110,6 +111,7 @@ class SystemSettings {
     this.customPortalEnabled = false,
     this.customPortalTitle = '',
     this.customPortalUrl = '',
+    this.customerServiceUrl = '',
     this.customPortalIconUrl = '',
     this.burnAfterReadEnabled = true,
     this.messageCryptoMode = MessageCryptoMode.plain,
@@ -150,6 +152,7 @@ class SystemSettings {
       customPortalEnabled: json['custom_portal_enabled'] == true,
       customPortalTitle: json['custom_portal_title']?.toString() ?? '',
       customPortalUrl: json['custom_portal_url']?.toString() ?? '',
+      customerServiceUrl: json['customer_service_url']?.toString() ?? '',
       customPortalIconUrl: json['custom_portal_icon_url']?.toString() ?? '',
       burnAfterReadEnabled: json['burn_after_read_enabled'] != false,
       messageCryptoMode: MessageCryptoMode.fromRaw(json['message_crypto_mode']),

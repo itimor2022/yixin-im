@@ -34,7 +34,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _agreedToTerms = false; // 是否同意协议
+  bool _agreedToTerms = true; // 是否同意协议（默认勾选）
   String? _errorMessage; // 错误提示信息
   Timer? _qrLoginPollTimer;
   bool _isQrLoginLoading = false;
@@ -238,24 +238,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Widget _buildForgotPasswordEntry(bool isDark) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        Icon(
-          Icons.verified_user_outlined,
-          size: 16,
-          color: isDark ? Colors.white38 : Colors.black38,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            '已绑定手机号可验证找回',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? Colors.white54 : Colors.black45,
-            ),
-          ),
-        ),
         TextButton.icon(
           onPressed: _openForgotPassword,
           icon: const Icon(Icons.lock_reset_rounded, size: 17),

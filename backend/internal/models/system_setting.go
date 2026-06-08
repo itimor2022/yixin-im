@@ -57,6 +57,9 @@ const (
 	SettingCustomPortalURL     = "custom_portal_url"      // 自定义栏目访问网址
 	SettingCustomPortalIconURL = "custom_portal_icon_url" // 自定义栏目图标
 
+	// 在线客服
+	SettingCustomerServiceURL = "customer_service_url" // 在线客服地址(App找回密码/FAQ跳转)
+
 	// 官方用户/群组/频道
 	SettingOfficialUsers    = "official_users"    // 官方用户列表 (JSON数组: ["uuid1", "uuid2"])
 	SettingOfficialGroups   = "official_groups"   // 官方群组列表 (JSON数组: ["uuid1", "uuid2"])

@@ -5,10 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/system_settings_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-/// 在线客服链接与 QQ
-const String kOnlineServiceUrl = '#';
-const String kQQServiceNumber = '2106868181';
 
 /// 常见问题页面
 class FAQPage extends ConsumerStatefulWidget {
@@ -453,30 +451,36 @@ class _FAQPageState extends ConsumerState<FAQPage> {
     );
   }
 
-  void _openOnlineService() {
-    Clipboard.setData(const ClipboardData(text: kOnlineServiceUrl));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('在线客服链接已复制，请粘贴到浏览器打开'),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+  Future<void> _openOnlineService() async {
+    final url =
+        ref.read(systemSettingsProvider).valueOrNull?.customerServiceUrl.trim() ??
+            '';
+    if (url.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('客服暂未配置，请稍后再试')),
+        );
+      }
+      return;
     }
-  }
-
-  void _copyQQAndHint() {
-    Clipboard.setData(const ClipboardData(text: kQQServiceNumber));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('QQ $kQQServiceNumber 已复制到剪贴板'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('客服地址无效')),
+        );
+      }
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开客服链接')),
+        );
+      }
+    }
   }
 
   void _contactSupport(AppLocalizations l10n) {
@@ -536,17 +540,6 @@ class _FAQPageState extends ConsumerState<FAQPage> {
                   onTap: () {
                     Navigator.pop(context);
                     _openOnlineService();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _ContactOption(
-                  icon: Icons.tag_rounded,
-                  title: l10n.qqSupport,
-                  subtitle: 'QQ：$kQQServiceNumber',
-                  isDark: isDark,
-                  onTap: () {
-                    Navigator.pop(context);
-                    _copyQQAndHint();
                   },
                 ),
               ],
