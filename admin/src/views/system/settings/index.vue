@@ -235,7 +235,7 @@
           </ElFormItem>
           <ElFormItem label="签到功能">
             <ElSwitch v-model="featureForm.checkin_enabled" :disabled="isDemoAdmin" />
-            <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示每日签到入口</span>
+            <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示签到入口</span>
           </ElFormItem>
           <ElFormItem label="非好友消息">
             <ElSwitch v-model="featureForm.allow_stranger_message" :disabled="isDemoAdmin" />

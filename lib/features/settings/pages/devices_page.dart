@@ -374,41 +374,43 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
                 // 活跃会话/其他设备 已隐藏(需求3)
                 if (false) ...[
-                // 活跃会话（其他设备）
-                _buildSectionHeader(
-                  l10n.activeSessions,
-                  isDark,
-                  trailing:
-                      '${_devices.where((d) => d.deviceId != _currentDevice?.deviceId).length} ${l10n.devicesCount}',
-                ),
+                  // 活跃会话（其他设备）
+                  _buildSectionHeader(
+                    l10n.activeSessions,
+                    isDark,
+                    trailing:
+                        '${_devices.where((d) => d.deviceId != _currentDevice?.deviceId).length} ${l10n.devicesCount}',
+                  ),
 
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: _devices
-                          .where((d) => d.deviceId != _currentDevice?.deviceId)
-                          .isEmpty
-                      ? [_buildEmptySessionTile(isDark, l10n)]
-                      : _devices
-                          .where((d) => d.deviceId != _currentDevice?.deviceId)
-                          .map(
-                            (device) =>
-                                _buildOtherDeviceTile(device, isDark, l10n),
-                          )
-                          .toList(),
-                ),
+                  _buildSettingsCard(
+                    isDark: isDark,
+                    cardColor: cardColor,
+                    children: _devices
+                            .where(
+                                (d) => d.deviceId != _currentDevice?.deviceId)
+                            .isEmpty
+                        ? [_buildEmptySessionTile(isDark, l10n)]
+                        : _devices
+                            .where(
+                                (d) => d.deviceId != _currentDevice?.deviceId)
+                            .map(
+                              (device) =>
+                                  _buildOtherDeviceTile(device, isDark, l10n),
+                            )
+                            .toList(),
+                  ),
 
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    l10n.suspiciousDeviceHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      l10n.suspiciousDeviceHint,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white38 : Colors.black38,
+                      ),
                     ),
                   ),
-                ),
-
+                ],
                 // 终止所有其他设备按钮（仅当有其他设备时显示）
                 if (_devices
                     .where((d) => d.deviceId != _currentDevice?.deviceId)
@@ -420,8 +422,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     children: [_buildTerminateAllTile(isDark, l10n)],
                   ),
                 ],
-                ],
-
                 const SizedBox(height: 35),
 
                 // 退出登录
