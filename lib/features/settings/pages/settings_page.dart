@@ -149,7 +149,7 @@ class SettingsPage extends ConsumerWidget {
                         return _SettingsTile(
                           icon: Icons.calendar_today_outlined,
                           iconBgColor: const Color(0xFF34C759),
-                          title: '每日签到',
+                          title: '签到',
                           isDark: isDark,
                           onTap: () => _openPage(
                             context,

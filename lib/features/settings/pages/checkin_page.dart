@@ -68,8 +68,27 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(title: const Text('每日签到')),
+      backgroundColor:
+          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '签到',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -181,9 +200,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           height: 38,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isChecked
-                ? theme.colorScheme.primary
-                : Colors.transparent,
+            color: isChecked ? theme.colorScheme.primary : Colors.transparent,
           ),
           alignment: Alignment.center,
           child: isChecked
