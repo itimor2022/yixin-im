@@ -686,12 +686,9 @@ class _UserProfileCard extends ConsumerStatefulWidget {
 }
 
 class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
-  /// 格式化手机号（隐藏中间4位）
+  /// 格式化手机号（完整显示）
   String _formatPhone(String? phone) {
     if (phone == null || phone.isEmpty) return '未绑定手机';
-    if (phone.length >= 11) {
-      return '${phone.substring(0, 3)}****${phone.substring(phone.length - 4)}';
-    }
     return phone;
   }
 
@@ -867,9 +864,6 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
         ? user!.nickname
         : (user?.username ?? '未登录');
 
-    // 用户名 @xxx
-    final username = user?.username ?? '';
-
     // 手机号
     final phoneDisplay = _formatPhone(user?.phone);
 
@@ -961,13 +955,6 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
                       color: isDark ? Colors.white54 : Colors.black45,
                     ),
                   ),
-                  if (username.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      '@$username',
-                      style: TextStyle(fontSize: 14, color: AppColors.primary),
-                    ),
-                  ],
                 ],
               ),
             ),
