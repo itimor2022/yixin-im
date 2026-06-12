@@ -7,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api/api_client.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../utils/fcm_web_token.dart';
 
 void _log(String message) {
-  if (kDebugMode) debugPrint(message);
+  // ignore: avoid_print
+  print(message);
 }
 
 /// 推送通知服务 - iOS 使用 APNs，Android 使用 FCM
@@ -439,6 +441,12 @@ class PushNotificationService {
   Future<void> register() async {
     _log('[Push] register() called, platform: ${Platform.operatingSystem}');
 
+    // ── Web FCM ──────────────────────────────────────────────────────────
+    if (kIsWeb) {
+      await _setupWebFCM();
+      return;
+    }
+
     if (Platform.isAndroid) {
       final preferredChannel = await _initAndroidVendorPush();
       if (preferredChannel != 'fcm' && !_vendorInitRequestedToken) {
@@ -707,6 +715,89 @@ class PushNotificationService {
   }
 
   /// 清除 token（登出时调用）
+  // ─── Web FCM ──────────────────────────────────────────────────────────────
+
+  Future<void> _setupWebFCM() async {
+    if (!kIsWeb) return;
+    try {
+      _log('[Push Web] Starting Web FCM setup...');
+
+      // 等待 Service Worker 就绪
+      await Future.delayed(const Duration(seconds: 3));
+      _log('[Push Web] SW wait done, getting token via JS...');
+
+      // 用 JS interop 直接调用 Firebase JS SDK getToken
+      const vapidKey =
+          'BD3lYkvhun_1sdIBtQsvpF7F-VKjXGC6KH_biJH39LPIHr3TARRvu8RhMheOqDoQG2Fiih9L6im68ilPcUYoW3c';
+      final token = await _getWebFCMTokenViaJS(vapidKey);
+      if (token != null && token.isNotEmpty) {
+        _log('[Push Web] Got token, length: ${token.length}');
+        _handleToken(token, deviceType: 'web', pushChannel: 'fcm');
+      } else {
+        _log('[Push Web] Failed to get token');
+      }
+
+      // Token 刷新监听
+      try {
+        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+          _log('[Push Web] Token refreshed');
+          _handleToken(newToken, deviceType: 'web', pushChannel: 'fcm');
+        });
+      } catch (e) {
+        _log('[Push Web] onTokenRefresh setup error: $e');
+      }
+
+      // 前台消息监听（Web 前台不自动显示通知，需手动处理）
+      try {
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          _log('[Push Web] Foreground message: \${message.notification?.title}');
+          final data = <String, dynamic>{
+            'title': message.notification?.title ?? '',
+            'body': message.notification?.body ?? '',
+            ...?message.data,
+          };
+          onNotificationReceived?.call(data);
+        });
+      } catch (e) {
+        _log('[Push Web] onMessage setup error: \$e');
+      }
+
+      _log('[Push Web] Setup complete');
+    } catch (e) {
+      _log('[Push Web] Setup error: $e');
+    }
+  }
+
+  /// Web 端通过 JS interop 直接调用 Firebase JS SDK 获取 FCM token
+  /// 绕过 firebase_messaging Dart 包在 release 模式下的类型错误
+  Future<String?> _getWebFCMTokenViaJS(String vapidKey) async {
+    if (!kIsWeb) return null;
+    try {
+      // 通过 package:web 调用 JS
+      final completer = Completer<String?>();
+      _callJSGetToken(vapidKey, completer);
+      return await completer.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          _log('[Push Web] getToken timeout');
+          return null;
+        },
+      );
+    } catch (e) {
+      _log('[Push Web] _getWebFCMTokenViaJS error: \$e');
+      return null;
+    }
+  }
+
+  void _callJSGetToken(String vapidKey, Completer<String?> completer) {
+    getWebFCMToken(vapidKey).then((token) {
+      completer.complete(token);
+    }).catchError((e) {
+      _log('[Push Web] _callJSGetToken error: \$e');
+      completer.complete(null);
+    });
+  }
+
   Future<void> clearToken() async {
     _tokenTimeoutTimer?.cancel();
     _cancelUploadRetry();

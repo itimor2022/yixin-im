@@ -650,21 +650,43 @@ func (s *PushService) sendFCMPush(device models.UserDevice, title, body string, 
 	}
 
 	dataMap := stringifyPushData(data)
-	requestBody := map[string]interface{}{
-		"message": map[string]interface{}{
-			"token": device.PushToken,
+
+	// Web FCM token 不能携带 android 专属字段，否则 FCM 返回 400
+	isWebDevice := device.DeviceType == "web"
+
+	message := map[string]interface{}{
+		"token": device.PushToken,
+		"notification": map[string]string{
+			"title": title,
+			"body":  body,
+		},
+	}
+	if !isWebDevice {
+		message["android"] = map[string]interface{}{
+			"priority": "high",
 			"notification": map[string]string{
+				"sound":      "default",
+				"channel_id": "gaoranim_messages",
+			},
+		}
+	} else {
+		// Web 端使用 webpush 配置
+		message["webpush"] = map[string]interface{}{
+			"notification": map[string]interface{}{
 				"title": title,
 				"body":  body,
+				"icon":  "/icons/Icon-192.png",
+				"badge": "/icons/Icon-192.png",
+				"vibrate": []int{200, 100, 200},
 			},
-			"android": map[string]interface{}{
-				"priority": "high",
-				"notification": map[string]string{
-					"sound":      "default",
-					"channel_id": "gaoranim_messages",
-				},
+			"fcm_options": map[string]string{
+				"link": "/",
 			},
-		},
+		}
+	}
+
+	requestBody := map[string]interface{}{
+		"message": message,
 	}
 	if len(dataMap) > 0 {
 		requestBody["message"].(map[string]interface{})["data"] = dataMap

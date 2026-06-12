@@ -292,6 +292,21 @@ func (h *Hub) broadcastUserStatus(userID string, isOnline bool) {
 		return true
 	})
 
+	// 集群广播：把在线状态推给其他节点上的相关用户
+	// 注意：notified 只包含本节点订阅者；跨节点用户需通过集群广播覆盖
+	if h.cluster != nil {
+		if len(notified) > 0 {
+			// 已在本节点通知过的用户，也通过集群推给他们在其他节点的连接（多端）
+			notifiedIDs := make([]string, 0, len(notified))
+			for uid := range notified {
+				notifiedIDs = append(notifiedIDs, uid)
+			}
+			h.cluster.SendToUsers(notifiedIDs, data)
+		}
+		// 额外：向所有节点广播，让其他节点上订阅了该用户所在聊天室的客户端也能收到
+		// 其他节点收到后会在本地 chatSubscribers 里再过滤一遍，不会重复发送
+		h.cluster.BroadcastToAll(data)
+	}
 	log.Printf("[WS Hub] Broadcast user status: userID=%s, isOnline=%v", userID, isOnline)
 }
 

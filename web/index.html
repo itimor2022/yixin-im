@@ -11,17 +11,14 @@
   <meta name="theme-color" content="#1a1a1a">
   <link rel="manifest" href="manifest.json">
 
-  <!-- iOS PWA 支持 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="壹信IM">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-  <!-- Windows 磁贴 -->
   <meta name="msapplication-TileColor" content="#1a1a1a">
   <meta name="msapplication-TileImage" content="icons/Icon-192.png">
 
-  <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="壹信IM">
   <meta property="og:description" content="安全、快速、稳定的即时通讯应用">
@@ -40,6 +37,94 @@
       } catch (_) {}
     })();
   </script>
-  <script src="flutter_bootstrap.js" async></script>
+
+  <!-- Firebase compat SDK，与 firebase-messaging-sw.js 保持一致 -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyATpSnaDhQZSGm3Edi4AueB3LuhEZiA8Kw",
+      authDomain: "imtest-1d769.firebaseapp.com",
+      projectId: "imtest-1d769",
+      storageBucket: "imtest-1d769.firebasestorage.app",
+      messagingSenderId: "636608823824",
+      appId: "1:636608823824:web:6b6daec69629b4dc3d4095"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    // FCM SW 注册 Promise，Flutter 初始化后触发
+    let fcmSwRegistrationResolve;
+    const fcmSwReady = new Promise(resolve => { fcmSwRegistrationResolve = resolve; });
+
+    window._registerFCMServiceWorker = async function() {
+      if (!('serviceWorker' in navigator)) {
+        fcmSwRegistrationResolve(null);
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {scope: '/'});
+        if (reg.active) {
+          console.log('[FCM] SW already active');
+          fcmSwRegistrationResolve(reg);
+        } else {
+          const sw = reg.installing || reg.waiting;
+          if (sw) {
+            sw.addEventListener('statechange', function() {
+              if (sw.state === 'activated') {
+                console.log('[FCM] SW activated');
+                fcmSwRegistrationResolve(reg);
+              }
+            });
+          }
+          setTimeout(() => fcmSwRegistrationResolve(reg), 5000);
+        }
+      } catch(e) {
+        console.error('[FCM] SW register failed:', e);
+        fcmSwRegistrationResolve(null);
+      }
+    };
+
+    window.firebaseGetFCMToken = async function(vapidKey) {
+      try {
+        const fcmReg = await Promise.race([
+          fcmSwReady,
+          new Promise(resolve => setTimeout(() => resolve(null), 20000))
+        ]);
+        if (!fcmReg) {
+          console.error('[FCM] SW not ready');
+          return null;
+        }
+        console.log('[FCM] Getting token...');
+        const token = await messaging.getToken({
+          vapidKey: vapidKey,
+          serviceWorkerRegistration: fcmReg
+        });
+        console.log('[FCM] Token length:', token ? token.length : 0);
+        return token || null;
+      } catch(e) {
+        console.error('[FCM] getToken failed:', e);
+        return null;
+      }
+    };
+
+    console.log('[FCM] Firebase compat initialized');
+  </script>
+
+  <script>
+    var script = document.createElement('script');
+    script.src = 'flutter_bootstrap.js';
+    script.onload = function() {
+      setTimeout(function() {
+        if (window._registerFCMServiceWorker) {
+          console.log('[FCM] Registering FCM SW after Flutter bootstrap...');
+          window._registerFCMServiceWorker();
+        }
+      }, 3000);
+    };
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>

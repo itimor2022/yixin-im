@@ -29,6 +29,7 @@ import 'devices_page.dart';
 import 'stickers_page.dart';
 import 'faq_page.dart';
 import 'chat_settings_page.dart';
+import 'network_settings_page.dart';
 import 'checkin_page.dart';
 import '../../auth/pages/agreement_page.dart';
 import '../../home/pages/home_desktop_page.dart';
@@ -227,6 +228,17 @@ class SettingsPage extends ConsumerWidget {
                         const DevicesPage(),
                         ref,
                         desktopPanelType: DesktopPanelType.settingsDevices,
+                      ),
+                    ),
+                    _SettingsTile(
+                      icon: Icons.network_check_rounded,
+                      iconBgColor: const Color(0xFF007AFF),
+                      title: '网络线路',
+                      isDark: isDark,
+                      onTap: () => _openPage(
+                        context,
+                        const NetworkSettingsPage(),
+                        ref,
                       ),
                     ),
                   ],

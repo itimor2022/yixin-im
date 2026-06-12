@@ -426,7 +426,9 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       if (ann == null || ann.enabled != 1) return;
 
       final prefs = await SharedPreferences.getInstance();
-      const storeKey = 'popup_announcement_read_key';
+      // 区分账号：key 拼入当前 userId，切换账号后重新弹出
+      final currentUserId = ref.read(authServiceProvider).user?.uuid ?? 'guest';
+      final storeKey = 'popup_announcement_read_key_\$currentUserId';
       final readKey = prefs.getString(storeKey);
       if (readKey == ann.readKey) return; // 已读且内容未更新
 

@@ -12,6 +12,9 @@ import 'system_settings_service.dart';
 import '../push_notification_service.dart';
 import '../offline_message_queue.dart';
 import 'api_client.dart';
+import 'websocket_service.dart';
+import '../../../features/chat/providers/chat_provider.dart';
+import '../../../features/contacts/providers/contact_provider.dart';
 
 /// 用户模型
 class User {
@@ -430,6 +433,35 @@ class AuthService extends StateNotifier<AuthState> {
           AvatarCacheManager.prefetch(user.avatar!);
         }
 
+        // 账号切换检测：不同账号时清理旧数据，同账号保留历史数据
+        final oldUserId = await TokenStorage.getUserId();
+        final isSameAccount = oldUserId != null &&
+            oldUserId.isNotEmpty &&
+            oldUserId == user.uuid;
+        if (!isSameAccount && oldUserId != null && oldUserId.isNotEmpty) {
+          // 切换账号：断开旧 WS
+          try {
+            await _ref
+                .read(webSocketServiceProvider.notifier)
+                .disconnect(clearToken: true);
+          } catch (_) {}
+          // 清除旧账号本地所有数据
+          await TokenStorage.clear();
+          // 清除旧账号 Isar 缓存（非 Web）
+          if (!PlatformUtils.isWeb && IsarService.instance.isAvailable) {
+            try {
+              await IsarService.instance.isar.writeTxn(() async {
+                await IsarService.instance.isar.clear();
+              });
+            } catch (_) {}
+          }
+          // 重置内存 Provider
+          try {
+            _ref.read(chatListProvider.notifier).reset();
+            _ref.read(contactListProvider.notifier).reset();
+          } catch (_) {}
+        }
+
         // 保存 Token
         await TokenStorage.saveToken(token);
         await TokenStorage.saveUserId(user.uuid);
@@ -524,6 +556,35 @@ class AuthService extends StateNotifier<AuthState> {
             ? userRaw
             : Map<String, dynamic>.from(userRaw as Map);
         final user = User.fromJson(userData);
+
+        // 账号切换检测：不同账号时清理旧数据，同账号保留历史数据
+        final oldUserId = await TokenStorage.getUserId();
+        final isSameAccount = oldUserId != null &&
+            oldUserId.isNotEmpty &&
+            oldUserId == user.uuid;
+        if (!isSameAccount && oldUserId != null && oldUserId.isNotEmpty) {
+          // 切换账号：断开旧 WS
+          try {
+            await _ref
+                .read(webSocketServiceProvider.notifier)
+                .disconnect(clearToken: true);
+          } catch (_) {}
+          // 清除旧账号本地所有数据
+          await TokenStorage.clear();
+          // 清除旧账号 Isar 缓存（非 Web）
+          if (!PlatformUtils.isWeb && IsarService.instance.isAvailable) {
+            try {
+              await IsarService.instance.isar.writeTxn(() async {
+                await IsarService.instance.isar.clear();
+              });
+            } catch (_) {}
+          }
+          // 重置内存 Provider
+          try {
+            _ref.read(chatListProvider.notifier).reset();
+            _ref.read(contactListProvider.notifier).reset();
+          } catch (_) {}
+        }
 
         // 保存 Token
         await TokenStorage.saveToken(token);
@@ -807,17 +868,8 @@ class AuthService extends StateNotifier<AuthState> {
 
     // 清除 Token 存储
     try {
-      if (PlatformUtils.isWeb) {
-        final prefs = await SharedPreferences.getInstance();
-        await Future.wait([
-          prefs.remove('auth_token'),
-          prefs.remove('user_id'),
-          prefs.remove('moment_notification_last_read'),
-          prefs.remove('recent_emojis'),
-        ]);
-      } else {
-        await TokenStorage.clear();
-      }
+      // 所有平台统一用 TokenStorage.clear()，确保清理完整
+      await TokenStorage.clear();
     } catch (e) {
       if (kDebugMode) debugPrint('[Auth] Failed to clear token storage: $e');
     }

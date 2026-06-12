@@ -733,13 +733,13 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     send(WSMessage(type: WSMessageType.ping));
 
     _pongTimeoutTimer?.cancel();
-    _pongTimeoutTimer = Timer(const Duration(seconds: 10), () {
+    _pongTimeoutTimer = Timer(const Duration(seconds: 8), () {
       if (_isDisposed) return;
       if (_waitingForPong) {
         _pongTimeoutCount++;
         if (kDebugMode) debugPrint('[WS] Pong timeout (count: $_pongTimeoutCount/3)');
 
-        if (_pongTimeoutCount >= 3) {
+        if (_pongTimeoutCount >= 2) {
           if (kDebugMode) debugPrint('[WS] Too many pong timeouts, reconnecting...');
           _pongTimeoutCount = 0;
           unawaited(_forceReconnectIfAllowed('pong timeout limit reached'));
@@ -1360,7 +1360,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   void _startPing() {
     _pingTimer?.cancel();
     _pongTimeoutCount = 0;
-    _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (_isDisposed) {
         _pingTimer?.cancel();
         return;
