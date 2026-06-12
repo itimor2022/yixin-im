@@ -33,6 +33,9 @@ func NormalizePushChannel(channel, deviceType string) string {
 	case "android":
 		// Keep FCM as Android default until vendor token SDKs are enabled.
 		return PushChannelFCM
+	case "web":
+		// Web 端使用 FCM Web Push
+		return PushChannelFCM
 	default:
 		return PushChannelUnknown
 	}

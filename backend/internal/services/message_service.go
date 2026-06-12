@@ -969,6 +969,11 @@ func (s *MessageService) MarkMessagesAsRead(ctx context.Context, chatID, readerI
 		}
 	}
 
+	// ★ 已读后使 Redis 消息缓存失效，避免下次进入聊天时读到旧的 status
+	if s.cache != nil {
+		_ = s.cache.DeleteChatMessages(context.Background(), chatID)
+	}
+
 	burnFilter := bson.M{
 		"chat_id":         chatID,
 		"sender_id":       bson.M{"$in": senderIDs},

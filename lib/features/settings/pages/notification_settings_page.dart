@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:universal_io/io.dart';
+
+import '../../../core/services/push_notification_service.dart';
+import '../../../core/utils/web_notification_permission.dart';
 
 import '../../../core/services/android_notification_settings_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -27,12 +31,16 @@ class _NotificationSettingsPageState
     extends ConsumerState<NotificationSettingsPage>
     with WidgetsBindingObserver {
   PermissionStatus? _notificationPermissionStatus;
+  String _webNotificationPermission = 'default'; // 'default' | 'granted' | 'denied'
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshNotificationPermissionStatus();
+    if (kIsWeb) {
+      _checkWebNotificationPermission();
+    }
   }
 
   @override
@@ -89,7 +97,22 @@ class _NotificationSettingsPageState
       children: [
         const SizedBox(height: 24),
 
-        if (Platform.isAndroid) ...[
+        if (kIsWeb) ...[
+          _SectionTitle(title: '浏览器推送通知', isDark: isDark),
+          _SettingsCard(
+            isDark: isDark,
+            children: [
+              _WebPushTile(
+                isDark: isDark,
+                permission: _webNotificationPermission,
+                onTap: () { _requestWebNotificationPermission(); },
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+        ],
+
+        if (!kIsWeb && Platform.isAndroid) ...[
           _SectionTitle(title: '系统通知权限', isDark: isDark),
           _SettingsCard(
             isDark: isDark,
@@ -244,6 +267,24 @@ class _NotificationSettingsPageState
 
   void _updateSettings(NotificationSoundSettings settings) {
     ref.read(notificationSoundServiceProvider.notifier).saveSettings(settings);
+  }
+
+  void _checkWebNotificationPermission() {
+    if (!kIsWeb) return;
+    final permission = getBrowserNotificationPermission();
+    setState(() {
+      _webNotificationPermission = permission;
+    });
+  }
+
+  Future<void> _requestWebNotificationPermission() async {
+    if (!kIsWeb) return;
+    final result = await requestBrowserNotificationPermission();
+    if (!mounted) return;
+    setState(() { _webNotificationPermission = result; });
+    if (result == 'granted') {
+      await ref.read(pushNotificationServiceProvider).register();
+    }
   }
 
   Future<void> _refreshNotificationPermissionStatus() async {
@@ -654,6 +695,66 @@ class _TapTile extends StatelessWidget {
                 color: isDark ? Colors.white24 : Colors.black26,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WebPushTile extends StatelessWidget {
+  final bool isDark;
+  final String permission;
+  final VoidCallback onTap;
+
+  const _WebPushTile({
+    required this.isDark,
+    required this.permission,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final granted = permission == 'granted';
+    final denied = permission == 'denied';
+    final subtitle = granted
+        ? '✅ 已开启，切换到其他标签页时可收到推送'
+        : denied
+            ? '❌ 已拒绝，请在浏览器地址栏手动开启通知权限'
+            : '点击开启，切换到其他标签页时仍可收到消息推送';
+
+    return InkWell(
+      onTap: granted ? null : onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '后台消息推送',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white54 : Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!granted && !denied)
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            if (granted)
+              const Icon(Icons.check_circle, color: Colors.green, size: 20),
           ],
         ),
       ),

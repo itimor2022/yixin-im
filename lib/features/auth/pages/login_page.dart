@@ -17,8 +17,10 @@ import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/services/device_service.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../shared/widgets/desktop/auth_desktop_layout.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'agreement_page.dart';
 import 'forgot_password_page.dart';
+import '../../settings/pages/network_settings_page.dart';
 
 /// 登录页面
 class LoginPage extends ConsumerStatefulWidget {
@@ -45,10 +47,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _qrLoginText;
   String? _qrLoginError;
   bool _showDesktopQrLogin = false;
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = info.version);
+    });
   }
 
   @override
@@ -232,7 +238,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           onPressed: () => _login(l10n),
           text: l10n.login,
         ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _openNetworkSettings,
+          icon: const Icon(Icons.swap_horiz_rounded, size: 15),
+          label: const Text('切换线路'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primary.withOpacity(0.75),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(fontSize: 12),
+          ),
+        ),
       ],
+    );
+  }
+
+  void _openNetworkSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NetworkSettingsPage()),
     );
   }
 
@@ -586,6 +611,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             ],
           ),
         ),
+        if (_appVersion.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Text(
+            'v$_appVersion',
+            style: TextStyle(
+              fontSize: 22,
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
+            ),
+          ),
+        ],
       ],
     );
   }

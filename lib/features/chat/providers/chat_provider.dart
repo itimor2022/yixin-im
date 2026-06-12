@@ -20,6 +20,7 @@ import '../utils/system_message_text.dart';
 import 'package:flutter/material.dart';
 import '../../../core/router/app_router.dart';
 import '../../contacts/providers/friend_request_provider.dart';
+import '../../contacts/providers/contact_provider.dart';
 import 'message_provider.dart' show MessageItem, persistMessageItemsToIsarCache;
 
 DateTime? _normalizeChatListTime(DateTime? value) {
@@ -486,6 +487,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _wsHandlerIds.add(
       _wsService.registerHandler('friend_request', (data) {
         _ref.read(friendRequestProvider.notifier).increment();
+        // 播放好友申请提示音（复用私聊通知音）
+        _playNotificationSound(ChatItemType.private);
         final inner = data['data'];
         final fromName = (inner is Map && inner['from_name'] != null)
             ? inner['from_name'].toString()
@@ -493,9 +496,58 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final ctx = rootNavigatorKey.currentContext;
         if (ctx != null) {
           ScaffoldMessenger.of(ctx).showSnackBar(
-            SnackBar(content: Text('$fromName 请求添加你为好友')),
+            SnackBar(
+              content: Text('$fromName 请求添加你为好友'),
+              action: SnackBarAction(
+                label: '查看',
+                onPressed: () {
+                  rootNavigatorKey.currentState?.pushNamed('/friend-requests');
+                },
+              ),
+            ),
           );
         }
+      }),
+    );
+
+    // 监听好友申请被接受(F-12)
+    _wsHandlerIds.add(
+      _wsService.registerHandler('friend_request_accepted', (data) {
+        // 刷新联系人列表
+        try {
+          _ref.read(contactListProvider.notifier).loadFromServer(force: true);
+        } catch (_) {}
+        // 刷新会话列表（新会话出现）
+        unawaited(silentRefresh(bypassDebounce: true));
+        // 提示
+        final inner = data['data'];
+        final byName = (inner is Map && inner['by_name'] != null)
+            ? inner['by_name'].toString()
+            : '对方';
+        final ctx = rootNavigatorKey.currentContext;
+        if (ctx != null) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(content: Text('$byName 已同意你的好友申请')),
+          );
+        }
+      }),
+    );
+
+    // 监听对方删除好友 / 自己删除好友（立即从会话列表移除，无需重启）
+    _wsHandlerIds.add(
+      _wsService.registerHandler('chat_hidden', (data) {
+        final chatId = data['chat_id']?.toString() ?? data['data']?['chat_id']?.toString();
+        // 立即从内存状态移除该会话
+        if (chatId != null && chatId.isNotEmpty) {
+          state = state.copyWith(
+            pinnedChats: state.pinnedChats.where((c) => c.id != chatId).toList(),
+            regularChats: state.regularChats.where((c) => c.id != chatId).toList(),
+          );
+        }
+        // 同步刷新联系人列表
+        try {
+          _ref.read(contactListProvider.notifier).loadFromServer(force: true);
+        } catch (_) {}
       }),
     );
 

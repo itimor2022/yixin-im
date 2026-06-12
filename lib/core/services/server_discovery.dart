@@ -79,6 +79,19 @@ class ServerDiscovery {
   String? _currentNode;
   String? get currentNode => _currentNode;
 
+  /// 最近一次发现的候选节点列表（OSS/DNS 解析结果）
+  List<String> _lastCandidates = [];
+
+  /// 所有已知节点：当前 + OSS/DNS候选 + 内置兜底（去重）
+  List<String> get allKnownNodes {
+    final set = <String>{
+      if (_currentNode != null) _currentNode!,
+      ..._lastCandidates,
+      ..._fallbackNodes,
+    };
+    return set.toList();
+  }
+
   // ── 公开接口 ────────────────────────────────────────────
 
   /// App 启动时调用，阻塞直到选定节点
@@ -93,6 +106,12 @@ class ServerDiscovery {
     return _discover();
   }
 
+  /// 手动指定节点并缓存（来自用户手动选择）
+  Future<void> clearCacheAndSet(String node) async {
+    await _saveCache(node);
+    _applyNode(node);
+  }
+
   /// 强制重新发现（网络错误后调用）
   Future<String> forceRefresh() async {
     await _clearCache();
@@ -105,6 +124,7 @@ class ServerDiscovery {
     final t0 = DateTime.now();
     if (kDebugMode) debugPrint('[Discovery] ═══ Starting discovery at $t0 ═══');
     final nodes = await _fetchNodeList();
+    _lastCandidates = List<String>.from(nodes);
     if (kDebugMode) debugPrint('[Discovery] Candidates: $nodes');
     final best = await _probeFastest(nodes);
     if (best == null) {
