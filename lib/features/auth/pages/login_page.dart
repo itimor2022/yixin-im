@@ -102,7 +102,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(height: isDesktop ? 40 : 80),
+        SizedBox(height: isDesktop ? 28 : 56),
 
         // Logo（桌面端隐藏，因为左侧已有）
         if (!isDesktop) ...[
@@ -122,13 +122,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           _buildLoginForm(isDark, l10n),
 
         SizedBox(
-          height: PlatformUtils.isDesktop && _showDesktopQrLogin ? 12 : 40,
+          height: PlatformUtils.isDesktop && _showDesktopQrLogin ? 12 : 18,
         ),
 
         // 底部
         _buildBottom(isDark, l10n),
 
-        const SizedBox(height: 40),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -238,19 +238,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           onPressed: () => _login(l10n),
           text: l10n.login,
         ),
-        const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: _openNetworkSettings,
-          icon: const Icon(Icons.swap_horiz_rounded, size: 15),
-          label: const Text('切换线路'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.primary.withOpacity(0.75),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(fontSize: 12),
-          ),
-        ),
       ],
     );
   }
@@ -263,11 +250,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Widget _buildForgotPasswordEntry(bool isDark) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         TextButton.icon(
+          onPressed: _openNetworkSettings,
+          icon: const Icon(Icons.swap_horiz_rounded, size: 17),
+          label: const Text('切换线路'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        TextButton.icon(
           onPressed: _openForgotPassword,
-          icon: const Icon(Icons.lock_reset_rounded, size: 17),
+          icon: const Icon(Icons.contact_support_rounded, size: 17),
           label: const Text('找回账号密码'),
           style: TextButton.styleFrom(
             foregroundColor: AppColors.primary,
@@ -615,9 +617,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           const SizedBox(height: 24),
           Text(
             'v$_appVersion',
-            style: TextStyle(
-              fontSize: 22,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -949,7 +952,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     if (phone.length < 7) {
-      _showError(l10n.get('phone_min_length') ?? '手机号至少7位');
+      _showError(l10n.get('phone_min_length') ?? '手机号位数至少11位');
       return;
     }
 
@@ -989,7 +992,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     setState(() => _isLoading = false);
 
     if (kDebugMode) debugPrint('[Login] response.code: ${response.code}');
-    if (kDebugMode) debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
+    if (kDebugMode)
+      debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
     if (kDebugMode) debugPrint('[Login] response.message: ${response.message}');
 
     if (response.isSuccess) {

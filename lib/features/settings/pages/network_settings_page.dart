@@ -28,12 +28,13 @@ class NodeInfo {
     NodeStatus? status,
     int? latencyMs,
     bool? isSelected,
-  }) => NodeInfo(
-    url: url,
-    status: status ?? this.status,
-    latencyMs: latencyMs ?? this.latencyMs,
-    isSelected: isSelected ?? this.isSelected,
-  );
+  }) =>
+      NodeInfo(
+        url: url,
+        status: status ?? this.status,
+        latencyMs: latencyMs ?? this.latencyMs,
+        isSelected: isSelected ?? this.isSelected,
+      );
 }
 
 // ── Provider ────────────────────────────────────────────
@@ -49,10 +50,12 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
     final current = ApiConfig.serverUrl;
     // 使用 ServerDiscovery 已知的所有节点：OSS/DNS候选 + 内置兜底 + 当前节点
     final all = ServerDiscovery.instance.allKnownNodes;
-    state = all.map((url) => NodeInfo(
-      url: url,
-      isSelected: url == current,
-    )).toList();
+    state = all
+        .map((url) => NodeInfo(
+              url: url,
+              isSelected: url == current,
+            ))
+        .toList();
     testAll();
   }
 
@@ -66,12 +69,14 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
 
   Future<void> testAll() async {
     // 全部重置为测试中
-    state = state.map((n) => NodeInfo(
-      url: n.url,
-      status: NodeStatus.testing,
-      latencyMs: null,
-      isSelected: n.isSelected,
-    )).toList();
+    state = state
+        .map((n) => NodeInfo(
+              url: n.url,
+              status: NodeStatus.testing,
+              latencyMs: null,
+              isSelected: n.isSelected,
+            ))
+        .toList();
 
     await Future.wait(state.map((n) => _testNode(n.url)));
   }
@@ -88,7 +93,8 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
         connectTimeout: _pingTimeout,
         receiveTimeout: _pingTimeout,
       ));
-      (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+      (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+          (client) {
         client.badCertificateCallback = (cert, host, port) => true;
         return client;
       };
@@ -98,7 +104,8 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
       );
       stopwatch.stop();
       if ((resp.statusCode ?? 0) == 200) {
-        _updateNode(url, status: NodeStatus.ok, latencyMs: stopwatch.elapsedMilliseconds);
+        _updateNode(url,
+            status: NodeStatus.ok, latencyMs: stopwatch.elapsedMilliseconds);
       } else {
         _updateNode(url, status: NodeStatus.failed);
       }
@@ -112,12 +119,14 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
     // 切换节点
     ApiConfig.updateServer(url);
     ServerDiscovery.instance.clearCacheAndSet(url);
-    state = state.map((n) => NodeInfo(
-      url: n.url,
-      status: n.status,
-      latencyMs: n.latencyMs,
-      isSelected: n.url == url,
-    )).toList();
+    state = state
+        .map((n) => NodeInfo(
+              url: n.url,
+              status: n.status,
+              latencyMs: n.latencyMs,
+              isSelected: n.url == url,
+            ))
+        .toList();
   }
 
   void _updateNode(String url, {NodeStatus? status, int? latencyMs}) {
@@ -131,7 +140,6 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
       );
     }).toList();
   }
-
 }
 
 final networkSettingsProvider =
@@ -204,9 +212,12 @@ class NetworkSettingsPage extends ConsumerWidget {
                     children: [
                       for (int i = 0; i < nodes.length; i++) ...[
                         if (i > 0)
-                          Divider(height: 1, indent: 16,
-                            color: isDark ? Colors.white12 : Colors.black12),
+                          Divider(
+                              height: 1,
+                              indent: 16,
+                              color: isDark ? Colors.white12 : Colors.black12),
                         _NodeTile(
+                          index: i + 1,
                           node: nodes[i],
                           isDark: isDark,
                           onTap: () {
@@ -247,12 +258,12 @@ class NetworkSettingsPage extends ConsumerWidget {
                 ),
 
                 const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    '当前节点: ${ApiConfig.serverUrl}',
-                    style: TextStyle(fontSize: 12, color: subColor),
-                  ),
-                ),
+                // Center(
+                //   child: Text(
+                //     '当前节点: ${ApiConfig.serverUrl}',
+                //     style: TextStyle(fontSize: 12, color: subColor),
+                //   ),
+                // ),
               ],
             ),
     );
@@ -261,12 +272,14 @@ class NetworkSettingsPage extends ConsumerWidget {
 
 // ── 节点行 ───────────────────────────────────────────────
 class _NodeTile extends StatelessWidget {
+  final int index;
   final NodeInfo node;
   final bool isDark;
   final VoidCallback onTap;
   final VoidCallback onRetest;
 
   const _NodeTile({
+    required this.index,
     required this.node,
     required this.isDark,
     required this.onTap,
@@ -278,9 +291,8 @@ class _NodeTile extends StatelessWidget {
     final textColor = isDark ? Colors.white : Colors.black;
     final subColor = isDark ? Colors.white54 : Colors.black45;
 
-    // 显示域名简化
-    final uri = Uri.tryParse(node.url);
-    final displayName = uri?.host ?? node.url;
+    // 显示为 "线路 1", "线路 2" 等
+    final displayName = '线路 $index';
 
     return InkWell(
       onTap: onTap,
@@ -318,18 +330,17 @@ class _NodeTile extends StatelessWidget {
                     displayName,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: node.isSelected
-                          ? FontWeight.w600
-                          : FontWeight.normal,
+                      fontWeight:
+                          node.isSelected ? FontWeight.w600 : FontWeight.normal,
                       color: textColor,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    node.url,
-                    style: TextStyle(fontSize: 11, color: subColor),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  // const SizedBox(height: 2),
+                  // Text(
+                  //   node.url,
+                  //   style: TextStyle(fontSize: 11, color: subColor),
+                  //   overflow: TextOverflow.ellipsis,
+                  // ),
                 ],
               ),
             ),
@@ -344,8 +355,7 @@ class _NodeTile extends StatelessWidget {
             // 重测按钮
             IconButton(
               icon: Icon(Icons.refresh_rounded,
-                  size: 18,
-                  color: isDark ? Colors.white38 : Colors.black38),
+                  size: 18, color: isDark ? Colors.white38 : Colors.black38),
               onPressed: onRetest,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -373,14 +383,16 @@ class _LatencyBadge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 14, height: 14,
+                width: 14,
+                height: 14,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: Colors.grey,
                 ),
               ),
               const SizedBox(width: 4),
-              const Text('测速中', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              const Text('测速中',
+                  style: TextStyle(fontSize: 11, color: Colors.grey)),
             ],
           ),
         );

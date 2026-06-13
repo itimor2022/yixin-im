@@ -595,6 +595,7 @@ const Map<String, String> _zhCN = {
   'username': '用户名',
   'username_format_error': '用户名只能包含英文、数字和下划线',
   'username_min_length': '用户名至少3位',
+  'phone_min_length': '手机号位数至少11位',
   'password_min_length': '密码至少6位',
   'bio': '个人简介',
   'common_groups': '共同群组',
@@ -1166,6 +1167,7 @@ const Map<String, String> _zhTW = {
   'username': '使用者名稱',
   'username_format_error': '使用者名稱只能包含英文、數字和底線',
   'username_min_length': '使用者名稱至少3位',
+  'phone_min_length': '手機號碼至少11位',
   'password_min_length': '密碼至少6位',
   'bio': '個人簡介',
   'common_groups': '共同群組',
@@ -1739,6 +1741,7 @@ const Map<String, String> _en = {
   'username_format_error':
       'Username can only contain letters, numbers and underscores',
   'username_min_length': 'Username must be at least 3 characters',
+  'phone_min_length': 'Phone number must be at least 11 characters',
   'password_min_length': 'Password must be at least 6 characters',
   'bio': 'Bio',
   'common_groups': 'Groups in Common',
@@ -1774,11 +1777,15 @@ const Map<String, String> _en = {
   'discover_title': 'Discover',
   'portal_open': 'Open Website',
   'portal_open_hint': 'Tap to open the configured website inside the app',
-  'portal_external_hint': 'Desktop opens the configured website in your system browser',
+  'portal_external_hint':
+      'Desktop opens the configured website in your system browser',
   'portal_unavailable': 'This section is unavailable',
-  'portal_disabled_hint': 'The admin panel has not enabled this section or no website has been configured yet',
-  'discover_subtitle': 'This page shows backend-managed discovery entries that open directly inside the app',
-  'discover_demo_notice': 'This page is now connected to backend configuration. New, updated, or disabled entries can be managed from the admin panel.',
+  'portal_disabled_hint':
+      'The admin panel has not enabled this section or no website has been configured yet',
+  'discover_subtitle':
+      'This page shows backend-managed discovery entries that open directly inside the app',
+  'discover_demo_notice':
+      'This page is now connected to backend configuration. New, updated, or disabled entries can be managed from the admin panel.',
   'discover_open': 'Open',
   'discover_demo_tag': 'Demo',
   'discover_live_tag': 'Live',
