@@ -4,40 +4,62 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_colors.dart';
 
+/// 应用主题模式（扩展 Flutter ThemeMode，增加中国红）
+enum AppThemeMode {
+  system,
+  light,
+  dark,
+  chineseRed;
+
+  /// 映射到 Flutter 原生 ThemeMode
+  ThemeMode get flutterThemeMode {
+    switch (this) {
+      case AppThemeMode.system:
+        return ThemeMode.system;
+      case AppThemeMode.light:
+        return ThemeMode.light;
+      case AppThemeMode.dark:
+        return ThemeMode.dark;
+      case AppThemeMode.chineseRed:
+        return ThemeMode.light;
+    }
+  }
+}
+
 /// 主题模式 Provider
-final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
+final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, AppThemeMode>((ref) {
   return ThemeModeNotifier();
 });
 
-class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.system) {
+class ThemeModeNotifier extends StateNotifier<AppThemeMode> {
+  ThemeModeNotifier() : super(AppThemeMode.system) {
     _loadTheme();
   }
 
-  static const String _key = 'theme_mode';
+  static const String _key = 'app_theme_mode';
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_key);
     if (value != null) {
-      state = ThemeMode.values.firstWhere(
+      state = AppThemeMode.values.firstWhere(
         (e) => e.name == value,
-        orElse: () => ThemeMode.system,
+        orElse: () => AppThemeMode.system,
       );
     }
   }
 
-  Future<void> setThemeMode(ThemeMode mode) async {
+  Future<void> setThemeMode(AppThemeMode mode) async {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, mode.name);
   }
 
   void toggleTheme() {
-    if (state == ThemeMode.light) {
-      setThemeMode(ThemeMode.dark);
+    if (state == AppThemeMode.light) {
+      setThemeMode(AppThemeMode.dark);
     } else {
-      setThemeMode(ThemeMode.light);
+      setThemeMode(AppThemeMode.light);
     }
   }
 }
