@@ -190,6 +190,7 @@ class AppLocalizations {
   String get darkMode => get('dark_mode');
   String get lightMode => get('light_mode');
   String get systemMode => get('system_mode');
+  String get chineseRedMode => get('chinese_red_mode');
   String get fontSize => get('font_size');
   String get chatBackground => get('chat_background');
   String get stickersEmoji => get('stickers_emoji');
@@ -664,7 +665,7 @@ const Map<String, String> _zhCN = {
   'dark_mode': '深色模式',
   'light_mode': '浅色模式',
   'system_mode': '跟随系统',
-  'font_size': '字体大小',
+  'chinese_red_mode': '中国红',
   'chat_background': '聊天背景',
   'stickers_emoji': '贴纸和表情',
   'devices': '设备',
@@ -1236,7 +1237,7 @@ const Map<String, String> _zhTW = {
   'dark_mode': '深色模式',
   'light_mode': '淺色模式',
   'system_mode': '跟隨系統',
-  'font_size': '字體大小',
+  'chinese_red_mode': '中國紅',
   'chat_background': '聊天背景',
   'stickers_emoji': '貼圖和表情',
   'devices': '裝置',
@@ -1814,7 +1815,7 @@ const Map<String, String> _en = {
   'dark_mode': 'Dark',
   'light_mode': 'Light',
   'system_mode': 'System',
-  'font_size': 'Font Size',
+  'chinese_red_mode': 'Chinese Red',
   'chat_background': 'Chat Background',
   'stickers_emoji': 'Stickers and Emoji',
   'devices': 'Devices',

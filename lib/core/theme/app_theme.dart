@@ -340,6 +340,161 @@ class AppTheme {
     textTheme: _textTheme(AppColors.darkTextPrimary, AppColors.darkTextSecondary),
   );
 
+  // ==================== 中国红主题 ====================
+
+  static ThemeData get chineseRed => ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
+
+    colorScheme: const ColorScheme.light(
+      primary: AppColors.chineseRedPrimary,
+      primaryContainer: AppColors.chineseRedPrimaryLight,
+      secondary: AppColors.chineseRedPrimary,
+      secondaryContainer: AppColors.chineseRedPrimaryLight,
+      surface: AppColors.chineseRedSurface,
+      error: AppColors.error,
+      onPrimary: Colors.white,
+      onSecondary: Colors.white,
+      onSurface: AppColors.chineseRedTextPrimary,
+      onError: Colors.white,
+    ),
+
+    scaffoldBackgroundColor: AppColors.chineseRedBackground,
+
+    appBarTheme: const AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      backgroundColor: AppColors.chineseRedPrimary,
+      foregroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      titleTextStyle: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+        letterSpacing: -0.3,
+      ),
+      iconTheme: IconThemeData(
+        color: Colors.white,
+        size: 24,
+      ),
+    ),
+
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: Colors.white,
+      selectedItemColor: AppColors.chineseRedPrimary,
+      unselectedItemColor: AppColors.chineseRedTextSecondary,
+      type: BottomNavigationBarType.fixed,
+      elevation: 8,
+      selectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      unselectedLabelStyle: TextStyle(fontSize: 12),
+    ),
+
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      minLeadingWidth: 0,
+      horizontalTitleGap: 12,
+    ),
+
+    dividerTheme: const DividerThemeData(
+      color: AppColors.chineseRedDivider,
+      thickness: 0.5,
+      space: 0,
+    ),
+
+    cardTheme: CardThemeData(
+      color: AppColors.chineseRedCard,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.chineseRedInputBackground,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(20),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(20),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(20),
+        borderSide: const BorderSide(
+          color: AppColors.chineseRedPrimary,
+          width: 1.5,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      hintStyle: AppTextStyles.inputHint.copyWith(
+        color: AppColors.chineseRedTextSecondary,
+      ),
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.chineseRedPrimary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        textStyle: AppTextStyles.buttonPrimary,
+      ),
+    ),
+
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.chineseRedPrimary,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        textStyle: AppTextStyles.buttonSecondary,
+      ),
+    ),
+
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: AppColors.chineseRedPrimary,
+      foregroundColor: Colors.white,
+      elevation: 4,
+      shape: CircleBorder(),
+    ),
+
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.chineseRedCard,
+      elevation: 24,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    ),
+
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.chineseRedBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+    ),
+
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: AppColors.chineseRedPrimaryDark,
+      contentTextStyle: AppTextStyles.bodyMedium.copyWith(color: Colors.white),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    ),
+
+    textTheme: _textTheme(AppColors.chineseRedTextPrimary, AppColors.chineseRedTextSecondary),
+  );
+
   // ==================== 文字主题 ====================
   
   static TextTheme _textTheme(Color primaryColor, Color secondaryColor) {

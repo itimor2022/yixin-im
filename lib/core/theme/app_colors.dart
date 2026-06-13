@@ -85,6 +85,34 @@ class AppColors {
   
   static const Color messageRead = Color(0xFF4FAE4E);
 
+  // ==================== 中国红主题 ====================
+
+  static const Color chineseRedPrimary = Color(0xFFC62B2B);
+  static const Color chineseRedPrimaryLight = Color(0xFFE03333);
+  static const Color chineseRedPrimaryDark = Color(0xFF9B1C1C);
+
+  static const LinearGradient chineseRedGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFC62B2B), Color(0xFF8B1C1C)],
+  );
+
+  /// 背景：极浅暖白，带一丝红韵
+  static const Color chineseRedBackground = Color(0xFFFDF5F5);
+  static const Color chineseRedSurface = Color(0xFFFDF5F5);
+  static const Color chineseRedCard = Color(0xFFFFFFFF);
+
+  static const Color chineseRedTextPrimary = Color(0xFF1A0000);
+  static const Color chineseRedTextSecondary = Color(0xFF8B6868);
+  static const Color chineseRedTextTertiary = Color(0xFFB09898);
+
+  static const Color chineseRedDivider = Color(0xFFF0D8D8);
+  static const Color chineseRedInputBackground = Color(0xFFFFF0F0);
+
+  /// 消息气泡：发送方浅红，接收方白色
+  static const Color chineseRedBubbleOutgoing = Color(0xFFFFDDDD);
+  static const Color chineseRedBubbleIncoming = Color(0xFFFFFFFF);
+
   // ==================== 头像颜色 (TG 风格) ====================
   
   /// 未设置头像时的统一默认色（注册默认头像统一风格）

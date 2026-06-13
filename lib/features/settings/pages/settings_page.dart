@@ -397,14 +397,16 @@ class SettingsPage extends ConsumerWidget {
     ).push(MaterialPageRoute(builder: (_) => page));
   }
 
-  String _getThemeModeText(ThemeMode mode, AppLocalizations l10n) {
+  String _getThemeModeText(AppThemeMode mode, AppLocalizations l10n) {
     switch (mode) {
-      case ThemeMode.system:
+      case AppThemeMode.system:
         return l10n.systemMode;
-      case ThemeMode.light:
+      case AppThemeMode.light:
         return l10n.lightMode;
-      case ThemeMode.dark:
+      case AppThemeMode.dark:
         return l10n.darkMode;
+      case AppThemeMode.chineseRed:
+        return l10n.chineseRedMode;
     }
   }
 
@@ -427,29 +429,46 @@ class SettingsPage extends ConsumerWidget {
           _SelectionOption(
             title: l10n.systemMode,
             subtitle: isEn ? 'Auto switch dark/light' : '自动切换深色/浅色',
-            isSelected: themeMode == ThemeMode.system,
+            isSelected: themeMode == AppThemeMode.system,
             onTap: () {
               ref
                   .read(themeModeProvider.notifier)
-                  .setThemeMode(ThemeMode.system);
+                  .setThemeMode(AppThemeMode.system);
               Navigator.pop(context);
             },
           ),
           _SelectionOption(
             title: l10n.lightMode,
-            isSelected: themeMode == ThemeMode.light,
+            isSelected: themeMode == AppThemeMode.light,
             onTap: () {
               ref
                   .read(themeModeProvider.notifier)
-                  .setThemeMode(ThemeMode.light);
+                  .setThemeMode(AppThemeMode.light);
               Navigator.pop(context);
             },
           ),
           _SelectionOption(
             title: l10n.darkMode,
-            isSelected: themeMode == ThemeMode.dark,
+            isSelected: themeMode == AppThemeMode.dark,
             onTap: () {
-              ref.read(themeModeProvider.notifier).setThemeMode(ThemeMode.dark);
+              ref.read(themeModeProvider.notifier).setThemeMode(AppThemeMode.dark);
+              Navigator.pop(context);
+            },
+          ),
+          _SelectionOption(
+            title: l10n.chineseRedMode,
+            subtitle: isEn ? 'Classic Chinese red style' : '传统中国红，喜庆典雅',
+            isSelected: themeMode == AppThemeMode.chineseRed,
+            leading: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: AppColors.chineseRedGradient,
+              ),
+            ),
+            onTap: () {
+              ref.read(themeModeProvider.notifier).setThemeMode(AppThemeMode.chineseRed);
               Navigator.pop(context);
             },
           ),
@@ -1188,6 +1207,7 @@ class _SelectionSheet extends StatelessWidget {
                         ),
                       )
                     : null,
+                leading: option.leading,
                 trailing: option.isSelected
                     ? Icon(Icons.check, color: AppColors.primary)
                     : null,
@@ -1207,12 +1227,14 @@ class _SelectionOption {
   final String? subtitle;
   final bool isSelected;
   final VoidCallback onTap;
+  final Widget? leading;
 
   _SelectionOption({
     required this.title,
     this.subtitle,
     required this.isSelected,
     required this.onTap,
+    this.leading,
   });
 }
 

@@ -950,7 +950,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = ref.watch(themeModeProvider);
+    final appThemeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
 
     final callState = ref.watch(callServiceProvider);
@@ -1006,9 +1006,9 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     return MaterialApp.router(
       title: '壹信IM',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: themeMode,
+      theme: appThemeMode == AppThemeMode.chineseRed ? AppTheme.chineseRed : AppTheme.light,
+      darkTheme: appThemeMode == AppThemeMode.chineseRed ? AppTheme.chineseRed : AppTheme.dark,
+      themeMode: appThemeMode.flutterThemeMode,
       locale: language.locale,
       supportedLocales: AppLanguage.values.map((l) => l.locale).toList(),
       localizationsDelegates: const [
