@@ -26,6 +26,8 @@ messaging.onBackgroundMessage((payload) => {
     data: payload.data || {},
     vibrate: [200, 100, 200],
     requireInteraction: false,
+    silent: false,
+    renotify: true,
   };
 
   // 通知所有页面播放声音

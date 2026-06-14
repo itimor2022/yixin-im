@@ -1606,8 +1606,22 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             .where((chat) => seenIds.add(chat.id)) // 去重：只保留第一次出现的
             .toList();
 
-        final pinned = chats.where((c) => c.isPinned).toList();
-        final regular = chats.where((c) => !c.isPinned).toList();
+        // 过滤非好友私聊：private 类型会话，对方不在联系人列表中的不显示
+        final contacts = _ref.read(contactListProvider);
+        final contactUuids = contacts.map((c) => c.uuid).whereType<String>().toSet();
+        final contactIds  = contacts.map((c) => c.id).toSet();
+        final filteredChats = chats.where((chat) {
+          if (chat.type != ChatItemType.private) return true; // 群/频道不过滤
+          // targetUserUuid 或 targetUserId 在联系人中则保留
+          final uuid = chat.targetUserUuid;
+          final uid  = chat.targetUserId?.toString();
+          if (uuid != null && uuid.isNotEmpty && contactUuids.contains(uuid)) return true;
+          if (uid  != null && uid.isNotEmpty  && contactIds.contains(uid))   return true;
+          return false;
+        }).toList();
+
+        final pinned  = filteredChats.where((c) =>  c.isPinned).toList();
+        final regular = filteredChats.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(
@@ -1779,8 +1793,22 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             .where((chat) => seenIds.add(chat.id))
             .toList();
 
-        final pinned = chats.where((c) => c.isPinned).toList();
-        final regular = chats.where((c) => !c.isPinned).toList();
+        // 过滤非好友私聊：private 类型会话，对方不在联系人列表中的不显示
+        final contacts = _ref.read(contactListProvider);
+        final contactUuids = contacts.map((c) => c.uuid).whereType<String>().toSet();
+        final contactIds  = contacts.map((c) => c.id).toSet();
+        final filteredChats = chats.where((chat) {
+          if (chat.type != ChatItemType.private) return true; // 群/频道不过滤
+          // targetUserUuid 或 targetUserId 在联系人中则保留
+          final uuid = chat.targetUserUuid;
+          final uid  = chat.targetUserId?.toString();
+          if (uuid != null && uuid.isNotEmpty && contactUuids.contains(uuid)) return true;
+          if (uid  != null && uid.isNotEmpty  && contactIds.contains(uid))   return true;
+          return false;
+        }).toList();
+
+        final pinned  = filteredChats.where((c) =>  c.isPinned).toList();
+        final regular = filteredChats.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(

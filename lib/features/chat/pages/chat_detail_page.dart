@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'group_profile_page.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:universal_io/io.dart';
@@ -92,6 +93,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final ChatType chatType;
   final String? action; // 'call' 或 'video'，用于从用户主页直接发起通话
   final bool isDesktopMode; // 是否作为桌面端右侧内容区使用
+  final String? jumpToMessageId; // 搜索跳转：定位到指定消息
 
   const ChatDetailPage({
     super.key,
@@ -101,6 +103,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.chatType = ChatType.private,
     this.action,
     this.isDesktopMode = false,
+    this.jumpToMessageId,
   });
 
   @override
@@ -221,6 +224,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       _loadLatestAnnouncement();
       if (widget.chatType == ChatType.group) {
         _loadActiveMeeting();
+      }
+      // 搜索跳转：消息加载完成后滚动到目标消息
+      if (widget.jumpToMessageId != null) {
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) _scrollToMessage(widget.jumpToMessageId!);
+        });
       }
       // 如果有 action 参数，自动发起通话
       if (widget.action != null) {
@@ -1719,6 +1728,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// 滚动到指定消息（用于点击回复预览时跳转）
   void _scrollToMessage(String messageId) {
     final messages = ref.read(messageListProvider(widget.chatId));
+    // MessageItem.id 存的就是业务 msg_id，直接匹配
     final index = messages.indexWhere((m) => m.id == messageId);
 
     if (index == -1) {
@@ -2388,7 +2398,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             ] else ...[
               IconButton(
                 icon: Icon(Icons.search, color: AppColors.primary),
-                onPressed: () {},
+                onPressed: () => _openSearchPage(),
               ),
               Builder(
                 builder: (moreCtx) => IconButton(
@@ -2698,7 +2708,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               _OptionTile(
                 icon: Icons.search,
                 title: '搜索',
-                onTap: () => Navigator.pop(context),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openSearchPage();
+                },
               ),
               _OptionTile(
                 icon: Icons.bookmark_outline,
@@ -2869,6 +2882,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   /// 显示退出/取消订阅确认对话框（TG风格底部弹窗）
+  void _openSearchPage() {
+    if (widget.chatType != ChatType.group) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SearchMessagesPage(
+          chatId: widget.chatId,
+          chatName: widget.chatName,
+        ),
+      ),
+    );
+  }
+
   void _showLeaveConfirmDialog(
     BuildContext context, {
     required bool isChannel,

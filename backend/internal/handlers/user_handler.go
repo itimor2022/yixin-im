@@ -224,6 +224,9 @@ func buildUserProfilePayload(user models.User, eventType string, includePhone bo
 		"emoji_avatar":   user.EmojiAvatar,
 		"nickname_color": user.NicknameColor,
 		"premium_type":   user.PremiumType,
+		"is_member":      user.IsMember,
+		"badge_text":     user.BadgeText,
+		"badge_color":    user.BadgeColor,
 	}
 	if includePhone {
 		var phone any

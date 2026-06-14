@@ -765,7 +765,7 @@ final messageListProvider = StateNotifierProvider.family
       ref.onDispose(() => timer?.cancel());
       ref.onCancel(() {
         timer?.cancel();
-        timer = Timer(const Duration(seconds: 30), () => link.close());
+        timer = Timer(const Duration(seconds: 8), () => link.close());
       });
       ref.onResume(() {
         timer?.cancel();
@@ -1613,14 +1613,22 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       }
     }
 
+    final now = DateTime.now();
     final transientMessages = state.where((msg) {
       if (loadedIds.contains(msg.id)) return false;
       final walletKey = _walletMessageKey(msg);
       if (walletKey != null && loadedWalletKeys.contains(walletKey)) {
         return false;
       }
+      // 发送中/失败的消息始终保留
       if (msg.status == MessageStatus.sending ||
           msg.status == MessageStatus.failed) {
+        return true;
+      }
+      // 2分钟内本地已发送成功的消息也保留，防止服务端时间戳精度差异导致消息消失
+      if (msg.isOutgoing &&
+          msg.status == MessageStatus.sent &&
+          now.difference(msg.createdAt).inMinutes < 2) {
         return true;
       }
       if (newestLoadedTime != null && msg.createdAt.isAfter(newestLoadedTime)) {

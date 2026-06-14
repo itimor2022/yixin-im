@@ -1846,6 +1846,7 @@ class SearchMessageResult {
 /// 搜索消息项
 class SearchMessageItem {
   final String id;
+  final String msgId;   // 业务消息 ID（msg_id），用于跳转定位
   final String chatId;
   final String senderId;
   final String? senderName;
@@ -1856,6 +1857,7 @@ class SearchMessageItem {
 
   SearchMessageItem({
     required this.id,
+    required this.msgId,
     required this.chatId,
     required this.senderId,
     this.senderName,
@@ -1869,22 +1871,54 @@ class SearchMessageItem {
     final senderAvatar = ApiConfig.getMediaUrl(
       json['sender_avatar']?.toString(),
     );
+
+    // content 兼容两种格式：
+    // 1. ES 返回字符串：content = "消息文字"，highlight = "<em>...</em>"
+    // 2. MongoDB 返回对象：content = {text: "消息文字"}
+    Map<String, dynamic> contentMap;
+    final rawContent = json['content'];
+    if (rawContent is Map) {
+      contentMap = Map<String, dynamic>.from(rawContent);
+    } else if (rawContent is String) {
+      // ES 返回：用 highlight 或 content 字符串作为 text
+      final highlight = json['highlight']?.toString() ?? '';
+      final displayText = highlight.isNotEmpty ? highlight : rawContent;
+      contentMap = {'text': displayText};
+    } else {
+      contentMap = {};
+    }
+
+    // created_at 兼容两种格式：
+    // 1. ES 返回毫秒时间戳（int）
+    // 2. MongoDB 返回 ISO 字符串
+    DateTime createdAt;
+    final rawTime = json['created_at'];
+    if (rawTime is int) {
+      createdAt = DateTime.fromMillisecondsSinceEpoch(rawTime).toLocal();
+    } else if (rawTime is String) {
+      createdAt = DateTime.tryParse(rawTime)?.toLocal() ?? DateTime.now();
+    } else {
+      createdAt = DateTime.now();
+    }
+
     return SearchMessageItem(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? json['msg_id']?.toString() ?? '',
+      msgId: json['msg_id']?.toString() ?? json['id']?.toString() ?? '',
       chatId: json['chat_id'] ?? '',
       senderId: json['sender_id'] ?? '',
       senderName: json['sender_name'],
       senderAvatar: senderAvatar.isEmpty ? null : senderAvatar,
       type: json['type'] ?? 1,
-      content: json['content'] ?? {},
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at']).toLocal()
-          : DateTime.now(),
+      content: contentMap,
+      createdAt: createdAt,
     );
   }
 
-  /// 获取文本内容
-  String get text => content['text'] ?? '';
+  /// 获取文本内容（去除 HTML 高亮标签）
+  String get text {
+    final raw = content['text']?.toString() ?? '';
+    return raw.replaceAll(RegExp(r'<[^>]*>'), '');
+  }
 }
 
 /// 禁言状态

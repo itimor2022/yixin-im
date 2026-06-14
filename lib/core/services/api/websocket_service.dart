@@ -615,7 +615,9 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       unawaited(
         connect(_token!, deviceType: _deviceType, isReconnectAttempt: true),
       );
-    } else if (state == WSConnectionState.connected && !_waitingForPong) {
+    } else if (state == WSConnectionState.connected) {
+      // resumed 时主动验证连接是否真实存活
+      // 若 pong 未在 5s 内返回，_pongTimeoutTimer 会触发强制重连
       _sendResumePing();
     }
   }
@@ -673,7 +675,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     send(WSMessage(type: WSMessageType.ping));
 
     _pongTimeoutTimer?.cancel();
-    _pongTimeoutTimer = Timer(const Duration(seconds: 8), () {
+    _pongTimeoutTimer = Timer(const Duration(seconds: 5), () {
       if (_isDisposed) return;
       if (_waitingForPong) {
         unawaited(_handleResumePingTimeout());
@@ -733,7 +735,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     send(WSMessage(type: WSMessageType.ping));
 
     _pongTimeoutTimer?.cancel();
-    _pongTimeoutTimer = Timer(const Duration(seconds: 8), () {
+    _pongTimeoutTimer = Timer(const Duration(seconds: 5), () {
       if (_isDisposed) return;
       if (_waitingForPong) {
         _pongTimeoutCount++;
@@ -760,7 +762,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 后台模式下的心跳（更频繁）
   void _startBackgroundPing() {
     _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_isDisposed) {
         _pingTimer?.cancel();
         return;

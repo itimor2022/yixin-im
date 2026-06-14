@@ -149,8 +149,9 @@ func (h *MembershipAdminHandler) ListUserMemberships(c *gin.Context) {
 func (h *MembershipAdminHandler) GrantMembership(c *gin.Context) {
 	userID := c.Param("user_id")
 	var req struct {
-		PlanID uint64 `json:"plan_id" binding:"required"`
-		Days   int    `json:"days"`
+		PlanID     uint64 `json:"plan_id" binding:"required"`
+		Days       int    `json:"days"`
+		BadgeLabel string `json:"badge_label"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "参数错误")
@@ -186,7 +187,13 @@ func (h *MembershipAdminHandler) GrantMembership(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "赠送失败")
 		return
 	}
+	badgeLabel := req.BadgeLabel
+	if badgeLabel == "" {
+		badgeLabel = plan.BadgeLabel
+	}
 	_ = h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"is_member":      true,
+		"badge_text":     badgeLabel,
 		"nickname_color": "premium:#F59E0B",
 		"premium_type":   plan.Slug,
 	}).Error

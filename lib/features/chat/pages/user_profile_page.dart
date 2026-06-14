@@ -1396,13 +1396,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final success =
           await ref.read(contactListProvider.notifier).removeContact(userUuid);
       if (success && mounted) {
-        setState(() => _isContact = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已将 ${_displayName} 从联系人中移除'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        // 从会话列表移除该私聊会话
+        final chatId = widget.chatId;
+        if (chatId != null && chatId.isNotEmpty) {
+          ref.read(chatListProvider.notifier).removeChat(chatId);
+        }
+        // 直接返回到上一页，不在资料页停留
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/');
+        }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1414,9 +1416,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       }
     } else {
       // 添加联系人
-      final success =
-          await ref.read(contactListProvider.notifier).addContact(userUuid);
-      if (success && mounted) {
+      final result = await ref
+          .read(contactListProvider.notifier)
+          .addContactWithStatus(userUuid);
+      if (!mounted) return;
+      if (result.success) {
         setState(() => _isContact = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1424,10 +1428,18 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-      } else if (mounted) {
+      } else if (result.pending) {
+        // 已发送申请，等待对方验证——不算失败
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('添加失败，请重试'),
+          SnackBar(
+            content: Text('好友申请已发送，等待 ${_displayName} 验证'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message?.isNotEmpty == true ? result.message! : '添加失败，请重试'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.error,
           ),

@@ -87,31 +87,54 @@ class AppColors {
 
   // ==================== 中国红主题 ====================
 
-  static const Color chineseRedPrimary = Color(0xFFC62B2B);
-  static const Color chineseRedPrimaryLight = Color(0xFFE03333);
-  static const Color chineseRedPrimaryDark = Color(0xFF9B1C1C);
+  // ── 中国风主题色板（故宫·宣纸·朱砂·水墨）──────────────────────────────
 
+  /// 朱砂红——主色，取自故宫宫墙
+  static const Color chineseRedPrimary      = Color(0xFFC0392B);
+  /// 朱砂亮色——悬停/高亮
+  static const Color chineseRedPrimaryLight = Color(0xFFD44638);
+  /// 朱砂暗色——按压
+  static const Color chineseRedPrimaryDark  = Color(0xFF922B21);
+
+  /// 金色——点缀色，取自故宫琉璃瓦
+  static const Color chineseGold            = Color(0xFFD4A017);
+  static const Color chineseGoldLight       = Color(0xFFE8C14A);
+
+  /// 主题渐变：朱砂红 → 深朱
   static const LinearGradient chineseRedGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFC62B2B), Color(0xFF8B1C1C)],
+    colors: [Color(0xFFC0392B), Color(0xFF8E1B15)],
   );
 
-  /// 背景：极浅暖白，带一丝红韵
-  static const Color chineseRedBackground = Color(0xFFFDF5F5);
-  static const Color chineseRedSurface = Color(0xFFFDF5F5);
-  static const Color chineseRedCard = Color(0xFFFFFFFF);
+  /// 宣纸米色——脚手架背景，温润不刺眼
+  static const Color chineseRedBackground      = Color(0xFFF5EFE6);
+  /// 略深于背景的表面色——列表/卡片组底色
+  static const Color chineseRedSurface         = Color(0xFFF0E8DC);
+  /// 卡片白——带暖调的近白
+  static const Color chineseRedCard            = Color(0xFFFDF8F2);
+  /// AppBar / 导航栏底色——深朱砂，营造宫廷感
+  static const Color chineseRedAppBar          = Color(0xFFAC2218);
+  /// 底部导航栏底色——宣纸色
+  static const Color chineseRedNavBar          = Color(0xFFF5EFE6);
 
-  static const Color chineseRedTextPrimary = Color(0xFF1A0000);
-  static const Color chineseRedTextSecondary = Color(0xFF8B6868);
-  static const Color chineseRedTextTertiary = Color(0xFFB09898);
+  /// 墨色主文字
+  static const Color chineseRedTextPrimary     = Color(0xFF1C0A00);
+  /// 次级文字——深棕
+  static const Color chineseRedTextSecondary   = Color(0xFF6B3A2A);
+  /// 三级文字——浅棕
+  static const Color chineseRedTextTertiary    = Color(0xFFA07060);
 
-  static const Color chineseRedDivider = Color(0xFFF0D8D8);
-  static const Color chineseRedInputBackground = Color(0xFFFFF0F0);
+  /// 分割线——细竹色
+  static const Color chineseRedDivider         = Color(0xFFDDCDBB);
+  /// 输入框底色——轻薄宣纸
+  static const Color chineseRedInputBackground = Color(0xFFF0E8DC);
+  /// 输入框边框（聚焦）
+  static const Color chineseRedInputBorder     = Color(0xFFC0392B);
 
-  /// 消息气泡：发送方浅红，接收方白色
-  static const Color chineseRedBubbleOutgoing = Color(0xFFFFDDDD);
-  static const Color chineseRedBubbleIncoming = Color(0xFFFFFFFF);
+  /// 消息气泡：发出——浅朱砂；收到——近白宣纸
+  static const Color chineseRedBubbleOutgoing  = Color(0xFFFFCDD0);
+  static const Color chineseRedBubbleIncoming  = Color(0xFFFDF8F2);
 
   // ==================== 头像颜色 (TG 风格) ====================
   

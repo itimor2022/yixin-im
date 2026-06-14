@@ -140,9 +140,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isDark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary,
+                Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -152,9 +150,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? AppColors.darkTextSecondary
-                  : AppColors.lightTextSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -172,9 +168,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isDark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary,
+                Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -184,9 +178,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? AppColors.darkTextSecondary
-                  : AppColors.lightTextSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -198,7 +190,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
       style: TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
-        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+        color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }
@@ -262,7 +254,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor:
-            isDark ? AppColors.darkBackground : AppColors.lightBackground,
+            Theme.of(context).scaffoldBackgroundColor,
         body: CustomScrollView(
           slivers: [
             // 顶部标题栏 - 毛玻璃固定效果
@@ -275,17 +267,13 @@ class _ChatPageState extends ConsumerState<ChatPage>
               elevation: 0,
               flexibleSpace: Platform.isAndroid
                   ? Container(
-                      color: isDark
-                          ? AppColors.darkBackground
-                          : AppColors.lightBackground,
+                      color: Theme.of(context).scaffoldBackgroundColor,
                     )
                   : ClipRect(
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                         child: Container(
-                          color: isDark
-                              ? AppColors.darkBackground.withOpacity(0.85)
-                              : AppColors.lightBackground.withOpacity(0.85),
+                          color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.85),
                         ),
                       ),
                     ),

@@ -29,44 +29,34 @@
       <!-- ── Tab 2: 会员设置 ── -->
       <ElTabPane label="会员设置" name="member">
         <div class="pt-4 px-2">
-          <!-- 会员开关 -->
-          <div class="flex items-center justify-between mb-6 p-4 rounded-lg bg-gray-50">
-            <div>
-              <p class="font-semibold text-g-800">会员状态</p>
-              <p class="text-xs text-g-400 mt-0.5">开启后用户将显示会员徽章</p>
-            </div>
-            <ElSwitch
-              v-model="memberData.isMember"
-              active-color="#3390EC"
-              size="large"
-            />
+
+          <!-- 套餐选择 -->
+          <div class="mb-5">
+            <p class="text-sm text-g-600 mb-2 font-medium">选择套餐</p>
+            <ElSelect v-model="memberData.planId" placeholder="请选择套餐" style="width: 100%" clearable @change="onPlanChange">
+              <ElOption
+                v-for="plan in availablePlans"
+                :key="plan.id"
+                :label="`${plan.name}（${plan.duration_days}天 / ¥${plan.price}）`"
+                :value="plan.id"
+              />
+            </ElSelect>
           </div>
 
-          <!-- 徽章预览 -->
+          <!-- 有效天数 -->
           <div class="mb-5">
-            <p class="text-sm text-g-600 mb-2 font-medium">徽章预览</p>
-            <div class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white">
-              <span class="text-g-500 text-sm">用户昵称</span>
-              <span
-                v-if="memberData.isMember && memberData.badgeText"
-                class="px-2 py-0.5 rounded text-white text-xs font-bold"
-                :style="{ backgroundColor: memberData.badgeColor || '#3390EC' }"
-              >
-                {{ memberData.badgeText }}
-              </span>
-              <span v-else class="text-xs text-g-300">（暂无徽章）</span>
-            </div>
+            <p class="text-sm text-g-600 mb-2 font-medium">有效天数</p>
+            <ElInputNumber v-model="memberData.days" :min="1" :max="3650" style="width: 100%" />
           </div>
 
           <!-- 徽章文字 -->
           <div class="mb-4">
             <p class="text-sm text-g-600 mb-2 font-medium">徽章文字</p>
             <ElInput
-              v-model="memberData.badgeText"
+              v-model="memberData.badgeLabel"
               placeholder="如：PREMIUM / VIP / 会员"
               maxlength="10"
               show-word-limit
-              :disabled="!memberData.isMember"
             />
           </div>
 
@@ -74,18 +64,8 @@
           <div class="mb-4">
             <p class="text-sm text-g-600 mb-2 font-medium">徽章颜色</p>
             <div class="flex items-center gap-3">
-              <ElColorPicker
-                v-model="memberData.badgeColor"
-                :disabled="!memberData.isMember"
-                show-alpha
-              />
-              <ElInput
-                v-model="memberData.badgeColor"
-                placeholder="#3390EC"
-                style="width: 140px"
-                :disabled="!memberData.isMember"
-              />
-              <!-- 快选色板 -->
+              <ElColorPicker v-model="memberData.badgeColor" />
+              <ElInput v-model="memberData.badgeColor" placeholder="#3390EC" style="width: 140px" />
               <div class="flex gap-1.5">
                 <span
                   v-for="c in presetColors"
@@ -97,6 +77,33 @@
               </div>
             </div>
           </div>
+
+          <!-- 徽章预览 -->
+          <div class="mb-5">
+            <p class="text-sm text-g-600 mb-2 font-medium">徽章预览</p>
+            <div class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white">
+              <span class="text-g-500 text-sm">用户昵称</span>
+              <span
+                v-if="memberData.badgeLabel"
+                class="px-2 py-0.5 rounded text-white text-xs font-bold"
+                :style="{ backgroundColor: memberData.badgeColor || '#3390EC' }"
+              >
+                {{ memberData.badgeLabel }}
+              </span>
+              <span v-else class="text-xs text-g-300">（暂无徽章）</span>
+            </div>
+          </div>
+
+          <!-- 赠送按钮 -->
+          <ElButton
+            type="primary"
+            :disabled="!memberData.planId"
+            :loading="memberData.granting"
+            style="width: 100%"
+            @click="handleGrantMembership"
+          >
+            立即赠送会员
+          </ElButton>
         </div>
       </ElTabPane>
     </ElTabs>
@@ -113,6 +120,7 @@
 <script setup lang="ts">
   import type { FormInstance, FormRules } from 'element-plus'
   import { updateUser, setMembership } from '@/api/system-manage'
+  import { grantMembership, getMembershipPlans } from '@/api/admin'
 
   interface UserData {
     id?: number
@@ -127,6 +135,8 @@
     isMember?: boolean
     badgeText?: string
     badgeColor?: string
+    badgeLabel?: string
+    premiumType?: string
   }
 
   interface Props {
@@ -165,8 +175,14 @@
   const memberData = reactive({
     isMember: false,
     badgeText: '',
-    badgeColor: '#3390EC'
+    badgeColor: '#3390EC',
+    badgeLabel: '',
+    planId: undefined as number | undefined,
+    days: 30,
+    granting: false
   })
+
+  const availablePlans = ref<{ id: number; name: string; duration_days: number; price: number; badge_label: string; badge_color: string }[]>([])
 
   const rules: FormRules = {
     nickname: [
@@ -194,7 +210,12 @@
     Object.assign(memberData, {
       isMember: !!row.isMember,
       badgeText: row.badgeText || '',
-      badgeColor: row.badgeColor || '#3390EC'
+      badgeColor: row.badgeColor || '#3390EC',
+      badgeLabel: row.badgeText || '',
+      isMember: !!row.isMember,
+      planId: undefined,
+      days: 30,
+      granting: false
     })
   }
 
@@ -205,10 +226,51 @@
         activeTab.value = 'basic'
         initFormData()
         nextTick(() => formRef.value?.clearValidate())
+        if (availablePlans.value.length === 0) loadPlans()
       }
     },
     { immediate: true }
   )
+
+  const onPlanChange = (planId: number) => {
+    const plan = availablePlans.value.find(p => p.id === planId)
+    if (plan) {
+      memberData.days = plan.duration_days
+      memberData.badgeLabel = plan.badge_label || 'PREMIUM'
+      memberData.badgeColor = plan.badge_color || '#3390EC'
+    }
+  }
+
+  const handleGrantMembership = async () => {
+    if (!props.userData?.id || !memberData.planId) return
+    memberData.granting = true
+    try {
+      await grantMembership(props.userData.id, memberData.planId, memberData.days)
+        // 同步保存徽章设置
+        await setMembership(props.userData.id, {
+          is_member: true,
+          badge_text: memberData.badgeLabel || '',
+          badge_color: memberData.badgeColor || '#3390EC',
+        })
+        memberData.isMember = true
+      ElMessage.success('会员赠送成功')
+      emit('submit')
+    } catch (e) {
+      console.error('会员赠送失败:', e)
+      ElMessage.error('会员赠送失败，请重试')
+    } finally {
+      memberData.granting = false
+    }
+  }
+
+  const loadPlans = async () => {
+    try {
+      const res = await getMembershipPlans()
+      availablePlans.value = (res || []).filter((p: any) => p.status === 1)
+    } catch (e) {
+      console.error('套餐加载失败:', e)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!formRef.value || !props.userData?.id) return
@@ -232,16 +294,16 @@
         errors.push('基本信息')
       }
 
-      // 保存会员信息（独立执行，不受基本信息影响）
+      // 保存徽章设置（badge_text / badge_color / is_member）
       try {
         await setMembership(props.userData!.id!, {
           is_member: memberData.isMember,
-          badge_text: memberData.badgeText,
-          badge_color: memberData.badgeColor
+          badge_text: memberData.badgeLabel || '',
+          badge_color: memberData.badgeColor || '#3390EC',
         })
       } catch (e) {
-        console.error('会员信息保存失败:', e)
-        errors.push('会员设置')
+        console.error('徽章设置保存失败:', e)
+        errors.push('徽章设置')
       }
 
       submitting.value = false

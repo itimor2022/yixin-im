@@ -814,7 +814,7 @@
         refreshSoft()
         updateLastTime()
       }
-    }, 30000) // 30秒刷新一次
+    }, 5000) // 5秒刷新一次
   })
 
   onActivated(() => {
