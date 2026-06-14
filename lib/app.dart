@@ -708,6 +708,12 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     ref.listenManual(authServiceProvider, (previous, next) {
       if (next.status == AuthStatus.authenticated && !_pushRegistered) {
         _pushRegistered = true;
+        // 登录成功后立即初始化会话列表（防止 chat_page 未重建导致列表为空）
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          final chatNotifier = ref.read(chatListProvider.notifier);
+          chatNotifier.initialize();
+        });
         Future.delayed(const Duration(seconds: 2), () {
           ref.read(pushNotificationServiceProvider).register();
           ref

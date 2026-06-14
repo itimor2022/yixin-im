@@ -573,18 +573,42 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
   }
 
   /// 添加联系人（调用API）
-  Future<bool> addContact(String userId, {String? remark}) async {
+  /// 添加联系人结果枚举
+  /// - success: 添加成功
+  /// - pending: 已发送申请，等待对方验证
+  /// - failed: 失败
+  Future<({bool success, bool pending, String? message})> addContactWithStatus(
+    String userId, {
+    String? remark,
+  }) async {
     final response = await _api.post(
       '/contact/add',
       data: {'user_id': userId, if (remark != null) 'remark': remark},
     );
 
     if (response.isSuccess) {
-      await loadFromServer(force: true);
-      return true;
+      // 不立即刷新联系人列表：双向好友验证时对方还未通过，
+      // 等服务端推送 friend_request_accepted WS 事件后再刷新，
+      // 避免联系人/会话列表提前出现未通过的好友
+      return (success: true, pending: false, message: null);
     }
 
-    return false;
+    // 服务端返回"已申请/等待验证"相关错误码或消息时，视为 pending
+    final msg = response.message.toLowerCase();
+    final isPending = response.code == 1005 ||
+        response.code == 1006 ||
+        msg.contains('pending') ||
+        msg.contains('already') ||
+        msg.contains('申请') ||
+        msg.contains('等待') ||
+        msg.contains('已发送') ||
+        msg.contains('请求已');
+    return (success: false, pending: isPending, message: response.message);
+  }
+
+  Future<bool> addContact(String userId, {String? remark}) async {
+    final result = await addContactWithStatus(userId, remark: remark);
+    return result.success;
   }
 
   /// 删除联系人（调用API）

@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	PongWait   = 90 * time.Second
+	PongWait   = 30 * time.Second
 	PingPeriod = (PongWait * 9) / 10
 )
 

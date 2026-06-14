@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import 'chat_detail_page.dart' show ChatDetailPage, ChatType;
 import 'package:photo_view/photo_view.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:video_player/video_player.dart';
@@ -772,7 +773,7 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     Navigator.push(
       context,
       createPageRoute(
-        builder: (context) => _SearchMessagesPage(
+        builder: (context) => SearchMessagesPage(
           chatId: widget.groupId,
           chatName: widget.name ?? '群组',
         ),
@@ -2144,18 +2145,18 @@ class _TGActionButton extends StatelessWidget {
 }
 
 // 搜索消息页面
-class _SearchMessagesPage extends ConsumerStatefulWidget {
+class SearchMessagesPage extends ConsumerStatefulWidget {
   final String chatId;
   final String chatName;
 
-  const _SearchMessagesPage({required this.chatId, required this.chatName});
+  const SearchMessagesPage({required this.chatId, required this.chatName});
 
   @override
-  ConsumerState<_SearchMessagesPage> createState() =>
-      _SearchMessagesPageState();
+  ConsumerState<SearchMessagesPage> createState() =>
+      SearchMessagesPageState();
 }
 
-class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
+class SearchMessagesPageState extends ConsumerState<SearchMessagesPage> {
   final _searchController = TextEditingController();
   List<api.SearchMessageItem> _results = [];
   bool _isSearching = false;
@@ -2349,7 +2350,18 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
                             ),
                           ),
                           onTap: () {
-                            // TODO: 跳转到消息位置
+                            // 关闭搜索页，跳转到聊天页并定位到该消息
+                            Navigator.of(context).pop();
+                            Navigator.of(context).push(
+                              createPageRoute(
+                                builder: (_) => ChatDetailPage(
+                                  chatId: widget.chatId,
+                                  chatName: widget.chatName,
+                                  chatType: ChatType.group,
+                                  jumpToMessageId: result.msgId,
+                                ),
+                              ),
+                            );
                           },
                         ),
                       );

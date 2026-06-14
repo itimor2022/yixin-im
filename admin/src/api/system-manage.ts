@@ -118,6 +118,9 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     serviceUserId: item.service_user_id,
     serviceUsername: item.service_username || '',
     serviceNickname: item.service_nickname || '',
+    isMember: !!item.is_member,
+    badgeText: item.badge_text || '',
+    badgeColor: item.badge_color || '',
     serviceInviteCode: item.service_invite_code || '',
     isMember: !!item.is_member,
     badgeText: item.badge_text || '',
@@ -424,7 +427,7 @@ export interface MembershipPayload {
 export async function setMembership(userId: number, data: MembershipPayload) {
   return request.put({
     url: `/admin/users/${userId}/membership`,
-    params: data
+    data: data
   })
 }
 

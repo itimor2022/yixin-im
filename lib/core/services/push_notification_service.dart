@@ -80,16 +80,17 @@ class PushNotificationService {
   }) async {
     try {
       if (Platform.isAndroid) {
-        const androidDetails = AndroidNotificationDetails(
-          'gaoranim_messages',
+        final androidDetails = AndroidNotificationDetails(
+          'gaoranim_messages_v2',
           '消息通知',
           channelDescription: '聊天消息通知，包含声音和震动',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           playSound: true,
           enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 250, 250, 250]),
         );
-        const details = NotificationDetails(android: androidDetails);
+        final details = NotificationDetails(android: androidDetails);
         await _localNotifications.show(
           DateTime.now().millisecondsSinceEpoch.remainder(100000),
           title,

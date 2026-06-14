@@ -176,28 +176,60 @@ func (s *SearchService) Search(ctx context.Context, keyword, chatID string, page
 	if chatID != "" {
 		queryClause = map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must": map[string]interface{}{
-					"match": map[string]interface{}{
-						"content": map[string]interface{}{
-							"query":    keyword,
-							"operator": "and",
+				"must": []interface{}{
+					map[string]interface{}{
+						"bool": map[string]interface{}{
+							"should": []interface{}{
+								map[string]interface{}{
+									"match": map[string]interface{}{
+										"content": map[string]interface{}{
+											"query":    keyword,
+											"operator": "or",
+										},
+									},
+								},
+								map[string]interface{}{
+									"wildcard": map[string]interface{}{
+										"content.keyword": map[string]interface{}{
+											"value": "*" + keyword + "*",
+										},
+									},
+								},
+							},
+							"minimum_should_match": 1,
 						},
 					},
 				},
-				"filter": map[string]interface{}{
-					"term": map[string]interface{}{
-						"chat_id": chatID,
+				"filter": []interface{}{
+					map[string]interface{}{
+						"term": map[string]interface{}{
+							"chat_id.keyword": chatID,
+						},
 					},
 				},
 			},
 		}
 	} else {
 		queryClause = map[string]interface{}{
-			"match": map[string]interface{}{
-				"content": map[string]interface{}{
-					"query":    keyword,
-					"operator": "and",
+			"bool": map[string]interface{}{
+				"should": []interface{}{
+					map[string]interface{}{
+						"match": map[string]interface{}{
+							"content": map[string]interface{}{
+								"query":    keyword,
+								"operator": "or",
+							},
+						},
+					},
+					map[string]interface{}{
+						"wildcard": map[string]interface{}{
+							"content.keyword": map[string]interface{}{
+								"value": "*" + keyword + "*",
+							},
+						},
+					},
 				},
+				"minimum_should_match": 1,
 			},
 		}
 	}

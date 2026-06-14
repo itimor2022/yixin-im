@@ -93,8 +93,7 @@ class SettingsPage extends ConsumerWidget {
         : FloatingNavLayout.reservedSpace(context, extra: 24);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
           //  顶部栏
@@ -102,15 +101,14 @@ class SettingsPage extends ConsumerWidget {
             expandedHeight: 0,
             floating: true,
             pinned: true,
-            backgroundColor:
-                isDark ? AppColors.darkBackground : AppColors.lightBackground,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             surfaceTintColor: Colors.transparent,
             title: Text(
               l10n.settings,
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             centerTitle: true,
