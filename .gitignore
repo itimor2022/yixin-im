@@ -73,3 +73,5 @@ windows/flutter/.flutter-plugins-dependencies
 windows/flutter/.dart_tool/
 windows/flutter/.flutter-pluginswindows/flutter/ephemeral/
 *.bak
+**/*.bak.*
+*.bak.*
