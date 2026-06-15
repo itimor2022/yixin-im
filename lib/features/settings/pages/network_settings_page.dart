@@ -115,7 +115,7 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
     }
   }
 
-  void selectNode(String url) {
+  String selectNode(String url) {
     // 切换节点
     ApiConfig.updateServer(url);
     ServerDiscovery.instance.clearCacheAndSet(url);
@@ -127,6 +127,9 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
               isSelected: n.url == url,
             ))
         .toList();
+    // 返回节点序号名称
+    final idx = state.indexWhere((n) => n.url == url);
+    return idx >= 0 ? '线路 ${idx + 1}' : url;
   }
 
   void _updateNode(String url, {NodeStatus? status, int? latencyMs}) {
@@ -222,7 +225,18 @@ class NetworkSettingsPage extends ConsumerWidget {
                           isDark: isDark,
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            notifier.selectNode(nodes[i].url);
+                            final name = notifier.selectNode(nodes[i].url);
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('已切换至 $name'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            );
                           },
                           onRetest: () {
                             HapticFeedback.lightImpact();
@@ -258,16 +272,22 @@ class NetworkSettingsPage extends ConsumerWidget {
                 ),
 
                 const SizedBox(height: 8),
-                // Center(
-                //   child: Text(
-                //     '当前节点: ${ApiConfig.serverUrl}',
-                //     style: TextStyle(fontSize: 12, color: subColor),
-                //   ),
-                // ),
+                Center(
+                  child: Text(
+                    '当前线路：${_getCurrentLineName(nodes)}',
+                    style: TextStyle(fontSize: 12, color: subColor),
+                  ),
+                ),
               ],
             ),
     );
   }
+}
+
+String _getCurrentLineName(List<NodeInfo> nodes) {
+  final idx = nodes.indexWhere((n) => n.isSelected);
+  if (idx < 0) return '未知';
+  return '线路 ${idx + 1}';
 }
 
 // ── 节点行 ───────────────────────────────────────────────
