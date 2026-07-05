@@ -1323,7 +1323,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
 
             _buildDivider(isDark),
             // 删除按钮 - 侧滑确认
-            _buildDeleteMenuItem(isDark),
+           // _buildDeleteMenuItem(isDark),
           ],
         ),
       ),

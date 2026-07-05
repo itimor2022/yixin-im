@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { ref, onMounted, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { searchMessages } from '@/api/admin'
+  import { searchMessages, deleteMessage } from '@/api/admin'
   import { fixImageUrl } from '@/utils/url'
 
   defineOptions({ name: 'MessageSearch' })
@@ -20,6 +20,7 @@
   const msgType = ref('')
   const dateRange = ref<[Date, Date] | null>(null)
   const targetName = ref('')
+  const selectedRows = ref<any[]>([])
 
   const typeOptions = [
     { label: '文本', value: '1' },
@@ -80,6 +81,7 @@
       const res = (await searchMessages(params)) as any
       list.value = res?.list || []
       total.value = res?.total || 0
+      selectedRows.value = []
     } catch (error) {
       console.error('Failed to search messages:', error)
     }
@@ -107,6 +109,46 @@
     targetName.value = q.name ? String(q.name) : ''
     page.value = 1
     loadData()
+  }
+
+  function handleSelectionChange(selection: any[]) {
+    selectedRows.value = selection
+  }
+
+  async function handleDelete(rows: any[]) {
+    if (rows.length === 0) return
+    ElMessageBox.confirm(
+      `确定要永久删除选中的 ${rows.length} 条聊天记录吗？此操作将无法恢复！`,
+      '警告',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    ).then(async () => {
+      loading.value = true
+      let successCount = 0
+      let failCount = 0
+      for (const row of rows) {
+        try {
+          await deleteMessage({ id: row.id, chat_id: row.chat_id })
+          successCount++
+        } catch (err) {
+          failCount++
+          console.error(`删除消息 ${row.id} 失败:`, err)
+        }
+      }
+
+      loading.value = false
+      if (failCount === 0) {
+        ElMessage.success(`成功删除 ${successCount} 条消息`)
+      } else {
+        ElMessage.warning(`删除完成。成功: ${successCount}条, 失败: ${failCount}条`)
+      }
+      
+      loadData()
+    }).catch(() => {
+    })
   }
 
   watch(() => route.query, applyQueryParams)
@@ -149,9 +191,20 @@
         <ElButton type="primary" @click="handleSearch">搜索</ElButton>
         <ElButton v-if="targetName" @click="clearTarget">清除筛选</ElButton>
       </div>
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <ElButton 
+          type="danger" 
+          :disabled="selectedRows.length === 0"
+          @click="handleDelete(selectedRows)"
+          size="small"
+        >
+          批量删除 ({{ selectedRows.length }})
+        </ElButton>
+      </div>
     </template>
 
-    <ElTable :data="list" v-loading="loading" stripe size="small">
+    <ElTable :data="list" v-loading="loading" stripe size="small" @selection-change="handleSelectionChange">
+      <ElTableColumn type="selection" width="50" />
       <ElTableColumn label="发送者" width="150">
         <template #default="{ row }">
           <div style="display: flex; align-items: center; gap: 8px">
@@ -178,6 +231,7 @@
       </ElTableColumn>
       <ElTableColumn prop="chat_id" label="会话ID" width="140" show-overflow-tooltip />
       <ElTableColumn prop="created_at" label="发送时间" width="170" />
+      
     </ElTable>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 16px">

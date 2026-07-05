@@ -387,11 +387,11 @@ class _ChannelProfilePageState extends ConsumerState<ChannelProfilePage> {
                   title: '分享频道',
                   onTap: () => _shareChannel(context),
                 ),
-                _TGCell(
-                  title: '举报',
-                  titleColor: Colors.red,
-                  onTap: () => _showReportDialog(context),
-                ),
+                // _TGCell(
+                //   title: '举报',
+                //   titleColor: Colors.red,
+                //   onTap: () => _showReportDialog(context),
+                // ),
               ],
             ),
           ),

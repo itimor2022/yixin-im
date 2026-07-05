@@ -926,6 +926,11 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
     };
     _wsService.registerHandler(WSMessageType.reconnected, _reconnectedHandler);
 
+    _wsService.registerHandler('admin_message_delete', (data) {
+        final msgId = data['msg_id']?.toString() ?? '';
+        state = state.where((msg) => msg.id != msgId).toList();
+      });
+
     _chatHistoryClearedHandler = (data) {
       if (!mounted) return;
       final msgChatId = data['chat_id']?.toString();

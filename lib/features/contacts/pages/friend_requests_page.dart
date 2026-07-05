@@ -34,7 +34,8 @@ class _FriendRequestsPageState extends ConsumerState<FriendRequestsPage> {
       _loading = false;
     });
     // 看过申请后清掉红点
-    ref.read(friendRequestProvider.notifier).clear();
+   // ref.read(friendRequestProvider.notifier).clear();
+    ref.read(friendRequestProvider.notifier).state = list.length;
   }
 
   Future<void> _accept(Map<String, dynamic> req) async {
@@ -48,6 +49,7 @@ class _FriendRequestsPageState extends ConsumerState<FriendRequestsPage> {
     if (ok) {
       setState(() => _requests.removeWhere(
           (r) => r['request_id'].toString() == id));
+      ref.read(friendRequestProvider.notifier).state = _requests.length;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已通过好友申请')),
       );
@@ -69,6 +71,7 @@ class _FriendRequestsPageState extends ConsumerState<FriendRequestsPage> {
     if (ok) {
       setState(() => _requests.removeWhere(
           (r) => r['request_id'].toString() == id));
+      ref.read(friendRequestProvider.notifier).state = _requests.length;
     }
   }
 

@@ -348,7 +348,7 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 		"type":    "new_message",
 		"message": msg,
 	}
-	if params.ChatType == 2 {
+	if params.ChatType == 2 || params.ChatType == 3 {
 		// 群聊：走 chatID 广播，只推在线成员，不需要传全量 uid 列表
 		s.hub.BroadcastToGroupCluster(params.ChatID, wsPayload)
 		// 发送者其他设备多设备同步

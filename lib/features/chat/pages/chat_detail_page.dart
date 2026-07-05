@@ -3436,11 +3436,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           onSend: (text) => _sendMessageWithContext(text),
           onAttachment: _showAttachmentOptions,
           onVoice: _startVoiceRecord,
-          onBurnAfterReadToggle: _toggleBurnAfterRead,
+          onBurnAfterReadToggle: null,
           showEmojiPicker: _showEmojiPickerState,
           onEmojiToggle: _toggleEmojiPicker,
-          allowBurnAfterRead: burnAfterReadAllowed,
-          burnAfterReadEnabled: _burnAfterReadEnabled,
+          allowBurnAfterRead: false,
+          burnAfterReadEnabled: false,
           hasPendingAttachments: _pendingImages.isNotEmpty,
         ),
       ],
@@ -5432,11 +5432,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
       _showSnackBar('正在下载...');
       await FileSaver.instance.saveFile(
-        name: name,
-        fileExtension: ext,
-        mimeType: mimeType,
-        link: LinkDetails(link: fullUrl),
-      );
+      name: name.contains('.') ? name : "$name.$ext",
+      mimeType: mimeType,
+      link: LinkDetails(link: fullUrl),
+    );
       _showSnackBar('下载已开始');
     } catch (e) {
       if (kDebugMode) debugPrint('[ChatDetail] Web download error: \$e');
@@ -5487,12 +5486,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           default:                    mimeType = MimeType.other; break;
         }
         _showSnackBar('正在下载...');
-        await FileSaver.instance.saveFile(
-          name: name,
-          fileExtension: ext,
-          mimeType: mimeType,
-          link: LinkDetails(link: fullUrl),
-        );
+await FileSaver.instance.saveFile(
+  name: name.contains('.') ? name : "$name.$ext", 
+  mimeType: mimeType,
+  link: LinkDetails(link: fullUrl),
+);
         _showSnackBar('下载已开始');
       } else {
         // ── 桌面端：FilePicker 选择保存位置 + Dio 下载 ──
@@ -7665,26 +7663,26 @@ class _AttachmentSheet extends StatelessWidget {
                   onTakePhoto();
                 },
               ),
-              if (onStartMeeting != null)
-                _AttachmentOption(
-                  icon: Icons.video_call_outlined,
-                  label: '会议',
-                  color: const Color(0xFF5B8CFF),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onStartMeeting!();
-                  },
-                ),
-              if (onSendLocation != null)
-                _AttachmentOption(
-                  icon: Icons.location_on_outlined,
-                  label: '位置',
-                  color: const Color(0xFFEF6C57),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onSendLocation!();
-                  },
-                ),
+              // if (onStartMeeting != null)
+              //   _AttachmentOption(
+              //     icon: Icons.video_call_outlined,
+              //     label: '会议',
+              //     color: const Color(0xFF5B8CFF),
+              //     onTap: () {
+              //       Navigator.pop(context);
+              //       onStartMeeting!();
+              //     },
+              //   ),
+              // if (onSendLocation != null)
+              //   _AttachmentOption(
+              //     icon: Icons.location_on_outlined,
+              //     label: '位置',
+              //     color: const Color(0xFFEF6C57),
+              //     onTap: () {
+              //       Navigator.pop(context);
+              //       onSendLocation!();
+              //     },
+              //   ),
               _AttachmentOption(
                 icon: Icons.insert_drive_file,
                 label: '文件',
@@ -7694,26 +7692,26 @@ class _AttachmentSheet extends StatelessWidget {
                   onPickFile();
                 },
               ),
-              if (onSendRedPacket != null)
-                _AttachmentOption(
-                  imagePath: 'assets/stickers/hongbao.png',
-                  label: '红包',
-                  color: const Color(0xFFE53935),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onSendRedPacket!();
-                  },
-                ),
-              if (onTransfer != null)
-                _AttachmentOption(
-                  imagePath: 'assets/stickers/zhuanzhang.png',
-                  label: '转账',
-                  color: const Color(0xFFFF9800),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onTransfer!();
-                  },
-                ),
+              // if (onSendRedPacket != null)
+              //   _AttachmentOption(
+              //     imagePath: 'assets/stickers/hongbao.png',
+              //     label: '红包',
+              //     color: const Color(0xFFE53935),
+              //     onTap: () {
+              //       Navigator.pop(context);
+              //       onSendRedPacket!();
+              //     },
+              //   ),
+              // if (onTransfer != null)
+              //   _AttachmentOption(
+              //     imagePath: 'assets/stickers/zhuanzhang.png',
+              //     label: '转账',
+              //     color: const Color(0xFFFF9800),
+              //     onTap: () {
+              //       Navigator.pop(context);
+              //       onTransfer!();
+              //     },
+              //   ),
               if (onOpenFavorites != null)
                 _AttachmentOption(
                   icon: Icons.favorite_border_rounded,

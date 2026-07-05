@@ -80,7 +80,12 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
 
+  bool _isNumeric(String str) {
+    return RegExp(r'^\d+$').hasMatch(str);
+  }
+
   bool _isSearching = false;
+  DateTime? _lastSearchTime;
   List<SearchResult> _allResults = [];
   String? _errorMessage;
 
@@ -101,19 +106,35 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   }
 
   Future<void> _search(String keyword) async {
-    // 去掉开头的 @ 符号（支持 @username 格式搜索）
-    String searchKeyword = keyword.trim();
-    if (searchKeyword.startsWith('@')) {
-      searchKeyword = searchKeyword.substring(1);
-    }
 
-    if (searchKeyword.isEmpty) {
+    String searchKeyword = keyword.trim();
+
+    // ★ 拦截控制：只有满 8 位及以上才发起真正的网络请求
+    if (searchKeyword.length != 11) {
       setState(() {
         _allResults = [];
         _errorMessage = null;
+        _isSearching = false;
       });
       return;
     }
+
+    final now = DateTime.now();
+    if (_lastSearchTime != null) {
+      final difference = now.difference(_lastSearchTime!).inSeconds;
+      if (difference < 3) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('操作过于频繁，请在 ${3 - difference} 秒后重试'),
+            duration: const Duration(seconds: 1),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return; 
+      }
+    }
+    _lastSearchTime = now; 
 
     setState(() {
       _isSearching = true;
@@ -160,12 +181,10 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
     );
 
     if (result.type == 'user') {
-      // F-12: 先进资料页，由资料页按钮控制能否发消息（非好友受 allow_stranger_message 开关约束）
       context.push(
         '/user/${result.id}?name=${Uri.encodeComponent(result.name)}${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
       );
     } else {
-      // 群组/频道 - 直接进入聊天页，传递类型参数
       final chatType = result.type == 'group' ? 'group' : 'channel';
       context.push(
         '/chat/${result.id}?name=${Uri.encodeComponent(result.name)}&type=$chatType${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
@@ -197,7 +216,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         }
       }
 
-      // 创建失败时显示错误
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(response.message),
@@ -216,7 +234,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   }
 
   void _addContact(SearchResult user) async {
-    // 桌面端不触发震动
     if (Platform.isIOS || Platform.isAndroid) {
       HapticFeedback.mediumImpact();
     }
@@ -239,7 +256,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
           ),
         );
       } else if (response.message == '已经是联系人') {
-        // 已是联系人时刷新列表并提示，避免列表显示为空
         ref.read(contactListProvider.notifier).loadFromServer();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -270,6 +286,10 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
+
+    // ★ 提取并清洗当前的关键字长度，用于精细控制状态显隐
+    String cleanKeyword = _searchController.text.trim();
+
 
     return Scaffold(
       backgroundColor: isDark
@@ -304,8 +324,13 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
             child: TextField(
               controller: _searchController,
               focusNode: _focusNode,
+              maxLength: 11,
+              keyboardType: TextInputType.phone, 
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly
+              ],
               decoration: InputDecoration(
-                hintText: l10n.get('search_user_group_channel') ?? '搜索用户、群组或频道',
+                hintText: '请输入11位手机号',
                 hintStyle: TextStyle(
                   color: isDark
                       ? AppColors.darkTextTertiary
@@ -346,38 +371,52 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
                     : AppColors.lightTextPrimary,
               ),
               onChanged: (value) {
-                setState(() {});
+                String checkValue = value.trim();
+                
+                // ★ 如果用户退格删除导致长度不足 8 位，立即重置并刷新界面，移走旧列表
+                if (checkValue.length < 11) {
+                  setState(() {
+                    _allResults = [];
+                    _errorMessage = null;
+                  });
+                }
+                
                 // 防抖搜索
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  if (_searchController.text == value) {
-                    _search(value);
-                  }
-                });
+                if (checkValue.length == 11) {
+                  Future.delayed(const Duration(milliseconds: 500), () {
+                    if (_searchController.text == value) {
+                      _search(_searchController.text);
+                    }
+                  });
+                }
               },
               onSubmitted: _search,
             ),
           ),
 
-          // 提示文字
-          if (_searchController.text.isEmpty && _allResults.isEmpty)
+          // 提示文字 (未输入，或输入的有效关键字数不足 8 位)
+          if (cleanKeyword.length < 11)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.person_search_rounded,
+                      Icons.phone_android_rounded,
                       size: 80,
                       color: isDark ? Colors.white24 : Colors.black12,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      l10n.get('search_user_to_chat') ?? '搜索用户开始聊天',
+                      cleanKeyword.isEmpty
+                          ? (l10n.get('search_user_to_chat') ?? '搜索用户手机号开始聊天')
+                          : '请输入 11 位手机号 (${cleanKeyword.length}/11)',
                       style: TextStyle(
                         fontSize: 16,
-                        color: isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary,
+                        fontWeight: cleanKeyword.isEmpty ? FontWeight.normal : FontWeight.w500,
+                        color: cleanKeyword.isEmpty
+                            ? (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary)
+                            : AppColors.primary,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -391,26 +430,26 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Text(
-                      l10n.get('also_search_public_groups') ?? '也可搜索公开群组和频道',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark
-                            ? AppColors.darkTextTertiary
-                            : AppColors.lightTextTertiary,
-                      ),
-                    ),
+                    // Text(
+                    //   l10n.get('also_search_public_groups') ?? '也可搜索公开群组和频道',
+                    //   style: TextStyle(
+                    //     fontSize: 14,
+                    //     color: isDark
+                    //         ? AppColors.darkTextTertiary
+                    //         : AppColors.lightTextTertiary,
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
             ),
 
-          // 加载中
-          if (_isSearching)
+          // 加载中 (满 8 位发起了异步请求时显示)
+          if (_isSearching && cleanKeyword.length == 11)
             const Expanded(child: Center(child: CircularProgressIndicator())),
 
-          // 错误信息
-          if (_errorMessage != null && !_isSearching)
+          // 错误信息 (满 8 位请求失败时显示)
+          if (_errorMessage != null && !_isSearching && cleanKeyword.length == 11)
             Expanded(
               child: Center(
                 child: Column(
@@ -432,10 +471,9 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
               ),
             ),
 
-          // 搜索结果 - 直接显示所有结果，不分 Tab
+          // 搜索结果 - 只有满 8 位及以上才触发渲染
           if (!_isSearching &&
-              _errorMessage == null &&
-              _searchController.text.isNotEmpty)
+              _errorMessage == null && cleanKeyword.length == 11)
             Expanded(
               child: _allResults.isEmpty
                   ? _buildEmptyState(isDark)
@@ -471,7 +509,7 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            '未找到用户',
+            '未找到相关结果',
             style: TextStyle(
               fontSize: 16,
               color: isDark
@@ -481,18 +519,18 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '尝试其他关键词',
+            '请检查输入是否正确',
             style: TextStyle(
               fontSize: 14,
               color: isDark
                   ? AppColors.darkTextTertiary
                   : AppColors.lightTextTertiary,
-            ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 }
 
 class _SearchResultTile extends StatelessWidget {
@@ -688,7 +726,6 @@ class _SearchResultTile extends StatelessWidget {
                 ],
               )
             else if (result.isMember)
-              // 已加入/订阅，显示箭头（进入聊天）
               Icon(
                 Icons.chevron_right,
                 color: isDark
@@ -696,7 +733,6 @@ class _SearchResultTile extends StatelessWidget {
                     : AppColors.lightTextTertiary,
               )
             else
-              // 未加入/订阅，显示加入/订阅按钮
               FilledButton(
                 onPressed: onTap,
                 style: FilledButton.styleFrom(

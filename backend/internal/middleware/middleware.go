@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"context"
 
 	"gaoranim/internal/authsession"
 	"gaoranim/internal/cache"
@@ -119,6 +120,9 @@ func Auth(cache *cache.Cache) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		ctx := context.WithValue(c.Request.Context(), "client_ip", c.ClientIP())
+        c.Request = c.Request.WithContext(ctx)
 
 		if err := authenticateUserToken(c, cache, tokenString); err != nil {
 			response.Unauthorized(c, err.Error())

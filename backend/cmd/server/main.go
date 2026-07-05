@@ -884,6 +884,7 @@ func setupRouter(
 			qrLoginHandler := handlers.NewQRLoginHandler(db, cache)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
+			auth.POST("/captcha", authHandler.GetCaptcha)
 			auth.POST("/check-username", authHandler.CheckUsername)
 			auth.POST("/password/send-reset-code", authHandler.SendPasswordResetCode)
 			auth.POST("/password/reset-by-code", authHandler.ResetPasswordByCode)
@@ -1353,7 +1354,9 @@ func setupRouter(
 				}
 
 				msgAdminHandler := handlers.NewMessageAdminHandler(db, mongoDB)
+				handlers.AdminHubInstance = hub
 				adminAuth.GET("/messages/search", msgAdminHandler.SearchMessages)
+				adminAuth.DELETE("/messages/delete", msgAdminHandler.DeleteAdminMessage)
 
 				walletMgmt := adminAuth.Group("/wallet")
 				{

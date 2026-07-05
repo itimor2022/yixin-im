@@ -676,6 +676,8 @@ func isAllowedSystemSettingKey(key string) bool {
 		models.SettingCustomPortalURL,
 		models.SettingCustomPortalIconURL,
 		models.SettingCustomerServiceURL,
+		models.SettingLogoImageUrl,
+		models.SettingDiscoverTopImageUrl,
 		models.SettingOfficialUsers,
 		models.SettingOfficialGroups,
 		models.SettingOfficialChannels,
@@ -1488,6 +1490,8 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"custom_portal_url":           settingMap[models.SettingCustomPortalURL],
 		"custom_portal_icon_url":      settingMap[models.SettingCustomPortalIconURL],
 		"customer_service_url":        settingMap[models.SettingCustomerServiceURL],
+		"logo_image_url":              settingMap[models.SettingLogoImageUrl],
+		"discover_top_image_url":      settingMap[models.SettingDiscoverTopImageUrl],
 		"burn_after_read_enabled":     !isSystemSettingFalse(settingMap[models.SettingBurnAfterReadEnabled]),
 		"message_crypto_mode":         normalizeMessageCryptoMode(settingMap[models.SettingMessageCryptoMode]),
 		// 官方用户/群组/频道

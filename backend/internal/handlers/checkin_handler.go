@@ -95,7 +95,7 @@ func (h *CheckinHandler) DoCheckin(c *gin.Context) {
 		return tx.Save(&stat).Error
 	})
 	if err != nil {
-		response.ServerError(c, "签到失败")
+		response.ServerError(c, "签到失败: " + err.Error())
 		return
 	}
 
@@ -110,54 +110,100 @@ func (h *CheckinHandler) DoCheckin(c *gin.Context) {
 }
 
 // GetCalendar 日历 + 统计 GET /api/v1/checkin/calendar?month=2026-06
+// func (h *CheckinHandler) GetCalendar(c *gin.Context) {
+// 	userID, ok := h.resolveUserID(c)
+// 	if !ok {
+// 		response.Unauthorized(c, "未登录")
+// 		return
+// 	}
+
+// 	monthStr := c.Query("month")
+// 	var first time.Time
+// 	if monthStr != "" {
+// 		t, err := time.ParseInLocation("2006-01", monthStr, time.Local)
+// 		if err != nil {
+// 			response.BadRequest(c, "month 格式应为 2006-01")
+// 			return
+// 		}
+// 		first = t
+// 	} else {
+// 		now := time.Now()
+// 		first = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+// 	}
+// 	last := first.AddDate(0, 1, 0)
+
+// 	var recs []models.UserCheckin
+// 	h.db.Where("user_id = ? AND checkin_date >= ? AND checkin_date < ?", userID, first, last).
+// 		Order("checkin_date ASC").Find(&recs)
+
+// 	days := make([]string, 0, len(recs))
+// 	for _, r := range recs {
+// 		days = append(days, r.CheckinDate.Format("2006-01-02"))
+// 	}
+
+// 	var stat models.UserCheckinStat
+// 	h.db.Where("user_id = ?", userID).First(&stat)
+
+// 	// 今天是否已签到
+// 	today := dateOnly(time.Now())
+// 	var cnt int64
+// 	h.db.Model(&models.UserCheckin{}).Where("user_id = ? AND checkin_date = ?", userID, today).Count(&cnt)
+
+// 	response.Success(c, gin.H{
+// 		"month":           first.Format("2006-01"),
+// 		"checked_days":    days,
+// 		"total_days":      stat.TotalDays,
+// 		"continuous_days": stat.ContinuousDays,
+// 		"checked_today":   cnt > 0,
+// 	})
+// }
+// GetCalendar 日历 + 统计 GET /api/v1/checkin/calendar?month=2026-06
 func (h *CheckinHandler) GetCalendar(c *gin.Context) {
-	userID, ok := h.resolveUserID(c)
-	if !ok {
-		response.Unauthorized(c, "未登录")
-		return
-	}
+    userID, ok := h.resolveUserID(c)
+    if !ok {
+        response.Unauthorized(c, "未登录")
+        return
+    }
 
-	monthStr := c.Query("month")
-	var first time.Time
-	if monthStr != "" {
-		t, err := time.ParseInLocation("2006-01", monthStr, time.Local)
-		if err != nil {
-			response.BadRequest(c, "month 格式应为 2006-01")
-			return
-		}
-		first = t
-	} else {
-		now := time.Now()
-		first = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
-	}
-	last := first.AddDate(0, 1, 0)
+    monthStr := c.Query("month")
+    var first time.Time
+    if monthStr != "" {
+        t, err := time.ParseInLocation("2006-01", monthStr, time.Local)
+        if err != nil {
+            response.BadRequest(c, "month 格式应为 2006-01")
+            return
+        }
+        first = t
+    } else {
+        now := time.Now()
+        first = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+    }
+    last := first.AddDate(0, 1, 0)
 
-	var recs []models.UserCheckin
-	h.db.Where("user_id = ? AND checkin_date >= ? AND checkin_date < ?", userID, first, last).
-		Order("checkin_date ASC").Find(&recs)
+    // ======= 🌟 核心修改地方：直接让 MySQL 吐出格式化好的字符串数组 =======
+    var days []string
+    h.db.Model(&models.UserCheckin{}).
+        Where("user_id = ? AND checkin_date >= ? AND checkin_date < ?", userID, first, last).
+        Order("checkin_date ASC").
+        Pluck("DATE_FORMAT(checkin_date, '%Y-%m-%d')", &days)
+    // ===================================================================
 
-	days := make([]string, 0, len(recs))
-	for _, r := range recs {
-		days = append(days, r.CheckinDate.Format("2006-01-02"))
-	}
+    var stat models.UserCheckinStat
+    h.db.Where("user_id = ?", userID).First(&stat)
 
-	var stat models.UserCheckinStat
-	h.db.Where("user_id = ?", userID).First(&stat)
+    // 今天是否已签到 (保持不动)
+    today := dateOnly(time.Now())
+    var cnt int64
+    h.db.Model(&models.UserCheckin{}).Where("user_id = ? AND checkin_date = ?", userID, today).Count(&cnt)
 
-	// 今天是否已签到
-	today := dateOnly(time.Now())
-	var cnt int64
-	h.db.Model(&models.UserCheckin{}).Where("user_id = ? AND checkin_date = ?", userID, today).Count(&cnt)
-
-	response.Success(c, gin.H{
-		"month":           first.Format("2006-01"),
-		"checked_days":    days,
-		"total_days":      stat.TotalDays,
-		"continuous_days": stat.ContinuousDays,
-		"checked_today":   cnt > 0,
-	})
+    response.Success(c, gin.H{
+        "month":           first.Format("2006-01"),
+        "checked_days":    days, // 此时 days 里面就是标准的 ["2026-06-01", "2026-06-02"] 字符串了
+        "total_days":      stat.TotalDays,
+        "continuous_days": stat.ContinuousDays,
+        "checked_today":   cnt > 0,
+    })
 }
-
 // ==================== 后台 ====================
 
 // AdminListCheckins 后台签到记录 GET /admin/checkins/list

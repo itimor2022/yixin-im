@@ -46,16 +46,25 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
   static const _pingPath = '/api/v1/ping';
   static const _pingTimeout = Duration(seconds: 8);
 
-  void _init() {
-    final current = ApiConfig.serverUrl;
-    // 使用 ServerDiscovery 已知的所有节点：OSS/DNS候选 + 内置兜底 + 当前节点
+ void _init() {
+    String normalize(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
+    final current = normalize(ApiConfig.serverUrl ?? ''); 
+    
     final all = ServerDiscovery.instance.allKnownNodes;
-    state = all
+    
+    if (all.length <= 1) {
+      Future(rediscover); 
+    }
+    
+    final sortedList = all.toList()..sort((a, b) => a.compareTo(b)); 
+    
+    state = sortedList
         .map((url) => NodeInfo(
               url: url,
-              isSelected: url == current,
+              isSelected: normalize(url) == current, 
             ))
         .toList();
+        
     testAll();
   }
 
@@ -115,21 +124,21 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
     }
   }
 
-  String selectNode(String url) {
-    // 切换节点
+  void selectNode(String url) {
     ApiConfig.updateServer(url);
     ServerDiscovery.instance.clearCacheAndSet(url);
+    
+    String normalize(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
+    final target = normalize(url);
+    
     state = state
         .map((n) => NodeInfo(
               url: n.url,
               status: n.status,
               latencyMs: n.latencyMs,
-              isSelected: n.url == url,
+              isSelected: normalize(n.url) == target, // 🔥 改为清洗比对
             ))
         .toList();
-    // 返回节点序号名称
-    final idx = state.indexWhere((n) => n.url == url);
-    return idx >= 0 ? '线路 ${idx + 1}' : url;
   }
 
   void _updateNode(String url, {NodeStatus? status, int? latencyMs}) {
@@ -225,18 +234,7 @@ class NetworkSettingsPage extends ConsumerWidget {
                           isDark: isDark,
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            final name = notifier.selectNode(nodes[i].url);
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('已切换至 $name'),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            );
+                            notifier.selectNode(nodes[i].url);
                           },
                           onRetest: () {
                             HapticFeedback.lightImpact();
@@ -272,22 +270,16 @@ class NetworkSettingsPage extends ConsumerWidget {
                 ),
 
                 const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    '当前线路：${_getCurrentLineName(nodes)}',
-                    style: TextStyle(fontSize: 12, color: subColor),
-                  ),
-                ),
+                // Center(
+                //   child: Text(
+                //     '当前节点: ${ApiConfig.serverUrl}',
+                //     style: TextStyle(fontSize: 12, color: subColor),
+                //   ),
+                // ),
               ],
             ),
     );
   }
-}
-
-String _getCurrentLineName(List<NodeInfo> nodes) {
-  final idx = nodes.indexWhere((n) => n.isSelected);
-  if (idx < 0) return '未知';
-  return '线路 ${idx + 1}';
 }
 
 // ── 节点行 ───────────────────────────────────────────────

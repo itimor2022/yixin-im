@@ -691,33 +691,47 @@ func (h *UserHandler) SearchAll(c *gin.Context) {
 		return
 	}
 
+	// isNumeric := true
+    // for _, r := range keyword {
+    //     if r < '0' || r > '9' {
+    //         isNumeric = false
+    //         break
+    //     }
+    // }
+
+	if len(keyword) != 11 {
+        response.BadRequest(c, "请输入精准的11位手机号")
+        return
+    }
+
 	currentUserID := c.GetString("user_id")
 	result := make([]gin.H, 0)
-	keywordLike := "%" + keyword + "%"
-	shortID, hasShortID := models.ParseUserShortIDKeyword(keyword)
+	//keywordLike := "%" + keyword + "%"
+	//shortID, hasShortID := models.ParseUserShortIDKeyword(keyword)
 
 	// 获取当前用户
 	var currentUser models.User
 	h.db.Where("uuid = ?", currentUserID).First(&currentUser)
 
 	// 搜索用户
-	if searchType == "all" || searchType == "user" {
+	if (searchType == "all" || searchType == "user") {
 		var users []models.User
 		query := h.db.Model(&models.User{}).
 			Select("users.*").
 			Joins("LEFT JOIN user_privacy_settings ups ON ups.user_id = users.id").
 			Where("users.uuid != ?", currentUserID)
-		if hasShortID {
-			query = query.Where(
-				"(users.nickname LIKE ? OR users.username LIKE ? OR (users.phone = ? AND COALESCE(ups.allow_phone_search, 1) = 1) OR (users.short_id = ? AND COALESCE(ups.allow_short_id_search, 1) = 1))",
-				keywordLike, keywordLike, keyword, shortID,
-			)
-		} else {
-			query = query.Where(
-				"(users.nickname LIKE ? OR users.username LIKE ? OR (users.phone = ? AND COALESCE(ups.allow_phone_search, 1) = 1))",
-				keywordLike, keywordLike, keyword,
-			)
-		}
+		query = query.Where("users.phone = ? AND COALESCE(ups.allow_phone_search, 1) = 1", keyword)
+		// if hasShortID {
+		// 	query = query.Where(
+		// 		"(users.nickname LIKE ? OR users.username LIKE ? OR (users.phone = ? AND COALESCE(ups.allow_phone_search, 1) = 1) OR (users.short_id = ? AND COALESCE(ups.allow_short_id_search, 1) = 1))",
+		// 		keywordLike, keywordLike, keyword, shortID,
+		// 	)
+		// } else {
+		// 	query = query.Where(
+		// 		"(users.nickname LIKE ? OR users.username LIKE ? OR (users.phone = ? AND COALESCE(ups.allow_phone_search, 1) = 1))",
+		// 		keywordLike, keywordLike, keyword,
+		// 	)
+		// }
 		query.Limit(10).Find(&users)
 
 		for _, u := range users {

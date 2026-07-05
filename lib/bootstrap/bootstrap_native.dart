@@ -153,6 +153,8 @@ Future<void> bootstrapApp() async {
     ),
   );
 
+  
+
   Future<void>.delayed(const Duration(milliseconds: 500), () {
     OfflineMessageQueue().initialize();
   });

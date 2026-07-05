@@ -73,6 +73,8 @@ class SystemSettings {
   final String customPortalTitle;
   final String customPortalUrl;
   final String customerServiceUrl;
+  final String logoImageUrl;
+  final String discoverTopImageUrl;
   final String customPortalIconUrl;
   final bool burnAfterReadEnabled;
   final MessageCryptoMode messageCryptoMode;
@@ -112,6 +114,8 @@ class SystemSettings {
     this.customPortalTitle = '',
     this.customPortalUrl = '',
     this.customerServiceUrl = '',
+    this.logoImageUrl = '',
+    this.discoverTopImageUrl = '',
     this.customPortalIconUrl = '',
     this.burnAfterReadEnabled = true,
     this.messageCryptoMode = MessageCryptoMode.plain,
@@ -153,6 +157,8 @@ class SystemSettings {
       customPortalTitle: json['custom_portal_title']?.toString() ?? '',
       customPortalUrl: json['custom_portal_url']?.toString() ?? '',
       customerServiceUrl: json['customer_service_url']?.toString() ?? '',
+      logoImageUrl: json['logo_image_url']?.toString() ?? '',
+      discoverTopImageUrl: json['discover_top_image_url']?.toString() ?? '',
       customPortalIconUrl: json['custom_portal_icon_url']?.toString() ?? '',
       burnAfterReadEnabled: json['burn_after_read_enabled'] != false,
       messageCryptoMode: MessageCryptoMode.fromRaw(json['message_crypto_mode']),
@@ -200,6 +206,8 @@ class SystemSettings {
         'custom_portal_title': customPortalTitle,
         'custom_portal_url': customPortalUrl,
         'custom_portal_icon_url': customPortalIconUrl,
+        'logo_image_url': logoImageUrl,
+        'discover_top_image_url': discoverTopImageUrl,
         'burn_after_read_enabled': burnAfterReadEnabled,
         'message_crypto_mode': messageCryptoMode.value,
         'official_users': officialUsers,

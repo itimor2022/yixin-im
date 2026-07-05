@@ -15,10 +15,12 @@ import (
 	"gaoranim/internal/services"
 	"gaoranim/pkg/jwt"
 	"gaoranim/pkg/response"
+	"image/color"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"github.com/mojocn/base64Captcha"
 )
 
 // AuthHandler 认证处理器
@@ -107,6 +109,8 @@ type RegisterRequest struct {
 	DeviceID   string `json:"device_id" binding:"required"`
 	DeviceType string `json:"device_type"` // ios/android/web
 	DeviceName string `json:"device_name"`
+	CaptchaID   string `json:"captchaId" binding:"required"`   // 新增
+    CaptchaCode string `json:"captchaCode" binding:"required"`// 新增
 }
 
 // Register 注册
@@ -152,6 +156,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.Error(c, 400, "昵称不能为空")
 		return
 	}
+
+	// ================== 验证码校验逻辑 ==================
+	var store = base64Captcha.DefaultMemStore
+	if !store.Verify(req.CaptchaID, req.CaptchaCode, true) { 
+		response.Error(c, 400, "验证码错误或已过期")
+		return
+	}
+	// =======================================================
 
 	// 检查是否强制填写邀请码
 	var requireInviteSetting models.SystemSetting
@@ -431,6 +443,45 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	response.Success(c, resp)
 }
 
+// GetCaptcha 获取实心、统一字体、高显图形验证码
+func (h *AuthHandler) GetCaptcha(c *gin.Context) {
+	// 1. 定义完美的乳白色背景 (RGBA)
+	milkyWhite := &color.RGBA{R: 245, G: 245, B: 242, A: 255}
+
+	// 2. 指定只使用库中内置的最清晰、纯实心的标准三号字体 "wqy-microhei.ttc" (文泉驿微米黑)
+	// 如果需要其他经典实心字体，也可以选择 "3Dcap.ttf" 等，这里用三号最端正、明显且绝对是实心的
+	var fontOptions = []string{"wqy-microhei.ttc"}
+
+	// 3. 配置高可读性的字符驱动
+	driverString := base64Captcha.NewDriverString(
+		45,           // 图片高度
+		130,          // 图片宽度
+		0,            // 噪点波纹控制 (0代表最平滑，字形不扭曲)
+		0,            // 干扰线数量 (0代表没有干扰线)
+		4,            // 验证码长度
+		"1234567890", // 限制字符集为纯数字
+		milkyWhite,   // 乳白色背景色
+		nil,          // 使用内置默认字体包管理器
+		fontOptions,  // 核心：强制指定只用这一种实心、明显的字体，杜绝空心字交替出现！
+	)
+
+	// 4. 使用内存存储
+	cp := base64Captcha.NewCaptcha(driverString, base64Captcha.DefaultMemStore)
+
+	// 生成验证码
+	id, b64s, _, err := cp.Generate()
+	if err != nil {
+		response.ServerError(c, "生成验证码失败")
+		return
+	}
+
+	// 返回给前端
+	response.Success(c, gin.H{
+		"captchaId":  id,
+		"captchaB64": b64s,
+	})
+}
+
 // LoginRequest 登录请求
 type LoginRequest struct {
 	Phone      string `json:"phone" binding:"required"`
@@ -438,92 +489,118 @@ type LoginRequest struct {
 	DeviceID   string `json:"device_id" binding:"required"`
 	DeviceType string `json:"device_type"` // ios/android/web
 	DeviceName string `json:"device_name"`
+	CaptchaID   string `json:"captchaId" binding:"required"`   // 新增：验证码ID
+    CaptchaCode string `json:"captchaCode" binding:"required"`
 }
 
 // Login 登录
 func (h *AuthHandler) Login(c *gin.Context) {
-	// Device lock may require SMS verification for new devices.
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-	req.Phone = strings.TrimSpace(req.Phone)
+    // Device lock may require SMS verification for new devices.
+    var req LoginRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        response.BadRequest(c, "参数错误")
+        return
+    }
+    req.Phone = strings.TrimSpace(req.Phone)
 
-	// 查找用户（按手机号）
-	var user models.User
-	result := h.db.Where("phone = ?", req.Phone).First(&user)
+    // ================== 新增：图形验证码校验 ==================
+    // 第三参数为 true 代表：校验后无论成功与否，立刻将该验证码从内存中销毁（防止重放攻击）
+    if !base64Captcha.DefaultMemStore.Verify(req.CaptchaID, req.CaptchaCode, true) {
+        response.Error(c, 400, "验证码错误或已过期")
+        return
+    }
+    // =======================================================
 
-	if result.Error == gorm.ErrRecordNotFound {
-		response.Error(c, 400, "手机号或密码错误")
-		return
-	}
+    // 查找用户（按手机号）
+    var user models.User
+    result := h.db.Where("phone = ?", req.Phone).First(&user)
 
-	if result.Error != nil {
-		response.ServerError(c, "登录失败，请稍后重试")
-		return
-	}
+    if result.Error == gorm.ErrRecordNotFound {
+        response.Error(c, 400, "手机号或密码错误")
+        return
+    }
 
-	// 验证密码（先查Redis缓存，避免每次走bcrypt）
-	pwCacheKey := fmt.Sprintf("pw:ok:%d:%x", user.ID, sha256.Sum256([]byte(req.Password)))
-	pwCacheHit := false
-	if h.cache != nil {
-		if val, err := h.cache.GetRaw(c, pwCacheKey); err == nil && val == "1" {
-			pwCacheHit = true
-		}
-	}
-	if !pwCacheHit {
-		if !user.CheckPassword(req.Password) {
-			response.Error(c, 400, "用户名或密码错误")
-			return
-		}
-		// 验证成功，缓存5分钟
-		if h.cache != nil {
-			h.cache.SetRaw(c, pwCacheKey, "1", 5*60)
-		}
-	}
+    if result.Error != nil {
+        response.ServerError(c, "登录失败，请稍后重试")
+        return
+    }
 
-	// 检查用户状态
-	if user.Status == 0 {
-		response.Error(c, 403, "账号已被禁用")
-		return
-	}
+    // 验证密码（先查Redis缓存，避免每次走bcrypt）
+    pwCacheKey := fmt.Sprintf("pw:ok:%d:%x", user.ID, sha256.Sum256([]byte(req.Password)))
+    pwCacheHit := false
+    if h.cache != nil {
+        if val, err := h.cache.GetRaw(c, pwCacheKey); err == nil && val == "1" {
+            pwCacheHit = true
+        }
+    }
+    if !pwCacheHit {
+        if !user.CheckPassword(req.Password) {
+            response.Error(c, 400, "用户名或密码错误")
+            return
+        }
+        // 验证成功，缓存5分钟
+        if h.cache != nil {
+            h.cache.SetRaw(c, pwCacheKey, "1", 5*60)
+        }
+    }
 
-	// 更新最后登录时间
-	h.db.Model(&user).Update("last_seen", time.Now())
+    // 检查用户状态
+    if user.Status == 0 {
+        response.Error(c, 403, "账号已被禁用")
+        return
+    }
 
-	if needVerify, ticket := h.issueDeviceLockChallenge(c, user, req); needVerify {
-		c.JSON(http.StatusOK, response.Response{
-			Code:    deviceLockVerifyRequiredCode,
-			Message: "新设备登录需要短信验证",
-			Data: gin.H{
-				"verify_ticket": ticket,
-				"expires_in":    int(cache.TTLVerifyCode / time.Second),
-			},
-		})
-		return
-	}
 
-	// 普通登录复用现有会话版本，避免新设备登录挤掉其他在线设备。
-	sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
+    if h.cache != nil {
+        whitelistKey := "user:whitelist:" + user.UUID
+        var whitelistIps string
+        
+        if err := h.cache.Get(c.Request.Context(), whitelistKey, &whitelistIps); err == nil {
 
-	// 生成 Token
-	token, err := jwt.GenerateToken(user.UUID, req.DeviceID, sessionVersion)
-	if err != nil {
-		response.ServerError(c, "生成Token失败")
-		return
-	}
+            currentIP := c.ClientIP()
+            
+            if !CheckIPInWhitelist(currentIP, whitelistIps) {
+                response.Error(c, http.StatusForbidden, "当前处于非法的访问IP环境，登录已被拒绝")
+                return 
+            }
+        }
+    }
 
-	// 记录设备与会话。普通登录复用同一会话版本，不挤掉其他设备。
-	if err := recordUserLogin(h.db, user.ID, token, req.DeviceID, req.DeviceType, req.DeviceName, c.ClientIP(), time.Now()); err != nil {
-		response.ServerError(c, "记录登录会话失败")
-		return
-	}
+    // 更新最后登录时间
+    h.db.Model(&user).Update("last_seen", time.Now())
 
-	response.Success(c, gin.H{
-		"token": token,
-		"user":  user,
-	})
+    if needVerify, ticket := h.issueDeviceLockChallenge(c, user, req); needVerify {
+        c.JSON(http.StatusOK, response.Response{
+            Code:    deviceLockVerifyRequiredCode,
+            Message: "新设备登录需要短信验证",
+            Data: gin.H{
+                "verify_ticket": ticket,
+                "expires_in":    int(cache.TTLVerifyCode / time.Second),
+            },
+        })
+        return
+    }
+
+    // 普通登录复用现有会话版本，避免新设备登录挤掉其他在线设备。
+    sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
+
+    // 生成 Token
+    token, err := jwt.GenerateToken(user.UUID, req.DeviceID, sessionVersion)
+    if err != nil {
+        response.ServerError(c, "生成Token失败")
+        return
+    }
+
+    // 记录设备与会话。普通登录复用同一会话版本，不挤掉其他设备。
+    if err := recordUserLogin(h.db, user.ID, token, req.DeviceID, req.DeviceType, req.DeviceName, c.ClientIP(), time.Now()); err != nil {
+        response.ServerError(c, "记录登录会话失败")
+        return
+    }
+
+    response.Success(c, gin.H{
+        "token": token,
+        "user":  user,
+    })
 }
 
 // updateDevice 更新设备信息

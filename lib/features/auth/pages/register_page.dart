@@ -37,6 +37,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _nicknameController = TextEditingController();
   final _inviteCodeController = TextEditingController();
 
+  String? _captchaId;
+  String? _captchaB64;
+  final _captchaController = TextEditingController();
+
   int _currentStep = 0; // 0: 账号信息, 1: 个人资料
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -58,6 +62,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     super.initState();
     // phone 不需要实时检测
     _loadRegisterSettings();
+    _fetchCaptcha();
   }
 
   Future<void> _loadRegisterSettings() async {
@@ -73,6 +78,26 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     }
   }
 
+
+  Future<void> _fetchCaptcha() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final response = await api.post('/auth/captcha'); 
+
+      if (!mounted) return;
+
+      if (response.isSuccess && response.data != null) {
+        setState(() {
+          _captchaId = response.data['captchaId'];
+          _captchaB64 = response.data['captchaB64'];
+          _captchaController.clear(); 
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('获取验证码失败: $e');
+    }
+  }
+
   @override
   void dispose() {
     _usernameCheckTimer?.cancel();
@@ -82,6 +107,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     _confirmPasswordController.dispose();
     _nicknameController.dispose();
     _inviteCodeController.dispose();
+    _captchaController.dispose();
     super.dispose();
   }
 
@@ -383,6 +409,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
         const SizedBox(height: 16),
 
+
+
         // 密码
         _buildPasswordField(
           controller: _passwordController,
@@ -405,6 +433,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           isDark: isDark,
           onChanged: (_) => _clearError(),
         ),
+
 
         // 错误提示
         if (_errorMessage != null && _currentStep == 0) ...[
@@ -517,11 +546,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           onChanged: (_) => _clearError(),
         ),
 
-        // 错误提示
-        if (_errorMessage != null && _currentStep == 1) ...[
-          const SizedBox(height: 16),
-          _buildErrorMessage(isDark),
-        ],
 
         const SizedBox(height: 16),
 
@@ -533,6 +557,64 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           keyboardType: TextInputType.text,
           isDark: isDark,
         ),
+
+        const SizedBox(height: 16), // 保持与邀请码框一致的 16 高度空隙
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center, // 垂直居中对齐
+          children: [
+            Expanded(
+              child: _buildInputField(
+                controller: _captchaController,
+                hint: '请输入图形验证码',
+                icon: Icons.verified_user_outlined,
+                keyboardType: TextInputType.number,
+                isDark: isDark,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                ],
+                onChanged: (_) => _clearError(),
+              ),
+            ),
+            const SizedBox(width: 12), // 输入框与图片之间的横向间隙
+            GestureDetector(
+              onTap: _fetchCaptcha, // 点击图片刷新验证码
+              child: Container(
+                width: 120,
+                height: 50, // 保持与你的输入框等高
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade300,
+                    width: 1,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _captchaB64 != null
+                    ? Image.memory(
+                        Uri.parse(_captchaB64!).data!.contentAsBytes(),
+                        fit: BoxFit.fill,
+                      )
+                    : const Center(
+                        child: SizedBox(
+                          width: 20, 
+                          height: 20, 
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+        // =============================================================
+
+                // 错误提示
+        if (_errorMessage != null && _currentStep == 1) ...[
+          const SizedBox(height: 16),
+          _buildErrorMessage(isDark),
+        ],
 
         const SizedBox(height: 20),
 
@@ -863,6 +945,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       return;
     }
 
+
     HapticFeedback.mediumImpact();
     setState(() => _currentStep = 1);
   }
@@ -995,6 +1078,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       return;
     }
 
+    if (_captchaController.text.trim().isEmpty) {
+      _showError('请输入图形验证码');
+      return;
+    }
+
     HapticFeedback.mediumImpact();
     setState(() => _isLoading = true);
 
@@ -1016,6 +1104,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       deviceId: deviceId,
       deviceType: deviceType,
       deviceName: deviceName,
+      captchaId: _captchaId ?? '',                 
+      captchaCode: _captchaController.text.trim(),
       inviteCode: _inviteCodeController.text.trim().isNotEmpty
           ? _inviteCodeController.text.trim()
           : null,
@@ -1067,6 +1157,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     } else {
       setState(() => _isLoading = false);
       _showError(response.message);
+      _fetchCaptcha();
     }
   }
 

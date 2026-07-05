@@ -119,7 +119,7 @@ ensureRequiredPropsWhenEnabled(
 android {
     namespace = "com.yixinim.app"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    //ndkVersion = flutter.ndkVersion
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

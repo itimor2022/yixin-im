@@ -22,6 +22,7 @@ import '../../../core/router/app_router.dart';
 import '../../contacts/providers/friend_request_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 import 'message_provider.dart' show MessageItem, persistMessageItemsToIsarCache;
+import 'package:go_router/go_router.dart';
 
 DateTime? _normalizeChatListTime(DateTime? value) {
   if (value == null) return null;
@@ -487,25 +488,37 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _wsHandlerIds.add(
       _wsService.registerHandler('friend_request', (data) {
         _ref.read(friendRequestProvider.notifier).increment();
-        // 播放好友申请提示音（复用私聊通知音）
         _playNotificationSound(ChatItemType.private);
-        final inner = data['data'];
-        final fromName = (inner is Map && inner['from_name'] != null)
-            ? inner['from_name'].toString()
-            : '有人';
+        
         final ctx = rootNavigatorKey.currentContext;
+        
         if (ctx != null) {
+          final inner = data['data'];
+          final fromName = (inner is Map && inner['from_name'] != null)
+              ? inner['from_name'].toString()
+              : '有人';
+
+          ScaffoldMessenger.of(ctx).clearSnackBars(); 
+
           ScaffoldMessenger.of(ctx).showSnackBar(
             SnackBar(
               content: Text('$fromName 请求添加你为好友'),
+              duration: const Duration(seconds: 4), 
               action: SnackBarAction(
                 label: '查看',
                 onPressed: () {
-                  rootNavigatorKey.currentState?.pushNamed('/friend-requests');
+                  ScaffoldMessenger.of(ctx).hideCurrentSnackBar(); 
+                  GoRouter.of(rootNavigatorKey.currentContext!).push('/friend-requests');
                 },
               ),
             ),
           );
+
+          Future.delayed(const Duration(seconds: 4), () {
+            if (rootNavigatorKey.currentContext != null) {
+              ScaffoldMessenger.of(rootNavigatorKey.currentContext!).hideCurrentSnackBar();
+            }
+          });
         }
       }),
     );
@@ -1606,22 +1619,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             .where((chat) => seenIds.add(chat.id)) // 去重：只保留第一次出现的
             .toList();
 
-        // 过滤非好友私聊：private 类型会话，对方不在联系人列表中的不显示
-        final contacts = _ref.read(contactListProvider);
-        final contactUuids = contacts.map((c) => c.uuid).whereType<String>().toSet();
-        final contactIds  = contacts.map((c) => c.id).toSet();
-        final filteredChats = chats.where((chat) {
-          if (chat.type != ChatItemType.private) return true; // 群/频道不过滤
-          // targetUserUuid 或 targetUserId 在联系人中则保留
-          final uuid = chat.targetUserUuid;
-          final uid  = chat.targetUserId?.toString();
-          if (uuid != null && uuid.isNotEmpty && contactUuids.contains(uuid)) return true;
-          if (uid  != null && uid.isNotEmpty  && contactIds.contains(uid))   return true;
-          return false;
-        }).toList();
-
-        final pinned  = filteredChats.where((c) =>  c.isPinned).toList();
-        final regular = filteredChats.where((c) => !c.isPinned).toList();
+        final pinned  = chats.where((c) =>  c.isPinned).toList();
+        final regular = chats.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(
@@ -1716,7 +1715,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     await loadFromServer();
   }
 
-  /// 静默刷新聊天列表（从后台恢复时使用，不显示加载状态）
+/// 静默刷新聊天列表（从后台恢复时使用，不显示加载状态）
   ///
   /// [bypassDebounce]：WS 重连后必须尽快对齐服务端未读/预览，避免与上一请求落在同一 500ms 窗口被吞掉。
   Future<void> silentRefresh({bool bypassDebounce = false}) async {
@@ -1793,22 +1792,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             .where((chat) => seenIds.add(chat.id))
             .toList();
 
-        // 过滤非好友私聊：private 类型会话，对方不在联系人列表中的不显示
-        final contacts = _ref.read(contactListProvider);
-        final contactUuids = contacts.map((c) => c.uuid).whereType<String>().toSet();
-        final contactIds  = contacts.map((c) => c.id).toSet();
-        final filteredChats = chats.where((chat) {
-          if (chat.type != ChatItemType.private) return true; // 群/频道不过滤
-          // targetUserUuid 或 targetUserId 在联系人中则保留
-          final uuid = chat.targetUserUuid;
-          final uid  = chat.targetUserId?.toString();
-          if (uuid != null && uuid.isNotEmpty && contactUuids.contains(uuid)) return true;
-          if (uid  != null && uid.isNotEmpty  && contactIds.contains(uid))   return true;
-          return false;
-        }).toList();
+        // ==================== ❌ 二开好友过滤已被彻底干掉 ====================
 
-        final pinned  = filteredChats.where((c) =>  c.isPinned).toList();
-        final regular = filteredChats.where((c) => !c.isPinned).toList();
+        // 🌟 最核心修改：恢复成原版，直接将全量 chats 数据源分别拆分给置顶和常规列表
+        final pinned  = chats.where((c) =>  c.isPinned).toList();
+        final regular = chats.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(
@@ -1844,8 +1832,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
         // 异步写入 Isar
         Future.microtask(() async {
+          // 🛡️ 额外拦截：日志报过 Isar 故障，如果没开成功直接终止，保护内存数据
           if (_isDisposed ||
               PlatformUtils.isWeb ||
+              IsarService.instance == null ||
               !IsarService.instance.isAvailable) {
             return;
           }
@@ -2129,7 +2119,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     );
 
     if (!response.isSuccess) {
-      throw Exception(
+      throw AppCleanException(
         response.message.isNotEmpty ? response.message : '创建群组失败',
       );
     }
@@ -2185,7 +2175,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     );
 
     if (!response.isSuccess) {
-      throw Exception(
+      throw AppCleanException(
         response.message.isNotEmpty ? response.message : '创建频道失败',
       );
     }
@@ -2346,7 +2336,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               .toList(),
         );
       }
-      throw Exception(
+      throw AppCleanException(
         response.message.isNotEmpty ? response.message : '置顶操作失败',
       );
     }

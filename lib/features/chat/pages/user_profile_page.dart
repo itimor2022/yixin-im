@@ -797,91 +797,91 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                         ),
                       ),
                     if (_isCurrentUser) const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                      child: PremiumCard(
-                        isDark: true,
-                        premiumType: _premiumType,
-                        padding: const EdgeInsets.all(18),
-                        borderRadius: BorderRadius.circular(24),
-                        colors: profileBgGradient,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_awesome_rounded,
-                                  color: Colors.white.withOpacity(0.95),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  PremiumThemeTokens.isPremium(_premiumType)
-                                      ? 'Premium Profile'
-                                      : 'Profile Snapshot',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              (_realBio != null && _realBio!.isNotEmpty)
-                                  ? _realBio!
-                                  : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.84),
-                                fontSize: 14,
-                                height: 1.45,
-                              ),
-                            ),
-                            if (_realUsername != null &&
-                                _realUsername!.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              PremiumContainer(
-                                premiumType: _premiumType,
-                                borderRadius: BorderRadius.circular(14),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.alternate_email,
-                                        size: 16,
-                                        color: Colors.white.withOpacity(0.92),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        '@$_realUsername',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
+                    // Padding(
+                    //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                    //   child: PremiumCard(
+                    //     isDark: true,
+                    //     premiumType: _premiumType,
+                    //     padding: const EdgeInsets.all(18),
+                    //     borderRadius: BorderRadius.circular(24),
+                    //     colors: profileBgGradient,
+                    //     child: Column(
+                    //       crossAxisAlignment: CrossAxisAlignment.start,
+                    //       children: [
+                    //         Row(
+                    //           children: [
+                    //             Icon(
+                    //               Icons.auto_awesome_rounded,
+                    //               color: Colors.white.withOpacity(0.95),
+                    //               size: 20,
+                    //             ),
+                    //             const SizedBox(width: 8),
+                    //             Text(
+                    //               PremiumThemeTokens.isPremium(_premiumType)
+                    //                   ? 'Premium Profile'
+                    //                   : 'Profile Snapshot',
+                    //               style: const TextStyle(
+                    //                 color: Colors.white,
+                    //                 fontSize: 16,
+                    //                 fontWeight: FontWeight.w700,
+                    //               ),
+                    //             ),
+                    //           ],
+                    //         ),
+                    //         const SizedBox(height: 10),
+                    //         Text(
+                    //           (_realBio != null && _realBio!.isNotEmpty)
+                    //               ? _realBio!
+                    //               : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
+                    //           style: TextStyle(
+                    //             color: Colors.white.withOpacity(0.84),
+                    //             fontSize: 14,
+                    //             height: 1.45,
+                    //           ),
+                    //         ),
+                    //         if (_realUsername != null &&
+                    //             _realUsername!.isNotEmpty) ...[
+                    //           const SizedBox(height: 12),
+                    //           PremiumContainer(
+                    //             premiumType: _premiumType,
+                    //             borderRadius: BorderRadius.circular(14),
+                    //             child: Padding(
+                    //               padding: const EdgeInsets.symmetric(
+                    //                 horizontal: 10,
+                    //                 vertical: 8,
+                    //               ),
+                    //               child: Row(
+                    //                 mainAxisSize: MainAxisSize.min,
+                    //                 children: [
+                    //                   Icon(
+                    //                     Icons.alternate_email,
+                    //                     size: 16,
+                    //                     color: Colors.white.withOpacity(0.92),
+                    //                   ),
+                    //                   const SizedBox(width: 6),
+                    //                   Text(
+                    //                     '@$_realUsername',
+                    //                     style: const TextStyle(
+                    //                       color: Colors.white,
+                    //                       fontSize: 13,
+                    //                       fontWeight: FontWeight.w600,
+                    //                     ),
+                    //                   ),
+                    //                 ],
+                    //               ),
+                    //             ),
+                    //           ),
+                    //         ],
+                    //       ],
+                    //     ),
+                    //   ),
+                    // ),
                   ],
                 ),
-              ),
+              ),  
 
               // 间距
-              SliverToBoxAdapter(child: SizedBox(height: 20)),
+              SliverToBoxAdapter(child: SizedBox(height: 40)),
 
               // 用户信息卡片
               SliverToBoxAdapter(
@@ -991,40 +991,40 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
               ),
 
               // 危险操作（不显示给自己）
-              if (!_isCurrentUser) ...[
-                SliverToBoxAdapter(child: SizedBox(height: 20)),
-                SliverToBoxAdapter(
-                  child: _TGSection(
-                    cardColor: cardColor,
-                    separatorColor: separatorColor,
-                    children: [
-                      _TGCell(
-                        title: _isBlocked
-                            ? (l10n.get('unblock_user') ?? '取消屏蔽')
-                            : (l10n.get('block_user') ?? '屏蔽用户'),
-                        titleColor: _isBlocked ? Colors.orange : Colors.red,
-                        trailing: _loadingBlockStatus
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
-                        onTap: _loadingBlockStatus
-                            ? null
-                            : () => _toggleBlock(context),
-                      ),
-                      _TGCell(
-                        title: l10n.get('report') ?? '举报',
-                        titleColor: Colors.red,
-                        onTap: () => _showReportPage(context),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              // if (!_isCurrentUser) ...[
+              //   SliverToBoxAdapter(child: SizedBox(height: 20)),
+              //   SliverToBoxAdapter(
+              //     child: _TGSection(
+              //       cardColor: cardColor,
+              //       separatorColor: separatorColor,
+              //       children: [
+              //         _TGCell(
+              //           title: _isBlocked
+              //               ? (l10n.get('unblock_user') ?? '取消屏蔽')
+              //               : (l10n.get('block_user') ?? '屏蔽用户'),
+              //           titleColor: _isBlocked ? Colors.orange : Colors.red,
+              //           trailing: _loadingBlockStatus
+              //               ? SizedBox(
+              //                   width: 16,
+              //                   height: 16,
+              //                   child: CircularProgressIndicator(
+              //                     strokeWidth: 2,
+              //                   ),
+              //                 )
+              //               : null,
+              //           onTap: _loadingBlockStatus
+              //               ? null
+              //               : () => _toggleBlock(context),
+              //         ),
+              //         _TGCell(
+              //           title: l10n.get('report') ?? '举报',
+              //           titleColor: Colors.red,
+              //           onTap: () => _showReportPage(context),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ],
 
               SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
@@ -1288,14 +1288,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
               _searchMessages(context);
             },
           ),
-          _TGActionSheetItem(
-            title: '清空聊天记录',
-            isDestructive: true,
-            onTap: () {
-              Navigator.pop(context);
-              _showClearChatDialog(context);
-            },
-          ),
+          // _TGActionSheetItem(
+          //   title: '清空聊天记录',
+          //   isDestructive: true,
+          //   onTap: () {
+          //     Navigator.pop(context);
+          //     _showClearChatDialog(context);
+          //   },
+          // ),
         ],
         cancelText: '取消',
       ),

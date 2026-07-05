@@ -68,7 +68,7 @@ class E2EEService {
     final keyPair = await _loadOrCreateKeyPair();
     final deviceBundle = await _fetchChatDeviceKeys(chatId);
     if (deviceBundle.devices.isEmpty) {
-      throw Exception('当前会话没有可用的加密设备');
+      throw AppCleanException('当前会话没有可用的加密设备');
     }
 
     final secret = _randomBytes(64);
@@ -126,13 +126,13 @@ class E2EEService {
         .where((userId) => (validDeviceCountByUser[userId] ?? 0) == 0)
         .toList();
     if (missingUsers.isNotEmpty) {
-      throw Exception('会话内仍有设备未升级到加密版本，请先更新客户端后再发送');
+      throw AppCleanException('会话内仍有设备未升级到加密版本，请先更新客户端后再发送');
     }
 
     final myEnvelopeFound =
         envelopes.any((item) => item.deviceId == keyPair.deviceId);
     if (!myEnvelopeFound || envelopes.isEmpty) {
-      throw Exception('加密封装失败，请稍后重试');
+      throw AppCleanException('加密封装失败，请稍后重试');
     }
 
     return E2EEEncryptResult(
@@ -176,7 +176,7 @@ class E2EEService {
         _hmacSha256(macKey, Uint8List.fromList([...iv, ...cipherBytes]));
     final actualMac = _b64d(payload.mac);
     if (!_constantTimeEquals(expectedMac, actualMac)) {
-      throw Exception('消息签名校验失败');
+      throw AppCleanException('消息签名校验失败');
     }
 
     final plainBytes = _decryptAesCbc(cipherBytes, aesKey, iv);
@@ -216,7 +216,7 @@ class E2EEService {
       },
     );
     if (!response.isSuccess) {
-      throw Exception(
+      throw AppCleanException(
           response.message.isNotEmpty ? response.message : '注册设备密钥失败');
     }
     await _storage.write(key: registeredDeviceKey, value: keyPair.deviceId);
@@ -228,7 +228,7 @@ class E2EEService {
       queryParameters: {'chat_id': chatId},
     );
     if (!response.isSuccess || response.data == null) {
-      throw Exception(
+      throw AppCleanException(
           response.message.isNotEmpty ? response.message : '读取会话密钥失败');
     }
     final raw = response.data;

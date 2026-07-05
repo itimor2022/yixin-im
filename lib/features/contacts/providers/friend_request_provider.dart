@@ -28,5 +28,9 @@ class FriendRequestNotifier extends StateNotifier<int> {
 
 final friendRequestProvider =
     StateNotifierProvider<FriendRequestNotifier, int>((ref) {
-  return FriendRequestNotifier(ref);
+  final notifier = FriendRequestNotifier(ref);
+  
+  Future.microtask(() => notifier.load());
+  
+  return notifier;
 });

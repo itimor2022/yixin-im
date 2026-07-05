@@ -13,84 +13,97 @@ extension GetUserModelCollection on Isar {
   IsarCollection<UserModel> get userModels => this.collection();
 }
 
-int _userModelJsSafeInt(String value) => int.parse(value);
-
-final UserModelSchema = CollectionSchema(
+const UserModelSchema = CollectionSchema(
   name: r'UserModel',
-  id: _userModelJsSafeInt('7195426469378571114'),
+  id: 1,
   properties: {
     r'avatar': PropertySchema(
       id: 0,
       name: r'avatar',
       type: IsarType.string,
     ),
-    r'bio': PropertySchema(
+    r'badgeColor': PropertySchema(
       id: 1,
+      name: r'badgeColor',
+      type: IsarType.string,
+    ),
+    r'badgeText': PropertySchema(
+      id: 2,
+      name: r'badgeText',
+      type: IsarType.string,
+    ),
+    r'bio': PropertySchema(
+      id: 3,
       name: r'bio',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'emojiAvatar': PropertySchema(
-      id: 3,
+      id: 5,
       name: r'emojiAvatar',
       type: IsarType.string,
     ),
     r'id': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'id',
       type: IsarType.string,
     ),
     r'isBlocked': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'isBlocked',
       type: IsarType.bool,
     ),
     r'isContact': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'isContact',
       type: IsarType.bool,
     ),
+    r'isMember': PropertySchema(
+      id: 9,
+      name: r'isMember',
+      type: IsarType.bool,
+    ),
     r'isOnline': PropertySchema(
-      id: 7,
+      id: 10,
       name: r'isOnline',
       type: IsarType.bool,
     ),
     r'lastSeen': PropertySchema(
-      id: 8,
+      id: 11,
       name: r'lastSeen',
       type: IsarType.dateTime,
     ),
     r'nickname': PropertySchema(
-      id: 9,
+      id: 12,
       name: r'nickname',
       type: IsarType.string,
     ),
     r'nicknameColor': PropertySchema(
-      id: 10,
+      id: 13,
       name: r'nicknameColor',
       type: IsarType.string,
     ),
     r'phone': PropertySchema(
-      id: 11,
+      id: 14,
       name: r'phone',
       type: IsarType.string,
     ),
     r'premiumType': PropertySchema(
-      id: 12,
+      id: 15,
       name: r'premiumType',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 13,
+      id: 16,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
     r'username': PropertySchema(
-      id: 14,
+      id: 17,
       name: r'username',
       type: IsarType.string,
     )
@@ -102,7 +115,7 @@ final UserModelSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: _userModelJsSafeInt('-3268401673993471357'),
+      id: -1,
       name: r'id',
       unique: true,
       replace: false,
@@ -115,7 +128,7 @@ final UserModelSchema = CollectionSchema(
       ],
     ),
     r'username': IndexSchema(
-      id: _userModelJsSafeInt('-2899563114555695793'),
+      id: -2,
       name: r'username',
       unique: false,
       replace: false,
@@ -128,7 +141,7 @@ final UserModelSchema = CollectionSchema(
       ],
     ),
     r'phone': IndexSchema(
-      id: _userModelJsSafeInt('-6308098324157559207'),
+      id: -12345,
       name: r'phone',
       unique: false,
       replace: false,
@@ -157,6 +170,18 @@ int _userModelEstimateSize(
   var bytesCount = offsets.last;
   {
     final value = object.avatar;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.badgeColor;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.badgeText;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
@@ -209,20 +234,23 @@ void _userModelSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.avatar);
-  writer.writeString(offsets[1], object.bio);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeString(offsets[3], object.emojiAvatar);
-  writer.writeString(offsets[4], object.id);
-  writer.writeBool(offsets[5], object.isBlocked);
-  writer.writeBool(offsets[6], object.isContact);
-  writer.writeBool(offsets[7], object.isOnline);
-  writer.writeDateTime(offsets[8], object.lastSeen);
-  writer.writeString(offsets[9], object.nickname);
-  writer.writeString(offsets[10], object.nicknameColor);
-  writer.writeString(offsets[11], object.phone);
-  writer.writeString(offsets[12], object.premiumType);
-  writer.writeDateTime(offsets[13], object.updatedAt);
-  writer.writeString(offsets[14], object.username);
+  writer.writeString(offsets[1], object.badgeColor);
+  writer.writeString(offsets[2], object.badgeText);
+  writer.writeString(offsets[3], object.bio);
+  writer.writeDateTime(offsets[4], object.createdAt);
+  writer.writeString(offsets[5], object.emojiAvatar);
+  writer.writeString(offsets[6], object.id);
+  writer.writeBool(offsets[7], object.isBlocked);
+  writer.writeBool(offsets[8], object.isContact);
+  writer.writeBool(offsets[9], object.isMember);
+  writer.writeBool(offsets[10], object.isOnline);
+  writer.writeDateTime(offsets[11], object.lastSeen);
+  writer.writeString(offsets[12], object.nickname);
+  writer.writeString(offsets[13], object.nicknameColor);
+  writer.writeString(offsets[14], object.phone);
+  writer.writeString(offsets[15], object.premiumType);
+  writer.writeDateTime(offsets[16], object.updatedAt);
+  writer.writeString(offsets[17], object.username);
 }
 
 UserModel _userModelDeserialize(
@@ -233,20 +261,23 @@ UserModel _userModelDeserialize(
 ) {
   final object = UserModel();
   object.avatar = reader.readStringOrNull(offsets[0]);
-  object.bio = reader.readStringOrNull(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.emojiAvatar = reader.readStringOrNull(offsets[3]);
-  object.id = reader.readString(offsets[4]);
-  object.isBlocked = reader.readBool(offsets[5]);
-  object.isContact = reader.readBool(offsets[6]);
-  object.isOnline = reader.readBool(offsets[7]);
-  object.lastSeen = reader.readDateTimeOrNull(offsets[8]);
-  object.nickname = reader.readStringOrNull(offsets[9]);
-  object.nicknameColor = reader.readStringOrNull(offsets[10]);
-  object.phone = reader.readStringOrNull(offsets[11]);
-  object.premiumType = reader.readStringOrNull(offsets[12]);
-  object.updatedAt = reader.readDateTime(offsets[13]);
-  object.username = reader.readString(offsets[14]);
+  object.badgeColor = reader.readStringOrNull(offsets[1]);
+  object.badgeText = reader.readStringOrNull(offsets[2]);
+  object.bio = reader.readStringOrNull(offsets[3]);
+  object.createdAt = reader.readDateTime(offsets[4]);
+  object.emojiAvatar = reader.readStringOrNull(offsets[5]);
+  object.id = reader.readString(offsets[6]);
+  object.isBlocked = reader.readBool(offsets[7]);
+  object.isContact = reader.readBool(offsets[8]);
+  object.isMember = reader.readBool(offsets[9]);
+  object.isOnline = reader.readBool(offsets[10]);
+  object.lastSeen = reader.readDateTimeOrNull(offsets[11]);
+  object.nickname = reader.readStringOrNull(offsets[12]);
+  object.nicknameColor = reader.readStringOrNull(offsets[13]);
+  object.phone = reader.readStringOrNull(offsets[14]);
+  object.premiumType = reader.readStringOrNull(offsets[15]);
+  object.updatedAt = reader.readDateTime(offsets[16]);
+  object.username = reader.readString(offsets[17]);
   return object;
 }
 
@@ -262,30 +293,36 @@ P _userModelDeserializeProp<P>(
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 5:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 6:
-      return (reader.readBool(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 7:
       return (reader.readBool(offset)) as P;
     case 8:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 9:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 10:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 11:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 12:
       return (reader.readStringOrNull(offset)) as P;
     case 13:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 14:
+      return (reader.readStringOrNull(offset)) as P;
+    case 15:
+      return (reader.readStringOrNull(offset)) as P;
+    case 16:
+      return (reader.readDateTime(offset)) as P;
+    case 17:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -734,6 +771,306 @@ extension UserModelQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         property: r'avatar',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'badgeColor',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeColorIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'badgeColor',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeColorGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'badgeColor',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeColorStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeColorMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'badgeColor',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeColorIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeColor',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeColorIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'badgeColor',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'badgeText',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeTextIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'badgeText',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeTextGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'badgeText',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'badgeText',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> badgeTextIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeText',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      badgeTextIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'badgeText',
         value: '',
       ));
     });
@@ -1236,6 +1573,16 @@ extension UserModelQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'isContact',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> isMemberEqualTo(
+      bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isMember',
         value: value,
       ));
     });
@@ -2179,6 +2526,30 @@ extension UserModelQuerySortBy on QueryBuilder<UserModel, UserModel, QSortBy> {
     });
   }
 
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByBadgeColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByBadgeColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.desc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByBadgeText() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByBadgeTextDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByBio() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'bio', Sort.asc);
@@ -2248,6 +2619,18 @@ extension UserModelQuerySortBy on QueryBuilder<UserModel, UserModel, QSortBy> {
   QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByIsContactDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isContact', Sort.desc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByIsMemberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.desc);
     });
   }
 
@@ -2362,6 +2745,30 @@ extension UserModelQuerySortThenBy
     });
   }
 
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByBadgeColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByBadgeColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.desc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByBadgeText() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByBadgeTextDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByBio() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'bio', Sort.asc);
@@ -2431,6 +2838,18 @@ extension UserModelQuerySortThenBy
   QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByIsContactDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isContact', Sort.desc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByIsMemberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.desc);
     });
   }
 
@@ -2552,6 +2971,20 @@ extension UserModelQueryWhereDistinct
     });
   }
 
+  QueryBuilder<UserModel, UserModel, QDistinct> distinctByBadgeColor(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'badgeColor', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QDistinct> distinctByBadgeText(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'badgeText', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QDistinct> distinctByBio(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -2588,6 +3021,12 @@ extension UserModelQueryWhereDistinct
   QueryBuilder<UserModel, UserModel, QDistinct> distinctByIsContact() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isContact');
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QDistinct> distinctByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isMember');
     });
   }
 
@@ -2660,6 +3099,18 @@ extension UserModelQueryProperty
     });
   }
 
+  QueryBuilder<UserModel, String?, QQueryOperations> badgeColorProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'badgeColor');
+    });
+  }
+
+  QueryBuilder<UserModel, String?, QQueryOperations> badgeTextProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'badgeText');
+    });
+  }
+
   QueryBuilder<UserModel, String?, QQueryOperations> bioProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'bio');
@@ -2693,6 +3144,12 @@ extension UserModelQueryProperty
   QueryBuilder<UserModel, bool, QQueryOperations> isContactProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isContact');
+    });
+  }
+
+  QueryBuilder<UserModel, bool, QQueryOperations> isMemberProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isMember');
     });
   }
 

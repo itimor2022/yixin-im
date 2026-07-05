@@ -57,7 +57,7 @@ class CheckinService {
     if (res.isSuccess && res.data != null) {
       return CheckinCalendar.fromJson(res.data!);
     }
-    throw Exception(res.message);
+    throw AppCleanException(res.message);
   }
 }
 

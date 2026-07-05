@@ -75,7 +75,7 @@ build() {
     export GOARCH=amd64
     
     # 编译
-    go build -ldflags="-s -w" -o "$OUTPUT_DIR/$BINARY_NAME" ./cmd/server
+    go build -trimpath -ldflags="-s -w" -o "$OUTPUT_DIR/$BINARY_NAME" ./cmd/server
     
     if [ -f "$OUTPUT_DIR/$BINARY_NAME" ]; then
         # 获取文件大小

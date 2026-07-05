@@ -89,7 +89,7 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
         HapticFeedback.mediumImpact();
         Navigator.pop(context);
       } else {
-        throw Exception(response.message);
+        throw AppCleanException(response.message);
       }
     } catch (e) {
       if (!mounted) return;

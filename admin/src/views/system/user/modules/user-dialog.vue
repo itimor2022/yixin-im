@@ -23,6 +23,21 @@
               <ElOption label="待审核" :value="2" />
             </ElSelect>
           </ElFormItem>
+
+          <!-- ── 新增功能：IP 白名单开关 ── -->
+          <ElFormItem label="白名单" prop="enableWhitelist">
+            <ElSwitch v-model="formData.enableWhitelist" />
+          </ElFormItem>
+
+          <!-- ── 新增功能：白名单 IP 输入框（开启时显示） ── -->
+          <ElFormItem v-if="formData.enableWhitelist" label="白名单IP" prop="whitelistIps">
+            <ElInput
+              v-model="formData.whitelistIps"
+              type="textarea"
+              :rows="4"
+              placeholder="请输入允许登录的 IP 地址，一行一个 IP&#10;例如：&#10;192.168.1.1&#10;10.0.0.1"
+            />
+          </ElFormItem>
         </ElForm>
       </ElTabPane>
 
@@ -137,6 +152,8 @@
     badgeColor?: string
     badgeLabel?: string
     premiumType?: string
+    enableWhitelist?: boolean | number
+    whitelistIps?: string
   }
 
   interface Props {
@@ -169,7 +186,9 @@
     username: '',
     phone: '',
     bio: '',
-    status: 1
+    status: 1,
+    enableWhitelist: false, 
+    whitelistIps: ''       
   })
 
   const memberData = reactive({
@@ -205,14 +224,16 @@
       username: row.username || '',
       phone: row.phone || (row.userPhone !== '-' ? row.userPhone : '') || '',
       bio: row.bio || '',
-      status: parseInt(row.status || '1')
+      status: parseInt(row.status || '1'),
+      // 回显白名单数据（兼容后端返回的 0/1 或 true/false）
+      enableWhitelist: row.enableWhitelist === 1 || row.enableWhitelist === true,
+      whitelistIps: row.whitelistIps || ''
     })
     Object.assign(memberData, {
       isMember: !!row.isMember,
       badgeText: row.badgeText || '',
       badgeColor: row.badgeColor || '#3390EC',
       badgeLabel: row.badgeText || '',
-      isMember: !!row.isMember,
       planId: undefined,
       days: 30,
       granting: false
@@ -246,7 +267,6 @@
     memberData.granting = true
     try {
       await grantMembership(props.userData.id, memberData.planId, memberData.days)
-        // 同步保存徽章设置
         await setMembership(props.userData.id, {
           is_member: true,
           badge_text: memberData.badgeLabel || '',
@@ -280,21 +300,21 @@
       submitting.value = true
       const errors: string[] = []
 
-      // 保存基本信息
       try {
         await updateUser(props.userData!.id!, {
           nickname: formData.nickname,
           username: formData.username,
           phone: formData.phone || undefined,
           bio: formData.bio || undefined,
-          status: formData.status
+          status: formData.status,
+          enable_whitelist: formData.enableWhitelist, 
+          whitelist_ips: formData.whitelistIps
         } as any)
       } catch (e) {
         console.error('基本信息保存失败:', e)
         errors.push('基本信息')
       }
 
-      // 保存徽章设置（badge_text / badge_color / is_member）
       try {
         await setMembership(props.userData!.id!, {
           is_member: memberData.isMember,
