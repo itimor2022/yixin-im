@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"regexp"
 
 	"gaoranim/internal/cache"
 	"gaoranim/internal/models"
@@ -731,16 +732,47 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 	}
 
 	// 违禁词过滤（仅对文本消息检测 text 字段）
-	if req.Type == 1 && !hasEncryptedPayload {
-		if text, ok := req.Content["text"].(string); ok && text != "" {
-			filtered, blocked := filterContentWithDB(h.db, text)
-			if blocked {
-				response.Forbidden(c, "消息包含违禁词，无法发送")
-				return
-			}
-			req.Content["text"] = filtered
-		}
-	}
+	// if req.Type == 1 && !hasEncryptedPayload {
+	// 	if text, ok := req.Content["text"].(string); ok && text != "" {
+	// 		filtered, blocked := filterContentWithDB(h.db, text)
+	// 		if blocked {
+	// 			response.Forbidden(c, "消息包含违禁词，无法发送")
+	// 			return
+	// 		}
+	// 		req.Content["text"] = filtered
+	// 	}
+	// }
+
+	// =========================================================================
+    //  新增/修改：群组网址屏蔽与 .top 域名限制硬拦截
+    // =========================================================================
+    if req.Type == 1 && !hasEncryptedPayload {
+        if text, ok := req.Content["text"].(string); ok && text != "" {
+            
+            if chat.Type != 1 && !chat.CanSendLinks && senderMember.Role < 1 {
+                
+                linkRegex := regexp.MustCompile(`(?i)((https?://)?([a-zA-Z0-9-]+\.)+([a-zA-Z]{2,6}|top)(/[^\s]*)?)`)
+                
+                containsTopDomain := strings.Contains(strings.ToLower(text), ".top")
+
+                if linkRegex.MatchString(text) || containsTopDomain {
+                    response.Forbidden(c, "当前群组已关闭“发送链接”权限，禁止发送网址域名消息")
+                    return
+                }
+            }
+
+            // 4. 原有的违禁词过滤逻辑保持不变
+            filtered, blocked := filterContentWithDB(h.db, text)
+            if blocked {
+                response.Forbidden(c, "消息包含违禁词，无法发送")
+                return
+            }
+            req.Content["text"] = filtered
+        }
+    }
+    // =========================================================================
+    //  拦截控制结束
+    // =========================================================================
 
 	burnAfterReadEnabled := !isSystemSettingFalse(
 		h.getStringSetting(models.SettingBurnAfterReadEnabled, "true"),

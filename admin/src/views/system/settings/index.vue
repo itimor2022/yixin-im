@@ -209,6 +209,20 @@
             />
             <span class="ml-2 text-sm text-g-400">App「找回密码」与「常见问题-在线客服」会跳转此地址</span>
           </ElFormItem>
+          <ElFormItem label="登录页面图片">
+            <ElInput
+              v-model="featureForm.logo_image_url"
+              placeholder="例如：https://www.demo.com/1.jpg"
+              :disabled="isDemoAdmin"
+            />
+          </ElFormItem>
+          <ElFormItem label="发现页顶部图片">
+            <ElInput
+              v-model="featureForm.discover_top_image_url"
+              placeholder="例如：https://www.demo.com/discover_banner.jpg"
+              :disabled="isDemoAdmin"
+            />
+          </ElFormItem>
           <ElDivider content-position="left">新用户设置</ElDivider>
           <ElFormItem label="新用户强制关注官方用户">
             <ElSwitch v-model="featureForm.new_user_follow_official" :disabled="isDemoAdmin" />
@@ -806,6 +820,8 @@
     custom_portal_url: '',
     custom_portal_icon_url: '',
     customer_service_url: '',
+    logo_image_url: '',
+    discover_top_image_url: '',
     burn_after_read_enabled: true,
     message_crypto_mode: 'plain',
     group_max_members: 200000,
@@ -1045,6 +1061,8 @@
       featureForm.custom_portal_url = settings.custom_portal_url || ''
       featureForm.custom_portal_icon_url = settings.custom_portal_icon_url || ''
       featureForm.customer_service_url = settings.customer_service_url || ''
+      featureForm.logo_image_url = settings.logo_image_url || '';
+      featureForm.discover_top_image_url = settings.discover_top_image_url || '';
       featureForm.burn_after_read_enabled = settings.burn_after_read_enabled !== false
       featureForm.message_crypto_mode = settings.message_crypto_mode || 'plain'
       featureForm.group_max_members = settings.group_max_members ?? 200000

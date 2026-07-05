@@ -21,6 +21,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'agreement_page.dart';
 import 'forgot_password_page.dart';
 import '../../settings/pages/network_settings_page.dart';
+import '../../../core/utils/link_utils.dart';
 
 /// 登录页面
 class LoginPage extends ConsumerStatefulWidget {
@@ -48,12 +49,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _qrLoginError;
   bool _showDesktopQrLogin = false;
   String _appVersion = '';
+  final _captchaController = TextEditingController();
+  String? _captchaId;
+  String? _captchaB64;
 
   @override
   void initState() {
     super.initState();
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _appVersion = info.version);
+    });
+    _fetchCaptcha();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        ref.invalidate(systemSettingsProvider);
+      } catch (e) {
+        debugPrint('⚠️ [Login Cache Bypass] 强刷配置异常: $e');
+      }
     });
   }
 
@@ -62,6 +74,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _qrLoginPollTimer?.cancel();
     _phoneController.dispose();
     _passwordController.dispose();
+    _captchaController.dispose();
     super.dispose();
   }
 
@@ -81,6 +94,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     // 移动端使用原始布局
     return Scaffold(
       backgroundColor: bgColor,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false, 
+        actions: [
+          _buildCustomerServiceAction(),
+          const SizedBox(width: 16), 
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -89,32 +111,99 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     );
   }
+  Future<void> _fetchCaptcha() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final response = await api.post('/auth/captcha');
+      if (response.isSuccess && response.data != null) {
+        if (!mounted) return;
+        setState(() {
+          _captchaId = response.data['captchaId']?.toString();
+          _captchaB64 = response.data['captchaB64']?.toString();
+        });
+      }
+    } catch (e) {
+      debugPrint('获取登录验证码失败: $e');
+    }
+  }
 
   /// 登录内容（共享）
   Widget _buildLoginContent(bool isDark) {
     final isDesktop =
         PlatformUtils.isDesktop || MediaQuery.of(context).size.width >= 600;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final appName =
-        ref.watch(systemSettingsProvider).valueOrNull?.displayName ??
-            kDefaultAppDisplayName;
+    
+    final systemSettings = ref.watch(systemSettingsProvider).valueOrNull;
+    
+    final remoteLogoUrl = systemSettings?.logoImageUrl;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(height: isDesktop ? 28 : 56),
+        if (isDesktop)
+          Align(
+            alignment: Alignment.centerRight,
+            child: _buildCustomerServiceAction(),
+          ),
 
-        // Logo（桌面端隐藏，因为左侧已有）
-        if (!isDesktop) ...[
-          _buildLogo(),
-          const SizedBox(height: 24),
-        ],
+        SizedBox(height: isDesktop ? 28 : 16),
 
         if (!(PlatformUtils.isDesktop && _showDesktopQrLogin)) ...[
-          _buildTitle(isDark, l10n, appName),
-          const SizedBox(height: 48),
-        ],
+          ref.watch(systemSettingsProvider).when(
+            data: (settings) {
+              final logoUrl = settings.logoImageUrl;
+              
+              if (logoUrl.isEmpty) return const SizedBox(height: 32);
+              
+              final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=${DateTime.now().microsecondsSinceEpoch}';
+              
+              debugPrint('🔥 [Login UI Log] 正在拉取最新的穿透直链: $finalImgUrl');
 
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 32),
+                child: Image.network(
+                  finalImgUrl, 
+                  height: 180, 
+                  fit: BoxFit.contain,
+                  // 3. 核心大招：利用 Image 自身的 frameBuilder 或 loadingBuilder 确保不闪烁，但每次重绘都清除 ImageProvider 自身的缓存
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    if (wasSynchronouslyLoaded) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: const Duration(milliseconds: 200),
+                      child: child,
+                    );
+                  },
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      height: 180,
+                      alignment: Alignment.center,
+                      child: const CircularProgressIndicator(strokeWidth: 2), 
+                    ); 
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    debugPrint('--- [BUG排查] UI 层渲染彻底崩溃，原因: $error ---');
+                    return const SizedBox(height: 32);
+                  },
+                ),
+              );
+            },
+            loading: () {
+              final cachedSettings = ref.read(systemSettingsProvider).valueOrNull;
+              if (cachedSettings != null && cachedSettings.logoImageUrl.isNotEmpty) {
+                final logoUrl = cachedSettings.logoImageUrl;
+                final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=${DateTime.now().microsecondsSinceEpoch}';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  child: Image.network(finalImgUrl, height: 180, fit: BoxFit.contain),
+                );
+              }
+              return const SizedBox(height: 180, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            },
+            error: (_, __) => const SizedBox(height: 32),
+          ),
+        ],
         // 登录表单
         if (PlatformUtils.isDesktop && _showDesktopQrLogin)
           _buildDesktopQrLoginSection(isDark, l10n)
@@ -180,6 +269,59 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
         // 密码输入
         _buildPasswordField(isDark, l10n),
+
+        const SizedBox(height: 16), // 保持完美的 16 高度空隙
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center, // 垂直居中
+          children: [
+            Expanded(
+              child: _buildInputField(
+                controller: _captchaController,
+                hint: '请输入图形验证码',
+                icon: Icons.verified_user_outlined,
+                keyboardType: TextInputType.number,
+                isDark: isDark,
+                autocorrect: false,
+                enableSuggestions: false,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                ],
+                onChanged: (_) => _clearError(),
+              ),
+            ),
+            const SizedBox(width: 12), // 输入框与验证码图片之间的横向间隙
+            GestureDetector(
+              onTap: _fetchCaptcha, // 点击图片刷新
+              child: Container(
+                width: 120,
+                height: 50, // 保持与输入框等高
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade300,
+                    width: 1,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _captchaB64 != null
+                    ? Image.memory(
+                        Uri.parse(_captchaB64!).data!.contentAsBytes(),
+                        fit: BoxFit.fill,
+                      )
+                    : const Center(
+                        child: SizedBox(
+                          width: 20, 
+                          height: 20, 
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
 
         const SizedBox(height: 10),
         _buildForgotPasswordEntry(isDark),
@@ -966,6 +1108,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
+    if (_captchaController.text.trim().isEmpty) {
+      _showError('请输入图形验证码');
+      return;
+    }
+
     HapticFeedback.mediumImpact();
     setState(() => _isLoading = true);
 
@@ -986,6 +1133,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       deviceId: deviceId,
       deviceType: deviceType,
       deviceName: deviceName,
+      captchaId: _captchaId ?? '',
+      captchaCode: _captchaController.text.trim(),
     );
 
     if (!mounted) return;
@@ -1004,6 +1153,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } else {
       if (kDebugMode) debugPrint('[Login] Login failed: ${response.message}');
       _showError(response.message);
+      _fetchCaptcha();
+      _captchaController.clear();
     }
   }
 
@@ -1118,4 +1269,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     // 同时震动反馈
     HapticFeedback.heavyImpact();
   }
+
+
+
+
+  Widget _buildCustomerServiceAction() {
+    return IconButton(
+      icon: const Icon(Icons.headset_mic_outlined, color: AppColors.primary, size: 24),
+      tooltip: '在线客服',
+      onPressed: () {
+        final settingsAsync = ref.read(systemSettingsProvider);
+        var serviceUrl = settingsAsync.asData?.value.customerServiceUrl;
+        if (serviceUrl == null || serviceUrl.isEmpty) {
+          final service = ref.read(systemSettingsServiceProvider);
+          serviceUrl = service.cachedSettings?.customerServiceUrl;
+        }
+        if (serviceUrl == null || serviceUrl.isEmpty) {
+          _showError('客服通道暂未配置');
+          return;
+        }
+        LinkUtils.openLink(context, serviceUrl);
+      },
+    );
+  }
+
+
 }

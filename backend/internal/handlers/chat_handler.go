@@ -666,7 +666,11 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 		var memberOnlySetting models.SystemSetting
 		if err := h.db.Where("`key` = ?", models.SettingMemberOnlyCreateGroup).First(&memberOnlySetting).Error; err == nil {
 			if isSystemSettingTrue(memberOnlySetting.Value) && !currentUser.IsMember {
-				response.Error(c, http.StatusForbidden, "仅会员可创建群组，请联系管理员开通会员")
+				msg := "请联系工作人员创建群组"
+				if req.Type == 3 {
+					msg = "请联系工作人员创建频道"
+				}
+				response.Error(c, http.StatusForbidden, msg)
 				return
 			}
 		}

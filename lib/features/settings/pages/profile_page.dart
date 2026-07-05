@@ -368,6 +368,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           _buildInputCard(
             child: TextField(
               controller: _nameController,
+              readOnly: true,
               style: TextStyle(
                 fontSize: 17,
                 color: isDark ? Colors.white : Colors.black,
@@ -391,7 +392,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
           const SizedBox(height: 8),
 
-          _buildHintText(l10n.enterYourName, isDark),
+          //_buildHintText(l10n.enterYourName, isDark),
 
           const SizedBox(height: 24),
 
@@ -402,6 +403,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 Expanded(
                   child: TextField(
                     controller: _usernameController,
+                    readOnly: true,
                     keyboardType: TextInputType.visiblePassword,
                     autocorrect: false,
                     enableSuggestions: false,
@@ -475,7 +477,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
           const SizedBox(height: 8),
 
-          _buildHintText(l10n.usernameHint, isDark),
+          //_buildHintText(l10n.usernameHint, isDark),
 
           const SizedBox(height: 24),
 

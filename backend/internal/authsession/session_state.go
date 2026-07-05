@@ -139,6 +139,16 @@ func ValidateUserTokenState(ctx context.Context, c *cache.Cache, claims *jwtpkg.
 		return "您的账号已被冻结"
 	}
 
+	whitelistKey := "user:whitelist:" + claims.UserID
+    var whitelistIps string
+    if err := c.Get(ctx, whitelistKey, &whitelistIps); err == nil {
+        if clientIP, ok := ctx.Value("client_ip").(string); ok {
+            if !CheckIPInWhitelist(clientIP, whitelistIps) {
+                return "非法的访问IP"
+            }
+        }
+    }
+
 	if c.Exists(ctx, passwordResetKey(claims.UserID)) {
 		return "密码已被修改，请重新登录"
 	}
@@ -166,4 +176,20 @@ func ValidateUserTokenState(ctx context.Context, c *cache.Cache, claims *jwtpkg.
 	}
 
 	return ""
+}
+
+
+func CheckIPInWhitelist(clientIP string, whitelistStr string) bool {
+    if whitelistStr == "" {
+        return false
+    }
+    ips := strings.FieldsFunc(whitelistStr, func(r rune) bool {
+        return r == '\n' || r == '\r' || r == ',' || r == ' '
+    })
+    for _, ip := range ips {
+        if strings.TrimSpace(ip) == clientIP {
+            return true
+        }
+    }
+    return false
 }

@@ -17,7 +17,7 @@ abstract class BaseUrlUpdatable {
 class ApiConfig {
   // ── 编译期 Fallback（ServerDiscovery 未完成时使用） ──────
   // 本地开发时可临时改这里，生产由 ServerDiscovery 动态写入
-  static const String _defaultServerUrl = 'https://vvs.r1grv.icu';
+  static const String _defaultServerUrl = 'https://api.legg.click';
 
   // ── 运行时可变节点（由 ServerDiscovery.updateServer 写入）──
   static String _serverUrl = _defaultServerUrl;
@@ -848,6 +848,16 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   ref.onDispose(() => client.dispose());
   return client;
 });
+
+
+class AppCleanException implements Exception {
+  final String message;
+  AppCleanException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 
 /// Token 安全存储（使用 flutter_secure_storage 加密存储敏感数据）
 class TokenStorage {

@@ -124,7 +124,9 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     serviceInviteCode: item.service_invite_code || '',
     isMember: !!item.is_member,
     badgeText: item.badge_text || '',
-    badgeColor: item.badge_color || '#3390EC'
+    badgeColor: item.badge_color || '#3390EC',
+    enableWhitelist: item.enable_whitelist, 
+    whitelistIps: item.whitelist_ips || ''
   }))
 
   return {

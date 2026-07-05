@@ -84,29 +84,44 @@ func (h *MomentHandler) GetMomentList(c *gin.Context) {
 		Where("visibility = ?", models.VisibilityPublic) // 只显示公开动态
 
 	// 过滤屏蔽的动态和用户（如果用户已登录）
-	if currentUID > 0 {
-		// 广场只展示好友(+自己)发布的动态
-		var friendIDs []uint64
-		h.db.Model(&models.Contact{}).
-			Where("user_id = ? AND status = 1", currentUID).
-			Pluck("contact_user_id", &friendIDs)
-		friendIDs = append(friendIDs, currentUID) // 包含自己
-		query = query.Where("user_id IN ?", friendIDs)
+	// if currentUID > 0 {
+	// 	// 广场只展示好友(+自己)发布的动态
+	// 	var friendIDs []uint64
+	// 	h.db.Model(&models.Contact{}).
+	// 		Where("user_id = ? AND status = 1", currentUID).
+	// 		Pluck("contact_user_id", &friendIDs)
+	// 	friendIDs = append(friendIDs, currentUID) // 包含自己
+	// 	query = query.Where("user_id IN ?", friendIDs)
 
-		// 获取屏蔽的动态ID
-		var blockedMomentIDs []uint64
-		h.db.Model(&models.MomentBlock{}).Where("user_id = ?", currentUID).Pluck("moment_id", &blockedMomentIDs)
-		if len(blockedMomentIDs) > 0 {
-			query = query.Where("id NOT IN ?", blockedMomentIDs)
-		}
+	// 	// 获取屏蔽的动态ID
+	// 	var blockedMomentIDs []uint64
+	// 	h.db.Model(&models.MomentBlock{}).Where("user_id = ?", currentUID).Pluck("moment_id", &blockedMomentIDs)
+	// 	if len(blockedMomentIDs) > 0 {
+	// 		query = query.Where("id NOT IN ?", blockedMomentIDs)
+	// 	}
 
-		// 获取屏蔽的用户ID
-		var blockedUserIDs []uint64
-		h.db.Model(&models.UserMomentBlock{}).Where("user_id = ?", currentUID).Pluck("blocked_user_id", &blockedUserIDs)
-		if len(blockedUserIDs) > 0 {
-			query = query.Where("user_id NOT IN ?", blockedUserIDs)
-		}
-	}
+	// 	// 获取屏蔽的用户ID
+	// 	var blockedUserIDs []uint64
+	// 	h.db.Model(&models.UserMomentBlock{}).Where("user_id = ?", currentUID).Pluck("blocked_user_id", &blockedUserIDs)
+	// 	if len(blockedUserIDs) > 0 {
+	// 		query = query.Where("user_id NOT IN ?", blockedUserIDs)
+	// 	}
+	// }
+
+
+	// 过滤屏蔽的动态和用户（如果用户已登录）
+    if currentUID > 0 {
+        var blockedMomentIDs []uint64
+        h.db.Model(&models.MomentBlock{}).Where("user_id = ?", currentUID).Pluck("moment_id", &blockedMomentIDs)
+        if len(blockedMomentIDs) > 0 {
+            query = query.Where("id NOT IN ?", blockedMomentIDs)
+        }
+        var blockedUserIDs []uint64
+        h.db.Model(&models.UserMomentBlock{}).Where("user_id = ?", currentUID).Pluck("blocked_user_id", &blockedUserIDs)
+        if len(blockedUserIDs) > 0 {
+            query = query.Where("user_id NOT IN ?", blockedUserIDs)
+        }
+    }
 
 	// 按话题筛选
 	if topic != "" {

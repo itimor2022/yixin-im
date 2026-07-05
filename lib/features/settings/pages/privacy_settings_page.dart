@@ -583,17 +583,17 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
         const SizedBox(height: 24),
 
         // 删除账号
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.get('delete_my_account') ?? '删除我的账号',
-              titleColor: AppColors.error,
-              isDark: isDark,
-              onTap: () => _showDeleteAccountConfirm(),
-            ),
-          ],
-        ),
+        // _SettingsCard(
+        //   isDark: isDark,
+        //   children: [
+        //     _TapTile(
+        //       title: l10n.get('delete_my_account') ?? '删除我的账号',
+        //       titleColor: AppColors.error,
+        //       isDark: isDark,
+        //       onTap: () => _showDeleteAccountConfirm(),
+        //     ),
+        //   ],
+        // ),
 
         const SizedBox(height: 100),
       ],

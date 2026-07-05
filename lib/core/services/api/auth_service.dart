@@ -392,6 +392,8 @@ class AuthService extends StateNotifier<AuthState> {
     required String phone,
     required String password,
     required String deviceId,
+    required String captchaId,     // 新增：接收前端传入的验证码ID
+    required String captchaCode,
     String? deviceType,
     String? deviceName,
   }) async {
@@ -405,6 +407,8 @@ class AuthService extends StateNotifier<AuthState> {
         'device_id': deviceId,
         'device_type': deviceType ?? 'ios',
         'device_name': deviceName ?? 'iPhone',
+        'captchaId': captchaId,     
+        'captchaCode': captchaCode,
       },
     );
 
@@ -519,6 +523,8 @@ class AuthService extends StateNotifier<AuthState> {
     required String password,
     required String nickname,
     required String deviceId,
+    required String captchaId,     // 新增：验证码ID
+    required String captchaCode,
     String? deviceType,
     String? deviceName,
     String? inviteCode,
@@ -533,6 +539,8 @@ class AuthService extends StateNotifier<AuthState> {
         'device_id': deviceId,
         'device_type': deviceType ?? 'ios',
         'device_name': deviceName ?? 'iPhone',
+        'captchaId': captchaId,     // 新增：传给后端
+        'captchaCode': captchaCode,
       };
       if (inviteCode != null && inviteCode.isNotEmpty) {
         data['invite_code'] = inviteCode;

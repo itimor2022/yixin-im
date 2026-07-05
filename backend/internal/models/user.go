@@ -33,6 +33,8 @@ type User struct {
 	CreatedAt     time.Time      `gorm:"type:datetime;not null" json:"created_at"`
 	UpdatedAt     time.Time      `gorm:"type:datetime;not null" json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	EnableWhitelist bool   `gorm:"column:enable_whitelist" json:"enable_whitelist"`
+    WhitelistIps    string `gorm:"column:whitelist_ips" json:"whitelist_ips"`
 }
 
 const (

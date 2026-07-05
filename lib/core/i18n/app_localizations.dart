@@ -989,7 +989,7 @@ const Map<String, String> _zhCN = {
   'crop_channel_avatar': '裁剪频道头像',
 
   // 搜索页面
-  'search_user_group_channel': '搜索用户、群组或频道',
+  'search_user_group_channel': '请输入手机号/群名/频道名',
   'search_user_to_chat': '搜索用户开始聊天',
   'no_need_add_friend': '无需添加好友，直接发起私聊',
   'also_search_public_groups': '也可搜索公开群组和频道',

@@ -1527,6 +1527,13 @@ export function searchMessages(params: {
   })
 }
 
+export function deleteMessage(params: { id: string; chat_id: string }) {
+  return request.del<any>({
+    url: '/admin/messages/delete',
+    params
+  })
+}
+
 export interface SmsGatewayConfig {
   enabled: boolean
   provider: string // smsbao | aliyun | tencent

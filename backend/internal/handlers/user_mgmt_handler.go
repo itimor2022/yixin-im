@@ -64,6 +64,8 @@ type UserListItem struct {
 	ServiceUsername   *string `json:"service_username"`
 	ServiceNickname   *string `json:"service_nickname"`
 	ServiceInviteCode *string `json:"service_invite_code"`
+	EnableWhitelist bool   `json:"enable_whitelist"` 
+    WhitelistIps    string `json:"whitelist_ips"`
 }
 
 func uint64Ptr(v uint64) *uint64 {
@@ -217,6 +219,8 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			Status:    u.Status,
 			IsOnline:  false,
 			CreatedAt: u.CreatedAt.Format("2006-01-02 15:04:05"),
+			EnableWhitelist: u.EnableWhitelist,
+            WhitelistIps:    u.WhitelistIps,
 		}
 
 		// 设置可选字段
@@ -316,60 +320,119 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 
 // UpdateUser 更新用户信息
 func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
-	userID := c.Param("id")
+    userID := c.Param("id")
 
-	var req struct {
-		Nickname *string `json:"nickname"`
-		Username *string `json:"username"`
-		Phone    *string `json:"phone"`
-		Bio      *string `json:"bio"`
-		Status   *int8   `json:"status"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误")
-		return
-	}
+    var req struct {
+        Nickname        *string `json:"nickname"`
+        Username        *string `json:"username"`
+        Phone           *string `json:"phone"`
+        Bio             *string `json:"bio"`
+        Status          *int8   `json:"status"`
+        EnableWhitelist *bool   `json:"enable_whitelist"` 
+        WhitelistIps    *string `json:"whitelist_ips"`
+    }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        response.Error(c, http.StatusBadRequest, "参数错误")
+        return
+    }
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		response.Error(c, http.StatusNotFound, "用户不存在")
-		return
-	}
+    var user models.User
+    if err := h.db.First(&user, userID).Error; err != nil {
+        response.Error(c, http.StatusNotFound, "用户不存在")
+        return
+    }
 
-	// 更新字段
-	updates := make(map[string]interface{})
-	if req.Nickname != nil {
-		updates["nickname"] = *req.Nickname
-	}
-	if req.Username != nil {
-		// 检查用户名是否已存在
-		var existUser models.User
-		if err := h.db.Where("username = ? AND id != ?", *req.Username, user.ID).First(&existUser).Error; err == nil {
-			response.Error(c, http.StatusBadRequest, "用户名已存在")
-			return
-		}
-		updates["username"] = *req.Username
-	}
-	if req.Phone != nil {
-		updates["phone"] = *req.Phone
-	}
-	if req.Bio != nil {
-		updates["bio"] = *req.Bio
-	}
-	if req.Status != nil {
-		updates["status"] = *req.Status
-	}
+    // 更新字段
+    updates := make(map[string]interface{})
+    if req.Nickname != nil {
+        updates["nickname"] = *req.Nickname
+    }
+    if req.Username != nil {
+        // 检查用户名是否已存在
+        var existUser models.User
+        if err := h.db.Where("username = ? AND id != ?", *req.Username, user.ID).First(&existUser).Error; err == nil {
+            response.Error(c, http.StatusBadRequest, "用户名已存在")
+            return
+        }
+        updates["username"] = *req.Username
+    }
+    if req.Phone != nil {
+        updates["phone"] = *req.Phone
+    }
+    if req.Bio != nil {
+        updates["bio"] = *req.Bio
+    }
+    if req.Status != nil {
+        updates["status"] = *req.Status
+    }
+    if req.EnableWhitelist != nil {
+        updates["enable_whitelist"] = *req.EnableWhitelist
+    }
+    if req.WhitelistIps != nil {
+        updates["whitelist_ips"] = *req.WhitelistIps
+    }
 
-	if len(updates) > 0 {
-		if err := h.db.Model(&user).Updates(updates).Error; err != nil {
-			response.Error(c, http.StatusInternalServerError, "更新失败")
-			return
-		}
-	}
+    if len(updates) > 0 {
+        if err := h.db.Model(&user).Updates(updates).Error; err != nil {
+            response.Error(c, http.StatusInternalServerError, "更新失败")
+            return
+        }
+    }
+    if h.cache != nil {
+        userIDStr := strconv.FormatUint(user.ID, 10)
+        redisKey := "user:whitelist:" + user.UUID
+        
+        if req.EnableWhitelist != nil && *req.EnableWhitelist {
+            ips := ""
+            if req.WhitelistIps != nil {
+                ips = *req.WhitelistIps
+            }
+            h.cache.Set(context.Background(), redisKey, ips, 365*24*time.Hour)
 
-	// 重新查询用户
-	h.db.First(&user, userID)
-	response.Success(c, user)
+            type UserSession struct {
+                Token string `gorm:"column:token"`
+                IP    string `gorm:"column:ip"`
+            }
+            var sessions []UserSession
+            
+            if err := h.db.Table("user_sessions").Where("user_id = ?", user.ID).Find(&sessions).Error; err == nil {
+                needDisconnect := false
+                for _, sess := range sessions {
+                    if !CheckIPInWhitelist(sess.IP, ips) {
+                        needDisconnect = true
+                        h.db.Table("user_sessions").Where("token = ?", sess.Token).Delete(nil)
+                    }
+                }
+                
+                if needDisconnect || len(sessions) == 0 {
+                    h.hub.DisconnectUser(user.UUID)
+                    h.hub.DisconnectUser(userIDStr) 
+                }
+            }
+        } else if req.EnableWhitelist != nil && !*req.EnableWhitelist {
+            h.cache.Delete(context.Background(), redisKey)
+        }
+    }
+
+    // 重新查询用户并返回
+    h.db.First(&user, userID)
+    response.Success(c, user)
+}
+
+
+func CheckIPInWhitelist(clientIP string, whitelistStr string) bool {
+    if whitelistStr == "" {
+        return false
+    }
+    ips := strings.FieldsFunc(whitelistStr, func(r rune) bool {
+        return r == '\n' || r == '\r' || r == ',' || r == ' '
+    })
+    for _, ip := range ips {
+        if strings.TrimSpace(ip) == clientIP {
+            return true
+        }
+    }
+    return false
 }
 
 // UpdateUserStatus 更新用户状态

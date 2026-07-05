@@ -897,11 +897,12 @@ class MessageBubble extends StatelessWidget {
   Widget _buildRichTextContent(Color textColor) {
     final content = message.content;
     final defaultStyle = AppTextStyles.bodyMedium.copyWith(color: textColor);
+    final isGroup = true;
 
     // 快速路径：如果消息较短或不包含 emoji 范围的字符，检查链接并返回
     if (content.length < 2 || !_mightContainAnimatedEmoji(content)) {
       // 检查是否包含链接
-      if (LinkUtils.containsLink(content)) {
+      if (!isGroup &&LinkUtils.containsLink(content)) {
         return Builder(
           builder: (context) => RichText(
             text: LinkUtils.buildLinkText(
@@ -1007,11 +1008,14 @@ class MessageBubble extends StatelessWidget {
     return false;
   }
 
-  Widget _buildImageBubble(
+Widget _buildImageBubble(
     Color bubbleColor,
     Color timeColor,
     bool isOutgoing,
   ) {
+    // 🌟 新增：检查是否有附带的文字说明
+    final hasText = message.content.trim().isNotEmpty;
+
     return Builder(
       builder: (context) => GestureDetector(
         onTap: () {
@@ -1037,10 +1041,12 @@ class MessageBubble extends StatelessWidget {
         },
         child: Container(
           decoration: BoxDecoration(
+            // 🌟 如果有文字，我们需要给整个气泡加上背景颜色，让文字好识别
+            color: hasText ? bubbleColor : null,
             borderRadius: _getBubbleRadius(isOutgoing),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withOpacity(0.06),
                 blurRadius: 5,
                 offset: const Offset(0, 2),
               ),
@@ -1048,45 +1054,106 @@ class MessageBubble extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: _getBubbleRadius(isOutgoing),
-            child: Stack(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 图片 - 使用已知尺寸预占位，避免加载后闪烁
-                _buildSizedMedia(280, 400),
+                // 1. 上层：图片部分
+                Stack(
+                  children: [
+                    // 图片 - 使用已知尺寸预占位，避免加载后闪烁
+                    _buildSizedMedia(280, 400),
 
-                // 时间和状态（底部渐变遮罩）
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  left: 0,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(12, 20, 8, 6),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.5),
-                        ],
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Text(
-                          DateFormat('HH:mm').format(message.createdAt),
-                          style: AppTextStyles.timestamp.copyWith(
-                            color: Colors.white,
+                    // 🌟 如果没有附加文字，时间和状态依旧作为底层半透明遮罩覆盖在图片上（保持原逻辑）
+                    if (!hasText)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        left: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.35),
+                              ],
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(24, 12, 8, 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                DateFormat('HH:mm').format(message.createdAt),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              if (isOutgoing) ...[
+                                const SizedBox(width: 3),
+                                _buildStatusIcon(Colors.white70),
+                              ],
+                            ],
                           ),
                         ),
-                        if (isOutgoing) ...[
-                          const SizedBox(width: 3),
-                          _buildStatusIcon(Colors.white),
-                        ],
+                      ),
+                  ],
+                ),
+
+                // 2. 🌟 下层：文字说明部分（仅在有关联文字时渲染）
+                if (hasText)
+                  Padding(
+                    // 左右和下方留出间距，顶部与图片错开
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    child: Stack(
+                      children: [
+                        // 富文本渲染：支持小表情、链接等
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: 4,
+                            right: message.isEdited
+                                ? (isOutgoing ? 88 : 66)
+                                : (isOutgoing ? 54 : 42), // 留出右下角时间状态的空间
+                          ),
+                          child: _buildRichTextContent(
+                            bubbleColor.computeLuminance() > 0.5
+                                ? Colors.black
+                                : Colors.white,
+                          ),
+                        ),
+                        // 右下角的时间和状态
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (message.isEdited)
+                                Text(
+                                  '已编辑 ',
+                                  style: TextStyle(
+                                    color: timeColor.withOpacity(0.8),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              Text(
+                                DateFormat('HH:mm').format(message.createdAt),
+                                style: AppTextStyles.timestamp
+                                    .copyWith(color: timeColor),
+                              ),
+                              if (isOutgoing) ...[
+                                const SizedBox(width: 3),
+                                _buildStatusIcon(timeColor),
+                              ],
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ),
               ],
             ),
           ),

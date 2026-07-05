@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+//import 'dart:io';
 import 'package:dio/io.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -36,7 +36,7 @@ class ServerDiscovery {
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
   static const List<String> _dnsDomains = [
-    'cfg.qa853.com',
+    //'cfg.qa853.com',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -50,8 +50,7 @@ class ServerDiscovery {
   /// 多个 OSS/CDN 加密配置文件地址
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    'https://xv.t39m0.icu/yx/nodes.enc',
-    'https://uk.t39m0.icu/yx/nodes.enc',
+    'https://admin.legg.click/api.txt',
   ];
 
   /// AES-256-CBC 密钥（32字节 UTF-8，与加密端一致）
@@ -62,9 +61,6 @@ class ServerDiscovery {
 
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [
-    'https://vvs.unf58.icu',
-    'https://vvs.jbwsj.icu',
-    'https://vvs.r1grv.icu',
   ];
 
   // ── 内部常量 ────────────────────────────────────────────
@@ -120,19 +116,32 @@ class ServerDiscovery {
 
   // ── 发现主流程 ──────────────────────────────────────────
 
-  Future<String> _discover() async {
+Future<String> _discover() async {
     final t0 = DateTime.now();
     if (kDebugMode) debugPrint('[Discovery] ═══ Starting discovery at $t0 ═══');
     final nodes = await _fetchNodeList();
-    _lastCandidates = List<String>.from(nodes);
-    if (kDebugMode) debugPrint('[Discovery] Candidates: $nodes');
-    final best = await _probeFastest(nodes);
-    if (best == null) {
-      if (kDebugMode) debugPrint('[Discovery] ❌ All nodes unreachable: $nodes');
+    
+    if (nodes.isEmpty) {
       throw Exception('No reachable server node. Please check your network.');
     }
-    final selected = best;
-    if (kDebugMode) debugPrint('[Discovery] Selected: $selected');
+
+    if (kDebugMode) debugPrint('[Discovery] Initial Fetch From TXT: $nodes');
+    
+    // 1. 等待所有节点测速完成，拿到真正活着的节点列表
+    final validNodes = await _probeValidNodes(nodes);
+    
+    if (validNodes.isNotEmpty) {
+      // 💡 只有有效的、能 Ping 通的线路，才同步给前端候选池
+      _lastCandidates = List<String>.from(validNodes);
+    } else {
+      // 💡 极端情况：如果一个通的都没有，把第一个塞进去兜底，防止前端报错
+      _lastCandidates = [nodes.first];
+    }
+
+    // 选出第一个作为默认选中的节点
+    final selected = _lastCandidates.first;
+    
+    if (kDebugMode) debugPrint('[Discovery] Selected Best: $selected, All Valid Nodes For UI: $_lastCandidates');
     _applyNode(selected);
     await _saveCache(selected);
     return selected;
@@ -146,51 +155,52 @@ class ServerDiscovery {
   }
 
   void _refreshInBackground() {
-    Future<void>.delayed(const Duration(seconds: 5), () async {
-      try {
-        await _clearCache();
-        final node = await _discover();
-        if (node != _currentNode) {
-          if (kDebugMode) debugPrint('[Discovery] BG switched to $node');
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Discovery] BG refresh error: $e');
-      }
-    });
+    // Future<void>.delayed(const Duration(seconds: 5), () async {
+    //   try {
+    //    // await _clearCache();
+    //     final node = await _discover();
+    //     if (node != _currentNode) {
+    //       if (kDebugMode) debugPrint('[Discovery] BG switched to $node');
+    //     }
+    //   } catch (e) {
+    //     if (kDebugMode) debugPrint('[Discovery] BG refresh error: $e');
+    //   }
+    // });
   }
 
   // ── 双轨并行获取节点列表 ────────────────────────────────
 
   Future<List<String>> _fetchNodeList() async {
-    final completer = Completer<List<String>>();
-    int failures = 0;
-    const total = 2; // DNS 轨道 + OSS 轨道
+    final List<String> resultNodes = [];
 
-    void onResult(List<String>? nodes) {
-      if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
-        completer.complete(nodes);
-      } else {
-        failures++;
-        if (failures >= total && !completer.isCompleted) {
-          if (kDebugMode) debugPrint('[Discovery] Both tracks failed, using fallback');
-          completer.complete(List<String>.from(_fallbackNodes));
-        }
+    // 1. 尝试从 OSS (api.txt) 获取
+    try {
+      if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
+      final ossNodes = await _fetchFromOss();
+      if (ossNodes != null && ossNodes.isNotEmpty) {
+        resultNodes.addAll(ossNodes);
+        if (kDebugMode) debugPrint('[Discovery] OSS Track success: $resultNodes');
+        return resultNodes.toSet().toList(); // 去重返回
       }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
     }
 
-    // 两轨并行启动
-    if (kDebugMode) debugPrint('[Discovery] Track-DNS starting...');
-    if (kDebugMode) debugPrint('[Discovery] Track-OSS starting...');
-    _fetchFromDns().then(onResult);
-    _fetchFromOss().then(onResult);
+    // 2. 如果 OSS 失败了，尝试从 DNS 获取
+    try {
+      if (kDebugMode) debugPrint('[Discovery] Fetching from DNS...');
+      final dnsNodes = await _fetchFromDns();
+      if (dnsNodes != null && dnsNodes.isNotEmpty) {
+        resultNodes.addAll(dnsNodes);
+        if (kDebugMode) debugPrint('[Discovery] DNS Track success: $resultNodes');
+        return resultNodes.toSet().toList();
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
+    }
 
-    return completer.future.timeout(
-      _fetchTimeout + const Duration(seconds: 2),
-      onTimeout: () {
-        if (kDebugMode) debugPrint('[Discovery] Fetch timeout, fallback');
-        return List<String>.from(_fallbackNodes);
-      },
-    );
+    if (kDebugMode) debugPrint('[Discovery] Both tracks failed. Using current node as fallback.');
+    return _currentNode != null ? [_currentNode!] : ['https://api.legg.click'];
   }
 
   // ── 轨道1: 多域名 × 多DoH 全并行 ───────────────────────
@@ -309,21 +319,42 @@ class ServerDiscovery {
       if (kDebugMode) debugPrint('[Discovery] OSS→ $url');
       final resp = await dio.get<String>(url);
       if (kDebugMode) debugPrint('[Discovery] OSS← status=${resp.statusCode}');
-      if (resp.statusCode != 200 || resp.data == null) {
-        if (kDebugMode) debugPrint('[Discovery] OSS no data: $url');
-        return null;
-      }
-      return _decryptNodes(resp.data!.trim());
+      if (resp.statusCode != 200 || resp.data == null) return null;
+      
+      return _parseLineByLineNodes(resp.data!.trim());
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] OSS error: $url → $e');
       return null;
     }
   }
 
+
+List<String>? _parseLineByLineNodes(String rawText) {
+    try {
+      if (kDebugMode) debugPrint('[Discovery] Raw text received: \n$rawText');
+      final lines = rawText.split(RegExp(r'[\r\n\s,;]+')); 
+      
+      final nodes = lines
+          .map((e) => e.trim().replaceAll('"', '').replaceAll("'", "")) 
+          .where((e) => e.startsWith('http') && !e.endsWith('.txt')) 
+          .toSet() 
+          .toList();
+          
+      if (kDebugMode) debugPrint('[Discovery] Successfully parsed nodes: $nodes');
+      return nodes.isNotEmpty ? nodes : null;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] Parse text error: $e');
+      return null;
+    }
+  }
+
   // ── AES-256-CBC 解密 ────────────────────────────────────
 
-  List<String>? _decryptNodes(String base64Cipher) {
-    if (kDebugMode) debugPrint('[Discovery] Decrypting: ${base64Cipher.length > 20 ? base64Cipher.substring(0,20) : base64Cipher}...');
+List<String>? _decryptNodes(String base64Cipher) {
+    if (base64Cipher.startsWith('http')) {
+      return _parseLineByLineNodes(base64Cipher);
+    }
+
     try {
       final key = enc.Key.fromUtf8(_aesKey);
       final iv  = enc.IV.fromUtf8(_aesIv);
@@ -336,43 +367,37 @@ class ServerDiscovery {
           ?.map((e) => e.toString())
           .where((e) => e.startsWith('http'))
           .toList();
-      if (kDebugMode) debugPrint('[Discovery] Decrypted nodes: $nodes');
       return (nodes?.isNotEmpty == true) ? nodes : null;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Discovery] Decrypt error: $e');
-      return null;
+      return _parseLineByLineNodes(base64Cipher);
     }
   }
 
   // ── 并发探测最快节点 ────────────────────────────────────
 
-  Future<String?> _probeFastest(List<String> nodes) async {
-    if (nodes.isEmpty) return null;
-    if (nodes.length == 1) {
-      return await _probeNode(nodes.first) ? nodes.first : null;
-    }
-
-    final completer = Completer<String?>();
-    int failed = 0;
+  Future<List<String>> _probeValidNodes(List<String> nodes) async {
+    if (nodes.isEmpty) return [];
+    
+    final List<String> activeNodes = [];
+    final List<Future<void>> futures = [];
 
     for (final node in nodes) {
       if (kDebugMode) debugPrint('[Discovery] Probing: $node');
-      _probeNode(node).then((ok) {
-        if (ok && !completer.isCompleted) {
-          completer.complete(node);
-        } else {
-          failed++;
-          if (failed == nodes.length && !completer.isCompleted) {
-            completer.complete(null);
-          }
+      final future = _probeNode(node).then((ok) {
+        if (ok) {
+          activeNodes.add(node); // 💡 谁通畅谁就进列表，不争抢第一
         }
       });
+      futures.add(future);
     }
 
-    return completer.future.timeout(
+    // 💡 等待所有人探测完毕（或者整体超时）
+    await Future.wait(futures).timeout(
       _probeTimeout + const Duration(seconds: 1),
-      onTimeout: () => null,
+      onTimeout: () => [],
     );
+
+    return activeNodes;
   }
 
   Future<bool> _probeNode(String node) async {
@@ -381,10 +406,19 @@ class ServerDiscovery {
         connectTimeout: _probeTimeout,
         receiveTimeout: _probeTimeout,
       ));
-      (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
-        client.badCertificateCallback = (cert, host, port) => true;
-        return client;
-      };
+      
+      // 🚀 核心修复：如果是 Web 环境，绝对不能强转 IOHttpClientAdapter
+      if (kIsWeb) {
+        // Web 端由浏览器沙箱直接接管 HTTPS 证书校验，无需也不允许手动忽略证书
+        if (kDebugMode) debugPrint('[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.');
+      } else {
+        // Android / iOS 等原生平台保留原有证书跳过逻辑
+        (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+          client.badCertificateCallback = (cert, host, port) => true;
+          return client;
+        };
+      }
+      
       final url = '$node$_pingPath';
       if (kDebugMode) debugPrint('[Discovery] Probe URL: $url');
       final resp = await dio.get<dynamic>(

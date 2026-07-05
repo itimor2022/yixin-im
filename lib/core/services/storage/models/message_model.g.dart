@@ -13,11 +13,9 @@ extension GetMessageModelCollection on Isar {
   IsarCollection<MessageModel> get messageModels => this.collection();
 }
 
-int _messageModelJsSafeInt(String value) => int.parse(value);
-
-final MessageModelSchema = CollectionSchema(
+const MessageModelSchema = CollectionSchema(
   name: r'MessageModel',
-  id: _messageModelJsSafeInt('-902762555029995869'),
+  id: -1,
   properties: {
     r'burnAfterRead': PropertySchema(
       id: 0,
@@ -199,7 +197,7 @@ final MessageModelSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: _messageModelJsSafeInt('-3268401673993471357'),
+      id: -2,
       name: r'id',
       unique: true,
       replace: false,
@@ -212,7 +210,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'chatId_createdAt': IndexSchema(
-      id: _messageModelJsSafeInt('-8009080684031631222'),
+      id: -3,
       name: r'chatId_createdAt',
       unique: false,
       replace: false,
@@ -230,7 +228,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'senderId': IndexSchema(
-      id: _messageModelJsSafeInt('-1619654757968658561'),
+      id: -4,
       name: r'senderId',
       unique: false,
       replace: false,
@@ -243,7 +241,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'createdAt': IndexSchema(
-      id: _messageModelJsSafeInt('-3433535483987302584'),
+      id: -5,
       name: r'createdAt',
       unique: false,
       replace: false,

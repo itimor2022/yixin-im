@@ -13,101 +13,119 @@ extension GetChatModelCollection on Isar {
   IsarCollection<ChatModel> get chatModels => this.collection();
 }
 
-int _chatModelJsSafeInt(String value) => int.parse(value);
-
-final ChatModelSchema = CollectionSchema(
+const ChatModelSchema = CollectionSchema(
   name: r'ChatModel',
-  id: _chatModelJsSafeInt('3590324851517520026'),
+  id: 1,
   properties: {
     r'avatar': PropertySchema(
       id: 0,
       name: r'avatar',
       type: IsarType.string,
     ),
-    r'createdAt': PropertySchema(
+    r'badgeColor': PropertySchema(
       id: 1,
+      name: r'badgeColor',
+      type: IsarType.string,
+    ),
+    r'badgeText': PropertySchema(
+      id: 2,
+      name: r'badgeText',
+      type: IsarType.string,
+    ),
+    r'createdAt': PropertySchema(
+      id: 3,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'draft': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'draft',
       type: IsarType.string,
     ),
     r'id': PropertySchema(
-      id: 3,
+      id: 5,
       name: r'id',
       type: IsarType.string,
     ),
     r'isArchived': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'isArchived',
       type: IsarType.bool,
     ),
+    r'isMember': PropertySchema(
+      id: 7,
+      name: r'isMember',
+      type: IsarType.bool,
+    ),
     r'isMuted': PropertySchema(
-      id: 5,
+      id: 8,
       name: r'isMuted',
       type: IsarType.bool,
     ),
     r'isPinned': PropertySchema(
-      id: 6,
+      id: 9,
       name: r'isPinned',
       type: IsarType.bool,
     ),
     r'lastMessage': PropertySchema(
-      id: 7,
+      id: 10,
       name: r'lastMessage',
       type: IsarType.string,
     ),
     r'lastMessageSender': PropertySchema(
-      id: 8,
+      id: 11,
       name: r'lastMessageSender',
       type: IsarType.string,
     ),
     r'lastMessageTime': PropertySchema(
-      id: 9,
+      id: 12,
       name: r'lastMessageTime',
       type: IsarType.dateTime,
     ),
     r'lastMessageType': PropertySchema(
-      id: 10,
+      id: 13,
       name: r'lastMessageType',
       type: IsarType.byte,
       enumMap: _ChatModellastMessageTypeEnumValueMap,
     ),
     r'memberCount': PropertySchema(
-      id: 11,
+      id: 14,
       name: r'memberCount',
       type: IsarType.long,
     ),
     r'name': PropertySchema(
-      id: 12,
+      id: 15,
       name: r'name',
       type: IsarType.string,
     ),
+    r'nicknameColor': PropertySchema(
+      id: 16,
+      name: r'nicknameColor',
+      type: IsarType.string,
+    ),
     r'peerUserId': PropertySchema(
-      id: 13,
+      id: 17,
       name: r'peerUserId',
       type: IsarType.string,
     ),
     r'premiumType': PropertySchema(
-      id: 14,
+      id: 18,
       name: r'premiumType',
       type: IsarType.string,
     ),
     r'type': PropertySchema(
-      id: 15,
+      id: 19,
       name: r'type',
       type: IsarType.byte,
       enumMap: _ChatModeltypeEnumValueMap,
     ),
     r'unreadCount': PropertySchema(
-      id: 16,
+      id: 20,
       name: r'unreadCount',
       type: IsarType.long,
     ),
     r'updatedAt': PropertySchema(
-      id: 17,
+      id: 21,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -119,7 +137,7 @@ final ChatModelSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: _chatModelJsSafeInt('-3268401673993471357'),
+      id: -1,
       name: r'id',
       unique: true,
       replace: false,
@@ -145,7 +163,7 @@ final ChatModelSchema = CollectionSchema(
       ],
     ),
     r'isPinned': IndexSchema(
-      id: _chatModelJsSafeInt('7607338673446676027'),
+      id: 2,
       name: r'isPinned',
       unique: false,
       replace: false,
@@ -158,7 +176,7 @@ final ChatModelSchema = CollectionSchema(
       ],
     ),
     r'updatedAt': IndexSchema(
-      id: _chatModelJsSafeInt('-6238191080293565125'),
+      id: -2,
       name: r'updatedAt',
       unique: false,
       replace: false,
@@ -192,6 +210,18 @@ int _chatModelEstimateSize(
     }
   }
   {
+    final value = object.badgeColor;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.badgeText;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.draft;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -211,6 +241,12 @@ int _chatModelEstimateSize(
     }
   }
   bytesCount += 3 + object.name.length * 3;
+  {
+    final value = object.nicknameColor;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   {
     final value = object.peerUserId;
     if (value != null) {
@@ -233,23 +269,27 @@ void _chatModelSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.avatar);
-  writer.writeDateTime(offsets[1], object.createdAt);
-  writer.writeString(offsets[2], object.draft);
-  writer.writeString(offsets[3], object.id);
-  writer.writeBool(offsets[4], object.isArchived);
-  writer.writeBool(offsets[5], object.isMuted);
-  writer.writeBool(offsets[6], object.isPinned);
-  writer.writeString(offsets[7], object.lastMessage);
-  writer.writeString(offsets[8], object.lastMessageSender);
-  writer.writeDateTime(offsets[9], object.lastMessageTime);
-  writer.writeByte(offsets[10], object.lastMessageType.index);
-  writer.writeLong(offsets[11], object.memberCount);
-  writer.writeString(offsets[12], object.name);
-  writer.writeString(offsets[13], object.peerUserId);
-  writer.writeString(offsets[14], object.premiumType);
-  writer.writeByte(offsets[15], object.type.index);
-  writer.writeLong(offsets[16], object.unreadCount);
-  writer.writeDateTime(offsets[17], object.updatedAt);
+  writer.writeString(offsets[1], object.badgeColor);
+  writer.writeString(offsets[2], object.badgeText);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeString(offsets[4], object.draft);
+  writer.writeString(offsets[5], object.id);
+  writer.writeBool(offsets[6], object.isArchived);
+  writer.writeBool(offsets[7], object.isMember);
+  writer.writeBool(offsets[8], object.isMuted);
+  writer.writeBool(offsets[9], object.isPinned);
+  writer.writeString(offsets[10], object.lastMessage);
+  writer.writeString(offsets[11], object.lastMessageSender);
+  writer.writeDateTime(offsets[12], object.lastMessageTime);
+  writer.writeByte(offsets[13], object.lastMessageType.index);
+  writer.writeLong(offsets[14], object.memberCount);
+  writer.writeString(offsets[15], object.name);
+  writer.writeString(offsets[16], object.nicknameColor);
+  writer.writeString(offsets[17], object.peerUserId);
+  writer.writeString(offsets[18], object.premiumType);
+  writer.writeByte(offsets[19], object.type.index);
+  writer.writeLong(offsets[20], object.unreadCount);
+  writer.writeDateTime(offsets[21], object.updatedAt);
 }
 
 ChatModel _chatModelDeserialize(
@@ -260,31 +300,31 @@ ChatModel _chatModelDeserialize(
 ) {
   final object = ChatModel();
   object.avatar = reader.readStringOrNull(offsets[0]);
-  object.createdAt = reader.readDateTime(offsets[1]);
-  object.draft = reader.readStringOrNull(offsets[2]);
-  object.id = reader.readString(offsets[3]);
-  object.isArchived = reader.readBool(offsets[4]);
-  object.isMuted = reader.readBool(offsets[5]);
-  object.isPinned = reader.readBool(offsets[6]);
-  object.lastMessage = reader.readStringOrNull(offsets[7]);
-  object.lastMessageSender = reader.readStringOrNull(offsets[8]);
-  object.lastMessageTime = reader.readDateTimeOrNull(offsets[9]);
+  object.badgeColor = reader.readStringOrNull(offsets[1]);
+  object.badgeText = reader.readStringOrNull(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.draft = reader.readStringOrNull(offsets[4]);
+  object.id = reader.readString(offsets[5]);
+  object.isArchived = reader.readBool(offsets[6]);
+  object.isMember = reader.readBoolOrNull(offsets[7]);
+  object.isMuted = reader.readBool(offsets[8]);
+  object.isPinned = reader.readBool(offsets[9]);
+  object.lastMessage = reader.readStringOrNull(offsets[10]);
+  object.lastMessageSender = reader.readStringOrNull(offsets[11]);
+  object.lastMessageTime = reader.readDateTimeOrNull(offsets[12]);
   object.lastMessageType = _ChatModellastMessageTypeValueEnumMap[
-          reader.readByteOrNull(offsets[10])] ??
+          reader.readByteOrNull(offsets[13])] ??
       MessageType.text;
-  object.memberCount = reader.readLongOrNull(offsets[11]);
-  object.name = reader.readString(offsets[12]);
-  object.peerUserId = reader.readStringOrNull(offsets[13]);
-  object.premiumType = reader.readStringOrNull(offsets[14]);
-  object.isMember = reader.readBoolOrNull(offsets[18]);
-  object.badgeText = reader.readStringOrNull(offsets[19]);
-  object.badgeColor = reader.readStringOrNull(offsets[20]);
-  object.nicknameColor = reader.readStringOrNull(offsets[21]);
+  object.memberCount = reader.readLongOrNull(offsets[14]);
+  object.name = reader.readString(offsets[15]);
+  object.nicknameColor = reader.readStringOrNull(offsets[16]);
+  object.peerUserId = reader.readStringOrNull(offsets[17]);
+  object.premiumType = reader.readStringOrNull(offsets[18]);
   object.type =
-      _ChatModeltypeValueEnumMap[reader.readByteOrNull(offsets[15])] ??
+      _ChatModeltypeValueEnumMap[reader.readByteOrNull(offsets[19])] ??
           ChatType.private;
-  object.unreadCount = reader.readLong(offsets[16]);
-  object.updatedAt = reader.readDateTime(offsets[17]);
+  object.unreadCount = reader.readLong(offsets[20]);
+  object.updatedAt = reader.readDateTime(offsets[21]);
   return object;
 }
 
@@ -298,41 +338,49 @@ P _chatModelDeserializeProp<P>(
     case 0:
       return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 2:
       return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 5:
-      return (reader.readBool(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 6:
       return (reader.readBool(offset)) as P;
     case 7:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBoolOrNull(offset)) as P;
     case 8:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 9:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 10:
+      return (reader.readStringOrNull(offset)) as P;
+    case 11:
+      return (reader.readStringOrNull(offset)) as P;
+    case 12:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 13:
       return (_ChatModellastMessageTypeValueEnumMap[
               reader.readByteOrNull(offset)] ??
           MessageType.text) as P;
-    case 11:
-      return (reader.readLongOrNull(offset)) as P;
-    case 12:
-      return (reader.readString(offset)) as P;
-    case 13:
-      return (reader.readStringOrNull(offset)) as P;
     case 14:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 15:
+      return (reader.readString(offset)) as P;
+    case 16:
+      return (reader.readStringOrNull(offset)) as P;
+    case 17:
+      return (reader.readStringOrNull(offset)) as P;
+    case 18:
+      return (reader.readStringOrNull(offset)) as P;
+    case 19:
       return (_ChatModeltypeValueEnumMap[reader.readByteOrNull(offset)] ??
           ChatType.private) as P;
-    case 16:
+    case 20:
       return (reader.readLong(offset)) as P;
-    case 17:
+    case 21:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -985,6 +1033,306 @@ extension ChatModelQueryFilter
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'badgeColor',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeColorIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'badgeColor',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeColorGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'badgeColor',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeColorStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'badgeColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeColorMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'badgeColor',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeColorIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeColor',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeColorIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'badgeColor',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'badgeText',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeTextIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'badgeText',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeTextGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'badgeText',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'badgeText',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'badgeText',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> badgeTextIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'badgeText',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      badgeTextIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'badgeText',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> createdAtEqualTo(
       DateTime value) {
     return QueryBuilder.apply(this, (query) {
@@ -1320,6 +1668,33 @@ extension ChatModelQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'isArchived',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> isMemberIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'isMember',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      isMemberIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'isMember',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> isMemberEqualTo(
+      bool? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isMember',
         value: value,
       ));
     });
@@ -2036,6 +2411,160 @@ extension ChatModelQueryFilter
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'nicknameColor',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'nicknameColor',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'nicknameColor',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'nicknameColor',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'nicknameColor',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'nicknameColor',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition>
+      nicknameColorIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'nicknameColor',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterFilterCondition> peerUserIdIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -2520,6 +3049,30 @@ extension ChatModelQuerySortBy on QueryBuilder<ChatModel, ChatModel, QSortBy> {
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByBadgeColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByBadgeColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByBadgeText() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByBadgeTextDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.desc);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -2565,6 +3118,18 @@ extension ChatModelQuerySortBy on QueryBuilder<ChatModel, ChatModel, QSortBy> {
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByIsArchivedDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isArchived', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByIsMemberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.desc);
     });
   }
 
@@ -2665,6 +3230,18 @@ extension ChatModelQuerySortBy on QueryBuilder<ChatModel, ChatModel, QSortBy> {
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByNicknameColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nicknameColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByNicknameColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nicknameColor', Sort.desc);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> sortByPeerUserId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'peerUserId', Sort.asc);
@@ -2740,6 +3317,30 @@ extension ChatModelQuerySortThenBy
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByBadgeColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByBadgeColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeColor', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByBadgeText() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByBadgeTextDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'badgeText', Sort.desc);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -2785,6 +3386,18 @@ extension ChatModelQuerySortThenBy
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByIsArchivedDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isArchived', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByIsMemberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isMember', Sort.desc);
     });
   }
 
@@ -2897,6 +3510,18 @@ extension ChatModelQuerySortThenBy
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByNicknameColor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nicknameColor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByNicknameColorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nicknameColor', Sort.desc);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QAfterSortBy> thenByPeerUserId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'peerUserId', Sort.asc);
@@ -2967,6 +3592,20 @@ extension ChatModelQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByBadgeColor(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'badgeColor', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByBadgeText(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'badgeText', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'createdAt');
@@ -2990,6 +3629,12 @@ extension ChatModelQueryWhereDistinct
   QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByIsArchived() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isArchived');
+    });
+  }
+
+  QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByIsMember() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isMember');
     });
   }
 
@@ -3045,6 +3690,14 @@ extension ChatModelQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByNicknameColor(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nicknameColor',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ChatModel, ChatModel, QDistinct> distinctByPeerUserId(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -3092,6 +3745,18 @@ extension ChatModelQueryProperty
     });
   }
 
+  QueryBuilder<ChatModel, String?, QQueryOperations> badgeColorProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'badgeColor');
+    });
+  }
+
+  QueryBuilder<ChatModel, String?, QQueryOperations> badgeTextProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'badgeText');
+    });
+  }
+
   QueryBuilder<ChatModel, DateTime, QQueryOperations> createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
@@ -3113,6 +3778,12 @@ extension ChatModelQueryProperty
   QueryBuilder<ChatModel, bool, QQueryOperations> isArchivedProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isArchived');
+    });
+  }
+
+  QueryBuilder<ChatModel, bool?, QQueryOperations> isMemberProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isMember');
     });
   }
 
@@ -3164,6 +3835,12 @@ extension ChatModelQueryProperty
   QueryBuilder<ChatModel, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<ChatModel, String?, QQueryOperations> nicknameColorProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nicknameColor');
     });
   }
 
