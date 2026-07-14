@@ -53,6 +53,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _captchaId;
   String? _captchaB64;
 
+  /// 登录页顶部 Logo 图片用来「穿透 CDN 缓存」的时间戳查询参数。
+  ///
+  /// 之前直接在 build 里用 `DateTime.now().microsecondsSinceEpoch`，
+  /// 每次输入账号密码触发的 setState / ref.watch 都会重新计算 URL，
+  /// `Image.network` 认为 provider key 变了就丢掉解码好的 raster、
+  /// 重新走一遍 HTTP → 解码，肉眼看就是"输入时 Logo 一直闪烁"。
+  ///
+  /// 这里只在 initState + `ref.invalidate(systemSettingsProvider)` 之后
+  /// 采样一次；同一次进入页面里的所有 rebuild 都拿到同一个 URL，
+  /// `PaintingBinding.instance.imageCache` 命中即可，不再重发请求。
+  /// 用户重新打开登录页时 initState 会再跑一次，自然又拿到最新图。
+  late final int _logoCacheBust = DateTime.now().microsecondsSinceEpoch;
+
   @override
   void initState() {
     super.initState();
@@ -155,7 +168,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               
               if (logoUrl.isEmpty) return const SizedBox(height: 32);
               
-              final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=${DateTime.now().microsecondsSinceEpoch}';
+              final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=$_logoCacheBust';
               
               debugPrint('🔥 [Login UI Log] 正在拉取最新的穿透直链: $finalImgUrl');
 
@@ -193,7 +206,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               final cachedSettings = ref.read(systemSettingsProvider).valueOrNull;
               if (cachedSettings != null && cachedSettings.logoImageUrl.isNotEmpty) {
                 final logoUrl = cachedSettings.logoImageUrl;
-                final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=${DateTime.now().microsecondsSinceEpoch}';
+                final finalImgUrl = '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=$_logoCacheBust';
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 32),
                   child: Image.network(finalImgUrl, height: 180, fit: BoxFit.contain),
@@ -533,7 +546,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(15),
+          LengthLimitingTextInputFormatter(11),
         ],
       ),
     );

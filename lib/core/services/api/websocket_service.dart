@@ -184,6 +184,10 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   // 使用 Completer 防止并发连接
   Completer<void>? _connectCompleter;
 
+  /// 通话前主动探活（`ensureAliveForCriticalAction`）用：等待下一个 pong 的 Completer。
+  /// 每次探活时被 set，pong 到达时 complete(true)；探活超时 complete(false)。
+  Completer<bool>? _aliveProbeCompleter;
+
   // 网络状态监听
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
@@ -242,6 +246,118 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     _lastForceReconnectAt = DateTime.now();
     if (kDebugMode) debugPrint('[WS] Force reconnect: $reason');
     await _triggerForceReconnect();
+  }
+
+  /// 通话/关键操作前调用：主动 ping + 等 pong，失败时强制重连并等一等重连结果。
+  ///
+  /// 为什么需要这个？
+  /// - 浏览器（Safari 30s、Chrome/Android tab 挂后台）会**静默 kill** WebSocket 底层 TCP，
+  ///   但 JS 层 `readyState` 仍然是 OPEN、Dart 里 `state == connected`，
+  ///   常规 20s 心跳需要 20~40s 才能发现。
+  /// - 用户按"打电话"这个瞬间不能等，必须**立刻确认**这一刻 WS 到底通不通。
+  ///
+  /// 返回 true = 现在连接确认活着；false = 无论重连了几次都没上来，让调用方给用户报错。
+  ///
+  /// 三步：
+  ///   1. 已经 disconnected → 直接强制重连
+  ///   2. 已 connected → send ping，等 [probeTimeout]（默认 3s）内 pong；到就返回 true
+  ///   3. ping 没等到 pong → 强制重连，等 [reconnectTimeout]（默认 10s）内变 connected
+  ///
+  /// 不用担心跟正常心跳 pong 抢：pong 事件同时 complete 探活 completer 和正常心跳逻辑。
+  Future<bool> ensureAliveForCriticalAction({
+    Duration probeTimeout = const Duration(seconds: 3),
+    Duration reconnectTimeout = const Duration(seconds: 10),
+  }) async {
+    if (_isDisposed || _token == null) return false;
+
+    // 1) 已经不是 connected，直接强制重连 + 等待
+    if (state != WSConnectionState.connected || _channel == null) {
+      if (kDebugMode) debugPrint('[WS] ensureAlive: not connected ($state), forcing reconnect');
+      await _forceReconnectAndAwait(reconnectTimeout);
+      // 第一轮没上来再来一次（有时候 iris_web / 浏览器需要清 TCP zombie）
+      if (state != WSConnectionState.connected) {
+        if (kDebugMode) debugPrint('[WS] ensureAlive: 1st reconnect failed, retrying once');
+        await _forceReconnectAndAwait(reconnectTimeout);
+      }
+      return state == WSConnectionState.connected;
+    }
+
+    // 2) connected → 发 probe ping，等 pong
+    final probe = Completer<bool>();
+    _aliveProbeCompleter = probe;
+
+    // send 返回 false = 未真的写到 channel（可能刚好状态漂移到 disconnected 或 sink.add
+    // 内部 try/catch 兜住了异常）。这种情况下等 pong 永远等不到，直接进入重连分支。
+    bool sent = false;
+    try {
+      sent = send(WSMessage(type: WSMessageType.ping));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[WS] ensureAlive: send probe ping threw: $e');
+    }
+    if (!sent) {
+      if (kDebugMode) debugPrint('[WS] ensureAlive: probe ping not sent, forcing reconnect');
+      if (_aliveProbeCompleter == probe) _aliveProbeCompleter = null;
+      await _forceReconnectAndAwait(reconnectTimeout);
+      if (state != WSConnectionState.connected) {
+        await _forceReconnectAndAwait(reconnectTimeout);
+      }
+      return state == WSConnectionState.connected;
+    }
+
+    // 超时兜底
+    Timer(probeTimeout, () {
+      if (_aliveProbeCompleter == probe && !probe.isCompleted) {
+        probe.complete(false);
+      }
+    });
+
+    final alive = await probe.future;
+    if (_aliveProbeCompleter == probe) _aliveProbeCompleter = null;
+
+    if (alive) {
+      if (kDebugMode) debugPrint('[WS] ensureAlive: probe pong received, alive');
+      return true;
+    }
+
+    // 3) probe 超时 → 强制重连；失败再来一次
+    //    浏览器上第一轮重连偶尔会因为 zombie TCP / DNS 抖动没上来，
+    //    再干一次基本能救回来（比之前 6s 超时 + 单次尝试稳很多，
+    //    也就不用用户手动刷新页面了）。
+    if (kDebugMode) debugPrint('[WS] ensureAlive: probe pong timeout, forcing reconnect');
+    await _forceReconnectAndAwait(reconnectTimeout);
+    if (state != WSConnectionState.connected) {
+      if (kDebugMode) debugPrint('[WS] ensureAlive: 1st reconnect failed, retrying once');
+      await _forceReconnectAndAwait(reconnectTimeout);
+    }
+    return state == WSConnectionState.connected;
+  }
+
+  /// 内部：强制重连并同步等到 connected 或超时。
+  /// 与 `_forceReconnectIfAllowed` 不同的是**无 cooldown 限制**——
+  /// 因为用户按拨号是明确的高优操作，不能被 12s 冷却锁住。
+  Future<void> _forceReconnectAndAwait(Duration timeout) async {
+    if (_isDisposed || _token == null) return;
+
+    // 已经在连接中就直接等它完成即可
+    final inflight = _connectCompleter;
+    if (inflight != null) {
+      try {
+        await inflight.future.timeout(timeout);
+      } catch (_) {}
+      return;
+    }
+
+    _lastForceReconnectAt = DateTime.now();
+    // 触发底层重连（不复用 _forceReconnectIfAllowed 是为了跳过 cooldown）
+    unawaited(_triggerForceReconnect());
+
+    // 等到 state 变 connected 或 timeout
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (_isDisposed) return;
+      if (state == WSConnectionState.connected && _channel != null) return;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
   }
 
   /// 距下次重连的倒计时秒数（供 UI 展示）
@@ -1067,6 +1183,14 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     _pongTimeoutCount = 0;
     _resumePingTimeoutCount = 0;
 
+    // 断开时把探活 completer 立即拉低，避免一次探活跨越两条 channel
+    //（旧 channel 断，新 channel 起来后的 pong 才 complete → 探活方以为旧连接活着）。
+    final probe = _aliveProbeCompleter;
+    if (probe != null && !probe.isCompleted) {
+      probe.complete(false);
+    }
+    _aliveProbeCompleter = null;
+
     final subscription = _subscription;
     _subscription = null;
     await subscription?.cancel();
@@ -1315,6 +1439,14 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         _pongTimeoutCount = 0;
         _resumePingTimeoutCount = 0;
         _pongTimeoutTimer?.cancel();
+
+        // ★ 通话前探活（ensureAliveForCriticalAction）等待 pong 的兜底：
+        //   任何 pong 都算连接活着。用完就置空，避免下一次探活拿到 stale ref。
+        final probe = _aliveProbeCompleter;
+        if (probe != null && !probe.isCompleted) {
+          probe.complete(true);
+        }
+        _aliveProbeCompleter = null;
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[WS] Parse error: $e');

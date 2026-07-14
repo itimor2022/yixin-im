@@ -23,6 +23,7 @@ import '../../contacts/providers/friend_request_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 import 'message_provider.dart' show MessageItem, persistMessageItemsToIsarCache;
 import 'package:go_router/go_router.dart';
+import '../utils/call_status_text.dart';
 
 DateTime? _normalizeChatListTime(DateTime? value) {
   if (value == null) return null;
@@ -308,6 +309,16 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   final Set<String> _recentMessageIds = <String>{};
   final List<String> _recentMessageIdOrder = <String>[];
 
+  /// 客户端最近一次在本机把某会话 unread 清零的时刻（chatId → 时刻）。
+  ///
+  /// 用于修复"未读气泡忽 50、忽 99+"抖动：本地 `markAsRead` 是 fire-and-forget POST，
+  /// 服务端处理 `/message/read` 与紧接着的 `getChatList()` 之间存在
+  /// 几十~几百毫秒的窗口，期间服务端仍然把旧 `unread_count>0` 返回给客户端，
+  /// 上一秒才被清零的红点又被 `silentRefresh` 冒出来。
+  /// 在这个窗口内，`getChatList` 响应里 unread_count>0 一律被本地兜底为 0。
+  final Map<String, DateTime> _localReadClearedAt = <String, DateTime>{};
+  static const Duration _localReadOverrideWindow = Duration(seconds: 8);
+
   /// 设置当前活跃聊天（进入聊天页面时调用）
   void setActiveChatId(String? chatId) {
     _activeChatId = chatId;
@@ -391,6 +402,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler(WSMessageType.readSync, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
+          // 打时间戳：紧接着到达的 silentRefresh 里如果 unread 仍 >0，
+          // 就当作服务端 gorm/redis 还没写回来，走本地强制归零逻辑。
+          _localReadClearedAt[chatId] = DateTime.now();
           final chat = _findChatById(chatId);
           if (chat != null && chat.unreadCount > 0) {
             if (kDebugMode) debugPrint('[Chat] read_sync: clearing unread for chat $chatId');
@@ -1586,7 +1600,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                         userChat.lastMsgText ?? '',
                         currentUserId: _getCurrentUserId(),
                       )
-                    : userChat.lastMsgText,
+                    : normalizeCallStatusText(userChat.lastMsgText ?? ''),
                 lastMessageTime: userChat.lastMsgTime,
                 lastMessageType: _mapMessageContentType(userChat.lastMsgType),
                 lastMessageSender: userChat.lastMsgSender,
@@ -1619,8 +1633,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             .where((chat) => seenIds.add(chat.id)) // 去重：只保留第一次出现的
             .toList();
 
-        final pinned  = chats.where((c) =>  c.isPinned).toList();
-        final regular = chats.where((c) => !c.isPinned).toList();
+        // 服务端字段兜底：保留本地更新过的 lastMessageTime / 8s 内清零的 unread
+        final reconciled = _reconcileServerChats(chats);
+
+        final pinned  = reconciled.where((c) =>  c.isPinned).toList();
+        final regular = reconciled.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(
@@ -1642,8 +1659,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         );
 
         // 订阅所有会话（优先执行，确保实时消息）
-        if (chats.isNotEmpty) {
-          final chatIds = chats.map((c) => c.id).toList();
+        if (reconciled.isNotEmpty) {
+          final chatIds = reconciled.map((c) => c.id).toList();
           _wsService.subscribeChats(chatIds);
         }
 
@@ -1654,7 +1671,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
         Future.microtask(() async {
           try {
-            final models = chats.map(_itemToChatModel).toList();
+            // 使用兜底后的数据落盘，避免服务端滞后值覆盖 Isar 中已知的更新时间/已读状态。
+            final models = reconciled.map(_itemToChatModel).toList();
             final newChatIds = models.map((m) => m.id).toSet();
 
             await IsarService.instance.isar.writeTxn(() async {
@@ -1759,7 +1777,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                         userChat.lastMsgText ?? '',
                         currentUserId: _getCurrentUserId(),
                       )
-                    : userChat.lastMsgText,
+                    : normalizeCallStatusText(userChat.lastMsgText ?? ''),
                 lastMessageTime: userChat.lastMsgTime,
                 lastMessageType: _mapMessageContentType(userChat.lastMsgType),
                 lastMessageSender: userChat.lastMsgSender,
@@ -1794,9 +1812,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
         // ==================== ❌ 二开好友过滤已被彻底干掉 ====================
 
+        // 服务端字段兜底：保留本地更新过的 lastMessageTime / 8s 内清零的 unread
+        // ——同 loadFromServer，用来消除排序错乱和未读气泡回弹。
+        final reconciled = _reconcileServerChats(chats);
+
         // 🌟 最核心修改：恢复成原版，直接将全量 chats 数据源分别拆分给置顶和常规列表
-        final pinned  = chats.where((c) =>  c.isPinned).toList();
-        final regular = chats.where((c) => !c.isPinned).toList();
+        final pinned  = reconciled.where((c) =>  c.isPinned).toList();
+        final regular = reconciled.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
         pinned.sort(
@@ -1825,8 +1847,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         }
 
         // 订阅所有会话
-        if (chats.isNotEmpty) {
-          final chatIds = chats.map((c) => c.id).toList();
+        if (reconciled.isNotEmpty) {
+          final chatIds = reconciled.map((c) => c.id).toList();
           _wsService.subscribeChats(chatIds);
         }
 
@@ -1840,7 +1862,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             return;
           }
           try {
-            final models = chats.map(_itemToChatModel).toList();
+            final models = reconciled.map(_itemToChatModel).toList();
             await IsarService.instance.isar.writeTxn(() async {
               await IsarService.instance.isar.chatModels.clear();
               await IsarService.instance.isar.chatModels.putAll(models);
@@ -1936,6 +1958,69 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     } finally {
       _prefetchMissedMessagesRunning = false;
     }
+  }
+
+  /// 服务器 `getChatList` 响应与本地内存状态之间的字段兜底融合。
+  ///
+  /// 修复两类高频抖动 bug：
+  ///   1. **排序错乱**（"'刚刚' 排到昨天下面"）：
+  ///      本地刚刚收到 WS `new_message` 通过 `_moveToTop` 把 chatA 挪到顶部
+  ///      并写了新的 `lastMessageTime`；紧接着 `silentRefresh` 触发的
+  ///      `getChatList` 命中一台落后从库 / Redis 未刷新的 `chats.last_msg_time`，
+  ///      返回旧值。若直接采用服务端结果并重排，chatA 会被"降回"昨天位置。
+  ///      → 只要本地已有 `lastMessageTime` 严格晚于服务端返回值，就保留
+  ///        本地这一组 last-msg 相关字段。
+  ///   2. **未读气泡抖动**（"50 → 99+"）：
+  ///      本地 `markAsRead` 已把 unread 清零并发出 `/message/read`，但服务端
+  ///      异步处理慢，`getChatList` 仍然把旧 `unread_count>0` 推回来。
+  ///      → 若 `_localReadClearedAt[chatId]` 落在 `_localReadOverrideWindow`
+  ///        窗口内，则强制把 unread 归零。
+  ///
+  /// 只影响 `getChatList` 冷路径，不影响任何 WS 推送 / 主动进入会话的逻辑。
+  List<ChatItem> _reconcileServerChats(List<ChatItem> serverChats) {
+    if (serverChats.isEmpty) return serverChats;
+    final localById = <String, ChatItem>{};
+    for (final c in state.pinnedChats) {
+      localById[c.id] = c;
+    }
+    for (final c in state.regularChats) {
+      localById[c.id] = c;
+    }
+    final now = DateTime.now();
+    return serverChats.map((server) {
+      var out = server;
+      final local = localById[server.id];
+
+      // 未读气泡：本地在窗口内已清零，服务端 > 0 → 兜底成 0。
+      if (server.unreadCount > 0) {
+        final clearedAt = _localReadClearedAt[server.id];
+        if (clearedAt != null &&
+            now.difference(clearedAt) < _localReadOverrideWindow) {
+          out = out.copyWith(unreadCount: 0);
+        } else if (clearedAt != null) {
+          _localReadClearedAt.remove(server.id); // 过窗口就丢，避免长期泄漏
+        }
+      } else if (server.unreadCount == 0) {
+        _localReadClearedAt.remove(server.id);
+      }
+
+      // 排序时间：本地严格晚于服务端 → 保留本地 last-msg 组字段。
+      if (local != null) {
+        final localTime = local.lastMessageTime;
+        final serverTime = server.lastMessageTime;
+        if (localTime != null &&
+            (serverTime == null || localTime.isAfter(serverTime))) {
+          out = out.copyWith(
+            lastMessage: local.lastMessage,
+            lastMessageTime: localTime,
+            lastMessageType: local.lastMessageType,
+            lastMessageSender: local.lastMessageSender,
+            lastMessageSeq: local.lastMessageSeq,
+          );
+        }
+      }
+      return out;
+    }).toList();
   }
 
   /// 检查列表是否有变化
@@ -2378,12 +2463,46 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   }
 
   /// 标记已读
+  ///
+  /// 修复 bug："已读的消息在切出 / 切回 App 后又变成未读"。
+  ///
+  /// 原因：旧实现只把本地内存里的 `unreadCount` 清零，没有同步到服务端 —— 服务端
+  /// 的 `/message/read` 仅在 [MessageListNotifier.loadMessages] 完成后 100ms 才由
+  /// `message_provider.dart` 触发，如果用户很快返回聊天页（`_isActive` 已被
+  /// `setActive(false)` 关掉，或消息还没拉完），那个回调就不会被排到 event loop，
+  /// **服务端始终认为消息未读**。下次 `silentRefresh()` 拿到 `getChatList` 结果时，
+  /// 服务端把 `unread_count > 0` 又推回来覆盖了本地清零的状态，头像右上角红点重新出现。
+  ///
+  /// 现在把服务端 `markAsRead` 放到入口点（进入 / 退出会话都会调这个方法），
+  /// fire-and-forget（幂等）确保服务端至少收到一次已读回执：
+  ///   1. 本地 UI 立刻乐观清零；
+  ///   2. 同步 POST `/message/read`，若拿得到 `lastMessageSeq` 就精确回执，
+  ///      否则让服务端用 Redis last_seq 兜底覆盖。
+  ///
+  /// 即使网络失败也不影响 UI —— 后续 `messageListProvider.loadMessages()`
+  /// 的延迟兜底调用仍然存在，作为二次保险。
   void markAsRead(String chatId) {
     final chat = _findChatById(chatId);
     if (chat == null) return;
 
-    final updatedChat = chat.copyWith(unreadCount: 0);
-    updateChat(updatedChat);
+    // 0. 打时间戳：让紧接着的 silentRefresh / loadFromServer 在 8s 内不要用
+    //    服务端仍然滞后的 unread_count 覆盖本地清零结果（未读气泡抖动 bug）。
+    _localReadClearedAt[chatId] = DateTime.now();
+
+    // 1. 本地乐观更新（避免不必要的重复 setState）
+    if (chat.unreadCount > 0) {
+      final updatedChat = chat.copyWith(unreadCount: 0);
+      updateChat(updatedChat);
+    }
+
+    // 2. 通知服务端已读（fire-and-forget，静默失败）
+    final lastSeq = chat.lastMessageSeq;
+    if (lastSeq > 0) {
+      unawaited(_chatService.markAsRead(chatId, msgSeq: lastSeq));
+    } else {
+      // 拿不到 seq 时用无参调用，让后端用 Redis last_seq 覆盖
+      unawaited(_chatService.markAsRead(chatId));
+    }
   }
 
   /// 标记未读

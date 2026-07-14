@@ -49,6 +49,9 @@ func GenerateToken(userID, deviceID string, sessionVersion ...int64) (string, er
 }
 
 // GenerateAdminToken 生成管理员Token
+//
+// 管理员 token 独立签名密钥（config.jwt.admin_secret），与用户端隔离；即使用户端
+// secret 泄露，也不影响后台。留空则自动回退到用户端 secret，保证旧配置不炸。
 func GenerateAdminToken(adminID uint64, username, role string) (string, error) {
 	cfg := config.GlobalConfig.JWT
 
@@ -64,7 +67,7 @@ func GenerateAdminToken(adminID uint64, username, role string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(cfg.Secret))
+	return token.SignedString([]byte(cfg.AdminSigningSecret()))
 }
 
 // ParseToken 解析Token
@@ -152,6 +155,8 @@ func parseTokenForRefresh(tokenString string) (*Claims, error) {
 }
 
 // ParseAdminToken 解析管理员Token
+//
+// 与 GenerateAdminToken 一致，使用 admin_secret（未配置则回退 secret）。
 func ParseAdminToken(tokenString string) (*AdminClaims, error) {
 	cfg := config.GlobalConfig.JWT
 
@@ -159,7 +164,7 @@ func ParseAdminToken(tokenString string) (*AdminClaims, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("invalid signing method")
 		}
-		return []byte(cfg.Secret), nil
+		return []byte(cfg.AdminSigningSecret()), nil
 	})
 
 	if err != nil {

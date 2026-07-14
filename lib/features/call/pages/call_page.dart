@@ -113,6 +113,13 @@ class _CallPageState extends ConsumerState<CallPage>
 
   void _toggleSpeaker() {
     HapticFeedback.selectionClick();
+    // ★ Web（含手机浏览器）上 Agora `setEnableSpeakerphone` 返回 -4；
+    //   浏览器的扬声器/听筒路由由系统或浏览器 UI 管理，App 层没办法可靠切换。
+    //   给一个明确 toast，避免用户误以为按钮坏了。安卓 APK 走原路径。
+    if (kIsWeb) {
+      _showWebUnsupportedTip('浏览器暂不支持切换扬声器，请在系统或设备上调整音量');
+      return;
+    }
     ref.read(callServiceProvider.notifier).toggleSpeaker();
   }
 
@@ -123,7 +130,33 @@ class _CallPageState extends ConsumerState<CallPage>
 
   void _switchCamera() {
     HapticFeedback.selectionClick();
+    // ★ Web 上 Agora `switchCamera` 直接返回 -4，Iris Web 需要枚举
+    //   mediaDevices 手动切设备，跨浏览器差异极大，尤其手机浏览器
+    //   经常只暴露一个 videoinput。这里给一个明确 toast，功能精简掉，
+    //   等以后有稳定方案再补。安卓 APK 完全不受影响。
+    if (kIsWeb) {
+      _showWebUnsupportedTip('浏览器暂不支持切换前后摄像头');
+      return;
+    }
     ref.read(callServiceProvider.notifier).switchCamera();
+  }
+
+  /// 只在 web 上使用的浏览器能力提示。
+  /// 使用 rootMessenger 保证浮在通话页顶部；如果没有 messenger 就静默失败。
+  void _showWebUnsupportedTip(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.black.withOpacity(0.85),
+        margin: const EdgeInsets.only(bottom: 120, left: 24, right: 24),
+      ),
+    );
   }
 
   void _endCall() {
@@ -435,12 +468,26 @@ class _CallPageState extends ConsumerState<CallPage>
       backgroundColor: const Color(0xFF0E1621),
       body: Stack(
         children: [
-          // 远程视频（全屏）
+          // ★ 同 _buildVideoView：远端视频一挂载就不再 unmount，
+          //   避免 Iris Web 的 HtmlElementView 反复销毁重建导致的
+          //   "对面全屏 / 事件被吃掉" bug。占位图叠加显示。
           Positioned.fill(
-            child: hasRemoteUser && remoteVideoEnabled
+            child: hasRemoteUser
                 ? callService.getRemoteView()
-                : _buildDesktopRemoteVideoPlaceholder(callInfo, hasRemoteUser, remoteVideoEnabled),
+                : _buildDesktopRemoteVideoPlaceholder(
+                    callInfo,
+                    hasRemoteUser,
+                    remoteVideoEnabled,
+                  ),
           ),
+          if (hasRemoteUser && !remoteVideoEnabled)
+            Positioned.fill(
+              child: _buildDesktopRemoteVideoPlaceholder(
+                callInfo,
+                hasRemoteUser,
+                remoteVideoEnabled,
+              ),
+            ),
           
           // 顶部信息栏
           Positioned(
@@ -543,28 +590,38 @@ class _CallPageState extends ConsumerState<CallPage>
                 ],
               ),
               clipBehavior: Clip.antiAlias,
-              child: callState.isVideoEnabled
-                  ? callService.getLocalView()
-                  : Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.videocam_off_rounded,
-                            color: Colors.white.withOpacity(0.4),
-                            size: 32,
+              // ★ 本地视频始终挂载 + 占位图覆盖式（同 _buildVideoView）。
+              child: Stack(
+                children: [
+                  Positioned.fill(child: callService.getLocalView()),
+                  if (!callState.isVideoEnabled)
+                    Positioned.fill(
+                      child: Container(
+                        color: const Color(0xFF1A1A1A),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.videocam_off_rounded,
+                                color: Colors.white.withOpacity(0.4),
+                                size: 32,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '摄像头已关闭',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white.withOpacity(0.4),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '摄像头已关闭',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withOpacity(0.4),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
+                ],
+              ),
             ),
           ),
           
@@ -585,29 +642,39 @@ class _CallPageState extends ConsumerState<CallPage>
                   ],
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              // ★ 桌面 / Web 视频通话：在按钮上方额外挂一个通话时长胶囊，
+              //   与移动端保持一致。桌面顶部小信息卡里也显示时长，重复展示
+              //   属于故意的——底部按钮上方是用户注视焦点，不能只留在顶部。
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildDesktopVideoControlButton(
-                    icon: callState.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                    label: '静音',
-                    isActive: callState.isMuted,
-                    onTap: _toggleMute,
-                  ),
-                  const SizedBox(width: 24),
-                  _buildDesktopVideoControlButton(
-                    icon: callState.isVideoEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-                    label: '视频',
-                    isActive: !callState.isVideoEnabled,
-                    onTap: _toggleVideo,
-                  ),
-                  const SizedBox(width: 24),
-                  _buildDesktopVideoControlButton(
-                    icon: Icons.call_end_rounded,
-                    label: '挂断',
-                    isActive: false,
-                    isEndCall: true,
-                    onTap: _endCall,
+                  _CallDurationBadge(seconds: _seconds),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildDesktopVideoControlButton(
+                        icon: callState.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                        label: '静音',
+                        isActive: callState.isMuted,
+                        onTap: _toggleMute,
+                      ),
+                      const SizedBox(width: 24),
+                      _buildDesktopVideoControlButton(
+                        icon: callState.isVideoEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                        label: '视频',
+                        isActive: !callState.isVideoEnabled,
+                        onTap: _toggleVideo,
+                      ),
+                      const SizedBox(width: 24),
+                      _buildDesktopVideoControlButton(
+                        icon: Icons.call_end_rounded,
+                        label: '挂断',
+                        isActive: false,
+                        isEndCall: true,
+                        onTap: _endCall,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -734,12 +801,35 @@ class _CallPageState extends ConsumerState<CallPage>
     
     return Stack(
       children: [
-        // 远程视频（全屏）或等待/关闭画面
+        // ★ 远端视频：**只要 hasRemoteUser 就一直挂载 AgoraVideoView**，
+        //   占位图作 overlay 叠在上面，需要遮挡时才显示。
+        //   为什么不能条件 mount / unmount？——Web 上 AgoraVideoView 用
+        //   HtmlElementView 把视频渲染到 <div><video/></div>；把 widget 拆掉
+        //   会 dispose 底层 platformView + 触发 Iris Web 的
+        //   `disposeRender` 销毁 <video> 元素；重挂时新 <div> 的 CSS
+        //   还没绑定完 Agora 就已经把 <video> 独立塞回 body，出现
+        //   "对面全屏、控件点不到"的 bug（问题 2b）。
+        //   同时如果第一次挂载时机太晚（onUserJoined 后 setupRemoteVideo
+        //   已经跑过），iris_web 也不会重跑 subscribe/play，直接黑屏
+        //   （问题 1 的 web-web 场景）。
         Positioned.fill(
-          child: hasRemoteUser && remoteVideoEnabled
+          child: hasRemoteUser
               ? callService.getRemoteView()
-              : _buildRemoteVideoPlaceholder(callInfo!, hasRemoteUser, remoteVideoEnabled),
+              : _buildRemoteVideoPlaceholder(
+                  callInfo!,
+                  hasRemoteUser,
+                  remoteVideoEnabled,
+                ),
         ),
+        // 视频挂载了但对方主动关摄像头 → 覆盖一层占位图，不动底层 platformView。
+        if (hasRemoteUser && !remoteVideoEnabled)
+          Positioned.fill(
+            child: _buildRemoteVideoPlaceholder(
+              callInfo!,
+              hasRemoteUser,
+              remoteVideoEnabled,
+            ),
+          ),
 
         // 本地视频（小窗口）- 可拖动
         Positioned(
@@ -765,31 +855,38 @@ class _CallPageState extends ConsumerState<CallPage>
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // 本地视频或关闭提示
-                  if (callState.isVideoEnabled)
-                    Positioned.fill(child: callService.getLocalView())
-                  else
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.videocam_off_rounded,
-                            color: Colors.white.withOpacity(0.6),
-                            size: 32,
+                  // ★ 本地视频**始终挂载**，同远端逻辑：web 上把 AgoraVideoView
+                  //   拆下再重挂会销毁 iris_web 的 <video> 元素、重开摄像头
+                  //   getUserMedia 又要几百 ms，视觉上抖动明显。
+                  //   关摄像头时上面覆盖一层占位图即可。
+                  Positioned.fill(child: callService.getLocalView()),
+                  if (!callState.isVideoEnabled)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.videocam_off_rounded,
+                                color: Colors.white.withOpacity(0.6),
+                                size: 32,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '摄像头已关',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.6),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '摄像头已关',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  
+
                   // 切换摄像头提示
                   if (callState.isVideoEnabled)
                     Positioned(
@@ -1120,6 +1217,14 @@ class _CallPageState extends ConsumerState<CallPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 视频通话接通后：在底部按钮上方增加一个明显的通话时长计时。
+            // 语音通话时 [_buildVoiceContent] 已经在页面中间大字展示时长，这里
+            // 只对视频通话追加，避免语音场景里重复出现两处一样的计时。
+            if (isVideo && isConnected) ...[
+              _CallDurationBadge(seconds: _seconds),
+              const SizedBox(height: 18),
+            ],
+
             // 控制按钮
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1249,6 +1354,68 @@ class _CallPageState extends ConsumerState<CallPage>
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 视频通话接通后展示在底部按钮上方的通话时长胶囊。
+///
+/// 独立成一个无状态小组件，方便 Mobile / Desktop / Web 三条布局共享同一样式，
+/// 也方便以后统一改字号 / 圆角 / 配色。仅接收秒数——真正的 [Timer.periodic]
+/// 仍然放在 [_CallPageState] 里，这里就是一个纯粹的展示组件。
+class _CallDurationBadge extends StatelessWidget {
+  const _CallDurationBadge({required this.seconds});
+
+  final int seconds;
+
+  String _format(int s) {
+    final h = s ~/ 3600;
+    final m = (s % 3600) ~/ 60;
+    final sec = s % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = sec.toString().padLeft(2, '0');
+    // 通话超过 1 小时才展示"小时"，避免 0 小时的时候多余的 "00:" 前缀
+    if (h > 0) {
+      return '${h.toString().padLeft(2, '0')}:$mm:$ss';
+    }
+    return '$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.12),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFF4CAF50),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _format(seconds),
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+              // 等宽数字：秒数跳动时字宽稳定，视觉不抖
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

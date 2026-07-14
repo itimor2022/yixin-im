@@ -8,7 +8,26 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:webview_windows/webview_windows.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/utils/platform_utils.dart';
+
+/// 计算内嵌网页底部需要预留的高度，
+/// 以避开悬浮底部导航栏，兼容各种设备（含刘海屏 / 全面屏 / Home 键机型 / 桌面端）。
+///
+/// 逻辑与 [HomePage] 中悬浮导航栏定位一致：
+/// - 移动设备使用 safeArea 底部 + 缓冲；
+/// - 无 safeArea 的设备（老机型 / 桌面 mobile layout）使用固定 14.0；
+/// - 桌面侧边栏模式下不显示悬浮导航栏，无需预留。
+double _floatingNavBottomInset(
+  BuildContext context, {
+  required bool isDesktopSidebar,
+  double extra = 12,
+}) {
+  if (isDesktopSidebar) return 0;
+  final rawBottomOffset = FloatingNavLayout.bottomOffset(context);
+  final navBarBottomOffset = rawBottomOffset > 0 ? rawBottomOffset : 14.0;
+  return FloatingNavLayout.barHeight + 12 + navBarBottomOffset + extra;
+}
 
 class CustomPortalContent extends StatelessWidget {
   final String title;
@@ -35,7 +54,7 @@ class CustomPortalContent extends StatelessWidget {
     if (PlatformUtils.isAndroid ||
         PlatformUtils.isIOS ||
         PlatformUtils.isMacOS) {
-      return _PortalWebView(url: url);
+      return _PortalWebView(url: url, isDesktopSidebar: isDesktopSidebar);
     }
 
     return _PortalExternalFallback(
@@ -49,8 +68,9 @@ class CustomPortalContent extends StatelessWidget {
 
 class _PortalWebView extends StatefulWidget {
   final String url;
+  final bool isDesktopSidebar;
 
-  const _PortalWebView({required this.url});
+  const _PortalWebView({required this.url, required this.isDesktopSidebar});
 
   @override
   State<_PortalWebView> createState() => _PortalWebViewState();
@@ -178,24 +198,32 @@ class _PortalWebViewState extends State<_PortalWebView> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = _floatingNavBottomInset(
+      context,
+      isDesktopSidebar: widget.isDesktopSidebar,
+    );
+
     return SafeArea(
       top: false,
       bottom: false,
-      child: Column(
-        children: [
-          if (_isLoading)
-            LinearProgressIndicator(
-              value: _progress == 0 ? null : _progress,
-              minHeight: 2,
-              backgroundColor: Colors.transparent,
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                AppColors.primary,
-              ),
-            )
-          else
-            const SizedBox(height: 2),
-          Expanded(child: WebViewWidget(controller: _controller)),
-        ],
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Column(
+          children: [
+            if (_isLoading)
+              LinearProgressIndicator(
+                value: _progress == 0 ? null : _progress,
+                minHeight: 2,
+                backgroundColor: Colors.transparent,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  AppColors.primary,
+                ),
+              )
+            else
+              const SizedBox(height: 2),
+            Expanded(child: WebViewWidget(controller: _controller)),
+          ],
+        ),
       ),
     );
   }
@@ -355,49 +383,57 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
       );
     }
 
+    final bottomInset = _floatingNavBottomInset(
+      context,
+      isDesktopSidebar: widget.isDesktopSidebar,
+    );
+
     return SafeArea(
       top: false,
       bottom: false,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: _isReady
-                ? Webview(_controller)
-                : const Center(child: CircularProgressIndicator()),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            child: _isLoading
-                ? const LinearProgressIndicator(
-                    minHeight: 2,
-                    backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primary,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _isReady
+                  ? Webview(_controller)
+                  : const Center(child: CircularProgressIndicator()),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _isLoading
+                  ? const LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: Colors.transparent,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
+                    )
+                  : const SizedBox(height: 2),
+            ),
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: Tooltip(
+                message: '在系统浏览器打开',
+                child: FilledButton.tonal(
+                  onPressed: _openExternally,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(42, 42),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
                     ),
-                  )
-                : const SizedBox(height: 2),
-          ),
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: Tooltip(
-              message: '在系统浏览器打开',
-              child: FilledButton.tonal(
-                onPressed: _openExternally,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(42, 42),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
                   ),
+                  child: const Icon(Icons.open_in_new_rounded, size: 18),
                 ),
-                child: const Icon(Icons.open_in_new_rounded, size: 18),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -434,9 +470,19 @@ class _PortalExternalFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final resolvedTitle = title.isEmpty ? '打开网站' : title;
+    final bottomInset = _floatingNavBottomInset(
+      context,
+      isDesktopSidebar: isDesktopSidebar,
+      extra: 0,
+    );
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(16, isDesktopSidebar ? 12 : 20, 16, 20),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          isDesktopSidebar ? 12 : 20,
+          16,
+          20 + bottomInset,
+        ),
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(

@@ -1,9 +1,8 @@
 package handlers
 
 import (
-	"fmt"
-	"crypto/sha256"
 	"errors"
+	"image/color"
 	"log"
 	"net/http"
 	"strings"
@@ -15,34 +14,45 @@ import (
 	"gaoranim/internal/services"
 	"gaoranim/pkg/jwt"
 	"gaoranim/pkg/response"
-	"image/color"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"github.com/mojocn/base64Captcha"
+	"gorm.io/gorm"
 )
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
-	db         *gorm.DB
-	cache      *cache.Cache
-	msgService *services.MessageService
-	smsSvc     *services.SMSService
+	db           *gorm.DB
+	cache        *cache.Cache
+	msgService   *services.MessageService
+	smsSvc       *services.SMSService
+	captchaStore base64Captcha.Store // Redis 支持的验证码存储，集群共享
 }
 
 // NewAuthHandler 创建认证处理器
+//
+// captchaStore 传入 Redis 实现（internal/captchastore），若为 nil 则降级到 base64Captcha
+// 自带的 DefaultMemStore（仅适用于单机开发环境）。集群部署必须传 Redis Store，否则
+// 验证码在节点 A 生成、请求走到节点 B 时会一律"验证码错误或已过期"。
 func NewAuthHandler(
 	db *gorm.DB,
 	cache *cache.Cache,
 	msgService *services.MessageService,
 	smsSvc *services.SMSService,
+	captchaStore base64Captcha.Store,
 ) *AuthHandler {
+	if captchaStore == nil {
+		// 兼容旧调用点：降级到内存 Store，同时打日志方便运维发现。
+		log.Printf("[WARN] AuthHandler: captchaStore is nil, falling back to in-memory store (NOT cluster-safe)")
+		captchaStore = base64Captcha.DefaultMemStore
+	}
 	return &AuthHandler{
-		db:         db,
-		cache:      cache,
-		msgService: msgService,
-		smsSvc:     smsSvc,
+		db:           db,
+		cache:        cache,
+		msgService:   msgService,
+		smsSvc:       smsSvc,
+		captchaStore: captchaStore,
 	}
 }
 
@@ -102,15 +112,15 @@ func (h *AuthHandler) CheckUsername(c *gin.Context) {
 
 // RegisterRequest 注册请求
 type RegisterRequest struct {
-	Phone      string `json:"phone" binding:"required"`
-	Password   string `json:"password" binding:"required,min=6,max=20"`
-	Nickname   string `json:"nickname" binding:"required,min=1,max=50"`
-	InviteCode string `json:"invite_code"` // 邀请码（可选）
-	DeviceID   string `json:"device_id" binding:"required"`
-	DeviceType string `json:"device_type"` // ios/android/web
-	DeviceName string `json:"device_name"`
+	Phone       string `json:"phone" binding:"required"`
+	Password    string `json:"password" binding:"required,min=6,max=20"`
+	Nickname    string `json:"nickname" binding:"required,min=1,max=50"`
+	InviteCode  string `json:"invite_code"` // 邀请码（可选）
+	DeviceID    string `json:"device_id" binding:"required"`
+	DeviceType  string `json:"device_type"` // ios/android/web
+	DeviceName  string `json:"device_name"`
 	CaptchaID   string `json:"captchaId" binding:"required"`   // 新增
-    CaptchaCode string `json:"captchaCode" binding:"required"`// 新增
+	CaptchaCode string `json:"captchaCode" binding:"required"` // 新增
 }
 
 // Register 注册
@@ -158,8 +168,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// ================== 验证码校验逻辑 ==================
-	var store = base64Captcha.DefaultMemStore
-	if !store.Verify(req.CaptchaID, req.CaptchaCode, true) { 
+	// 用注入的 Store（生产 = Redis，开发 = 内存）。第三参数 true 表示"校验后立即销毁"。
+	if !h.captchaStore.Verify(req.CaptchaID, req.CaptchaCode, true) {
 		response.Error(c, 400, "验证码错误或已过期")
 		return
 	}
@@ -191,8 +201,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 创建用户（主流程事务化，避免出现“返回失败但部分写入成功”）
-	        // 用手机号作为用户名，确保唯一
-        autoUsername := req.Phone
+	// 用手机号作为用户名，确保唯一
+	autoUsername := req.Phone
 	phone := req.Phone
 	user := models.User{
 		UUID:     uuid.New().String(),
@@ -465,8 +475,8 @@ func (h *AuthHandler) GetCaptcha(c *gin.Context) {
 		fontOptions,  // 核心：强制指定只用这一种实心、明显的字体，杜绝空心字交替出现！
 	)
 
-	// 4. 使用内存存储
-	cp := base64Captcha.NewCaptcha(driverString, base64Captcha.DefaultMemStore)
+	// 4. 用注入的 Store（生产为 Redis，跨节点共享）
+	cp := base64Captcha.NewCaptcha(driverString, h.captchaStore)
 
 	// 生成验证码
 	id, b64s, _, err := cp.Generate()
@@ -484,123 +494,118 @@ func (h *AuthHandler) GetCaptcha(c *gin.Context) {
 
 // LoginRequest 登录请求
 type LoginRequest struct {
-	Phone      string `json:"phone" binding:"required"`
-	Password   string `json:"password" binding:"required"`
-	DeviceID   string `json:"device_id" binding:"required"`
-	DeviceType string `json:"device_type"` // ios/android/web
-	DeviceName string `json:"device_name"`
-	CaptchaID   string `json:"captchaId" binding:"required"`   // 新增：验证码ID
-    CaptchaCode string `json:"captchaCode" binding:"required"`
+	Phone       string `json:"phone" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	DeviceID    string `json:"device_id" binding:"required"`
+	DeviceType  string `json:"device_type"` // ios/android/web
+	DeviceName  string `json:"device_name"`
+	CaptchaID   string `json:"captchaId" binding:"required"` // 新增：验证码ID
+	CaptchaCode string `json:"captchaCode" binding:"required"`
 }
 
 // Login 登录
 func (h *AuthHandler) Login(c *gin.Context) {
-    // Device lock may require SMS verification for new devices.
-    var req LoginRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        response.BadRequest(c, "参数错误")
-        return
-    }
-    req.Phone = strings.TrimSpace(req.Phone)
+	// Device lock may require SMS verification for new devices.
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	req.Phone = strings.TrimSpace(req.Phone)
 
-    // ================== 新增：图形验证码校验 ==================
-    // 第三参数为 true 代表：校验后无论成功与否，立刻将该验证码从内存中销毁（防止重放攻击）
-    if !base64Captcha.DefaultMemStore.Verify(req.CaptchaID, req.CaptchaCode, true) {
-        response.Error(c, 400, "验证码错误或已过期")
-        return
-    }
-    // =======================================================
+	// ================== 图形验证码校验 ==================
+	// 第三参数为 true = 校验后立即销毁（一次性），防止重放。走注入的 Store，集群共享。
+	if !h.captchaStore.Verify(req.CaptchaID, req.CaptchaCode, true) {
+		response.Error(c, 400, "验证码错误或已过期")
+		return
+	}
+	// =======================================================
 
-    // 查找用户（按手机号）
-    var user models.User
-    result := h.db.Where("phone = ?", req.Phone).First(&user)
+	// 查找用户（按手机号）
+	var user models.User
+	result := h.db.Where("phone = ?", req.Phone).First(&user)
 
-    if result.Error == gorm.ErrRecordNotFound {
-        response.Error(c, 400, "手机号或密码错误")
-        return
-    }
+	if result.Error == gorm.ErrRecordNotFound {
+		response.Error(c, 400, "手机号或密码错误")
+		return
+	}
 
-    if result.Error != nil {
-        response.ServerError(c, "登录失败，请稍后重试")
-        return
-    }
+	if result.Error != nil {
+		response.ServerError(c, "登录失败，请稍后重试")
+		return
+	}
 
-    // 验证密码（先查Redis缓存，避免每次走bcrypt）
-    pwCacheKey := fmt.Sprintf("pw:ok:%d:%x", user.ID, sha256.Sum256([]byte(req.Password)))
-    pwCacheHit := false
-    if h.cache != nil {
-        if val, err := h.cache.GetRaw(c, pwCacheKey); err == nil && val == "1" {
-            pwCacheHit = true
-        }
-    }
-    if !pwCacheHit {
-        if !user.CheckPassword(req.Password) {
-            response.Error(c, 400, "用户名或密码错误")
-            return
-        }
-        // 验证成功，缓存5分钟
-        if h.cache != nil {
-            h.cache.SetRaw(c, pwCacheKey, "1", 5*60)
-        }
-    }
+	// 验证密码
+	//
+	// ⚠️ 历史版本这里有一段"pw:ok:{uid}:{sha256(pwd)} → 1"的 Redis 密码结果缓存，
+	// 用意是省 bcrypt 那 ~100ms 开销。但这个缓存是重大安全隐患：
+	//   1. sha256 未加 pepper，Redis 一旦泄露 = 用户密码彩虹表；
+	//   2. 用户改密后老 hash 仍会在 5 分钟内被判为通过；
+	//   3. 一旦攻击者能写 Redis（或走 Redis 未鉴权口子），就等于给所有用户
+	//      开万能密码。综合来看，为了那点点 bcrypt CPU 完全不值得。
+	// 因此彻底去掉，每次登录都走 bcrypt。登录不是热点接口，10 次/秒的 IP+账号
+	// 限流已经能挡住暴力破解，不需要缓存。
+	if !user.CheckPassword(req.Password) {
+		response.Error(c, 400, "用户名或密码错误")
+		return
+	}
 
-    // 检查用户状态
-    if user.Status == 0 {
-        response.Error(c, 403, "账号已被禁用")
-        return
-    }
+	// 检查用户状态
+	if user.Status == 0 {
+		response.Error(c, 403, "账号已被禁用")
+		return
+	}
 
+	if h.cache != nil {
+		whitelistKey := "user:whitelist:" + user.UUID
+		var whitelistIps string
 
-    if h.cache != nil {
-        whitelistKey := "user:whitelist:" + user.UUID
-        var whitelistIps string
-        
-        if err := h.cache.Get(c.Request.Context(), whitelistKey, &whitelistIps); err == nil {
+		if err := h.cache.Get(c.Request.Context(), whitelistKey, &whitelistIps); err == nil {
 
-            currentIP := c.ClientIP()
-            
-            if !CheckIPInWhitelist(currentIP, whitelistIps) {
-                response.Error(c, http.StatusForbidden, "当前处于非法的访问IP环境，登录已被拒绝")
-                return 
-            }
-        }
-    }
+			currentIP := c.ClientIP()
 
-    // 更新最后登录时间
-    h.db.Model(&user).Update("last_seen", time.Now())
+			if !CheckIPInWhitelist(currentIP, whitelistIps) {
+				response.Error(c, http.StatusForbidden, "当前处于非法的访问IP环境，登录已被拒绝")
+				return
+			}
+		}
+	}
 
-    if needVerify, ticket := h.issueDeviceLockChallenge(c, user, req); needVerify {
-        c.JSON(http.StatusOK, response.Response{
-            Code:    deviceLockVerifyRequiredCode,
-            Message: "新设备登录需要短信验证",
-            Data: gin.H{
-                "verify_ticket": ticket,
-                "expires_in":    int(cache.TTLVerifyCode / time.Second),
-            },
-        })
-        return
-    }
+	// 更新最后登录时间
+	h.db.Model(&user).Update("last_seen", time.Now())
 
-    // 普通登录复用现有会话版本，避免新设备登录挤掉其他在线设备。
-    sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
+	if needVerify, ticket := h.issueDeviceLockChallenge(c, user, req); needVerify {
+		c.JSON(http.StatusOK, response.Response{
+			Code:    deviceLockVerifyRequiredCode,
+			Message: "新设备登录需要短信验证",
+			Data: gin.H{
+				"verify_ticket": ticket,
+				"expires_in":    int(cache.TTLVerifyCode / time.Second),
+			},
+		})
+		return
+	}
 
-    // 生成 Token
-    token, err := jwt.GenerateToken(user.UUID, req.DeviceID, sessionVersion)
-    if err != nil {
-        response.ServerError(c, "生成Token失败")
-        return
-    }
+	// 普通登录复用现有会话版本，避免新设备登录挤掉其他在线设备。
+	sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
 
-    // 记录设备与会话。普通登录复用同一会话版本，不挤掉其他设备。
-    if err := recordUserLogin(h.db, user.ID, token, req.DeviceID, req.DeviceType, req.DeviceName, c.ClientIP(), time.Now()); err != nil {
-        response.ServerError(c, "记录登录会话失败")
-        return
-    }
+	// 生成 Token
+	token, err := jwt.GenerateToken(user.UUID, req.DeviceID, sessionVersion)
+	if err != nil {
+		response.ServerError(c, "生成Token失败")
+		return
+	}
 
-    response.Success(c, gin.H{
-        "token": token,
-        "user":  user,
-    })
+	// 记录设备与会话。普通登录复用同一会话版本，不挤掉其他设备。
+	if err := recordUserLogin(h.db, user.ID, token, req.DeviceID, req.DeviceType, req.DeviceName, c.ClientIP(), time.Now()); err != nil {
+		response.ServerError(c, "记录登录会话失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"token": token,
+		"user":  user,
+	})
 }
 
 // updateDevice 更新设备信息
@@ -830,17 +835,29 @@ func (h *AuthHandler) SendPasswordResetCode(c *gin.Context) {
 		return
 	}
 
+	// ⚠️ 防用户枚举：无论手机号是否已注册、账号是否禁用，都返回同样的成功提示。
+	// 攻击者拿一份手机号库来撞库时看不出哪些号在系统里，才不会把这里当"手机号验证器"。
+	// 只在真的有账号 + 状态正常时才实际发短信，避免给不存在的号乱发。
+	successResp := func() {
+		response.Success(c, gin.H{
+			"message":    "如该手机号已注册，验证码已发送",
+			"expires_in": int(cache.TTLVerifyCode / time.Second),
+		})
+	}
+
 	var user models.User
 	if err := h.db.Where("phone = ?", phone).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.NotFound(c, "手机号未绑定账号")
+			successResp()
 			return
 		}
+		// DB 出错时才暴露服务端错误，避免"手机号存在"信息侧漏
 		response.ServerError(c, "发送失败")
 		return
 	}
 	if user.Status == 0 {
-		response.Error(c, 403, "账号已被禁用")
+		// 禁用账号同样按成功返回，不告诉调用方"账号被禁"
+		successResp()
 		return
 	}
 
@@ -857,10 +874,7 @@ func (h *AuthHandler) SendPasswordResetCode(c *gin.Context) {
 	}
 	clearSMSVerifyAttempts(ctx, h.cache, "password-reset:"+phone)
 
-	response.Success(c, gin.H{
-		"message":    "验证码已发送",
-		"expires_in": int(cache.TTLVerifyCode / time.Second),
-	})
+	successResp()
 }
 
 // ResetPasswordByCode resets a password after verifying the bound phone code.

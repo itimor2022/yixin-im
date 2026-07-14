@@ -375,12 +375,29 @@ func (h *Hub) handleBroadcast(msg *BroadcastMessage) {
 
 // sendToUser 发送消息给用户的所有设备（只查本节点内存）
 func (h *Hub) sendToUser(userID string, data []byte, excludeID string) {
-	if clientSet, ok := h.clients.Get(userID); ok {
-		clientSet.Range(func(c *Client) {
-			if c.ID != excludeID {
-				c.Send(data)
-			}
-		})
+	clientSet, ok := h.clients.Get(userID)
+	if !ok {
+		// 集群模式下如果 Redis 路由指到本节点但本节点内存里没客户端，
+		// 是一个已知的窄窗竞态（refresh/reconnect 中间态）。
+		// 通话信令时效性强，专门标注一条便于线上定位。
+		if msgType := peekMsgType(data); isCallSignal(msgType) {
+			log.Printf("[WS Hub] CALL SIGNAL dropped: no local client for user=%s type=%s "+
+				"(likely stale Redis route or reconnect race)", userID, msgType)
+		}
+		return
+	}
+	sent := 0
+	clientSet.Range(func(c *Client) {
+		if c.ID != excludeID {
+			c.Send(data)
+			sent++
+		}
+	})
+	if sent == 0 {
+		if msgType := peekMsgType(data); isCallSignal(msgType) {
+			log.Printf("[WS Hub] CALL SIGNAL not sent: all clients excluded user=%s type=%s",
+				userID, msgType)
+		}
 	}
 }
 

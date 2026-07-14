@@ -244,7 +244,17 @@ func (cb *ClusterBridge) SendToUser(uid string, data json.RawMessage) {
 	// 1. 查 Redis 路由表，找用户在哪个节点
 	nodeID, err := cb.rdb.Get(cb.ctx, redisRouteKey(uid)).Result()
 	if err == redis.Nil {
-		// 用户不在线（所有节点都没有），存离线消息
+		msgType := peekMsgType(data)
+		// ★ 通话信令时效性只有几十秒，塞到 7 天离线队列没有意义 ——
+		//   等用户回来的时候通话早已 cancel/timeout，反而会闪出一个
+		//   "假来电"UI 造成困惑（前端要 GET /call/pending 才能确认现状）。
+		//   直接丢弃 + 打日志，由前端 pollPendingCall 兜底。
+		if isCallSignal(msgType) {
+			log.Printf("[Cluster] CALL SIGNAL dropped: user offline uid=%s type=%s (skip offline queue)",
+				uid, msgType)
+			return
+		}
+		// 其他普通消息仍走离线队列
 		cb.saveOfflineMsg(uid, data)
 		return
 	}
@@ -255,6 +265,9 @@ func (cb *ClusterBridge) SendToUser(uid string, data json.RawMessage) {
 
 	// 2. 在本节点，直接推（零网络开销）
 	if nodeID == cb.nodeID {
+		if msgType := peekMsgType(data); isCallSignal(msgType) {
+			log.Printf("[Cluster] CALL SIGNAL local push uid=%s type=%s", uid, msgType)
+		}
 		cb.hub.sendToUserLocal(uid, data)
 		return
 	}
@@ -263,7 +276,34 @@ func (cb *ClusterBridge) SendToUser(uid string, data json.RawMessage) {
 	pm, _ := json.Marshal(clusterPushMsg{UID: uid, Data: data})
 	if err := cb.rdb.Publish(cb.ctx, redisPushChannel(nodeID), pm).Err(); err != nil {
 		log.Printf("[Cluster] 跨节点推送失败 uid=%s → node=%s: %v", uid, nodeID, err)
+		return
 	}
+	if msgType := peekMsgType(data); isCallSignal(msgType) {
+		log.Printf("[Cluster] CALL SIGNAL cross-node uid=%s type=%s target_node=%s",
+			uid, msgType, nodeID)
+	}
+}
+
+// peekMsgType 从原始 JSON 中偷看 "type" 字段，无需完整反序列化。
+// 只用于日志，parse 失败返回空串。
+func peekMsgType(data json.RawMessage) string {
+	var probe struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return ""
+	}
+	return probe.Type
+}
+
+// isCallSignal 判断是否为通话信令，用于选择性打详细日志。
+func isCallSignal(t string) bool {
+	switch t {
+	case "incoming_call", "call_accepted", "call_rejected",
+		"call_ended", "call_cancelled":
+		return true
+	}
+	return false
 }
 
 // SendToUsers 批量发送（群消息场景）

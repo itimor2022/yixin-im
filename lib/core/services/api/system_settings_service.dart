@@ -91,6 +91,10 @@ class SystemSettings {
   final bool checkinEnabled;
   final bool allowStrangerMessage;
 
+  /// ServerDiscovery api.txt 拉取地址（后台数据库配置，管理后台只读）。
+  /// 空字符串表示由 App 使用源码内硬编码的 fallback。
+  final String apiTxtUrl;
+
   const SystemSettings({
     this.appVersionIOS = '',
     this.appVersionAndroid = '',
@@ -131,6 +135,7 @@ class SystemSettings {
     this.revokeMessageMinutes = 2,
     this.checkinEnabled = false,
     this.allowStrangerMessage = false,
+    this.apiTxtUrl = '',
   });
 
   factory SystemSettings.fromJson(Map<String, dynamic> json) {
@@ -180,6 +185,7 @@ class SystemSettings {
       revokeMessageMinutes: json['revoke_message_minutes'] as int? ?? 2,
       checkinEnabled: json['checkin_enabled'] == true,
       allowStrangerMessage: json['allow_stranger_message'] == true,
+      apiTxtUrl: json['api_txt_url']?.toString() ?? '',
     );
   }
 
@@ -221,6 +227,7 @@ class SystemSettings {
         'max_voice_size': maxVoiceSize,
         'revoke_message_minutes': revokeMessageMinutes,
         'checkin_enabled': checkinEnabled,
+        'api_txt_url': apiTxtUrl,
       };
 
   String get displayName {
@@ -281,6 +288,11 @@ class SystemSettingsService {
   static const String _cacheTimeKey = 'system_settings_cache_time';
   static const Duration _cacheDuration = Duration(minutes: 30);
 
+  /// ServerDiscovery 冷启动时读取的 api.txt 地址缓存键。
+  /// 这里独立成一个 top-level key（而不是嵌在 systemSettingsCache 里），
+  /// 是因为 ServerDiscovery 在拿到 API 服务器之前就要用它，读单值最省事。
+  static const String kApiTxtUrlPrefsKey = 'svc_disc_api_txt_url';
+
   SystemSettings? _cachedSettings;
 
   SystemSettings? get cachedSettings => _cachedSettings;
@@ -308,6 +320,7 @@ class SystemSettingsService {
         final settings = SystemSettings.fromJson(response.data!);
         _cachedSettings = settings;
         await _saveToCache(settings);
+        await _persistApiTxtUrl(settings.apiTxtUrl);
         return settings;
       }
     } catch (e) {
@@ -381,6 +394,23 @@ class SystemSettingsService {
       await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       if (kDebugMode) debugPrint('[SystemSettings] Error saving to cache: $e');
+    }
+  }
+
+  /// 把最新拿到的 api.txt 地址持久化到 SharedPreferences，供下次冷启动
+  /// ServerDiscovery 直接读取（不必等 /app/settings 二次拉取才能拿到）。
+  /// 空字符串主动清除缓存，让 ServerDiscovery 回落到源码内硬编码 fallback。
+  Future<void> _persistApiTxtUrl(String url) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final trimmed = url.trim();
+      if (trimmed.isEmpty) {
+        await prefs.remove(kApiTxtUrlPrefsKey);
+      } else {
+        await prefs.setString(kApiTxtUrlPrefsKey, trimmed);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SystemSettings] Error persisting api_txt_url: $e');
     }
   }
 

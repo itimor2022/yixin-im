@@ -614,6 +614,74 @@ func (h *CallHandler) CancelCall(c *gin.Context) {
 	response.Success(c, gin.H{"message": "取消成功"})
 }
 
+// GetPendingCall 返回当前用户仍处于 calling/connected 状态的一通电话（如果有）。
+//
+// 主要用于 web 端补偿：
+//   - Web 上 WebSocket 掉线/重连 或 tab 被浏览器节流时，`incoming_call`
+//     可能被塞进 Redis 离线队列，也可能在切节点重连的窄窗口里彻底丢掉。
+//   - 前端在 WS 重连成功、或页面从后台切回前台时打一次这个接口，
+//     若还有 caller 在等，就走 handleIncomingCall 补出来电 UI。
+//
+// 返回值：
+//   - 没有活跃通话：{"has_pending": false}
+//   - 有活跃通话：{"has_pending": true, "as_role": "caller|callee", ...call info}
+//
+// 只查最近 5 分钟（活跃通话不可能更久），避免历史数据串扰。
+func (h *CallHandler) GetPendingCall(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var user models.User
+	if err := h.db.Where("uuid = ?", userID).First(&user).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+
+	activeSince := time.Now().Add(-5 * time.Minute)
+
+	var call models.Call
+	err := h.db.
+		Where("status IN ? AND start_time > ? AND (caller_id = ? OR callee_id = ?)",
+			[]string{"calling", "connected"},
+			activeSince,
+			user.ID,
+			user.ID,
+		).
+		Order("start_time DESC").
+		First(&call).Error
+	if err != nil {
+		response.Success(c, gin.H{"has_pending": false})
+		return
+	}
+
+	asRole := "caller"
+	otherUserID := call.CalleeID
+	if call.CalleeID == user.ID {
+		asRole = "callee"
+		otherUserID = call.CallerID
+	}
+
+	var otherUser models.User
+	if err := h.db.First(&otherUser, otherUserID).Error; err != nil {
+		// 对端用户异常（被删?）—— 不返回，让客户端跳过
+		response.Success(c, gin.H{"has_pending": false})
+		return
+	}
+
+	response.Success(c, gin.H{
+		"has_pending":  true,
+		"as_role":      asRole,
+		"call_id":      call.ID,
+		"channel_name": call.ChannelName,
+		"call_type":    call.CallType,
+		"status":       call.Status,
+		"other_user": gin.H{
+			"id":     otherUser.UUID,
+			"name":   otherUser.Nickname,
+			"avatar": otherUser.Avatar,
+		},
+	})
+}
+
 func (h *CallHandler) GetCallHistory(c *gin.Context) {
 	userID := c.GetString("user_id")
 

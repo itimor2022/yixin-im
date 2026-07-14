@@ -47,11 +47,26 @@ class ServerDiscovery {
     'https://cloudflare-dns.com/dns-query', // 海外兜底
   ];
 
-  /// 多个 OSS/CDN 加密配置文件地址
+  /// 多个 OSS/CDN 加密配置文件地址（源码内硬编码 fallback）
+  ///
+  /// 上线运行时的真实 api.txt 地址是从后台数据库 `system_settings.api_txt_url`
+  /// 拿到的（首次连上服务端后由 SystemSettingsService 缓存到 SharedPreferences
+  /// key = `svc_disc_api_txt_url`），冷启动时 `_effectiveOssUrls()` 会优先读
+  /// 该缓存并把这里的常量当作最后的兜底。
+  ///
+  /// 保持这里非空是为了：
+  ///   1. 全新安装、SharedPreferences 还是空的场景仍能引导起来；
+  ///   2. 缓存值失效（返回 4xx/超时）时可以自动回落。
+  ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
     'https://admin.legg.click/api.txt',
   ];
+
+  /// 与 `SystemSettingsService.kApiTxtUrlPrefsKey` 保持一致。
+  /// 单独复制一份常量是为了避免 ServerDiscovery 反向 import ApiClient/Riverpod 相关
+  /// 依赖（ServerDiscovery 在应用最早期启动，必须保持零业务依赖）。
+  static const String _apiTxtUrlPrefsKey = 'svc_disc_api_txt_url';
 
   /// AES-256-CBC 密钥（32字节 UTF-8，与加密端一致）
   static const String _aesKey = 'YiXin2024Secure!AppNodeKey@Qa853';
@@ -278,13 +293,32 @@ Future<String> _discover() async {
 
   // ── 轨道2: 多OSS全并行 ──────────────────────────────────
 
+  /// 合并"数据库下发的 api.txt 地址（SharedPreferences 缓存）"和"源码硬编码 fallback"，
+  /// 数据库地址排在最前面确保优先命中，同时去重。
+  Future<List<String>> _effectiveOssUrls() async {
+    final result = <String>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_apiTxtUrlPrefsKey)?.trim();
+      if (cached != null && cached.isNotEmpty && cached.startsWith('http')) {
+        result.add(cached);
+        if (kDebugMode) debugPrint('[Discovery] OSS use DB-cached url: $cached');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] OSS read prefs error: $e');
+    }
+    result.addAll(_ossUrls);
+    return result.toList();
+  }
+
   Future<List<String>?> _fetchFromOss() async {
-    if (_ossUrls.isEmpty) return null;
+    final ossUrls = await _effectiveOssUrls();
+    if (ossUrls.isEmpty) return null;
 
     final completer = Completer<List<String>?>();
     int failed = 0;
 
-    for (final url in _ossUrls) {
+    for (final url in ossUrls) {
       _fetchOssUrl(url).then((nodes) {
         if (nodes != null && nodes.isNotEmpty
             && !completer.isCompleted) {
@@ -292,13 +326,13 @@ Future<String> _discover() async {
           completer.complete(nodes);
         } else {
           failed++;
-          if (failed >= _ossUrls.length && !completer.isCompleted) {
+          if (failed >= ossUrls.length && !completer.isCompleted) {
             completer.complete(null);
           }
         }
       }).catchError((_) {
         failed++;
-        if (failed >= _ossUrls.length && !completer.isCompleted) {
+        if (failed >= ossUrls.length && !completer.isCompleted) {
           completer.complete(null);
         }
       });

@@ -60,6 +60,12 @@ const (
 	// 在线客服
 	SettingCustomerServiceURL = "customer_service_url" // 在线客服地址(App找回密码/FAQ跳转)
 
+	// 客户端服务发现（ServerDiscovery）api.txt 拉取地址。
+	// 只允许后台数据库直接修改（admin UI 只读展示，isAllowedSystemSettingKey 白名单不放行）；
+	// 客户端第一次拿到 API 服务器地址后会通过 /app/settings 拉到此值并缓存到 SharedPreferences，
+	// 下次冷启动 ServerDiscovery 会优先读取该缓存值代替源码内硬编码的 _ossUrls。
+	SettingApiTxtURL = "api_txt_url"
+
 	SettingLogoImageUrl       = "logo_image_url"
 
 	SettingDiscoverTopImageUrl = "discover_top_image_url"

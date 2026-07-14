@@ -16,6 +16,16 @@ type Chat struct {
 	Description string     `gorm:"type:varchar(1000)" json:"description"`
 	OwnerID     uint64     `gorm:"index" json:"owner_id"`
 	MemberCount int        `gorm:"default:0" json:"member_count"`
+	// FakeMemberCount 群组"水军"数量：管理员在后台为群组配置的虚拟成员数。
+	// 影响客户端看到的 member_count 展示（会与真实数相加）。
+	// 不进 chat_members 表、不占 MaxMembers 名额、不影响任何消息广播或权限逻辑。
+	// 只允许 type=2 (群聊) 使用；其他类型即便有值也不参与叠加。
+	FakeMemberCount int        `gorm:"type:int;default:0;not null" json:"fake_member_count"`
+	// FakeOnlineCount 群组"水军在线"数量：从 FakeMemberCount 里再单独设置一个"其中多少在线"。
+	// 影响客户端看到的 online_count 展示（会与真实在线数相加）。
+	// 后端 handler 会兜底 clamp 到 [0, FakeMemberCount]，避免"在线数 > 成员数"这种荒谬展示。
+	// 只允许 type=2 (群聊) 使用。
+	FakeOnlineCount int        `gorm:"type:int;default:0;not null" json:"fake_online_count"`
 	MaxMembers  int        `gorm:"default:200" json:"max_members"`
 	IsPublic    bool       `gorm:"default:false" json:"is_public"`
 	InviteLink  string     `gorm:"type:varchar(100);uniqueIndex" json:"invite_link"`

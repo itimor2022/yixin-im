@@ -1692,6 +1692,21 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
         _hasMore = messages.length >= 30;
         _lastSeq = messages.isNotEmpty ? messages.last.seq : null;
 
+        // 首页不足一整页(0<count<30) 通常意味着 Redis 热缓存被
+        // PushChatMessage 局部填充了几条（例如刚被转发进来的 N 条），
+        // 而 MongoDB 里其实还有大量历史。此时立即用 before_seq 触发一次
+        // 补齐拉取——后端在 before_seq>0 分支会直接跳过 Redis 缓存查 MongoDB，
+        // 从而拿回被"半死"缓存挡住的历史消息。避免用户看到
+        // "转发给对方后进入对话只显示刚转发的几条，历史消息看不到，
+        // 只有退出重进才能出现"的现象。
+        if (messages.isNotEmpty && messages.length < 30) {
+          if (kDebugMode) debugPrint(
+            '[Message] First page partial (${messages.length}/30) for chatId=$chatId, backfilling history via before_seq=$_lastSeq',
+          );
+          _hasMore = true;
+          unawaited(loadMoreMessages());
+        }
+
         // Only send read receipts while the chat page is active.
         Future.delayed(const Duration(milliseconds: 200), () {
           if (!mounted) return;

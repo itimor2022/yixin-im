@@ -556,6 +556,15 @@ func (s *MessageService) getMessagesBySeq(
 	}
 
 	// ★ 优先读 Redis 热数据缓存（最近200条，beforeSeq=0 表示拉最新消息）
+	//
+	// 关键修复：只有当**过滤后**的缓存条数 >= limit 时才认为命中。
+	// 之前只判断 `len(vals) > 0` 会踩这个 bug：
+	//   1) 目标会话本节点从没读过消息 / Redis TTL 已过期 → 缓存空
+	//   2) 转发 N 条 → SendMessage 里的 PushChatMessage 只把这 N 条 LPUSH 进缓存
+	//   3) 收件方进会话 → 缓存命中但只有 N 条 → 前端 `_hasMore = length >= 30` 拉到
+	//      false，历史消息永远拉不到，用户看到"只有刚转发的几条"
+	// 缓存不够就 fallthrough 到 MongoDB，正确性优先；命中的普通场景（活跃会话
+	// 缓存已满）性能不受影响，缓存也会随后续 PushChatMessage 自然补齐。
 	if beforeSeq == 0 {
 		if vals, hit := s.cache.GetChatMessages(ctx, chatID); hit {
 			var cached []*models.Message
@@ -575,9 +584,17 @@ func (s *MessageService) getMessagesBySeq(
 					cached = append(cached, &m)
 				}
 			}
-			if len(cached) > limit { cached = cached[:limit] }
-			log.Printf("[Message] Redis cache hit chatID=%s count=%d", chatID, len(cached))
-			return cached, nil
+			if len(cached) >= limit {
+				cached = cached[:limit]
+				log.Printf("[Message] Redis cache hit chatID=%s count=%d", chatID, len(cached))
+				return cached, nil
+			}
+			// 缓存过少（大概率是冷缓存被 PushChatMessage 局部填充过），
+			// 走 MongoDB 拉全量，避免把不完整的缓存当"全部"返回给客户端
+			log.Printf(
+				"[Message] Redis cache partial chatID=%s cached=%d limit=%d, fallthrough to MongoDB",
+				chatID, len(cached), limit,
+			)
 		}
 	}
 

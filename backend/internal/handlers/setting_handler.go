@@ -1490,6 +1490,8 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"custom_portal_url":           settingMap[models.SettingCustomPortalURL],
 		"custom_portal_icon_url":      settingMap[models.SettingCustomPortalIconURL],
 		"customer_service_url":        settingMap[models.SettingCustomerServiceURL],
+		// 服务发现 api.txt 地址：仅通过数据库维护（管理后台只读），客户端拿到后缓存本地覆盖 ServerDiscovery 硬编码
+		"api_txt_url":                 settingMap[models.SettingApiTxtURL],
 		"logo_image_url":              settingMap[models.SettingLogoImageUrl],
 		"discover_top_image_url":      settingMap[models.SettingDiscoverTopImageUrl],
 		"burn_after_read_enabled":     !isSystemSettingFalse(settingMap[models.SettingBurnAfterReadEnabled]),
