@@ -16,8 +16,19 @@ abstract class BaseUrlUpdatable {
 /// API 配置
 class ApiConfig {
   // ── 编译期 Fallback（ServerDiscovery 未完成时使用） ──────
-  // 本地开发时可临时改这里，生产由 ServerDiscovery 动态写入
-  static const String _defaultServerUrl = 'https://api.legg.click';
+  //
+  // 之前这里硬编码了测试服 URL，会导致：
+  //   1. api.txt 拉不到时客户端仍能连上测试服，误以为一切正常；
+  //   2. 泄露了生产测试服域名，安全审计不通过；
+  //   3. 运维排查"服务发现是不是挂了"时被这条兜底路径掩盖真实症状。
+  //
+  // 现在留成空串。ServerDiscovery 成功之前所有 API/WS 调用都会立刻失败——
+  // 这是我们**故意的**：让"服务发现没跑通"变成一个显性问题，用户看到
+  // 网络错误 → 排查 CORS / S3 权限 / 节点存活，而不是被一个错误环境骗着继续用。
+  //
+  // 本地开发若确实要跳过 ServerDiscovery（例如没配 S3 时），可在此处
+  // 临时改回一个 URL；提交前请务必还原为空串。
+  static const String _defaultServerUrl = '';
 
   // ── 运行时可变节点（由 ServerDiscovery.updateServer 写入）──
   static String _serverUrl = _defaultServerUrl;

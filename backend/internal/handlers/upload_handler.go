@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"gaoranim/internal/storage"
 	"gaoranim/internal/models"
+	"gaoranim/internal/storage"
 	"gaoranim/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -110,6 +110,63 @@ var allowedImageTypes = map[string]bool{
 	// ★ application/octet-stream 已移除，改由魔数验证兜底
 }
 
+// dangerousUploadExts 是绝不允许通过通用上传接口（UploadFile）落盘的扩展名。
+// 一旦落盘到 /uploads/... 静态目录，即使我们在响应头里加了 Content-Disposition
+// 也可能被 Nginx / PHP-FPM / Apache 错误解析成可执行文件，从而变成 RCE 后门。
+// 这里维护的是一个"绝对黑名单"，凡是命中直接 400 拒收，不做任何白名单裁剪。
+var dangerousUploadExts = map[string]bool{
+	".php": true, ".phtml": true, ".php3": true, ".php4": true, ".php5": true,
+	".phps": true, ".pht": true, ".phar": true,
+	".jsp": true, ".jspx": true, ".jspf": true,
+	".asp": true, ".aspx": true, ".ashx": true, ".asmx": true, ".cer": true,
+	".cfm": true, ".cfc": true,
+	".pl": true, ".cgi": true,
+	".py": true, ".rb": true, ".sh": true, ".bash": true, ".zsh": true,
+	".exe": true, ".dll": true, ".msi": true, ".bat": true, ".cmd": true,
+	".ps1": true, ".vbs": true, ".vbe": true, ".js": true, ".jse": true, ".hta": true,
+	".htaccess": true, ".htpasswd": true, ".ini": true, ".config": true,
+	".swf": true, ".jar": true, ".class": true, ".war": true, ".ear": true,
+	// HTML / SVG 也拉黑：SVG 内可以夹 <script>，HTML 直接就是 XSS 落地页，
+	// 通过静态目录展示会执行；应用真的需要展示 HTML/SVG 时走专用接口 + CSP。
+	".html": true, ".htm": true, ".xhtml": true, ".svg": true, ".svgz": true,
+}
+
+// isDangerousUploadExt 判断扩展名是否落在黑名单里（大小写不敏感，兼容 .Php 之类的绕过）。
+func isDangerousUploadExt(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == "" {
+		return false
+	}
+	return dangerousUploadExts[ext]
+}
+
+// sanitizeUploadFilename 去掉路径穿越（../）、控制字符和 Windows 保留名，返回一个
+// 只保留 basename 的干净字符串。落盘时我们自己会另外生成 uuid+timestamp 文件名，
+// 这里主要是为了保护"记录到数据库的原始文件名"和防止 header 里带 CRLF。
+func sanitizeUploadFilename(name string) string {
+	name = filepath.Base(name)
+	// 去掉 Windows / Unix 路径分隔符（Base 只处理 OS 相关的，跨系统上传时兜底一次）
+	name = strings.ReplaceAll(name, "\\", "")
+	name = strings.ReplaceAll(name, "/", "")
+	// 去除控制字符防止 header 注入
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	name = strings.TrimSpace(b.String())
+	if name == "" || name == "." || name == ".." {
+		return "file"
+	}
+	// 限制长度，防止极长文件名撑爆 DB / header
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
+}
+
 // detectImageTypeByMagic 通过魔数验证文件是否为合法图片（防伪造 Content-Type）
 func detectImageTypeByMagic(data []byte) bool {
 	if len(data) < 4 {
@@ -140,6 +197,15 @@ func detectImageTypeByMagic(data []byte) bool {
 }
 
 // detectAudioTypeByMagic 通过魔数验证文件是否为合法音频
+//
+// 支持的格式：
+//   - MP3 (FF FB / FF F3 / FF F2 / "ID3")
+//   - MP4/M4A/AAC (ftyp box)
+//   - WAV (RIFF...WAVE)
+//   - WebM (EBML header, 1A 45 DF A3) —— Web 端 MediaRecorder 默认容器
+//   - OGG ("OggS") —— Firefox 上 opus 的备选容器
+//
+// 注：只加分支，未删除任何原有格式检查，Android 上传的 m4a 依然走 ftyp 分支。
 func detectAudioTypeByMagic(data []byte) bool {
 	if len(data) < 4 {
 		return false
@@ -158,6 +224,14 @@ func detectAudioTypeByMagic(data []byte) bool {
 		data[8] == 0x57 && data[9] == 0x41 && data[10] == 0x56 && data[11] == 0x45 {
 		return true
 	}
+	// WebM (EBML): 1A 45 DF A3 —— Chrome/Edge/Firefox 的 MediaRecorder 默认输出
+	if data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3 {
+		return true
+	}
+	// OGG: "OggS" —— Firefox 上 opus 的另一种可能容器
+	if data[0] == 0x4F && data[1] == 0x67 && data[2] == 0x67 && data[3] == 0x53 {
+		return true
+	}
 	return false
 }
 
@@ -171,13 +245,13 @@ var allowedVideoTypes = map[string]bool{
 
 // 允许的音频类型
 var allowedAudioTypes = map[string]bool{
-	"audio/mpeg":               true, // mp3
-	"audio/mp4":                true, // m4a
-	"audio/x-m4a":              true, // m4a
-	"audio/aac":                true, // aac
-	"audio/wav":                true, // wav
-	"audio/ogg":                true, // ogg
-	"audio/webm":               true, // webm audio
+	"audio/mpeg":  true, // mp3
+	"audio/mp4":   true, // m4a
+	"audio/x-m4a": true, // m4a
+	"audio/aac":   true, // aac
+	"audio/wav":   true, // wav
+	"audio/ogg":   true, // ogg
+	"audio/webm":  true, // webm audio
 	// ★ application/octet-stream 已移除，改由魔数验证兜底
 }
 
@@ -587,7 +661,14 @@ func (h *UploadHandler) UploadVoice(c *gin.Context) {
 	})
 }
 
-// UploadFile 上传文件
+// UploadFile 上传文件（通用附件）
+//
+// ⚠️ 这是通用附件通道，任何类型的文件都能进来，因此风险面最大。这里必须要做的事：
+//  1. 扩展名黑名单：拒绝 .php/.jsp/.exe/.html/.svg 等可能被 Web 服务器执行或 XSS 的文件；
+//  2. 清洗原始文件名：去掉路径穿越（../）、控制字符、CRLF，防止 header 注入 / 目录逃逸；
+//  3. 落盘文件名由 uuid+timestamp 生成（uploadToStorage 内已处理），不采信客户端 header；
+//  4. 静态目录服务已经在 middleware.MediaSecurityHeaders 里加了 nosniff + attachment，
+//     即使被下载也不会以脚本方式执行。
 func (h *UploadHandler) UploadFile(c *gin.Context) {
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -595,6 +676,12 @@ func (h *UploadHandler) UploadFile(c *gin.Context) {
 		return
 	}
 	defer file.Close()
+
+	// 扩展名黑名单（大小写不敏感）
+	if isDangerousUploadExt(header.Filename) {
+		response.Error(c, http.StatusBadRequest, "不支持的文件类型")
+		return
+	}
 
 	// 获取用户ID并检查会员上传限制
 	userUUID := c.GetString("user_id")
@@ -611,17 +698,20 @@ func (h *UploadHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
-	contentType := header.Header.Get("Content-Type")
+	// 通用附件不采信客户端 Content-Type，一律按 application/octet-stream 落盘 +
+	// 强制下载，避免浏览器嗅探成脚本。原始 Content-Type 只留在响应里给前端展示 icon。
+	rawContentType := header.Header.Get("Content-Type")
+	storageContentType := "application/octet-stream"
 
-	// 读取文件内容
 	fileData, err := io.ReadAll(file)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "读取文件失败")
 		return
 	}
 
-	// 上传（S3 或本地）
-	url, err := h.uploadToStorage(c, fileData, "files", header.Filename, contentType)
+	safeName := sanitizeUploadFilename(header.Filename)
+
+	url, err := h.uploadToStorage(c, fileData, "files", safeName, storageContentType)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "上传失败")
 		return
@@ -629,9 +719,10 @@ func (h *UploadHandler) UploadFile(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"url":          url,
-		"filename":     header.Filename,
-		"originalName": header.Filename,
+		"filename":     safeName,
+		"originalName": safeName,
 		"size":         header.Size,
 		"type":         "file",
+		"mime":         rawContentType,
 	})
 }

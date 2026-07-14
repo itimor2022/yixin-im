@@ -1,7 +1,7 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/Users/li/fvm/versions/stable"
-export "FLUTTER_APPLICATION_PATH=/Volumes/PD/源码/yi-xin-511"
+export "FLUTTER_ROOT=/Users/x/Downloads/flutter"
+export "FLUTTER_APPLICATION_PATH=/Users/x/Downloads/yixin-im-4.1"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"

@@ -1,13 +1,14 @@
 package middleware
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
-	"context"
 
 	"gaoranim/internal/authsession"
 	"gaoranim/internal/cache"
@@ -47,8 +48,13 @@ func Logger() gin.HandlerFunc {
 	}
 }
 
-// CORS 跨域中间件（白名单模式，支持多域名动态匹配）
-// allowedOrigins 为空时降级为 * （开发模式）
+// CORS 跨域中间件（严格白名单模式）
+//
+// allowedOrigins 为空时降级为 `*` 但强制关闭 credentials —— 适合 Nginx 前面已经做过
+// CORS 的开发/内网场景；配置了白名单则严格匹配，且允许 credentials（JWT via cookie）。
+//
+// 修复要点：原实现无条件把请求 Origin 反射到 Access-Control-Allow-Origin，同时开
+// Allow-Credentials，等价于关掉了跨站保护（任何站点都能带用户 cookie 打你）。
 func CORS(allowedOrigins ...string) gin.HandlerFunc {
 	allowed := make(map[string]bool, len(allowedOrigins))
 	for _, o := range allowedOrigins {
@@ -56,6 +62,7 @@ func CORS(allowedOrigins ...string) gin.HandlerFunc {
 			allowed[strings.TrimRight(o, "/")] = true
 		}
 	}
+	hasWhitelist := len(allowed) > 0
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
@@ -64,11 +71,27 @@ func CORS(allowedOrigins ...string) gin.HandlerFunc {
 			return
 		}
 
-		// 放行所有来源，安全由 JWT 认证保证，支持任意域名/CDN/Cloudflare
-		c.Header("Access-Control-Allow-Origin", origin)
+		originKey := strings.TrimRight(origin, "/")
+
+		if hasWhitelist {
+			if !allowed[originKey] {
+				// 不在白名单，直接放弃写 CORS 头。浏览器会自行拦截。
+				// 预检请求也直接 204，避免暴露服务器信息。
+				if c.Request.Method == http.MethodOptions {
+					c.AbortWithStatus(http.StatusNoContent)
+					return
+				}
+				c.Next()
+				return
+			}
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+		} else {
+			// 开发模式：无白名单则回 `*`，但必须关掉 credentials（浏览器规范要求）
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With, Accept, X-Request-Id")
-		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
 		c.Header("Access-Control-Max-Age", "86400")
 		c.Header("Vary", "Origin")
@@ -110,6 +133,30 @@ func MediaCORS(baseURL string) gin.HandlerFunc {
 	}
 }
 
+// MediaSecurityHeaders 给 /uploads 静态目录加安全响应头。
+//
+// 目的：
+//   - X-Content-Type-Options: nosniff  —— 禁止浏览器嗅探 Content-Type，
+//     防止 image.jpg.html 被当 HTML 解析、eval 掉里面的 <script>。
+//   - Content-Security-Policy: 只允许自身域展示媒体，同时禁止内联脚本，
+//     即便被塞了 HTML 也执行不了 JS。
+//   - Content-Disposition: 对于 /uploads/files/... 的通用附件路径，强制 attachment
+//     下载，绝不 inline 打开。图片/视频/头像等业务白名单目录不做强制下载，
+//     否则前端 <img> 无法展示。
+//   - X-Frame-Options: DENY —— 防止上传目录被别的站 iframe 内嵌做 clickjacking。
+func MediaSecurityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox")
+		// 只对通用附件路径强制下载；图片、视频、头像等仍走 inline，才能被前端展示。
+		if strings.Contains(c.Request.URL.Path, "/uploads/files/") {
+			c.Header("Content-Disposition", "attachment")
+		}
+		c.Next()
+	}
+}
+
 // Auth 认证中间件
 func Auth(cache *cache.Cache) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -122,7 +169,7 @@ func Auth(cache *cache.Cache) gin.HandlerFunc {
 		}
 
 		ctx := context.WithValue(c.Request.Context(), "client_ip", c.ClientIP())
-        c.Request = c.Request.WithContext(ctx)
+		c.Request = c.Request.WithContext(ctx)
 
 		if err := authenticateUserToken(c, cache, tokenString); err != nil {
 			response.Unauthorized(c, err.Error())
@@ -379,13 +426,24 @@ func isSensitiveQueryKey(key string) bool {
 	}
 }
 
-// RateLimit 限流中间件
+// RateLimit 全局 IP 限流中间件
+//
+// 之前设的 100000/秒 相当于没设，容易被 DDoS 打穿；改为每 IP 每秒 300 次的滑动窗口。
+// 说明：
+//   - Gin 的 ClientIP() 只有在 engine.SetTrustedProxies() 正确配置后才能真正拿到真实 IP，
+//     否则外网用户能通过 X-Forwarded-For 头伪造 IP 绕过限流。main.go 已按 config
+//     里的 trusted_proxies 显式设置，这里可以放心用。
+//   - 阈值可通过环境变量 YIXIN_IP_RATE_LIMIT 覆盖，方便应急调整。
 func RateLimit(cache *cache.Cache) gin.HandlerFunc {
+	limit := 300
+	if v := strings.TrimSpace(getEnv("YIXIN_IP_RATE_LIMIT", "")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
 	return func(c *gin.Context) {
 		key := "ip:" + c.ClientIP()
-
-		// 每秒100个请求
-		allowed, err := cache.RateLimit(c.Request.Context(), key, 100000, time.Second)
+		allowed, err := cache.RateLimit(c.Request.Context(), key, limit, time.Second)
 		if err != nil {
 			log.Printf("Rate limit error: %v", err)
 			c.Next()
@@ -400,6 +458,14 @@ func RateLimit(cache *cache.Cache) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// getEnv 读取环境变量，未设置时返回默认值。middleware 层复用工具。
+func getEnv(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
 }
 
 // WalletRateLimit 钱包操作专用限流（基于用户ID，更严格）
@@ -469,8 +535,12 @@ func GetDeviceID(c *gin.Context) string {
 	return deviceID.(string)
 }
 
+// AdminIPBlockedCode 管理员 IP 不在白名单时返回的业务码
+// 前端据此将后台所有界面跳转到 404 页面
+const AdminIPBlockedCode = 40403
+
 // AdminAuth 管理员认证中间件
-func AdminAuth() gin.HandlerFunc {
+func AdminAuth(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -500,20 +570,57 @@ func AdminAuth() gin.HandlerFunc {
 			return
 		}
 
+		// IP 白名单校验：白名单不匹配时，后台所有界面跳转 404
+		// 同时装载角色 code（用于 demo_admin 类只读账号的写保护）
+		roleCode := resolveRoleCodeFallback(claims.Role)
+		if db != nil {
+			var admin models.Admin
+			if err := db.Select("id", "username", "role", "whitelist_ips").First(&admin, claims.AdminID).Error; err == nil {
+				if !admin.IsIPAllowed(c.ClientIP()) {
+					c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+						"code":    AdminIPBlockedCode,
+						"message": "页面不存在",
+					})
+					return
+				}
+				// 查询角色权限码（内置 super_admin 直接给 R_SUPER）
+				if admin.Role == "super_admin" {
+					roleCode = models.RoleCodeSuper
+				} else {
+					var role models.Role
+					if err := db.Select("code").Where("`key` = ?", admin.Role).First(&role).Error; err == nil && role.Code != "" {
+						roleCode = role.Code
+					}
+				}
+			}
+		}
+
 		c.Set("admin_id", claims.AdminID)
 		c.Set("admin_username", claims.Username)
 		c.Set("admin_role", claims.Role)
+		c.Set("admin_role_code", roleCode)
 
 		c.Next()
 	}
 }
 
+// isValidAdminRole 判断 role 字段是否合法
+// 由于角色现已可动态扩展，这里只做基本非空校验；具体权限由 admin_role_code 决定
 func isValidAdminRole(role string) bool {
+	return strings.TrimSpace(role) != ""
+}
+
+// resolveRoleCodeFallback 在无法查询数据库时，给内置角色兜底返回权限码
+func resolveRoleCodeFallback(role string) string {
 	switch role {
-	case "super_admin", "admin", "operator", "demo_admin":
-		return true
+	case "super_admin":
+		return models.RoleCodeSuper
+	case "admin", "operator":
+		return models.RoleCodeAdmin
+	case "demo_admin":
+		return models.RoleCodeDemo
 	default:
-		return false
+		return models.RoleCodeAdmin
 	}
 }
 
@@ -549,7 +656,7 @@ func GetAdminID(c *gin.Context) uint64 {
 	return adminID.(uint64)
 }
 
-// GetAdminRole 从上下文获取管理员角色
+// GetAdminRole 从上下文获取管理员角色 key（用于 UI 展示/审计）
 func GetAdminRole(c *gin.Context) string {
 	role, exists := c.Get("admin_role")
 	if !exists {
@@ -558,22 +665,32 @@ func GetAdminRole(c *gin.Context) string {
 	return role.(string)
 }
 
-// RequireWriteRole 写操作权限中间件 - 禁止演示管理员
+// GetAdminRoleCode 从上下文获取当前管理员的权限码（R_SUPER/R_ADMIN/R_DEMO）
+func GetAdminRoleCode(c *gin.Context) string {
+	v, exists := c.Get("admin_role_code")
+	if !exists {
+		return models.RoleCodeAdmin
+	}
+	return v.(string)
+}
+
+// IsDemoAdmin 判断当前登录管理员是否为只读演示账号
+func IsDemoAdmin(c *gin.Context) bool {
+	return GetAdminRoleCode(c) == models.RoleCodeDemo
+}
+
+// RequireWriteRole 写操作权限中间件 - 只读账号（R_DEMO）无法写入
 func RequireWriteRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role := GetAdminRole(c)
-		switch role {
-		case "super_admin", "admin", "operator":
+		switch GetAdminRoleCode(c) {
+		case models.RoleCodeSuper, models.RoleCodeAdmin:
 			c.Next()
-			return
-		case "demo_admin":
+		case models.RoleCodeDemo:
 			response.Forbidden(c, "演示账号无法执行此操作")
 			c.Abort()
-			return
 		default:
 			response.Forbidden(c, "无权限执行此操作")
 			c.Abort()
-			return
 		}
 	}
 }

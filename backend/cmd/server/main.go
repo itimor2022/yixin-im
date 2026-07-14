@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gaoranim/internal/cache"
+	"gaoranim/internal/captchastore"
 	"gaoranim/internal/config"
 	"gaoranim/internal/handlers"
 	"gaoranim/internal/middleware"
@@ -171,7 +172,7 @@ func main() {
 		log.Println("✓ S3 disabled，使用本地存储")
 	}
 
-	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, hub, msgService, pushService, s3Storage, searchSvc)
+	router := setupRouter(cfg, mysqlDB, mongoDB, cacheService, redisClient, hub, msgService, pushService, s3Storage, searchSvc)
 
 	// 13. 启动服务器
 	srv := &http.Server{
@@ -237,6 +238,38 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	}
 
 	// 自动迁移
+	//
+	// ⚠️ AutoMigrate 会在启动时对着 MySQL 跑 SHOW TABLES / ALTER 等 DDL，生产环境的问题：
+	//   1. 慢：几十张表 x 每张 4~5 条 SQL，冷启动明显变慢；
+	//   2. 危险：并发多节点滚动升级时，同一张表可能被多次 ALTER，MySQL 8 甚至会锁表；
+	//   3. 不可控：Schema 变更应该走 DB Migration 工具（golang-migrate / gh-ost / flyway），
+	//      让 DBA 提前评审，而不是应用启动时"自动"执行。
+	//
+	// 推荐生产做法：显式设 YIXIN_SKIP_AUTOMIGRATE=1，把 schema 交给独立的 migration 步骤。
+	// 开发和首次部署仍可留空，保持"开箱即用"体验。
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("YIXIN_SKIP_AUTOMIGRATE"))); v == "1" || v == "true" || v == "yes" {
+		log.Println("[DB] YIXIN_SKIP_AUTOMIGRATE=1, 跳过 GORM AutoMigrate，schema 应由独立 migration 步骤维护")
+		if err := migrateUserChatLastMsgID(db); err != nil {
+			log.Printf("[Migration] migrate user_chats.last_msg_id failed: %v", err)
+		}
+		if err := ensureUserDeviceE2EEColumns(db); err != nil {
+			log.Printf("[E2EE] ensure user_devices columns failed: %v", err)
+		}
+		if err := backfillHotUpdateDeliveryModes(db); err != nil {
+			log.Printf("[HotUpdate] normalize delivery_mode failed: %v", err)
+		}
+		backfillUserShortIDs(db)
+		initDefaultMembershipPlans(db)
+		initDefaultApiTxtURL(db)
+		fixChatMemberRoles(db)
+		if err := initDefaultAdmin(db, serverMode); err != nil {
+			return nil, err
+		}
+		initDefaultRoles(db)
+		loadHeartbeatTimeout(db)
+		return db, nil
+	}
+
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.UserDevice{},
@@ -249,6 +282,8 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 		&models.DiscoverItem{},
 		&models.Admin{},
 		&models.AdminLoginLog{},
+		&models.Role{},
+		&models.RoleMenu{},
 		// 动态相关
 		&models.Moment{},
 		&models.MomentLike{},
@@ -326,6 +361,9 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	// 初始化默认会员套餐
 	initDefaultMembershipPlans(db)
 
+	// 初始化 ServerDiscovery api.txt 地址（管理后台只读展示，缺行时插入默认值）
+	initDefaultApiTxtURL(db)
+
 	// 修复群组成员角色数据
 	fixChatMemberRoles(db)
 
@@ -333,6 +371,9 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	if err := initDefaultAdmin(db, serverMode); err != nil {
 		return nil, err
 	}
+
+	// 初始化内置角色（super_admin/admin/operator/demo_admin），缺行幂等插入
+	initDefaultRoles(db)
 
 	// 加载心跳超时设置
 	loadHeartbeatTimeout(db)
@@ -526,6 +567,37 @@ func initDefaultAdmin(db *gorm.DB, serverMode string) error {
 	return nil
 }
 
+// initDefaultRoles 在启动时确保 roles 表里存在四个内置角色。
+// 幂等：按 key 判断，已存在则跳过，不覆盖运维手动改过的 Name / Description / Code。
+// 说明：这里只兜底"内置"角色；运维通过后台"角色管理"新建的自定义角色不会被这里覆盖。
+func initDefaultRoles(db *gorm.DB) {
+	now := time.Now()
+	for _, seed := range models.BuiltInRoles {
+		var count int64
+		if err := db.Model(&models.Role{}).Where("`key` = ?", seed.Key).Count(&count).Error; err != nil {
+			log.Printf("[Roles] check role %q failed: %v", seed.Key, err)
+			continue
+		}
+		if count > 0 {
+			continue
+		}
+		role := models.Role{
+			Key:         seed.Key,
+			Name:        seed.Name,
+			Description: seed.Description,
+			Code:        seed.Code,
+			IsBuiltIn:   true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := db.Create(&role).Error; err != nil {
+			log.Printf("[Roles] seed role %q failed: %v", seed.Key, err)
+			continue
+		}
+		log.Printf("[Roles] seeded built-in role: %s (%s)", seed.Key, seed.Code)
+	}
+}
+
 // loadHeartbeatTimeout 从数据库加载心跳超时设置
 func loadHeartbeatTimeout(db *gorm.DB) {
 	var setting models.SystemSetting
@@ -591,6 +663,38 @@ func initDefaultMembershipPlans(db *gorm.DB) {
 		db.Create(&plan)
 	}
 	log.Println("✓ Default membership plans created")
+}
+
+// initDefaultApiTxtURL 首次启动时为 ServerDiscovery api.txt 地址插入默认行。
+// 这个 setting 是「只读」性质：管理后台不允许 PUT/PATCH（isAllowedSystemSettingKey 白名单不放行），
+// 需要修改就直接改数据库。这里在启动时兜底一次，避免 admin 页面首次显示空白。
+// - 已存在（无论 value 是什么）→ 不覆盖，保持运维改过的值；
+// - 不存在 → 用当前源码里的硬编码 fallback 作为默认值。
+func initDefaultApiTxtURL(db *gorm.DB) {
+	var count int64
+	if err := db.Model(&models.SystemSetting{}).
+		Where("`key` = ?", models.SettingApiTxtURL).
+		Count(&count).Error; err != nil {
+		log.Printf("[Init] count api_txt_url failed: %v", err)
+		return
+	}
+	if count > 0 {
+		return
+	}
+	now := time.Now()
+	row := models.SystemSetting{
+		Key:       models.SettingApiTxtURL,
+		Value:     "https://admin.legg.click/api.txt",
+		Type:      "string",
+		Remark:    "客户端 ServerDiscovery 拉取节点列表用的 api.txt 地址。管理后台只读，改动直接改本行。",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := db.Create(&row).Error; err != nil {
+		log.Printf("[Init] insert default api_txt_url failed: %v", err)
+		return
+	}
+	log.Println("✓ Default api_txt_url inserted into system_settings")
 }
 
 // initDefaultWithdrawMethods 初始化默认提现方式
@@ -751,6 +855,7 @@ func setupRouter(
 	db *gorm.DB,
 	mongoDB *mongo.Database,
 	cache *cache.Cache,
+	redisClient *redis.Client,
 	hub *ws.Hub,
 	msgService *services.MessageService,
 	pushService *services.PushService,
@@ -759,9 +864,18 @@ func setupRouter(
 ) *gin.Engine {
 	router := gin.New()
 
-	// ★ pprof 性能分析路由（仅内网可访问）
+	// ★ 信任代理白名单：只有来自这些 IP/CIDR 的 X-Forwarded-For 才会被 ClientIP() 采纳。
+	// 未配置则 nil（Gin 不信任任何代理，只用 socket 直连地址），可防止外网伪造 header
+	// 绕过 IP 限流。生产环境务必配置为 Nginx / K8s Ingress / CDN 的内网 IP 段。
+	// 详见 config.server.trusted_proxies。
+	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		log.Printf("[WARN] SetTrustedProxies failed: %v (fallback to no trusted proxies)", err)
+		_ = router.SetTrustedProxies(nil)
+	}
+
+	// ★ pprof 性能分析路由（仅内网可访问 —— InternalOnly 中间件强制校验源 IP）
 	{
-		pprofGroup := router.Group("/debug/pprof")
+		pprofGroup := router.Group("/debug/pprof", middleware.InternalOnly())
 		pprofGroup.GET("/", gin.WrapF(gopprof.Index))
 		pprofGroup.GET("/cmdline", gin.WrapF(gopprof.Cmdline))
 		pprofGroup.GET("/profile", gin.WrapF(gopprof.Profile))
@@ -779,10 +893,18 @@ func setupRouter(
 	// 中间件
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
-	// CORS 白名单：BaseURL 不为空时限制来源，为空时（开发模式）放行所有
-	corsOrigins := []string{}
-	if cfg.Server.BaseURL != "" {
-		corsOrigins = append(corsOrigins, cfg.Server.BaseURL)
+	// CORS 严格白名单：
+	// - config.server.allowed_origins 优先（推荐配置）
+	// - 未配置时回退到 BaseURL / RegisterBaseURL（保证旧配置也能跑）
+	// - 都为空则允许所有来源（开发模式，且不带 credentials）
+	corsOrigins := append([]string(nil), cfg.Server.AllowedOrigins...)
+	if len(corsOrigins) == 0 {
+		if cfg.Server.BaseURL != "" {
+			corsOrigins = append(corsOrigins, cfg.Server.BaseURL)
+		}
+		if cfg.Server.RegisterBaseURL != "" && cfg.Server.RegisterBaseURL != cfg.Server.BaseURL {
+			corsOrigins = append(corsOrigins, cfg.Server.RegisterBaseURL)
+		}
 	}
 	router.Use(middleware.CORS(corsOrigins...))
 
@@ -828,6 +950,9 @@ func setupRouter(
 	}
 	uploads := router.Group("/uploads")
 	uploads.Use(middleware.MediaCORS(baseURL))
+	// ★ 静态目录安全头：nosniff + CSP + /uploads/files/ 强制 attachment，
+	// 防止用户上传的文件被浏览器嗅探成 HTML/JS 执行。
+	uploads.Use(middleware.MediaSecurityHeaders())
 	uploads.StaticFS("/", gin.Dir(uploadDir, false))
 
 	// 根路径：访问 / 时提示后端已启动
@@ -849,7 +974,9 @@ func setupRouter(
 	})
 
 	// ★ WebSocket 状态（新增 node_id 和集群开关状态）
-	router.GET("/ws/stats", func(c *gin.Context) {
+	// 仅内网可访问 —— 该端点会暴露在线用户数、集群拓扑等敏感运维信息，
+	// 生产环境绝对不能公网直连，必须走 Nginx / VPN 内网。
+	router.GET("/ws/stats", middleware.InternalOnly(), func(c *gin.Context) {
 		stats := hub.GetStats()
 		// ★ stats 直接是 map[string]interface{}，追加集群信息后返回
 		stats["node_id"] = ws.NodeID
@@ -880,7 +1007,10 @@ func setupRouter(
 		// 认证路由（无需登录）
 		auth := api.Group("/auth")
 		{
-			authHandler := handlers.NewAuthHandler(db, cache, msgService, smsSvc)
+			// 验证码 Store 用 Redis 实现，保证集群里任意节点都能校验彼此发出的验证码。
+			// TTL 与短信验证码保持一致（5 分钟），到期自动淘汰。
+			captchaStore := captchastore.New(redisClient, "captcha:", 5*time.Minute)
+			authHandler := handlers.NewAuthHandler(db, cache, msgService, smsSvc, captchaStore)
 			qrLoginHandler := handlers.NewQRLoginHandler(db, cache)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
@@ -986,7 +1116,9 @@ func setupRouter(
 			{
 				msgHandler := handlers.NewMessageHandler(db, msgService, pushService, hub, cache)
 				message.GET("/e2ee/device-keys", msgHandler.GetChatDeviceKeys)
-				message.POST("/send", middleware.UserRateLimit(cache, 10000, time.Second), msgHandler.SendMessage)
+				// 消息发送单用户限流：每 5 秒 60 条（≈ 12/秒峰值，正常聊天绰绰有余，能挡住
+				// 脚本刷屏 / 撞消息）。原值 10000/秒 相当于没设，一个账号就能把 MongoDB 打挂。
+				message.POST("/send", middleware.UserRateLimit(cache, 60, 5*time.Second), msgHandler.SendMessage)
 				message.GET("/list", msgHandler.GetMessages)
 				message.POST("/revoke", msgHandler.RevokeMessage)
 				message.POST("/delete", msgHandler.DeleteMessage)
@@ -1077,6 +1209,9 @@ func setupRouter(
 				call.POST("/end", callHandler.EndCall)
 				call.DELETE("/:call_id", callHandler.CancelCall)
 				call.GET("/history", callHandler.GetCallHistory)
+				// GetPendingCall: 客户端在 WS 重连 / 页面恢复可见时轮询，
+				// 用来补偿"WS 掉线时错过 incoming_call"这种 web 上高发的场景。
+				call.GET("/pending", callHandler.GetPendingCall)
 			}
 
 			// 群会议（声网）
@@ -1141,7 +1276,10 @@ func setupRouter(
 				wallet.POST("/pay-password", walletHandler.SetPayPassword)
 				wallet.POST("/verify-password", walletHandler.VerifyPayPassword)
 				wallet.GET("/transactions", walletHandler.GetTransactions)
-				wallet.POST("/recharge", wrl5, walletHandler.Recharge)
+				// ⚠️ 严禁开启 /wallet/recharge —— 该 handler 只做鉴权就直接给用户余额 +amount，
+				// 等价于"白送钱后门"。真实充值必须走 /wallet/online-pay/create + 微信/支付宝
+				// 服务端异步回调 /payment/notify/*（订单号+签名校验+幂等落账）。
+				// wallet.POST("/recharge", wrl5, walletHandler.Recharge)
 				wallet.POST("/red-packet/send", wrl5, walletHandler.SendRedPacket)
 				wallet.POST("/red-packet/:id/claim", wrl10, walletHandler.ClaimRedPacket)
 				wallet.GET("/red-packet/:id", walletHandler.GetRedPacket)
@@ -1182,19 +1320,33 @@ func setupRouter(
 		// ========== 管理后台 API ==========
 		adminAPI := api.Group("/admin")
 		{
-			adminHandler := handlers.NewAdminHandler(db)
+			adminHandler := handlers.NewAdminHandler(db, cache)
 
 			adminAPI.POST("/login", adminHandler.Login)
 
 			adminAuth := adminAPI.Group("")
-			adminAuth.Use(middleware.AdminAuth())
+			adminAuth.Use(middleware.AdminAuth(db))
 			{
 				adminAuth.GET("/me", adminHandler.GetCurrentAdmin)
 				adminAuth.PUT("/password", adminHandler.UpdatePassword)
 
 				adminAuth.GET("/list", middleware.RequireRole("super_admin"), adminHandler.ListAdmins)
 				adminAuth.POST("/create", middleware.RequireRole("super_admin"), adminHandler.CreateAdmin)
+				adminAuth.PUT("/:id", middleware.RequireRole("super_admin"), adminHandler.UpdateAdmin)
 				adminAuth.DELETE("/:id", middleware.RequireRole("super_admin"), adminHandler.DeleteAdmin)
+
+				// 角色-菜单权限（前端 "角色权限" 页面；仅 super_admin 可读写）
+				roleMenuHandler := handlers.NewRoleMenuHandler(db)
+				adminAuth.GET("/role-menus", middleware.RequireRole("super_admin"), roleMenuHandler.ListRoleMenus)
+				adminAuth.PUT("/role-menus/:role", middleware.RequireRole("super_admin"), roleMenuHandler.UpdateRoleMenu)
+
+				// 角色管理（前端 "角色管理" 页面；仅 super_admin 可读写）
+				roleHandler := handlers.NewRoleHandler(db)
+				adminAuth.GET("/roles", middleware.RequireRole("super_admin"), roleHandler.ListRoles)
+				adminAuth.POST("/roles", middleware.RequireRole("super_admin"), roleHandler.CreateRole)
+				adminAuth.PUT("/roles/:id", middleware.RequireRole("super_admin"), roleHandler.UpdateRole)
+				adminAuth.DELETE("/roles/:id", middleware.RequireRole("super_admin"), roleHandler.DeleteRole)
+				adminAuth.GET("/roles/:key/admins", middleware.RequireRole("super_admin"), roleHandler.GetRoleAdmins)
 
 				userMgmt := adminAuth.Group("/users")
 				{
@@ -1216,7 +1368,7 @@ func setupRouter(
 
 				chatMgmt := adminAuth.Group("/chats")
 				{
-					chatMgmtHandler := handlers.NewChatMgmtHandler(db)
+					chatMgmtHandler := handlers.NewChatMgmtHandler(db, hub)
 					chatMgmt.GET("/list", chatMgmtHandler.ListChats)
 					chatMgmt.GET("/groups", chatMgmtHandler.ListGroups)
 					chatMgmt.GET("/channels", chatMgmtHandler.ListChannels)
@@ -1229,6 +1381,8 @@ func setupRouter(
 					chatMgmt.POST("/:id/dissolve", middleware.RequireWriteRole(), chatMgmtHandler.DissolveChat)
 					chatMgmt.DELETE("/:id", middleware.RequireWriteRole(), chatMgmtHandler.DeleteChat)
 					chatMgmt.DELETE("/:id/members/:member_id", middleware.RequireWriteRole(), chatMgmtHandler.RemoveChatMember)
+					// 群组「水军」数量：仅面向 type=2 的群聊，用于把客户端看到的成员/在线数虚增
+					chatMgmt.PUT("/:id/fake-members", middleware.RequireWriteRole(), chatMgmtHandler.UpdateFakeMemberCount)
 				}
 
 				stats := adminAuth.Group("/stats")

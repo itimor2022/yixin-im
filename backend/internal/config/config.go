@@ -8,7 +8,7 @@ import (
 )
 
 type Config struct {
-	S3       S3Config  `yaml:"s3"`
+	S3           S3Config           `yaml:"s3"`
 	Server       ServerConfig       `yaml:"server"`
 	MySQL        MySQLConfig        `yaml:"mysql"`
 	MongoDB      MongoDBConfig      `yaml:"mongodb"`
@@ -23,7 +23,7 @@ type Config struct {
 	// ========== 新增：集群配置 ==========
 	// 对应 config.yaml 中的 cluster 字段
 	// 单机部署时不配置此项，程序自动降级为单机模式
-	Cluster *ClusterConfig `yaml:"cluster"`
+	Cluster       *ClusterConfig       `yaml:"cluster"`
 	Elasticsearch *ElasticsearchConfig `yaml:"elasticsearch"`
 	// ========== 新增结束 ==========
 }
@@ -51,6 +51,20 @@ type ServerConfig struct {
 	UploadDir                   string        `yaml:"upload_dir"`
 	ExternalCleanupHTTPDelete   bool          `yaml:"external_cleanup_http_delete"`
 	ExternalCleanupAllowedHosts []string      `yaml:"external_cleanup_allowed_hosts"`
+
+	// TrustedProxies 传给 Gin engine.SetTrustedProxies() 的 CIDR / IP 列表。
+	// 只有来自这些地址的连接，才允许其 X-Forwarded-For / X-Real-IP 头被信任并
+	// 参与 ClientIP() 计算 —— 关键防御，防止外网直接伪造 header 绕过 IP 限流。
+	// 未配置或为 nil 时走 nil（Gin 视为不信任任何代理，只用 RemoteAddr）。
+	// 配置示例：["127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+	// 前面挂了 Nginx / K8s Ingress / CDN 时，写代理机器的内网段。
+	TrustedProxies []string `yaml:"trusted_proxies"`
+
+	// AllowedOrigins CORS 白名单（完整 scheme + host）。
+	// 只有列表内的 Origin 才会被回写到 Access-Control-Allow-Origin 里，
+	// 空则允许任意 origin（仅供开发使用，生产环境务必配置）。
+	// 配置示例：["https://m.example.com", "https://www.example.com"]
+	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
 type MySQLConfig struct {
@@ -63,18 +77,18 @@ type MySQLConfig struct {
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time"` // ★ 空闲连接超时释放
-	ReplicaDSN     string        `yaml:"replica_dsn"`      // ★ 从库DSN，配置后启用读写分离
+	ReplicaDSN      string        `yaml:"replica_dsn"`        // ★ 从库DSN，配置后启用读写分离
 }
 
 // S3Config AWS S3 存储配置
 type S3Config struct {
-	Enabled         bool   `yaml:"enabled"`          // false 时退回本地存储
+	Enabled         bool   `yaml:"enabled"` // false 时退回本地存储
 	Region          string `yaml:"region"`
 	Bucket          string `yaml:"bucket"`
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`
-	CDNBaseURL      string `yaml:"cdn_base_url"`     // CloudFront 域名，可选
-	Endpoint        string `yaml:"endpoint"`          // 兼容 MinIO，可选
+	CDNBaseURL      string `yaml:"cdn_base_url"` // CloudFront 域名，可选
+	Endpoint        string `yaml:"endpoint"`     // 兼容 MinIO，可选
 }
 
 type MongoDBConfig struct {
@@ -101,9 +115,22 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	Secret        string        `yaml:"secret"`
+	// Secret 用户端 token 签名密钥（HS256），建议 openssl rand -hex 64 生成 (128 字节)。
+	Secret string `yaml:"secret"`
+	// AdminSecret 管理员端 token 签名密钥。留空则回退到 Secret（兼容旧配置），
+	// 但强烈建议单独设置：即使用户端 secret 泄露，也不会连带打穿后台。
+	AdminSecret   string        `yaml:"admin_secret"`
 	Expire        time.Duration `yaml:"expire"`
 	RefreshExpire time.Duration `yaml:"refresh_expire"`
+}
+
+// AdminSigningSecret 返回管理员 token 实际使用的签名密钥。
+// 优先 admin_secret，回退到 secret（保证旧配置不炸）。
+func (j JWTConfig) AdminSigningSecret() string {
+	if j.AdminSecret != "" {
+		return j.AdminSecret
+	}
+	return j.Secret
 }
 
 type WebSocketConfig struct {
@@ -193,12 +220,11 @@ type SMSConfig struct {
 // ElasticsearchConfig ES搜索配置
 // ES机器未部署时留空，搜索功能自动降级为MongoDB正则搜索
 type ElasticsearchConfig struct {
-        Addresses []string `yaml:"addresses"` // ES节点地址列表，如 ["http://172.31.x.x:9200"]
-        Username  string   `yaml:"username"`   // 默认 elastic
-        Password  string   `yaml:"password"`
-        Index     string   `yaml:"index"`      // 索引名，默认 yixin_messages
+	Addresses []string `yaml:"addresses"` // ES节点地址列表，如 ["http://172.31.x.x:9200"]
+	Username  string   `yaml:"username"`  // 默认 elastic
+	Password  string   `yaml:"password"`
+	Index     string   `yaml:"index"` // 索引名，默认 yixin_messages
 }
-
 
 var GlobalConfig *Config
 

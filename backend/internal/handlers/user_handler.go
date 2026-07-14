@@ -765,6 +765,8 @@ func (h *UserHandler) SearchAll(c *gin.Context) {
 				h.db.Model(&models.ChatMember{}).Where("chat_id = ? AND user_id = ?", g.ID, currentUser.ID).Count(&count)
 				isMember = count > 0
 			}
+			// 群组「水军」叠加：搜索结果也走同一套账面数逻辑
+			effectiveMemberCount := g.MemberCount + g.FakeMemberCount
 			result = append(result, gin.H{
 				"id":           g.UUID,
 				"name":         g.Name,
@@ -772,7 +774,7 @@ func (h *UserHandler) SearchAll(c *gin.Context) {
 				"avatar":       g.Avatar,
 				"bio":          g.Description,
 				"type":         "group",
-				"member_count": g.MemberCount,
+				"member_count": effectiveMemberCount,
 				"is_member":    isMember,
 			})
 		}
@@ -864,12 +866,18 @@ func (h *UserHandler) GetCommonGroups(c *gin.Context) {
 		var memberCount int64
 		h.db.Model(&models.ChatMember{}).Where("chat_id = ?", g.ID).Count(&memberCount)
 
+		// 群组「水军」叠加（仅 type=2 群组生效，频道走真实数）
+		effectiveMemberCount := memberCount
+		if g.Type == 2 && g.FakeMemberCount > 0 {
+			effectiveMemberCount += int64(g.FakeMemberCount)
+		}
+
 		groups = append(groups, gin.H{
 			"id":           g.UUID,
 			"name":         g.Name,
 			"avatar":       g.Avatar,
 			"type":         g.Type,
-			"member_count": memberCount,
+			"member_count": effectiveMemberCount,
 		})
 	}
 

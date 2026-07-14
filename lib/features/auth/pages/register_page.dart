@@ -665,7 +665,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ),
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(15),
+          LengthLimitingTextInputFormatter(11),
         ],
       ),
     );

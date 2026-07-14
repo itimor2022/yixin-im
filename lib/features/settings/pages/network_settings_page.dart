@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,11 +103,21 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
         connectTimeout: _pingTimeout,
         receiveTimeout: _pingTimeout,
       ));
-      (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-          (client) {
-        client.badCertificateCallback = (cert, host, port) => true;
-        return client;
-      };
+
+      // ★ 修复 Web 上"所有线路都不可用"的问题：
+      //   `IOHttpClientAdapter` 来自 dart:io，Flutter Web 里默认适配器是
+      //   `BrowserHttpClientAdapter`，直接强转会在运行期抛 `TypeError`
+      //   进而被下面的 `catch (_)` 吞掉、然后一律标记 failed。
+      //   Web 端的 HTTPS 证书校验完全由浏览器沙箱负责，也不允许业务代码去
+      //   忽略证书——所以只在 Android / iOS / 桌面上保留 badCertificateCallback。
+      //   这跟 [server_discovery.dart] 里同样位置的写法保持一致。
+      if (!kIsWeb) {
+        (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+            (client) {
+          client.badCertificateCallback = (cert, host, port) => true;
+          return client;
+        };
+      }
       final resp = await dio.get<dynamic>(
         '$url$_pingPath',
         options: Options(validateStatus: (s) => s == 200),

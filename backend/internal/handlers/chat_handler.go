@@ -410,6 +410,12 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			continue
 		}
 
+		// 群组"水军"叠加（仅 type=2 生效，与 GetChat 逻辑保持一致）
+		effectiveMemberCount := chat.MemberCount
+		if chat.Type == 2 && chat.FakeMemberCount > 0 {
+			effectiveMemberCount += chat.FakeMemberCount
+		}
+
 		item := gin.H{
 			"id":                    userChat.ID,
 			"chat_id":               chat.UUID,
@@ -417,7 +423,7 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"name":                  chat.Name,
 			"avatar":                chat.Avatar,
 			"description":           chat.Description,
-			"member_count":          chat.MemberCount,
+			"member_count":          effectiveMemberCount,
 			"pending_request":       false,
 			"pending_request_count": 0,
 			"last_msg_text": func() string {
@@ -953,6 +959,26 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		}
 	}
 
+	// 群组「水军」叠加：
+	// - member_count 加上 FakeMemberCount（总人数虚增）
+	// - online_count 加上 FakeOnlineCount（可能小于总数，允许"5 水军里只有 3 在线"）
+	// 仅群聊 (type=2) 生效。字段为 0 时结果与原逻辑等价。
+	// 兜底 clamp：即便 DB 里 online > member，也把 online 掐到 member 以内，
+	// 防止历史脏数据造成"在线数 > 总人数"的荒谬展示。
+	effectiveMemberCount := chat.MemberCount
+	effectiveOnlineCount := onlineCount
+	if chat.Type == 2 && chat.FakeMemberCount > 0 {
+		fakeOnline := chat.FakeOnlineCount
+		if fakeOnline > chat.FakeMemberCount {
+			fakeOnline = chat.FakeMemberCount
+		}
+		if fakeOnline < 0 {
+			fakeOnline = 0
+		}
+		effectiveMemberCount += chat.FakeMemberCount
+		effectiveOnlineCount += fakeOnline
+	}
+
 	// 确定返回的名字和头像（私聊用对方用户的信息）
 	respName := chat.Name
 	respAvatar := chat.Avatar
@@ -969,8 +995,8 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"avatar":            respAvatar,
 		"description":       chat.Description,
 		"owner_id":          chat.OwnerID,
-		"member_count":      chat.MemberCount,
-		"online_count":      onlineCount,
+		"member_count":      effectiveMemberCount,
+		"online_count":      effectiveOnlineCount,
 		"my_role":           myRole,
 		"pending_request":   hasPendingRequest,
 		"is_public":         chat.IsPublic,
@@ -2840,11 +2866,19 @@ func (h *ChatHandler) broadcastChatUpdate(chat *models.Chat) {
 	// 重新加载最新的群组信息
 	h.db.First(chat, chat.ID)
 
+	// 群组"水军"叠加（与 GetChat / GetUserChats 保持一致），
+	// 保证客户端收到 WS chat_update 时看到的账面数依旧一致，
+	// 不会因为进入 / 刷新后又反弹回真实值。
+	effectiveMemberCount := chat.MemberCount
+	if chat.Type == 2 && chat.FakeMemberCount > 0 {
+		effectiveMemberCount += chat.FakeMemberCount
+	}
+
 	// 广播给所有成员
 	h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
 		"type":         "chat_update",
 		"chat_id":      chat.UUID,
-		"member_count": chat.MemberCount,
+		"member_count": effectiveMemberCount,
 	})
 }
 

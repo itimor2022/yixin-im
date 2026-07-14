@@ -113,6 +113,95 @@
     console.log('[FCM] Firebase compat initialized');
   </script>
 
+  <!--
+    Agora Web SDK + Iris Web bindings（Flutter agora_rtc_engine 6.5.x 官方依赖）。
+
+    这一个脚本文件里已经把 Agora Web SDK 4.22 + Iris 0.8.6 打包好了，
+    Flutter 侧 `createAgoraRtcEngine()` 会在初始化时通过 `window.IrisWebRtc.initIrisRtc`
+    调用它；如果没加载这个脚本，声网通话在 web 端会静默失败（joinChannel/publish 无响应）。
+
+    命名约定：`iris-web-rtc_n<native-ver>_w<web-sdk-ver>_<iris-ver>.js`。
+    版本必须与 agora_rtc_engine 6.5.x 匹配，随插件升级同步调整。
+
+    注意：必须放在 flutter_bootstrap.js 之前加载，否则 Flutter 引擎起来时
+          window.IrisWebRtc 还是 undefined。
+  -->
+  <script src="https://download.agora.io/sdk/release/iris-web-rtc_n450_w4220_0.8.6.js"
+          onerror="window.__irisLoadError = true; console.error('[Agora] iris-web-rtc script failed to load (CDN unreachable / blocked)');"></script>
+
+  <script>
+    // 供 Flutter 侧 (call_service.dart) 查询 iris_web 加载状态，
+    // engine 初始化失败时可以给用户一个明确提示，避免"点了通话没反应"这种黑盒体验。
+    window.__isAgoraWebReady = function () {
+      if (window.__irisLoadError) return { ok: false, reason: 'script_load_failed' };
+      if (typeof window.IrisWebRtc === 'undefined') return { ok: false, reason: 'not_ready_yet' };
+      return { ok: true };
+    };
+
+    // 3s 后仍未 ready，输出显眼警告便于自查
+    setTimeout(function () {
+      var s = window.__isAgoraWebReady();
+      if (!s.ok) {
+        console.warn('[Agora] IrisWebRtc still not ready after 3s, reason=' + s.reason +
+          '. Voice/video calls will not work on this page.');
+      }
+    }, 3000);
+
+    // ★ iOS Safari 专用：AudioContext 必须在用户手势的**同一个同步栈**里
+    //   resume() —— 一旦跨了任何 await 就会被永久锁在 suspended 状态，之后 iris_web
+    //   拉音频输出全静音、通话看似接通但没声音，还会引发 mic 状态机异常。
+    //   Flutter 侧 startCall/acceptCall 的第一行会同步透传到这个函数——
+    //   一定要放在任何 Dart await 之前，保证还在 tap 的 event loop tick 里。
+    //   PC / 非 Safari 上也一起 prime 一下，无副作用。
+    window.__unlockWebAudio = function () {
+      try {
+        // 复用同一个 AudioContext；重复 resume 是幂等的。
+        if (!window.__unlockAudioCtx) {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return; // 老浏览器没有 AudioContext，直接放行
+          window.__unlockAudioCtx = new AC();
+        }
+        var ctx = window.__unlockAudioCtx;
+        if (ctx.state !== 'running') {
+          // resume() 返回 Promise，我们不用 await——只要**调用**发生在手势
+          // 同步栈里，iOS Safari 就会解锁。
+          var p = ctx.resume();
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+        }
+
+        // 顺便播一段 0 长度的静音 buffer，用来解锁 <audio> 元素的 autoplay。
+        // iris_web 播远端音频用 HTMLAudioElement，同样受 iOS 自动播放策略限制。
+        try {
+          var buf = ctx.createBuffer(1, 1, 22050);
+          var src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start(0);
+        } catch (_) {}
+      } catch (e) {
+        // 任何异常都不能阻塞 Dart 侧的 startCall / acceptCall 主流程
+        try { console.warn('[Agora] unlockWebAudio failed:', e); } catch (_) {}
+      }
+    };
+
+    // ★ iris_web 内部的 setEnabled/setMuted 状态机 race 会以
+    //   `TRACK_STATE_UNREACHABLE: cannot set enabled while the track is muted`
+    //   形式抛未捕获 promise rejection。Flutter 侧已经在 _waitForWebAudioReady
+    //   等 recording 状态避免撞它，这里再兜一层：不让它污染 devtools 让人误以为
+    //   通话崩了，只在 debug console 输出更友好的诊断行。
+    window.addEventListener('unhandledrejection', function (evt) {
+      try {
+        var msg = (evt && evt.reason && evt.reason.message) ||
+                  (evt && evt.reason && evt.reason.toString && evt.reason.toString()) ||
+                  '';
+        if (msg && msg.indexOf('TRACK_STATE_UNREACHABLE') !== -1) {
+          console.warn('[Agora] suppressed transient iris_web track-state race: ' + msg);
+          evt.preventDefault(); // 不上报为 uncaught
+        }
+      } catch (_) {}
+    });
+  </script>
+
   <script>
     var script = document.createElement('script');
     script.src = 'flutter_bootstrap.js';

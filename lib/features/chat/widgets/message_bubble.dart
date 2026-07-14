@@ -15,6 +15,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/call_status_text.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -51,6 +52,11 @@ class MessageBubble extends StatelessWidget {
   final Function(String userId, String userName)? onMentionUser; // 长按头像@用户
   final bool isGroupChat;
   final bool canOpenMemberProfile;
+  // 己方（outgoing）气泡右侧头像使用。message.senderAvatar 上大部分本地乐观消息是 null，
+  // 所以 chat_detail_page 从 authServiceProvider 拿当前用户信息传进来兜底。
+  final String? currentUserAvatar;
+  final String? currentUserName;
+  final String? currentUserId;
 
   const MessageBubble({
     super.key,
@@ -69,6 +75,9 @@ class MessageBubble extends StatelessWidget {
     this.onMentionUser,
     this.isGroupChat = false,
     this.canOpenMemberProfile = true,
+    this.currentUserAvatar,
+    this.currentUserName,
+    this.currentUserId,
   });
 
   @override
@@ -103,8 +112,14 @@ class MessageBubble extends StatelessWidget {
       timeColor = Colors.white60;
     }
 
-    // 是否显示头像（群组/频道的接收消息）
-    final showAvatar = showSenderName && !isOutgoing;
+    // 两侧都显示头像（私聊/群聊/频道都一样）——WeChat 私聊风格
+    // outgoing 用当前用户 avatar（senderAvatar 大概率为空，authServiceProvider 兜底）
+    // incoming 用 message.senderAvatar
+    // 头像尺寸：32 → 40（同时满足"补齐私聊头像"和"群头像放大一些"两个需求）
+    const double avatarSize = 40;
+    const double avatarBubbleGap = 8;
+    // 两侧都有头像后，气泡最大宽度要留出更多空间给对面头像 + gap 的对称留白
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.65;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -118,30 +133,28 @@ class MessageBubble extends StatelessWidget {
             isOutgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 左侧头像（群组/频道消息）
-          if (showAvatar) ...[
-            if (isLastInGroup)
-              GestureDetector(
-                onTap: canOpenMemberProfile
-                    ? () => _openSenderProfile(context)
-                    : null,
-                onLongPress: onMentionUser != null
-                    ? () {
-                        // 长按头像@用户
-                        GlobalHaptics.medium();
-                        onMentionUser!(message.senderId, message.senderName);
-                      }
-                    : null,
-                child: AvatarWidget(
-                  avatar: message.senderAvatar,
-                  name: message.senderName,
-                  userId: message.senderId,
-                  size: 32,
-                ),
-              )
-            else
-              const SizedBox(width: 32), // 占位
-            const SizedBox(width: 8),
+          // 左侧头像：incoming 消息使用 senderAvatar
+          if (!isOutgoing) ...[
+            _buildSideAvatar(
+              context,
+              avatar: message.senderAvatar,
+              name: message.senderName,
+              userId: message.senderId,
+              size: avatarSize,
+              // isLastInGroup=false 时是同一 sender 的连续消息中间条，占位不显头像
+              showActual: isLastInGroup,
+              onTap: canOpenMemberProfile
+                  ? () => _openSenderProfile(context)
+                  : null,
+              onLongPress: onMentionUser != null
+                  ? () {
+                      // 长按头像@用户（只在群里有 onMentionUser 回调）
+                      GlobalHaptics.medium();
+                      onMentionUser!(message.senderId, message.senderName);
+                    }
+                  : null,
+            ),
+            const SizedBox(width: avatarBubbleGap),
           ],
 
           // 消息气泡
@@ -153,10 +166,7 @@ class MessageBubble extends StatelessWidget {
               onSecondaryTapDown: onSecondaryTapDown, // 右键点击（桌面端）
               onDoubleTap: onDoubleTap,
               child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width *
-                      (showAvatar ? 0.7 : 0.75),
-                ),
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                 child: Column(
                   crossAxisAlignment: isOutgoing
                       ? CrossAxisAlignment.end
@@ -178,7 +188,50 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           ),
+
+          // 右侧头像：outgoing 消息使用当前用户 avatar
+          if (isOutgoing) ...[
+            const SizedBox(width: avatarBubbleGap),
+            _buildSideAvatar(
+              context,
+              // senderAvatar 有值优先用（红包/转账等主动塞过），否则拿 authService 兜底
+              avatar: message.senderAvatar ?? currentUserAvatar,
+              name: currentUserName ?? message.senderName,
+              userId: currentUserId ?? message.senderId,
+              size: avatarSize,
+              showActual: isLastInGroup,
+              // 己方头像点击不打开自己主页（体验上没意义），保持简单
+              onTap: null,
+              onLongPress: null,
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// 抽出来的头像单元：连续消息只在最后一条显示头像，中间条留空位保持气泡对齐。
+  Widget _buildSideAvatar(
+    BuildContext context, {
+    required String? avatar,
+    required String name,
+    required String userId,
+    required double size,
+    required bool showActual,
+    VoidCallback? onTap,
+    VoidCallback? onLongPress,
+  }) {
+    if (!showActual) {
+      return SizedBox(width: size);
+    }
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: AvatarWidget(
+        avatar: avatar,
+        name: name,
+        userId: userId,
+        size: size,
       ),
     );
   }
@@ -1687,6 +1740,7 @@ Widget _buildImageBubble(
     String content,
     bool isOutgoing,
   ) {
+    content = normalizeCallStatusText(content);
     // 已有明确状态的消息直接返回
     if (content.contains('已取消') ||
         content.contains('对方忙') ||

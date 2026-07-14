@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gaoranim/internal/models"
+	"gaoranim/internal/ws"
 	"gaoranim/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -13,11 +14,12 @@ import (
 )
 
 type ChatMgmtHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	hub *ws.Hub // 用于「水军」保存后向群成员广播 chat_update，让端上实时刷新账面数
 }
 
-func NewChatMgmtHandler(db *gorm.DB) *ChatMgmtHandler {
-	return &ChatMgmtHandler{db: db}
+func NewChatMgmtHandler(db *gorm.DB, hub *ws.Hub) *ChatMgmtHandler {
+	return &ChatMgmtHandler{db: db, hub: hub}
 }
 
 // ChatWithMembers 带成员信息的会话
@@ -524,6 +526,117 @@ func (h *ChatMgmtHandler) RemoveChatMember(c *gin.Context) {
 	h.db.Model(&chat).Update("member_count", gorm.Expr("member_count - 1"))
 
 	response.Success(c, gin.H{"message": "已移除"})
+}
+
+// UpdateFakeMemberCount 设置群组"水军"数量 & "水军在线"数量。
+//
+// 这些数字不会真的在 chat_members / users 里生成任何行，
+// 只是 chats.fake_member_count / chats.fake_online_count 两列的值。
+// 客户端读取 member_count / online_count 时后端会把它们分别叠加上去
+// （详见 chat_handler.go 里的 effective* 计算），达到"账面成员数变多、
+// 部分显示在线"的效果，但因为不生成真实成员，群成员列表页仍然只有真实成员
+// ——正好符合用户"群前端不显示成员列表"的场景。
+//
+// 约束：online_count 必须 <= member_count；服务端会再 clamp 一次做最后防线。
+// 只允许 type=2 (群聊) 使用。私聊/频道调用会被拒。
+func (h *ChatMgmtHandler) UpdateFakeMemberCount(c *gin.Context) {
+	chatID := c.Param("id")
+
+	var req struct {
+		// 允许 0 覆盖回默认状态；上限设一个防呆值，避免误输入把成员数刷到爆
+		MemberCount int `json:"member_count" binding:"gte=0,lte=1000000"`
+		OnlineCount int `json:"online_count" binding:"gte=0,lte=1000000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "参数错误：member_count / online_count 必须是 0-1000000 的整数")
+		return
+	}
+	if req.OnlineCount > req.MemberCount {
+		response.Error(c, http.StatusBadRequest, "水军在线数不能大于水军总数")
+		return
+	}
+
+	var chat models.Chat
+	if err := h.db.First(&chat, chatID).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+
+	if chat.Type != 2 {
+		response.Error(c, http.StatusBadRequest, "水军设置仅支持群组")
+		return
+	}
+
+	// 最后防线：在线数不允许 > 总数（前端校验、binding 之外再兜一层）
+	member := req.MemberCount
+	online := req.OnlineCount
+	if online > member {
+		online = member
+	}
+
+	if err := h.db.Model(&chat).Updates(map[string]interface{}{
+		"fake_member_count": member,
+		"fake_online_count": online,
+		"updated_at":        time.Now(),
+	}).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "保存失败")
+		return
+	}
+
+	// 保存后立即向所有群成员广播 chat_update，触发端上 invalidate(chatDetailProvider)
+	// → 客户端会重新拉 GetChat，拿到叠加了 fake_* 的最新 member_count / online_count。
+	// 广播是"尽力而为"，失败也不能影响本次保存的成功语义。
+	h.broadcastFakeMemberUpdate(&chat, member, online)
+
+	response.Success(c, gin.H{
+		"chat_id":           chat.UUID,
+		"fake_member_count": member,
+		"fake_online_count": online,
+	})
+}
+
+// broadcastFakeMemberUpdate 水军数量变化后，主动推 chat_update 让端上重新拉群资料。
+//
+// 复用 chat_update 事件而不是新增一个 fake_member_update：
+//  1. 客户端 chat_provider.dart 已经监听了 chat_update 并 invalidate 全套 provider；
+//  2. 从客户端视角"账面成员/在线数变了"跟真实成员数变了行为一致，无需区分。
+//
+// 广播的 online_count 是"真实在线 + fake_online"，跟 GetChat 输出对齐，
+// 避免端上先看到广播数、再拉接口，两次数值不一致造成闪烁。
+func (h *ChatMgmtHandler) broadcastFakeMemberUpdate(chat *models.Chat, fakeMember, fakeOnline int) {
+	if h.hub == nil || chat == nil || chat.Type != 2 {
+		return
+	}
+
+	var memberUserIDs []uint64
+	if err := h.db.Model(&models.ChatMember{}).
+		Where("chat_id = ?", chat.ID).
+		Pluck("user_id", &memberUserIDs).Error; err != nil || len(memberUserIDs) == 0 {
+		return
+	}
+
+	var memberUUIDs []string
+	if err := h.db.Model(&models.User{}).
+		Where("id IN ?", memberUserIDs).
+		Pluck("uuid", &memberUUIDs).Error; err != nil || len(memberUUIDs) == 0 {
+		return
+	}
+
+	// 与 GetChat / broadcastChatUpdate 一致地叠加：真实成员 + 水军
+	effectiveMember := chat.MemberCount + fakeMember
+	// 在线数取"真实在线 + 水军在线"；GetChatOnlineCount 直接读订阅表，不查库
+	realOnline := 0
+	if online := h.hub.GetChatOnlineCount(chat.UUID); online > 0 {
+		realOnline = online
+	}
+	effectiveOnline := realOnline + fakeOnline
+
+	h.hub.SendToUsersCluster(memberUUIDs, map[string]interface{}{
+		"type":         "chat_update",
+		"chat_id":      chat.UUID,
+		"member_count": effectiveMember,
+		"online_count": effectiveOnline,
+	})
 }
 
 // GetChatStats 获取群组/频道统计

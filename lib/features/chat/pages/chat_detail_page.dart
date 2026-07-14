@@ -3090,6 +3090,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         !(widget.chatType == ChatType.group &&
             (chatDetail?.memberProtection ?? false) &&
             (chatDetail?.myRole ?? 0) < 2);
+    // outgoing 气泡右侧头像用当前用户 avatar（本地乐观消息里 senderAvatar 大概率为空）
+    final currentUser = ref.watch(authServiceProvider).user;
 
     return NotificationListener<ScrollStartNotification>(
       onNotification: (notification) {
@@ -3223,6 +3225,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                     message.replyTo!.messageId,
                                   )
                                 : null,
+                            currentUserAvatar: currentUser?.avatar,
+                            currentUserName: currentUser?.nickname,
+                            currentUserId: currentUser?.uuid,
                           ),
                   ),
                 ),
@@ -3297,13 +3302,29 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   /// 构建多选模式操作栏
   Widget _buildSelectionActionBar(bool isDark) {
+    final allMessages = ref.watch(messageListProvider(widget.chatId));
     final count = _selectedMessageIds.length;
-    final selectedMessages = ref
-        .watch(messageListProvider(widget.chatId))
+    final selectedMessages = allMessages
         .where((message) => _selectedMessageIds.contains(message.id))
         .toList(growable: false);
     final canForwardSelected =
         count > 0 && !selectedMessages.any((message) => message.burnAfterRead);
+
+    // 可被"全选"的消息：排除系统消息、已撤回、阅后即焚（这几种要么不能转发，要么不能删）
+    // 同时用来判断当前是否已经"全选"，切换按钮文案为"取消全选"
+    final selectableIds = allMessages
+        .where(
+          (m) =>
+              m.type != MessageItemType.system &&
+              !m.burnAfterRead &&
+              !m.isDeleted,
+        )
+        .map((m) => m.id)
+        .toSet();
+    final isAllSelected =
+        selectableIds.isNotEmpty &&
+        _selectedMessageIds.containsAll(selectableIds) &&
+        _selectedMessageIds.length == selectableIds.length;
 
     return ClipRect(
       child: BackdropFilter(
@@ -3339,6 +3360,34 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       style: TextStyle(
                         color: isDark ? Colors.white70 : Colors.black54,
                         fontSize: 15,
+                      ),
+                    ),
+                  ),
+
+                  // 全选 / 取消全选
+                  TextButton(
+                    onPressed: selectableIds.isEmpty
+                        ? null
+                        : () => _toggleSelectAllMessages(
+                              selectableIds,
+                              !isAllSelected,
+                            ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      isAllSelected ? '取消全选' : '全选',
+                      style: TextStyle(
+                        color: selectableIds.isEmpty
+                            ? (isDark ? Colors.white24 : Colors.black26)
+                            : AppColors.primary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
@@ -5961,6 +6010,22 @@ await FileSaver.instance.saveFile(
     });
   }
 
+  /// 全选 / 取消全选。取消全选时同步退出多选模式，与"单条取消到 0 自动退出"逻辑保持一致。
+  void _toggleSelectAllMessages(Set<String> selectableIds, bool selectAll) {
+    if (selectableIds.isEmpty) return;
+    GlobalHaptics.selection();
+    setState(() {
+      if (selectAll) {
+        _selectedMessageIds
+          ..clear()
+          ..addAll(selectableIds);
+      } else {
+        _selectedMessageIds.clear();
+        _isSelectionMode = false;
+      }
+    });
+  }
+
   /// 删除选中的消息
   void _deleteSelectedMessages() {
     if (_selectedMessageIds.isEmpty) return;
@@ -6176,151 +6241,501 @@ await FileSaver.instance.saveFile(
       return;
     }
 
+    // ★ 按发送时间升序排序（旧的先发、新的后发）。
+    //   聊天列表底层是 reverse: true 展示的，state 里 index 0 是最新一条，
+    //   直接 for-loop 就会先转发"最新"再转发"最老"——对方收到后新消息
+    //   反而在下面，看起来就是顺序反了。用 seq 主键排序更稳（server 单调），
+    //   本地乐观消息 seq=0 时退回 createdAt 兜底。
+    selectedMessages.sort((a, b) {
+      if (a.seq != 0 && b.seq != 0 && a.seq != b.seq) {
+        return a.seq.compareTo(b.seq);
+      }
+      return a.createdAt.compareTo(b.createdAt);
+    });
+
     _showForwardDialogForMultiple(selectedMessages);
   }
 
-  /// 显示转发对话框（多选）
+  /// 显示转发对话框（多选转发：可选多个接收方，底部"转发"按钮确认）
+  ///
+  /// 修复要点：
+  /// 1. 从"点击 ListTile 立即转发"改成"勾选多个目标 + 点击底部转发按钮"
+  /// 2. 转发前 pop 掉 bottom sheet 前，先把 notifier / 目标列表在**外层 State**
+  ///    的作用域里抓一份引用，之后的循环走 `this.ref`（ConsumerState 自带的 ref），
+  ///    不再依赖 modal 内的 Consumer ref。原来会出现"只发得出去一条"的 bug 就是因为
+  ///    `Navigator.pop(context)` 之后 modal 的 Consumer 已 dispose，闭包里 `ref.read`
+  ///    的后续调用行为不稳定（第一条能过、之后就静默失败）。
   void _showForwardDialogForMultiple(List<MessageItem> messages) {
     if (messages.any((message) => message.burnAfterRead)) {
       _showForwardBlockedHint();
       return;
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 选中的目标 chatId 集合（modal 内 StatefulBuilder 维护）
+    final Set<String> selectedTargetChatIds = <String>{};
+
+    // 在弹窗打开瞬间快照一份可转发会话列表（排除当前会话）。
+    // 这里从 Consumer(watch) 改为 ref.read + 顶层快照：
+    //  1. 让"全选"按钮能一次性把所有可见 chat 都选中，不用重复遍历 provider；
+    //  2. 弹窗生命周期通常只有几秒钟，期间聊天列表新增/删除不必再刷这个弹窗，
+    //     反而防止用户勾选中途列表变化把已选目标"抖没"。
+    final chatSnapshotState = ref.read(chatListProvider);
+    final List<ChatItem> chatSnapshot = [
+      ...chatSnapshotState.pinnedChats,
+      ...chatSnapshotState.regularChats,
+    ].where((c) => c.id != widget.chatId).toList(growable: false);
+    final Set<String> allChatIds = {for (final c in chatSnapshot) c.id};
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         initialChildSize: 0.6,
         minChildSize: 0.4,
         maxChildSize: 0.9,
-        builder: (context, scrollController) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // 拖动指示器
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        builder: (dsCtx, scrollController) => StatefulBuilder(
+          builder: (sbCtx, setSheetState) {
+            // "全选"状态：当且仅当所有可选会话都被选中时为 true。
+            // 复用与消息多选完全相同的判定逻辑，交互心智一致。
+            final bool isAllSelected = allChatIds.isNotEmpty &&
+                selectedTargetChatIds.length == allChatIds.length &&
+                selectedTargetChatIds.containsAll(allChatIds);
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
               ),
-
-              // 标题
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Text(
-                  '转发 ${messages.length} 条消息到...',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black,
+              child: Column(
+                children: [
+                  // 拖动指示器
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-              ),
 
-              // 聊天列表
-              Expanded(
-                child: Consumer(
-                  builder: (context, ref, _) {
-                    final chatState = ref.watch(chatListProvider);
-                    final chats = [
-                      ...chatState.pinnedChats,
-                      ...chatState.regularChats,
-                    ];
-                    return ListView.builder(
-                      controller: scrollController,
-                      itemCount: chats.length,
-                      itemBuilder: (context, index) {
-                        final chat = chats[index];
-                        if (chat.id == widget.chatId)
-                          return const SizedBox.shrink();
-
-                        return ListTile(
-                          leading: AvatarWidget(
-                            avatar: chat.avatar,
-                            name: chat.name,
-                            size: 48,
-                          ),
-                          title: Text(
-                            chat.name,
+                  // 标题 + 已选目标数 + 右上角"全选/取消全选"
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '转发 ${messages.length} 条消息到...',
                             style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
                               color: isDark ? Colors.white : Colors.black,
                             ),
                           ),
-                          onTap: () async {
-                            // 群组/频道：检查是否全员禁言
-                            if (chat.type == ChatItemType.group ||
-                                chat.type == ChatItemType.channel) {
-                              final chatDetail = await ref.read(
-                                chatDetailProvider(chat.id).future,
-                              );
-                              if (chatDetail != null) {
-                                // 频道：仅管理员/群主可发言
-                                if (chat.type == ChatItemType.channel &&
-                                    chatDetail.myRole < 2) {
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                    _showTopToast('仅管理员可发布内容，无法转发');
-                                  }
-                                  return;
-                                }
-                                // 群组：全员禁言且非管理员
-                                if (chat.type == ChatItemType.group &&
-                                    !chatDetail.canSendMessage &&
-                                    chatDetail.myRole < 2) {
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                    _showTopToast('该群组已禁言，无法转发');
-                                  }
-                                  return;
-                                }
-                              }
-                            }
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                            }
+                        ),
+                        if (selectedTargetChatIds.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              '已选 ${selectedTargetChatIds.length}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        // 右上角"全选 / 取消全选"：
+                        //  - 无可选目标时禁用（例如通讯录一个人都没有）
+                        //  - 已经全选 → 点击后取消全选（清空 selectedTargetChatIds）
+                        //  - 未全选 → 点击后把 allChatIds 全部塞进去
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: allChatIds.isEmpty
+                              ? null
+                              : () {
+                                  GlobalHaptics.selection();
+                                  setSheetState(() {
+                                    if (isAllSelected) {
+                                      selectedTargetChatIds.clear();
+                                    } else {
+                                      selectedTargetChatIds
+                                        ..clear()
+                                        ..addAll(allChatIds);
+                                    }
+                                  });
+                                },
+                          child: Text(
+                            isAllSelected ? '取消全选' : '全选',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: allChatIds.isEmpty
+                                  ? (isDark
+                                      ? Colors.white24
+                                      : Colors.black26)
+                                  : AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-                            // 转发所有选中的消息
-                            int successCount = 0;
-                            for (final msg in messages) {
-                              if (!mounted) break;
-                              final success = await ref
-                                  .read(
-                                    messageListProvider(widget.chatId).notifier,
-                                  )
-                                  .forwardMessage(msg.id, chat.id);
-                              if (success) successCount++;
-                            }
-
-                            if (mounted) {
-                              _showTopToast(
-                                '已转发 $successCount 条消息到 ${chat.name}',
+                  // 聊天列表（勾选式）：直接读顶层快照 chatSnapshot，
+                  // 与"全选"作用域完全一致，避免"看得到的没选中 / 选中的看不到"
+                  Expanded(
+                    child: chatSnapshot.isEmpty
+                        ? Center(
+                            child: Text(
+                              '暂无可转发的会话',
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white54
+                                    : Colors.black45,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: chatSnapshot.length,
+                            itemBuilder: (context, index) {
+                              final chat = chatSnapshot[index];
+                              final isChecked =
+                                  selectedTargetChatIds.contains(chat.id);
+                              return ListTile(
+                                leading: AvatarWidget(
+                                  avatar: chat.avatar,
+                                  name: chat.name,
+                                  size: 44,
+                                ),
+                                title: Text(
+                                  chat.name,
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black,
+                                  ),
+                                ),
+                                trailing: _ForwardCheckMark(
+                                  checked: isChecked,
+                                  isDark: isDark,
+                                ),
+                                onTap: () {
+                                  setSheetState(() {
+                                    if (isChecked) {
+                                      selectedTargetChatIds.remove(chat.id);
+                                    } else {
+                                      selectedTargetChatIds.add(chat.id);
+                                    }
+                                  });
+                                },
                               );
-                              _exitSelectionMode();
-                            }
-                          },
-                        );
-                      },
+                            },
+                          ),
+                  ),
+
+                  // 底部转发按钮
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: ElevatedButton(
+                          onPressed: selectedTargetChatIds.isEmpty
+                              ? null
+                              : () {
+                                  // 先把目标 chatId 复制一份出来，pop 之后再走真正的转发
+                                  final targets =
+                                      selectedTargetChatIds.toList();
+                                  Navigator.pop(sheetCtx);
+                                  _executeMultiForward(
+                                    messages: messages,
+                                    targetChatIds: targets,
+                                  );
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            disabledBackgroundColor: isDark
+                                ? Colors.white12
+                                : Colors.black12,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            selectedTargetChatIds.isEmpty
+                                ? '请选择接收人'
+                                : '转发 (${selectedTargetChatIds.length})',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 真正执行多目标 × 多消息的转发。
+  ///
+  /// 关键点：
+  /// - `ref` 用 **`this.ref`（ConsumerState 自带）**，不是 modal 里 Consumer 的 ref，
+  ///   保证整个 async 循环期间引用一直有效
+  /// - `notifier` 在**循环外**抓一次；在每一轮循环里都 fresh 读一遍 chatList 校验
+  ///   目标合法性
+  /// - 逐条 await 顺序发送。每条之间加 30ms 微小间隔，规避 backend 消息表 Redis seq
+  ///   INCR 极端情况下同一毫秒撞时钟造成的排序错乱
+  /// - 每条独立 try/catch，任何一条失败不影响下一条；结束时用真实计数弹提示
+  Future<void> _executeMultiForward({
+    required List<MessageItem> messages,
+    required List<String> targetChatIds,
+  }) async {
+    if (messages.isEmpty || targetChatIds.isEmpty) return;
+
+    final notifier =
+        ref.read(messageListProvider(widget.chatId).notifier);
+    final chatState = ref.read(chatListProvider);
+    final chatById = <String, ChatItem>{
+      for (final c in chatState.pinnedChats) c.id: c,
+      for (final c in chatState.regularChats) c.id: c,
+    };
+
+    int totalSuccess = 0;
+    int totalFail = 0;
+    final failedChatNames = <String>[];
+
+    // 进度显示：总工作量 = 目标会话数 × 每个会话要发的消息条数。
+    // 校验失败被跳过的整个会话（如频道非管理员/群禁言），也按 messages.length
+    // 一次性推进进度条，让"总进度 = 全部处理完成"的语义直观一致。
+    final int totalWork = targetChatIds.length * messages.length;
+    final ValueNotifier<int> progressNotifier = ValueNotifier<int>(0);
+    // 单条转发通常几十到几百 ms + 30ms 间隔；总时间 < 1s 时进度条一闪而过反而闪烁，
+    // 只有整体量足够大时才值得弹出。阈值：> 3 次网络调用（可以理解为一个会话发 4 条 或 2 会话各 2 条）。
+    final bool showProgress = totalWork > 3;
+    // 用来在循环结束后关闭 dialog；showDialog 是非 await 调用，进 builder 时把 ctx 抓下来。
+    BuildContext? progressDialogCtx;
+    bool progressDismissed = false;
+
+    if (showProgress && mounted) {
+      // 主动收键盘，防止转发过程中键盘挡住进度条
+      FocusManager.instance.primaryFocus?.unfocus();
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        // 加暗一点点，让用户明确"当前正在处理不要乱点"
+        barrierColor: Colors.black.withOpacity(0.35),
+        builder: (dialogCtx) {
+          progressDialogCtx = dialogCtx;
+          final dialogIsDark =
+              Theme.of(dialogCtx).brightness == Brightness.dark;
+          // PopScope 拦返回键：正在转发时物理返回也不能中断，
+          // 否则一半消息已发一半没发，UI 又已收起提示，用户不知道结局。
+          return PopScope(
+            canPop: false,
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+                decoration: BoxDecoration(
+                  color:
+                      dialogIsDark ? const Color(0xFF1C1C1E) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ValueListenableBuilder<int>(
+                  valueListenable: progressNotifier,
+                  builder: (ctx, done, _) {
+                    final ratio = totalWork == 0 ? 1.0 : done / totalWork;
+                    final percent = (ratio * 100).clamp(0, 100).toInt();
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              '正在转发…',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: dialogIsDark
+                                    ? Colors.white
+                                    : Colors.black,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: ratio,
+                            minHeight: 6,
+                            backgroundColor: dialogIsDark
+                                ? Colors.white12
+                                : Colors.black.withOpacity(0.08),
+                            valueColor:
+                                AlwaysStoppedAnimation(AppColors.primary),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '$done / $totalWork',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: dialogIsDark
+                                    ? Colors.white70
+                                    : Colors.black54,
+                              ),
+                            ),
+                            Text(
+                              '$percent%',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     );
                   },
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
+            ),
+          );
+        },
+      );
+    }
+
+    // 保证 dialog 无论走到哪个分支都能可靠关闭一次，避免"忘了关"或"关两次"。
+    void dismissProgressDialog() {
+      if (progressDismissed) return;
+      progressDismissed = true;
+      if (progressDialogCtx != null) {
+        final navigator = Navigator.maybeOf(progressDialogCtx!);
+        if (navigator != null && navigator.canPop()) {
+          navigator.pop();
+        }
+      }
+    }
+
+    try {
+      for (final targetChatId in targetChatIds) {
+        if (!mounted) break;
+        final chatEntry = chatById[targetChatId];
+        final chatName = chatEntry?.name ?? '会话';
+
+        // 群/频道再核对一次禁言状态，避免弹窗期间对面管理员改了权限
+        final chatType = chatEntry?.type;
+        if (chatType == ChatItemType.group ||
+            chatType == ChatItemType.channel) {
+          try {
+            final chatDetail =
+                await ref.read(chatDetailProvider(targetChatId).future);
+            if (chatDetail != null) {
+              if (chatType == ChatItemType.channel &&
+                  chatDetail.myRole < 2) {
+                failedChatNames.add('$chatName（仅管理员可发言）');
+                totalFail += messages.length;
+                // 整个会话跳过：一次性推完这一批的进度
+                progressNotifier.value += messages.length;
+                continue;
+              }
+              if (chatType == ChatItemType.group &&
+                  !chatDetail.canSendMessage &&
+                  chatDetail.myRole < 2) {
+                failedChatNames.add('$chatName（已全员禁言）');
+                totalFail += messages.length;
+                progressNotifier.value += messages.length;
+                continue;
+              }
+            }
+          } catch (_) {
+            // 拉不到详情就放行到实际发送阶段，让 backend 拒绝
+          }
+        }
+
+        for (final msg in messages) {
+          if (!mounted) break;
+          try {
+            final ok = await notifier.forwardMessage(msg.id, targetChatId);
+            if (ok) {
+              totalSuccess++;
+            } else {
+              totalFail++;
+            }
+          } catch (e) {
+            totalFail++;
+            if (kDebugMode) {
+              debugPrint('[Forward] failed msg=${msg.id} target=$targetChatId: $e');
+            }
+          }
+          // 每处理完一条（不论成功失败）推进 1 步进度条
+          progressNotifier.value += 1;
+          // 微小间隔：让 backend 完成 seq INCR / Redis 写入 / WS 广播
+          // 避免同一毫秒批量灌入时排序错乱或个别掉包
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+        }
+      }
+    } finally {
+      // 关掉进度条 & 释放 ValueNotifier，无论正常结束还是 mounted 变 false 都要走
+      dismissProgressDialog();
+      progressNotifier.dispose();
+    }
+
+    if (!mounted) return;
+
+    // 结果提示：成功 N 条 / 失败若干（并说明第一个失败原因）
+    String toast;
+    if (totalFail == 0) {
+      toast = targetChatIds.length == 1
+          ? '已成功转发 $totalSuccess 条消息'
+          : '已成功转发 $totalSuccess 条消息到 ${targetChatIds.length} 个会话';
+    } else if (totalSuccess == 0) {
+      toast = failedChatNames.isNotEmpty
+          ? '转发失败：${failedChatNames.first}'
+          : '转发失败，请重试';
+    } else {
+      toast = '已转发 $totalSuccess 条，$totalFail 条失败';
+    }
+    _showTopToast(toast);
+    _exitSelectionMode();
   }
 
   /// 撤回消息
@@ -6391,15 +6806,23 @@ await FileSaver.instance.saveFile(
             // 消息气泡
             Expanded(
               child: IgnorePointer(
-                child: MessageBubble(
-                  message: message,
-                  isFirstInGroup: isFirstInGroup,
-                  isLastInGroup: isLastInGroup,
-                  showSenderName:
-                      widget.chatType != ChatType.private &&
-                      !message.isOutgoing,
-                  customOutgoingColor: bubbleColors.outgoing,
-                  customIncomingColor: bubbleColors.incoming,
+                child: Builder(
+                  builder: (context) {
+                    final selUser = ref.read(authServiceProvider).user;
+                    return MessageBubble(
+                      message: message,
+                      isFirstInGroup: isFirstInGroup,
+                      isLastInGroup: isLastInGroup,
+                      showSenderName:
+                          widget.chatType != ChatType.private &&
+                          !message.isOutgoing,
+                      customOutgoingColor: bubbleColors.outgoing,
+                      customIncomingColor: bubbleColors.incoming,
+                      currentUserAvatar: selUser?.avatar,
+                      currentUserName: selUser?.nickname,
+                      currentUserId: selUser?.uuid,
+                    );
+                  },
                 ),
               ),
             ),
@@ -6411,6 +6834,35 @@ await FileSaver.instance.saveFile(
 }
 
 // ==================== 组件 ====================
+
+/// 转发列表右侧勾选框：主色实心圆 = 已勾选，灰色空圈 = 未勾选
+class _ForwardCheckMark extends StatelessWidget {
+  final bool checked;
+  final bool isDark;
+  const _ForwardCheckMark({required this.checked, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: checked ? AppColors.primary : Colors.transparent,
+        border: Border.all(
+          color: checked
+              ? AppColors.primary
+              : (isDark ? Colors.white38 : Colors.black26),
+          width: 1.6,
+        ),
+      ),
+      child: checked
+          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          : null,
+    );
+  }
+}
 
 class _ScrollToBottomButton extends StatelessWidget {
   final VoidCallback onTap;

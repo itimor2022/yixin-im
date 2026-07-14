@@ -21,17 +21,27 @@ const (
 	chatAuthCacheTTL = 2 * time.Second
 )
 
+// PongWait / PingPeriod 用于 WebSocket 心跳。
+//   - 30s 对移动网络太紧：H5 上进入后台切前台、地铁隧道信号丢一小段
+//     就会 pong 超时被踢，导致频繁 401 重连。
+//   - 反过来 600s (10 分钟) 太宽松：僵尸连接会在 Hub 里堆几分钟，
+//     内存和 goroutine 占用飙升，集群路由表也不准。
+//   - 60s 是行业常见值（微信小程序 / 微博 / 钉钉均为 55–75s 区间），
+//     兼顾稳定性与故障感知速度。
 var (
-	PongWait   = 30 * time.Second
-	PingPeriod = (PongWait * 9) / 10
+	PongWait   = 60 * time.Second
+	PingPeriod = (PongWait * 9) / 10 // 54s → 客户端不响应也能在 6s 内触发下一次 ping
 )
 
+// SetHeartbeatTimeout 在运行时更新心跳超时。
+//   - 允许 10~300s 范围（超过 5 分钟基本没意义，只会给僵尸连接续命）；
+//   - <10s 会打爆移动网络心跳频率，也会被夹到 10s。
 func SetHeartbeatTimeout(seconds int) {
 	if seconds < 10 {
 		seconds = 10
 	}
-	if seconds > 600 {
-		seconds = 600
+	if seconds > 300 {
+		seconds = 300
 	}
 	PongWait = time.Duration(seconds) * time.Second
 	PingPeriod = (PongWait * 9) / 10

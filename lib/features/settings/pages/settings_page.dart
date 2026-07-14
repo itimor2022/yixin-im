@@ -188,32 +188,8 @@ class SettingsPage extends ConsumerWidget {
                               desktopPanelType: DesktopPanelType.settingsNotification,
                             ),
                           ),
-                          _SettingsTile(
-                            icon: Icons.shield_rounded,
-                            iconBgColor: const Color(0xFF34C759),
-                            title: l10n.privacy,
-                            description: '管理黑名单、个人可见性与权限安全',
-                            isDark: isDark,
-                            onTap: () => _openPage(
-                              context,
-                              const PrivacySettingsPage(),
-                              ref,
-                              desktopPanelType: DesktopPanelType.settingsPrivacy,
-                            ),
-                          ),
-                          _SettingsTile(
-                            icon: Icons.storage_rounded,
-                            iconBgColor: const Color(0xFF8E8E93),
-                            title: l10n.dataStorage,
-                            description: '查看并清理聊天缓存与网络空间占用',
-                            isDark: isDark,
-                            onTap: () => _openPage(
-                              context,
-                              const DataStoragePage(),
-                              ref,
-                              desktopPanelType: DesktopPanelType.settingsDataStorage,
-                            ),
-                          ),
+                          // 隐私 / 数据 / 聊天：产品上线阶段暂时下线（同步自 cursor_im me_page 改动）。
+                          // 后端接口保留、Page 类保留，只是入口移除；后续要开只需把这三块 _SettingsTile 加回来即可。
                         ],
                       ),
 
@@ -223,19 +199,6 @@ class SettingsPage extends ConsumerWidget {
                       _SettingsGroup(
                         isDark: isDark,
                         children: [
-                          _SettingsTile(
-                            icon: Icons.forum_rounded,
-                            iconBgColor: AppColors.primary,
-                            title: l10n.chatSettings,
-                            description: '自定义聊天背景、气泡颜色及字体大小',
-                            isDark: isDark,
-                            onTap: () => _openPage(
-                              context,
-                              const ChatSettingsPage(),
-                              ref,
-                              desktopPanelType: DesktopPanelType.settingsChatSettings,
-                            ),
-                          ),
                           _SettingsTile(
                             icon: Icons.important_devices_rounded,
                             iconBgColor: const Color(0xFF5856D6),
@@ -283,38 +246,38 @@ class SettingsPage extends ConsumerWidget {
                               desktopPanelType: DesktopPanelType.settingsStickers,
                             ),
                           ),
-                          _SettingsTile(
-                            icon: Icons.quiz_rounded,
-                            iconBgColor: const Color(0xFF007AFF),
-                            title: l10n.faq,
-                            description: '查看常见的使用问题与官方解决方案',
-                            isDark: isDark,
-                            onTap: () => _openPage(
-                              context,
-                              const FAQPage(),
-                              ref,
-                              desktopPanelType: DesktopPanelType.settingsFaq,
-                            ),
-                          ),
-                          _SettingsTile(
-                            icon: Icons.info_outline,
-                            iconBgColor: const Color(0xFF8E8E93),
-                            title: l10n.about,
-                            description: '查看系统版本、服务协议与产品简介',
-                            isDark: isDark,
-                            onTap: () {
-                              if (isDesktopSidebar) {
-                                HapticFeedback.selectionClick();
-                                ref.read(desktopProfileProvider.notifier).state =
-                                    const DesktopProfileInfo(
-                                  type: DesktopPanelType.settingsAbout,
-                                  id: 'about',
-                                );
-                              } else {
-                                _showAboutSheet(context, isDark);
-                              }
-                            },
-                          ),
+                          // _SettingsTile(
+                          //   icon: Icons.quiz_rounded,
+                          //   iconBgColor: const Color(0xFF007AFF),
+                          //   title: l10n.faq,
+                          //   description: '查看常见的使用问题与官方解决方案',
+                          //   isDark: isDark,
+                          //   onTap: () => _openPage(
+                          //     context,
+                          //     const FAQPage(),
+                          //     ref,
+                          //     desktopPanelType: DesktopPanelType.settingsFaq,
+                          //   ),
+                          // ),
+                          // _SettingsTile(
+                          //   icon: Icons.info_outline,
+                          //   iconBgColor: const Color(0xFF8E8E93),
+                          //   title: l10n.about,
+                          //   description: '查看系统版本、服务协议与产品简介',
+                          //   isDark: isDark,
+                          //   onTap: () {
+                          //     if (isDesktopSidebar) {
+                          //       HapticFeedback.selectionClick();
+                          //       ref.read(desktopProfileProvider.notifier).state =
+                          //           const DesktopProfileInfo(
+                          //         type: DesktopPanelType.settingsAbout,
+                          //         id: 'about',
+                          //       );
+                          //     } else {
+                          //       _showAboutSheet(context, isDark);
+                          //     }
+                          //   },
+                          // ),
                         ],
                       ),
 

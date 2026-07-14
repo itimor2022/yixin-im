@@ -426,87 +426,15 @@ func (h *WalletHandler) GetTransactions(c *gin.Context) {
 	})
 }
 
-// Recharge 充值（模拟）
+// Recharge 充值（模拟）—— 已彻底下线
+//
+// ⚠️ 该接口是历史遗留的"模拟充值"入口：只要用户登录，POST amount:xxx 就能给自己
+// 加钱，等价于白送余额的后门。真实充值必须走 /wallet/online-pay/create + 微信/
+// 支付宝服务端异步回调 /payment/notify/*（订单号+签名校验+幂等落账）。
+//
+// 为了防止 main.go 里有人误开路由，这里 handler 层直接返回 403，硬拒绝一切请求。
 func (h *WalletHandler) Recharge(c *gin.Context) {
-	userID, err := h.getUserIDFromContext(c)
-	if err != nil {
-		response.Error(c, http.StatusUnauthorized, "用户未登录")
-		return
-	}
-
-	var req struct {
-		Amount float64 `json:"amount" binding:"required,gt=0"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "请输入有效金额")
-		return
-	}
-
-	// 事务内操作：锁定钱包行 -> 更新余额 -> 记录交易
-	tx := h.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// FOR UPDATE 锁定钱包行
-	var wallet models.Wallet
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("user_id = ?", userID).First(&wallet).Error; err != nil {
-		// 钱包不存在则创建
-		tx.Rollback()
-		w, createErr := h.getOrCreateWallet(userID)
-		if createErr != nil {
-			response.Error(c, http.StatusInternalServerError, "获取钱包失败")
-			return
-		}
-		// 重新开事务
-		tx = h.db.Begin()
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ?", userID).First(&wallet).Error; err != nil {
-			tx.Rollback()
-			_ = w
-			response.Error(c, http.StatusInternalServerError, "获取钱包失败")
-			return
-		}
-	}
-
-	// 原子更新余额
-	newBalance := wallet.Balance + req.Amount
-	if err := tx.Model(&wallet).Updates(map[string]interface{}{
-		"balance":    gorm.Expr("balance + ?", req.Amount),
-		"updated_at": time.Now(),
-	}).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, http.StatusInternalServerError, "充值失败")
-		return
-	}
-
-	// 记录交易
-	transaction := models.Transaction{
-		UserID:       userID,
-		Type:         models.TransactionTypeRecharge,
-		Amount:       req.Amount,
-		BalanceAfter: newBalance,
-		Remark:       "充值",
-		CreatedAt:    time.Now(),
-	}
-	if err := tx.Create(&transaction).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, http.StatusInternalServerError, "充值失败")
-		return
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		response.Error(c, http.StatusInternalServerError, "充值失败")
-		return
-	}
-
-	response.Success(c, gin.H{
-		"balance": newBalance,
-		"message": "充值成功",
-	})
+	response.Error(c, http.StatusForbidden, "该接口已下线，请通过在线支付充值")
 }
 
 // SendRedPacket 发红包
@@ -675,7 +603,11 @@ func (h *WalletHandler) SendRedPacket(c *gin.Context) {
 				"text": string(contentJSON),
 			},
 		}
-		h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
+		h.sendChatMessageWithRetry(func() context.Context {
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return c
+		}(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
 	}
 
 	response.Success(c, gin.H{
@@ -950,7 +882,11 @@ func (h *WalletHandler) ClaimRedPacket(c *gin.Context) {
 					"text": string(contentJSON),
 				},
 			}
-			h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, claimer.Nickname, claimer.Avatar, claimer.NicknameColor, claimer.PremiumType, claimer.EmojiAvatar, targetUserIDs)
+			h.sendChatMessageWithRetry(func() context.Context {
+				c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				return c
+			}(), params, claimer.Nickname, claimer.Avatar, claimer.NicknameColor, claimer.PremiumType, claimer.EmojiAvatar, targetUserIDs)
 		}
 	}
 
@@ -1202,7 +1138,11 @@ func (h *WalletHandler) SendTransfer(c *gin.Context) {
 				"text": string(contentJSON),
 			},
 		}
-		h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, []string{receiver.UUID})
+		h.sendChatMessageWithRetry(func() context.Context {
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return c
+		}(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, []string{receiver.UUID})
 	}
 
 	response.Success(c, gin.H{
@@ -1378,7 +1318,11 @@ func (h *WalletHandler) AcceptTransfer(c *gin.Context) {
 						"text": string(contentJSON),
 					},
 				}
-				h.sendChatMessageWithRetry(func() context.Context { c, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel(); return c }(), params, receiver.Nickname, receiver.Avatar, receiver.NicknameColor, receiver.PremiumType, receiver.EmojiAvatar, []string{sender.UUID, receiver.UUID})
+				h.sendChatMessageWithRetry(func() context.Context {
+					c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					return c
+				}(), params, receiver.Nickname, receiver.Avatar, receiver.NicknameColor, receiver.PremiumType, receiver.EmojiAvatar, []string{sender.UUID, receiver.UUID})
 			}
 		}
 	}
