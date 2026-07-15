@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -360,7 +361,7 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
       if (confirmed != true) return;
       if (!mounted) return;
       // 跳转到设置支付密码页
-      await Navigator.of(context).pushNamed('setPayPassword');
+      await context.pushNamed('setPayPassword');
       // 重新检查是否已设置
       await ref.read(walletProvider.notifier).loadWallet();
       final updated = ref.read(walletProvider).wallet;

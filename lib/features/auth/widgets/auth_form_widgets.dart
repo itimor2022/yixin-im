@@ -463,6 +463,11 @@ class AuthLogoBadge extends StatelessWidget {
           ? Image.network(
               finalUrl!,
               fit: BoxFit.contain,
+              loadingBuilder: (ctx, child, progress) {
+                if (progress == null) return child;
+                // 加载中：显示本地 asset 作为占位
+                return Image.asset(fallbackAsset, fit: BoxFit.contain);
+              },
               errorBuilder: (_, __, ___) =>
                   Image.asset(fallbackAsset, fit: BoxFit.contain),
             )

@@ -196,6 +196,8 @@ class ServerDiscovery {
   // ── 发现主流程 ──────────────────────────────────────────
 
   Future<String> _discover() async {
+    // api.txt 拉取已禁用，直接使用硬编码 fallback
+    return '';
     final t0 = DateTime.now();
     if (kDebugMode) debugPrint('[Discovery] ═══ Starting discovery at $t0 ═══');
     final nodes = await _fetchNodeList();

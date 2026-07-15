@@ -91,6 +91,7 @@ class SystemSettings {
   final int revokeMessageMinutes;
   final bool checkinEnabled;
   final bool redPacketEnabled;
+  final bool walletEnabled;
   final bool allowStrangerMessage;
 
   /// ServerDiscovery api.txt 拉取地址（后台数据库配置，管理后台只读）。
@@ -137,6 +138,7 @@ class SystemSettings {
     this.revokeMessageMinutes = 2,
     this.checkinEnabled = false,
     this.redPacketEnabled = false,
+    this.walletEnabled = false,
     this.allowStrangerMessage = false,
     this.apiTxtUrl = '',
   });
@@ -188,6 +190,7 @@ class SystemSettings {
       revokeMessageMinutes: json['revoke_message_minutes'] as int? ?? 2,
       checkinEnabled: json['checkin_enabled'] == true,
       redPacketEnabled: json['red_packet_enabled'] == true,
+      walletEnabled: json['wallet_enabled'] == true,
       allowStrangerMessage: json['allow_stranger_message'] == true,
       apiTxtUrl: json['api_txt_url']?.toString() ?? '',
     );
@@ -232,6 +235,7 @@ class SystemSettings {
         'revoke_message_minutes': revokeMessageMinutes,
         'checkin_enabled': checkinEnabled,
         'red_packet_enabled': redPacketEnabled,
+        'wallet_enabled': walletEnabled,
         'api_txt_url': apiTxtUrl,
       };
 
@@ -291,7 +295,7 @@ class SystemSettingsService {
 
   static const String _cacheKey = kSystemSettingsCacheKey;
   static const String _cacheTimeKey = 'system_settings_cache_time';
-  static const Duration _cacheDuration = Duration(minutes: 30);
+  static const Duration _cacheDuration = Duration(minutes: 5);
 
   /// ServerDiscovery 冷启动时读取的 api.txt 地址缓存键。
   /// 这里独立成一个 top-level key（而不是嵌在 systemSettingsCache 里），
@@ -463,33 +467,42 @@ final systemSettingsServiceProvider = Provider<SystemSettingsService>((ref) {
   return SystemSettingsService(apiClient);
 });
 
+// 防止多次 invalidateSelf 造成无限循环
+bool _settingsRefreshing = false;
+
 final systemSettingsProvider = FutureProvider<SystemSettings>((ref) async {
   final service = ref.watch(systemSettingsServiceProvider);
   var disposed = false;
   ref.onDispose(() {
     disposed = true;
   });
-  final cached = await service.getCachedSettings();
 
-  if (cached != null) {
-    final hasFreshCache = await service.hasFreshCache();
-    if (!hasFreshCache) {
-      Future<void>(() async {
-        try {
-          await service.getSettings(forceRefresh: true);
-          if (!disposed) {
-            ref.invalidateSelf();
-          }
-        } catch (e) {
-          if (kDebugMode)
-            debugPrint('[SystemSettings] Background refresh failed: $e');
-        }
-      });
-    }
-    return cached;
+  // 始终先尝试从 API 获取最新设置（带本地缓存兜底）
+  // 第一次加载直接拉 API，之后利用 _cacheDuration 控制频率
+  final hasFresh = await service.hasFreshCache();
+
+  if (hasFresh) {
+    // 缓存新鲜：直接返回缓存，异步不刷新（避免循环）
+    final cached = await service.getCachedSettings();
+    if (cached != null) return cached;
   }
 
-  return service.getSettings(forceRefresh: true);
+  // 缓存过期或不存在：强制从 API 拉取
+  if (!_settingsRefreshing) {
+    _settingsRefreshing = true;
+    try {
+      final fresh = await service.getSettings(forceRefresh: true);
+      _settingsRefreshing = false;
+      return fresh;
+    } catch (e) {
+      _settingsRefreshing = false;
+      if (kDebugMode) debugPrint('[SystemSettings] Fetch failed: $e');
+    }
+  }
+
+  // 兜底：返回任何可用缓存
+  final fallback = await service.getCachedSettings(allowExpired: true);
+  return fallback ?? const SystemSettings();
 });
 
 final officialUsersProvider = FutureProvider<Set<String>>((ref) async {

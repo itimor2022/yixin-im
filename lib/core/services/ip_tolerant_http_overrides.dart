@@ -32,7 +32,7 @@ bool isIpv4Host(String host) => _ipv4Pattern.hasMatch(host);
 /// -------------------------------------------------------------
 /// 不做全局 `badCertificateCallback = true`。那是之前安全审计里被点名的漏洞。
 /// 这里只对**裸 IPv4** host 放行证书校验：
-///   - `api.legg.click`   → 系统 CA 严格校验（不放行）
+///   - `api.aopwx.icu`   → 系统 CA 严格校验（不放行）
 ///   - `1.2.3.4`          → 允许证书校验失败继续（放行）
 ///
 /// 理由：
