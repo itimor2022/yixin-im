@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -74,6 +75,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   }
 
   Future<void> _loadOrders() async {
+    // Web 端不支持充值，跳过加载订单
+    if (kIsWeb) return;
     try {
       final svc = ref.read(walletServiceProvider);
       final resp = await svc.getRechargeOrders();
@@ -205,17 +208,19 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
                     const SizedBox(height: 28),
 
-                    // 操作按钮
+                    // 操作按钮（Web 端隐藏充值/提现，只保留账单）
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildActionButton(
-                            icon: Icons.arrow_upward,
-                            label: '提现',
-                            onTap: () => _navigateToWithdraw(context),
+                        if (!kIsWeb) ...[
+                          Expanded(
+                            child: _buildActionButton(
+                              icon: Icons.arrow_upward,
+                              label: '提现',
+                              onTap: () => _navigateToWithdraw(context),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                          const SizedBox(width: 12),
+                        ],
                         Expanded(
                           child: _buildActionButton(
                             icon: Icons.receipt_long,
@@ -268,8 +273,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 ),
               ],
 
-              // 充值/提现进度
-              ..._rechargeOrders
+              // 充值/提现进度（Web 端隐藏）
+              if (!kIsWeb) ..._rechargeOrders
                   .where((o) {
                     final s = o['status'] as String? ?? '';
                     return s == 'pending' || s == 'approved' || s == 'rejected';

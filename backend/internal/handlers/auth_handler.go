@@ -422,6 +422,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
+
+	// 注册成功后自动初始化钱包
+	var existWallet models.Wallet
+	if err := tx.Where("user_id = ?", user.ID).First(&existWallet).Error; err != nil {
+		newWallet := models.Wallet{UserID: user.ID}
+		if err := tx.Create(&newWallet).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "注册失败")
+			return
+		}
+	}
+
 	if err := tx.Commit().Error; err != nil {
 		tx.Rollback()
 		response.ServerError(c, "注册失败")
