@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:url_launcher/url_launcher.dart'; // 需要添加这个依赖
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/api/api_client.dart';
 import '../../../core/i18n/app_localizations.dart';
@@ -59,11 +59,21 @@ class DiscoverEntry {
     final rawId = json['id']?.toString() ?? '';
     final title = (json['title'] ?? '').toString().trim();
     final rawIconUrl = (json['icon_url'] ?? '').toString().trim();
+    final rawUrl = (json['url'] ?? '').toString().trim();
+    
+    // 打印调试信息，查看接口返回的原始数据
+    debugPrint('=== DiscoverEntry.fromJson ===');
+    debugPrint('id: $rawId');
+    debugPrint('title: $title');
+    debugPrint('rawUrl: $rawUrl');
+    debugPrint('rawIconUrl: $rawIconUrl');
+    debugPrint('openMode: ${json['open_mode']}');
+    debugPrint('==============================');
 
     return DiscoverEntry(
       id: rawId.isNotEmpty ? rawId : title,
       title: title.isNotEmpty ? title : '发现入口',
-      url: (json['url'] ?? '').toString().trim(),
+      url: rawUrl,
       iconUrl: rawIconUrl.isEmpty ? null : ApiConfig.getMediaUrl(rawIconUrl),
       openMode: (json['open_mode'] ?? 'webview').toString(),
       accentColor: _accentColors[
@@ -103,28 +113,28 @@ final discoverEntriesProvider =
     );
 
     if (response.isSuccess && response.data != null) {
-      return response.data!
+      final entries = response.data!
           .whereType<Map<String, dynamic>>()
           .map(DiscoverEntry.fromJson)
           .where((entry) => entry.url.isNotEmpty)
           .toList();
+      
+      // 打印所有入口的URL，方便调试
+      debugPrint('=== 发现页入口列表 ===');
+      for (var entry in entries) {
+        debugPrint('标题: ${entry.title}, URL: ${entry.url}, openMode: ${entry.openMode}');
+      }
+      debugPrint('=======================');
+      
+      return entries;
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('获取发现页数据失败: $e');
+  }
   return [];
 });
 
-/// 发现页 —— 颠覆式重设计版：
-///
-/// 三层 Stack 布局，与"我的" / "联系人"页保持一致：
-///   · 底层：SingleChildScrollView，顶部预留 `gradientOpaqueHeight`
-///   · 中层：主色渐变，被 IgnorePointer 包住，不拦截手势
-///   · 顶层：SafeArea + 交互式左对齐白字标题"发现"
-///
-/// 主体内容（自上而下）：
-///   1. **顶部一行 = 广场 Hero + 公告图（左右并排）**：有公告图时，一行两半，
-///      左侧广场 Hero（蓝色渐变 + "广场" + 副标题 + 箭头），右侧后台下发的
-///      公告图纯图卡；没有公告图时广场 Hero 占满整行（16:9 aspect）。
-///   2. **自定义入口 4 列图标网格**：只显示图标+名称，点击直接打开链接
+/// 发现页
 class DiscoverPage extends ConsumerStatefulWidget {
   final bool isDesktopSidebar;
 
@@ -181,7 +191,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
       },
       child: Scaffold(
         backgroundColor: _kBg,
-        // 3 层 Stack，与"我的" / "聊天"页视觉节奏一致
         body: Stack(
           children: [
             // ============ 底层：滚动内容 ============
@@ -262,8 +271,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
 
   // ---------------------------------------------------------------------------
   // 顶部一行：广场 Hero + 公告图 左右并排
-  //   · 有公告图 → SizedBox(height: 170) + 两个 Expanded 各占一半
-  //   · 无公告图 → AspectRatio 16:9，Hero 占满整行
   // ---------------------------------------------------------------------------
 
   Widget _buildTopRow(AsyncValue<String?> bannerAsync) {
@@ -271,7 +278,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     final hasAnnouncement = imageUrl != null && imageUrl.isNotEmpty;
 
     if (!hasAnnouncement) {
-      // 没有公告图 —— Hero 卡完整宽度
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: AspectRatio(
@@ -287,7 +293,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     final cleanUrl =
         '$imageUrl${imageUrl.contains('?') ? '&' : '?'}_t=$_refreshKey';
 
-    // 左右并排 —— 固定 170 高度，两个 Expanded 各占一半
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: SizedBox(
@@ -320,7 +325,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // 自定义入口 —— 4 列图标网格（只显示图标 + 名称）
+  // 自定义入口 —— 2 列图标网格
   // ---------------------------------------------------------------------------
 
   Widget _buildEntriesGrid(AsyncValue<List<DiscoverEntry>> entries) {
@@ -334,11 +339,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
             physics: const NeverScrollableScrollPhysics(),
             itemCount: items.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4, // 改为4列
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              // 图标+名称，使用更接近正方形的比例
-              childAspectRatio: 0.9,
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.1,
             ),
             itemBuilder: (context, index) {
               final entry = items[index];
@@ -364,67 +368,73 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     );
   }
 
-  /// 打开发现项链接
+  /// 打开发现项链接 - 统一使用外部浏览器
   Future<void> _openEntry(DiscoverEntry entry) async {
     HapticFeedback.selectionClick();
     
-    final url = entry.url;
-    if (url.isEmpty) return;
+    final url = entry.url.trim();
+    
+    debugPrint('=== 点击发现项 ===');
+    debugPrint('标题: ${entry.title}');
+    debugPrint('原始URL: "$url"');
+    debugPrint('==================');
+    
+    if (url.isEmpty) {
+      _showErrorSnackBar('链接地址为空');
+      return;
+    }
+
+    // 确保URL有协议头
+    String fullUrl = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      fullUrl = 'https://$url';
+    }
+    
+    debugPrint('处理后URL: "$fullUrl"');
 
     try {
-      // 如果 openMode 是 webview，使用应用内 WebView
-      if (entry.openMode == 'webview') {
-        if (widget.isDesktopSidebar) {
-          // 桌面端特殊处理
-          // TODO: 实现桌面端 WebView 或新窗口打开
-          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        } else {
-          // 移动端使用应用内 WebView
-          context.push('/webview', extra: {
-            'url': url,
-            'title': entry.title,
-          });
-        }
-      } else {
-        // 外部浏览器打开
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
+      final uri = Uri.parse(fullUrl);
+      
+      // 检查是否能打开
+      final canLaunch = await canLaunchUrl(uri);
+      debugPrint('canLaunchUrl: $canLaunch');
+      
+      if (!canLaunch) {
+        _showErrorSnackBar('无法打开链接: $url');
+        return;
       }
+
+      // 统一使用外部浏览器打开
+      debugPrint('外部浏览器打开: $fullUrl');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      
     } catch (e) {
-      // 降级处理：尝试外部浏览器
-      try {
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      } catch (_) {
-        // 完全失败时显示提示
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('无法打开链接: $url'),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.black.withOpacity(0.85),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
-        }
-      }
+      debugPrint('打开链接失败: $e');
+      _showErrorSnackBar('打开链接失败，请稍后重试');
     }
+  }
+
+  /// 显示错误提示
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 13),
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        backgroundColor: Colors.black.withOpacity(0.85),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
   }
 }
 
-/// 单格入口瓦片 —— 极简风格：只显示图标 + 名称
-///
-/// 结构：
-///   · 图标（圆形背景 + 图标/网络图片）
-///   · 名称（居中，最多1行）
-///   · 点击直接打开链接
+/// 单格入口瓦片
 class _EntryTile extends StatelessWidget {
   final DiscoverEntry entry;
   final VoidCallback onTap;
@@ -443,21 +453,26 @@ class _EntryTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         splashColor: base.withOpacity(0.12),
         highlightColor: base.withOpacity(0.06),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _kTileBorder, width: 0.8),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 20),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 图标 - 圆形背景
+              // 大图标 - 圆形背景
               Container(
-                width: 56,
-                height: 56,
+                width: 128,
+                height: 128,
                 decoration: BoxDecoration(
                   color: hasIcon ? Colors.white : base.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(
                     color: hasIcon ? const Color(0xFFEDEFF2) : Colors.transparent,
                     width: 0.8,
@@ -468,22 +483,22 @@ class _EntryTile extends StatelessWidget {
                 child: hasIcon
                     ? Image.network(
                         entry.iconUrl!,
-                        width: 48,
-                        height: 48,
+                        width: 60,
+                        height: 60,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => Icon(
                           Icons.explore_rounded,
                           color: base,
-                          size: 28,
+                          size: 36,
                         ),
                       )
                     : Icon(
                         Icons.explore_rounded,
                         color: base,
-                        size: 28,
+                        size: 36,
                       ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
               // 名称
               Text(
                 entry.title,
@@ -491,8 +506,8 @@ class _EntryTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                   color: _kTileTitle,
                   height: 1.2,
                 ),
@@ -505,10 +520,7 @@ class _EntryTile extends StatelessWidget {
   }
 }
 
-/// 广场 Hero 卡片 —— 蓝色斜向渐变 + 装饰圆 + 前景 "广场" 文案。
-///
-/// [compact] 用于紧凑模式（在 Row 里跟公告图并排时），会调低字号 / 装饰尺寸,
-/// 保证半宽卡片也能塞下所有内容。
+/// 广场 Hero 卡片
 class _HeroSquareCard extends StatelessWidget {
   final bool compact;
   final VoidCallback onTap;
@@ -633,7 +645,7 @@ class _HeroSquareCard extends StatelessWidget {
   }
 }
 
-/// 公告图片卡片 —— 纯图无覆盖文字，圆角剪裁，加载 / 出错都有兜底。
+/// 公告图片卡片
 class _AnnouncementCard extends StatelessWidget {
   final String imageUrl;
 
