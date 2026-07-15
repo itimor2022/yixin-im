@@ -13,6 +13,7 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/system_settings_service.dart';
+import '../../../shared/widgets/settings_ui.dart';
 import '../../chat/providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 
@@ -97,7 +98,6 @@ class DevicesPage extends ConsumerStatefulWidget {
 
 class _DevicesPageState extends ConsumerState<DevicesPage> {
   String _deviceName = '';
-  String _deviceModel = '';
   String _osVersion = '';
   String _appVersion = '';
   bool _isLoggingOut = false;
@@ -118,21 +118,19 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
           await ref.read(systemSettingsServiceProvider).getSettings();
       final version = settings.systemVersion.trim();
       setState(() {
-        _appVersion = version.isNotEmpty ? '$version' : '1.0.0';
+        _appVersion = version.isNotEmpty ? version : '1.0.0';
       });
       final deviceInfo = DeviceInfoPlugin();
       if (Platform.isIOS) {
         final iosInfo = await deviceInfo.iosInfo;
         setState(() {
           _deviceName = iosInfo.name;
-          _deviceModel = iosInfo.utsname.machine;
           _osVersion = 'iOS ${iosInfo.systemVersion}';
         });
       } else if (Platform.isAndroid) {
         final androidInfo = await deviceInfo.androidInfo;
         setState(() {
           _deviceName = androidInfo.model;
-          _deviceModel = androidInfo.device;
           _osVersion = 'Android ${androidInfo.version.release}';
         });
       }
@@ -230,7 +228,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: AppColors.error),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -251,573 +249,146 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     }
   }
 
-  IconData _getDeviceIcon(String type) {
-    switch (type.toLowerCase()) {
-      case 'ios':
-        return Icons.phone_iphone;
-      case 'android':
-        return Icons.phone_android;
-      case 'web':
-        return Icons.language;
-      case 'desktop':
-        return Icons.computer;
-      default:
-        return Icons.devices;
-    }
-  }
-
-  String _formatLastActive(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time);
-
-    if (diff.inMinutes < 5) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
-    return '${time.month}/${time.day}';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final appName =
-        ref.watch(systemSettingsProvider).valueOrNull?.displayName ??
-            kDefaultAppDisplayName;
 
-    // 桌面端面板模式：只返回内容，不需要 Scaffold 和 AppBar
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, cardColor, l10n);
-    }
+    return SettingsScaffold(
+      title: l10n.devices,
+      isDesktopPanel: widget.isDesktopPanel,
+      children: _isLoading
+          ? const [
+              SizedBox(height: 60),
+              Center(child: CircularProgressIndicator()),
+            ]
+          : _buildChildren(l10n),
+    );
+  }
 
-    return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        backgroundColor: cardColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            size: 20,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-          onPressed: () => Navigator.pop(context),
+  List<Widget> _buildChildren(AppLocalizations l10n) {
+    final otherDevices = _devices
+        .where((d) => d.deviceId != _currentDevice?.deviceId)
+        .toList();
+
+    return [
+      // ================ 当前设备 Hero ================
+      SettingsLooseCard(
+        padding: const EdgeInsets.all(18),
+        child: _buildCurrentDeviceHero(),
+      ),
+
+      // ================ 关联新设备 ================
+      SettingsSection(l10n.linkNewDevice),
+      SettingsChoiceIsland(
+        icon: Icons.qr_code_scanner_rounded,
+        iconColor: AppColors.primary,
+        label: l10n.scanQrCode,
+        subtitle: l10n.loginToOtherDevice,
+        onTap: _showQRScanner,
+      ),
+      SettingsNote(l10n.scanQrCodeHint),
+
+      // 活跃会话列表已根据需求 3 隐藏，原逻辑保留在 [_buildOtherDeviceIsland]
+      // 中，需要恢复时把下面 `if (otherDevices.isNotEmpty)` 展开即可。
+
+      // ================ 终止其他设备 ================
+      if (otherDevices.isNotEmpty) ...[
+        SettingsSection('其他设备'),
+        SettingsChoiceIsland(
+          icon: Icons.delete_sweep_rounded,
+          iconColor: AppColors.warning,
+          label: l10n.terminateAllOtherDevices,
+          labelColor: AppColors.warning,
+          onTap: () => _terminateAllOtherDevices(l10n),
         ),
-        title: Text(
-          l10n.devices,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        centerTitle: true,
+      ],
+
+      // ================ 退出登录 ================
+      SettingsSection('账号'),
+      SettingsChoiceIsland(
+        icon: Icons.logout_rounded,
+        iconColor: AppColors.error,
+        label: _isLoggingOut ? l10n.loggingOut : l10n.logout,
+        labelColor: AppColors.error,
+        loading: _isLoggingOut,
+        onTap: _isLoggingOut ? null : () => _showLogoutConfirm(l10n),
       ),
-      body: _buildBody(isDark, cardColor, l10n),
-    );
+      SettingsNote(l10n.logoutHint),
+    ];
   }
 
-  Widget _buildBody(bool isDark, Color cardColor, AppLocalizations l10n) {
-    return _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : RefreshIndicator(
-            onRefresh: _loadDevices,
-            child: ListView(
-              children: [
-                const SizedBox(height: 35),
-
-                // 当前设备标题
-                _buildSectionHeader(l10n.currentDevice, isDark),
-
-                // 当前设备卡片
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: [_buildCurrentDeviceTile(isDark)],
-                ),
-
-                const SizedBox(height: 35),
-
-                // 链接新设备
-                _buildSectionHeader(l10n.linkNewDevice, isDark),
-
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: [
-                    _buildTapTile(
-                      icon: Icons.qr_code_scanner_rounded,
-                      iconBgColor: AppColors.primary,
-                      title: l10n.scanQrCode,
-                      subtitle: l10n.loginToOtherDevice,
-                      isDark: isDark,
-                      onTap: _showQRScanner,
-                    ),
-                  ],
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    l10n.scanQrCodeHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 35),
-
-                // 活跃会话/其他设备 已隐藏(需求3)
-                if (false) ...[
-                  // 活跃会话（其他设备）
-                  _buildSectionHeader(
-                    l10n.activeSessions,
-                    isDark,
-                    trailing:
-                        '${_devices.where((d) => d.deviceId != _currentDevice?.deviceId).length} ${l10n.devicesCount}',
-                  ),
-
-                  _buildSettingsCard(
-                    isDark: isDark,
-                    cardColor: cardColor,
-                    children: _devices
-                            .where(
-                                (d) => d.deviceId != _currentDevice?.deviceId)
-                            .isEmpty
-                        ? [_buildEmptySessionTile(isDark, l10n)]
-                        : _devices
-                            .where(
-                                (d) => d.deviceId != _currentDevice?.deviceId)
-                            .map(
-                              (device) =>
-                                  _buildOtherDeviceTile(device, isDark, l10n),
-                            )
-                            .toList(),
-                  ),
-
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Text(
-                      l10n.suspiciousDeviceHint,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? Colors.white38 : Colors.black38,
-                      ),
-                    ),
-                  ),
-                ],
-                // 终止所有其他设备按钮（仅当有其他设备时显示）
-                if (_devices
-                    .where((d) => d.deviceId != _currentDevice?.deviceId)
-                    .isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _buildSettingsCard(
-                    isDark: isDark,
-                    cardColor: cardColor,
-                    children: [_buildTerminateAllTile(isDark, l10n)],
-                  ),
-                ],
-                const SizedBox(height: 35),
-
-                // 退出登录
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: [_buildLogoutTile(isDark, l10n)],
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    l10n.logoutHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 50),
-              ],
-            ),
-          );
-  }
-
-  Widget _buildSectionHeader(String title, bool isDark, {String? trailing}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Row(
-        children: [
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white38 : Colors.black38,
-              letterSpacing: 0.3,
-            ),
-          ),
-          if (trailing != null) ...[
-            const Spacer(),
-            Text(
-              trailing,
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.white38 : Colors.black38,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSettingsCard({
-    required bool isDark,
-    required Color cardColor,
-    required List<Widget> children,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        children: List.generate(children.length * 2 - 1, (index) {
-          if (index.isOdd) {
-            return Divider(
-              height: 1,
-              indent: 60,
-              color: isDark
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.06),
-            );
-          }
-          return children[index ~/ 2];
-        }),
-      ),
-    );
-  }
-
-  Widget _buildCurrentDeviceTile(bool isDark) {
-    // 优先使用后端返回的设备名称
+  /// 当前设备 Hero：极简纯文字（对齐"个人资料页"极简风）
+  Widget _buildCurrentDeviceHero() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final displayName = (_currentDevice?.deviceName.isNotEmpty == true)
         ? _currentDevice!.deviceName
         : (_deviceName.isNotEmpty
             ? _deviceName
             : _getDeviceTypeName(Platform.isIOS ? 'ios' : 'android'));
-
-    // 显示 IP 信息（如果有）
     final ipInfo =
         _currentDevice?.ip.isNotEmpty == true ? ' · ${_currentDevice!.ip}' : '';
 
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          // 设备图标
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
-              color: AppColors.primary,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // 设备信息
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$_appVersion · $_osVersion$ipInfo',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white54 : Colors.black45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 在线状态
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.success.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '在线',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTapTile({
-    required IconData icon,
-    required Color iconBgColor,
-    required String title,
-    String? subtitle,
-    required bool isDark,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: iconBgColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: iconBgColor, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isDark ? Colors.white54 : Colors.black45,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: isDark ? Colors.white24 : Colors.black26,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptySessionTile(bool isDark, AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-      child: Column(
-        children: [
-          Icon(
-            Icons.devices_other_rounded,
-            size: 48,
-            color: isDark ? Colors.white24 : Colors.black12,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            l10n.noOtherDevices,
-            style: TextStyle(
-              fontSize: 15,
-              color: isDark ? Colors.white54 : Colors.black45,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOtherDeviceTile(
-    DeviceInfo device,
-    bool isDark,
-    AppLocalizations l10n,
-  ) {
-    final deviceName = device.deviceName.isNotEmpty
-        ? device.deviceName
-        : _getDeviceTypeName(device.deviceType);
-
-    return Dismissible(
-      key: Key(device.deviceId),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        color: AppColors.error,
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      confirmDismiss: (direction) async {
-        return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(l10n.terminateDeviceSession),
-            content: Text(l10n.confirmTerminateDevice),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text(l10n.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                child: Text(l10n.terminate),
-              ),
-            ],
-          ),
-        );
-      },
-      onDismissed: (direction) {
-        _terminateDevice(device);
-      },
-      child: InkWell(
-        onTap: () => _terminateDevice(device),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              // 设备图标
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.info.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  _getDeviceIcon(device.deviceType),
-                  color: AppColors.info,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              // 设备信息
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      deviceName,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${device.ip.isNotEmpty ? device.ip : "未知IP"} · ${_formatLastActive(device.lastActive)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 终止按钮
-              IconButton(
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                  size: 20,
-                ),
-                onPressed: () => _terminateDevice(device),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTerminateAllTile(bool isDark, AppLocalizations l10n) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _terminateAllOtherDevices(l10n),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.delete_sweep_rounded,
-                color: AppColors.warning,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                l10n.terminateAllOtherDevices,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.warning,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                  color: isDark ? Colors.white : const Color(0xFF111827),
                 ),
               ),
-            ],
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.success.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '在线',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '$_appVersion · $_osVersion$ipInfo',
+          style: TextStyle(
+            fontSize: 13,
+            color: isDark ? Colors.white54 : const Color(0xFF6B7280),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -866,48 +437,10 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${l10n.operationFailed}: $e'),
-            backgroundColor: AppColors.error,
           ),
         );
       }
     }
-  }
-
-  Widget _buildLogoutTile(bool isDark, AppLocalizations l10n) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: _isLoggingOut ? null : () => _showLogoutConfirm(l10n),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_isLoggingOut)
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.error,
-                  ),
-                )
-              else
-                Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                _isLoggingOut ? l10n.loggingOut : l10n.logout,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.error,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _showQRScanner() {
@@ -1083,7 +616,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         SnackBar(
           content: Text('退出失败: $e'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),

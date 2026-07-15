@@ -90,6 +90,38 @@ if (vendorLocalPropertiesFile.exists()) {
     vendorLocalProperties.load(vendorLocalPropertiesFile.inputStream())
 }
 
+// ============================================================
+// 老设备兼容开关（LEGACY_COMPAT）
+// ============================================================
+// 一个开关同时控制两项配置，方便在"兼容包"和"精简包"之间切换。
+//
+//   LEGACY_COMPAT=true  （默认，兼容包）
+//     · minSdk = 26  → 支持 Android 8.0 及以上（含 Android 10）
+//                       解决"Android 10 及以下老设备安装时提示解析包错误"
+//     · abiFilters   = arm64-v8a + armeabi-v7a  → 兼容 32 位老 CPU 设备
+//     · APK 大小增加约 40~60%（多打一份 native so）
+//
+//   LEGACY_COMPAT=false （精简包，恢复原始行为）
+//     · minSdk = 30  → 仅支持 Android 11+
+//     · abiFilters   = arm64-v8a only
+//     · APK 更小，适合上架应用商店 / 分发给主流机型
+//
+// ─── 三种切换方式（按优先级从高到低）───
+//
+// 1) 直接调 gradle 命令：
+//      cd android
+//      ./gradlew assembleRelease -PLEGACY_COMPAT=false
+//
+// 2) 环境变量（推荐给 flutter build 命令用）：
+//      LEGACY_COMPAT=false flutter build apk --release       # 精简包
+//      flutter build apk --release                            # 默认兼容包
+//
+// 3) 修改 android/gradle.properties 里的 LEGACY_COMPAT 值（长期切换）
+//
+// 默认值设成 true 是为了不再让老机用户装不上；如你想恢复原来的行为，
+// 传 LEGACY_COMPAT=false 即可，或把 defaultValue 改成 false。
+val legacyCompat = resolvedBoolProp("LEGACY_COMPAT", vendorLocalProperties, defaultValue = true)
+
 // Optional vendor SDK dependency switch.
 // Disabled by default to keep current builds stable.
 val enableVendorPushSdk = resolvedBoolProp("ENABLE_VENDOR_PUSH_SDK", vendorLocalProperties, defaultValue = false)
@@ -132,8 +164,15 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.yixinim.app"
-        minSdk = 30
+        // 注意：这里的 applicationId 是"新的 v2 版本"，与旧的 com.yixinim.app 并存。
+        // namespace 依然保留 com.yixinim.app，是为了不移动 Kotlin 源码物理路径
+        // (AndroidManifest 里的 android:name=".MainActivity" 走 namespace 解析)。
+        // Android 12+ AGP 允许 applicationId 与 namespace 不同，属于官方推荐做法。
+        applicationId = "com.yixinim.app.v2"
+        // 由 LEGACY_COMPAT 决定 minSdk：
+        //   兼容包 → 26（Android 8.0+，含 Android 10 用户）
+        //   精简包 → 30（Android 11+，原始行为）
+        minSdk = if (legacyCompat) 26 else 30
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -161,10 +200,17 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Keep release arm64-only to reduce package size.
+            // ABI 过滤：兼容包多打一份 32 位 so，精简包只打 arm64。
+            // 打印一行方便在打包终端 / CI 日志里确认这次打的是哪种包。
+            val buildLabel = if (legacyCompat) "LEGACY (minSdk=26, arm64-v8a + armeabi-v7a)"
+                             else "MODERN (minSdk=30, arm64-v8a only)"
+            println("[build.gradle.kts] release APK build mode: $buildLabel")
             ndk {
                 abiFilters.clear()
                 abiFilters.add("arm64-v8a")
+                if (legacyCompat) {
+                    abiFilters.add("armeabi-v7a")
+                }
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -185,7 +231,13 @@ android {
 
     packaging {
         jniLibs {
-            excludes += listOf("lib/armeabi-v7a/**", "lib/x86/**")
+            // x86 / x86_64 一律排除（模拟器才用得到，实体设备极其罕见）。
+            // armeabi-v7a 只在"精简包"模式下排除；兼容包模式要保留它。
+            val jniExcludes = mutableListOf("lib/x86/**", "lib/x86_64/**")
+            if (!legacyCompat) {
+                jniExcludes += "lib/armeabi-v7a/**"
+            }
+            excludes += jniExcludes
         }
     }
 }

@@ -80,14 +80,15 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
 
-  bool _isNumeric(String str) {
-    return RegExp(r'^\d+$').hasMatch(str);
-  }
-
   bool _isSearching = false;
+  bool _hasSearched = false;
   DateTime? _lastSearchTime;
   List<SearchResult> _allResults = [];
   String? _errorMessage;
+
+  /// 允许搜索的最小字符数：防止空关键字或过短触发全表扫描。
+  /// 后端 `/user/search-all` 会做同样校验（<2 直接 400），两边保持一致。
+  static const int _minKeywordLength = 2;
 
   @override
   void initState() {
@@ -106,19 +107,32 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   }
 
   Future<void> _search(String keyword) async {
+    final searchKeyword = keyword.trim();
 
-    String searchKeyword = keyword.trim();
-
-    // ★ 拦截控制：只有满 8 位及以上才发起真正的网络请求
-    if (searchKeyword.length != 11) {
+    // 空关键字：清空结果回到初始态，不请求后端
+    if (searchKeyword.isEmpty) {
       setState(() {
         _allResults = [];
         _errorMessage = null;
         _isSearching = false;
+        _hasSearched = false;
       });
       return;
     }
 
+    // 关键字过短：轻提示，不请求后端
+    if (searchKeyword.length < _minKeywordLength) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('请至少输入 $_minKeywordLength 个字符再搜索'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    // 3 秒频控，防止误触 / 表单回车狂按
     final now = DateTime.now();
     if (_lastSearchTime != null) {
       final difference = now.difference(_lastSearchTime!).inSeconds;
@@ -131,14 +145,18 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
             backgroundColor: AppColors.error,
           ),
         );
-        return; 
+        return;
       }
     }
-    _lastSearchTime = now; 
+    _lastSearchTime = now;
+
+    // 收起软键盘，聚焦搜索结果
+    FocusScope.of(context).unfocus();
 
     setState(() {
       _isSearching = true;
       _errorMessage = null;
+      _hasSearched = true;
     });
 
     try {
@@ -147,6 +165,8 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         '/user/search-all',
         queryParameters: {'keyword': searchKeyword, 'type': 'all'},
       );
+
+      if (!mounted) return;
 
       if (response.code == 0 && response.data != null) {
         final list = response.data['list'] as List? ?? [];
@@ -163,6 +183,7 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = '搜索失败，请重试';
         _isSearching = false;
@@ -185,9 +206,8 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         '/user/${result.id}?name=${Uri.encodeComponent(result.name)}${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
       );
     } else {
-      final chatType = result.type == 'group' ? 'group' : 'channel';
       context.push(
-        '/chat/${result.id}?name=${Uri.encodeComponent(result.name)}&type=$chatType${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
+        '/chat/${result.id}?name=${Uri.encodeComponent(result.name)}&type=group${result.avatar != null ? '&avatar=${Uri.encodeComponent(result.avatar!)}' : ''}',
       );
     }
   }
@@ -219,7 +239,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(response.message),
-          backgroundColor: AppColors.error,
         ),
       );
     } catch (e) {
@@ -227,7 +246,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('打开聊天失败，请重试'),
-          backgroundColor: AppColors.error,
         ),
       );
     }
@@ -267,7 +285,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message),
-            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -276,7 +293,6 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('添加失败，请重试'),
-          backgroundColor: AppColors.error,
         ),
       );
     }
@@ -287,9 +303,8 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    // ★ 提取并清洗当前的关键字长度，用于精细控制状态显隐
-    String cleanKeyword = _searchController.text.trim();
-
+    final cleanKeyword = _searchController.text.trim();
+    final canSearch = cleanKeyword.length >= _minKeywordLength && !_isSearching;
 
     return Scaffold(
       backgroundColor: isDark
@@ -318,105 +333,130 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
       ),
       body: Column(
         children: [
-          // 搜索框
+          // 搜索框 + 搜索按钮
+          // ⚠️ 不再限制位数和字符类型：允许字母、数字、中文等任意关键字；
+          //    也不再随输入自动触发；改由「搜索按钮」或键盘 Enter (onSubmitted) 手动触发。
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              maxLength: 11,
-              keyboardType: TextInputType.phone, 
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _focusNode,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.search,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      hintText: l10n.get('search_user_group_channel') ??
+                          '请输入手机号 / 用户名 / 昵称',
+                      hintStyle: TextStyle(
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextTertiary,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextTertiary,
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              tooltip: '清空',
+                              onPressed: () {
+                                _searchController.clear();
+                                _search('');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: isDark
+                          ? Colors.white.withOpacity(0.08)
+                          : Colors.black.withOpacity(0.04),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary,
+                    ),
+                    // 输入变化只用于刷新清空按钮 / 按钮 enable 状态；不再自动触发搜索
+                    onChanged: (value) {
+                      if (value.trim().isEmpty && _hasSearched) {
+                        setState(() {
+                          _allResults = [];
+                          _errorMessage = null;
+                          _hasSearched = false;
+                        });
+                      } else {
+                        setState(() {});
+                      }
+                    },
+                    // 键盘回车键触发搜索
+                    onSubmitted: _search,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: canSearch
+                      ? () => _search(_searchController.text)
+                      : null,
+                  icon: _isSearching
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.search, size: 18),
+                  label: const Text('搜索'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
               ],
-              decoration: InputDecoration(
-                hintText: '请输入11位手机号',
-                hintStyle: TextStyle(
-                  color: isDark
-                      ? AppColors.darkTextTertiary
-                      : AppColors.lightTextTertiary,
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: isDark
-                      ? AppColors.darkTextTertiary
-                      : AppColors.lightTextTertiary,
-                ),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _search('');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: isDark
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.04),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
-              style: TextStyle(
-                fontSize: 16,
-                color: isDark
-                    ? AppColors.darkTextPrimary
-                    : AppColors.lightTextPrimary,
-              ),
-              onChanged: (value) {
-                String checkValue = value.trim();
-                
-                // ★ 如果用户退格删除导致长度不足 8 位，立即重置并刷新界面，移走旧列表
-                if (checkValue.length < 11) {
-                  setState(() {
-                    _allResults = [];
-                    _errorMessage = null;
-                  });
-                }
-                
-                // 防抖搜索
-                if (checkValue.length == 11) {
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    if (_searchController.text == value) {
-                      _search(_searchController.text);
-                    }
-                  });
-                }
-              },
-              onSubmitted: _search,
             ),
           ),
 
-          // 提示文字 (未输入，或输入的有效关键字数不足 8 位)
-          if (cleanKeyword.length < 11)
+          // 初始态：未搜索过时显示引导文案
+          if (!_hasSearched && !_isSearching)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.phone_android_rounded,
+                      Icons.person_search_rounded,
                       size: 80,
                       color: isDark ? Colors.white24 : Colors.black12,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      cleanKeyword.isEmpty
-                          ? (l10n.get('search_user_to_chat') ?? '搜索用户手机号开始聊天')
-                          : '请输入 11 位手机号 (${cleanKeyword.length}/11)',
+                      l10n.get('search_user_to_chat') ?? '搜索用户开始聊天',
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: cleanKeyword.isEmpty ? FontWeight.normal : FontWeight.w500,
-                        color: cleanKeyword.isEmpty
-                            ? (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary)
-                            : AppColors.primary,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -429,27 +469,17 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
                             : AppColors.lightTextTertiary,
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    // Text(
-                    //   l10n.get('also_search_public_groups') ?? '也可搜索公开群组和频道',
-                    //   style: TextStyle(
-                    //     fontSize: 14,
-                    //     color: isDark
-                    //         ? AppColors.darkTextTertiary
-                    //         : AppColors.lightTextTertiary,
-                    //   ),
-                    // ),
                   ],
                 ),
               ),
             ),
 
-          // 加载中 (满 8 位发起了异步请求时显示)
-          if (_isSearching && cleanKeyword.length == 11)
+          // 加载中
+          if (_isSearching)
             const Expanded(child: Center(child: CircularProgressIndicator())),
 
-          // 错误信息 (满 8 位请求失败时显示)
-          if (_errorMessage != null && !_isSearching && cleanKeyword.length == 11)
+          // 错误信息
+          if (_errorMessage != null && !_isSearching)
             Expanded(
               child: Center(
                 child: Column(
@@ -471,9 +501,8 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
               ),
             ),
 
-          // 搜索结果 - 只有满 8 位及以上才触发渲染
-          if (!_isSearching &&
-              _errorMessage == null && cleanKeyword.length == 11)
+          // 搜索结果
+          if (_hasSearched && !_isSearching && _errorMessage == null)
             Expanded(
               child: _allResults.isEmpty
                   ? _buildEmptyState(isDark)

@@ -18,14 +18,31 @@ enum RecordingState {
 }
 
 class VoiceRecordData {
+  /// 录音数据地址：
+  ///   - Native: 本地文件绝对路径（`/tmp/voice_xxx.m4a`）
+  ///   - Web: `MediaRecorder` 产出的 `blob:https://...` URL
+  /// 上传逻辑（`message_provider.sendVoiceMessage`）会自行区分并按平台读取字节。
   final String path;
   final int duration;
+
+  /// 文件字节数。Native 端在 stopRecording 时用 File.length 拿到，
+  /// Web 端 blob 拿不到确切大小，先填 0，上传时用真实字节数补齐。
   final int size;
+
+  /// 上传时的 MIME 类型，供 web 端使用（决定 backend 的 Content-Type 校验分支）。
+  /// Native 端不用管，默认 `audio/mp4`。
+  final String mimeType;
+
+  /// 上传时的建议文件扩展名（不带点）。Native 是 `m4a`，Web 视浏览器可能是
+  /// `webm` / `mp4` / `ogg`。
+  final String extension;
 
   VoiceRecordData({
     required this.path,
     required this.duration,
     required this.size,
+    this.mimeType = 'audio/mp4',
+    this.extension = 'm4a',
   });
 }
 
@@ -68,15 +85,22 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
   Timer? _amplitudeTimer;
   DateTime? _startTime;
   String? _currentPath;
+
+  /// Web 端启动时探测出来的实际编码器 & MIME，stopRecording 时透传给上层。
+  AudioEncoder _webEncoder = AudioEncoder.opus;
+  String _webMimeType = 'audio/webm';
+  String _webExtension = 'webm';
+
   bool _isDisposed = false;
 
   VoiceRecordService() : super(const VoiceRecordState());
 
   Future<bool> checkPermission() async {
+    // Web：浏览器在 MediaRecorder.start() 时会自动弹麦克风授权对话框，
+    // 不需要走 permission_handler（在纯 Web 环境下不可用）。
+    // 真正拿不到麦克风时，start() 会抛异常，由 startRecording 的 catch 兜底。
     if (PlatformUtils.isWeb) {
-      if (kDebugMode) debugPrint('[VoiceRecord] Web recording is disabled');
-      state = state.copyWith(error: '当前 Web 端暂不支持语音录制');
-      return false;
+      return true;
     }
 
     if (kDebugMode) debugPrint('[VoiceRecord] Checking permission...');
@@ -119,11 +143,56 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
     if (kDebugMode) debugPrint('[VoiceRecord] startRecording called');
 
     try {
+      // ─── Web 分支 ────────────────────────────────────────────────
+      // record_web 内部走浏览器 MediaRecorder：
+      //   1. 编码器选择：优先 opus (Chrome/Firefox/Edge)，回退 aacLc (Safari)；
+      //   2. path 参数在 web 上被忽略，stop() 返回 blob URL；
+      //   3. 权限提示由浏览器自动弹，不需要 permission_handler。
       if (PlatformUtils.isWeb) {
-        state = state.copyWith(error: '当前 Web 端暂不支持语音录制');
-        return false;
+        // 能力探测：opus 一般所有主流浏览器都支持（除 Safari 部分老版本），
+        // 挑不到就退回 aacLc。都不行才判"不支持"。
+        AudioEncoder? picked;
+        if (await _recorder.isEncoderSupported(AudioEncoder.opus)) {
+          picked = AudioEncoder.opus;
+          _webMimeType = 'audio/webm';
+          _webExtension = 'webm';
+        } else if (await _recorder.isEncoderSupported(AudioEncoder.aacLc)) {
+          picked = AudioEncoder.aacLc;
+          _webMimeType = 'audio/mp4';
+          _webExtension = 'm4a';
+        } else {
+          state = state.copyWith(error: '当前浏览器不支持语音录制');
+          return false;
+        }
+        _webEncoder = picked;
+
+        // 给一个占位文件名，方便调试 —— web 端 record 库会忽略路径本身。
+        _currentPath = 'voice_${DateTime.now().millisecondsSinceEpoch}.$_webExtension';
+
+        final config = RecordConfig(
+          encoder: _webEncoder,
+          // opus 通常 32 kbps 就已经很清晰，128 kbps 属于浪费带宽；
+          // aacLc 保持 128 kbps 跟 Native 端一致。
+          bitRate: _webEncoder == AudioEncoder.opus ? 32000 : 128000,
+          sampleRate: 44100,
+          numChannels: 1,
+        );
+
+        await _recorder.start(config, path: _currentPath!);
+
+        _startTime = DateTime.now();
+        state = state.copyWith(
+          state: RecordingState.recording,
+          duration: 0,
+          amplitude: 0,
+          error: null,
+        );
+
+        _startTimers();
+        return true;
       }
 
+      // ─── Native 分支（Android / iOS / 桌面）保持原样 ─────────────────
       final hasPermission = await checkPermission();
       if (!hasPermission) {
         if (kDebugMode) debugPrint('[VoiceRecord] No permission');
@@ -166,7 +235,12 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
       return true;
     } catch (e) {
       if (kDebugMode) debugPrint('[VoiceRecord] Start error: $e');
-      state = state.copyWith(error: '录音启动失败');
+      // Web 上抛异常最常见的原因是用户拒绝了麦克风权限，或者浏览器安全策略
+      // 禁用了 getUserMedia（比如 HTTP 非本地域名）。给个更明确的提示。
+      final msg = PlatformUtils.isWeb
+          ? '录音启动失败，请确认已授权麦克风且页面通过 HTTPS 访问'
+          : '录音启动失败';
+      state = state.copyWith(error: msg);
       return false;
     }
   }
@@ -222,8 +296,9 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
         return null;
       }
 
-      final path = await _recorder.stop();
-      if (path == null || _currentPath == null) {
+      // Web 上 stop() 返回 blob URL；Native 上返回文件路径。两边都可能返回 null。
+      final resultPath = await _recorder.stop();
+      if (resultPath == null || _currentPath == null) {
         state = state.copyWith(state: RecordingState.idle);
         return null;
       }
@@ -232,6 +307,33 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
           ? DateTime.now().difference(_startTime!).inMilliseconds
           : 0;
 
+      // ─── Web 分支 ────────────────────────────────────────────────
+      if (PlatformUtils.isWeb) {
+        // 太短直接丢弃（跟 native 保持一致的 <1s 阈值）。
+        // Web 端没有本地文件可以 delete，blob 会随 GC 自动回收。
+        state = state.copyWith(state: RecordingState.stopped, duration: 0, amplitude: 0);
+        if (duration < 1000) {
+          state = state.copyWith(state: RecordingState.idle);
+          _currentPath = null;
+          _startTime = null;
+          return null;
+        }
+
+        final data = VoiceRecordData(
+          path: resultPath, // blob URL
+          duration: duration,
+          size: 0, // web 端大小上传时补齐
+          mimeType: _webMimeType,
+          extension: _webExtension,
+        );
+
+        state = state.copyWith(state: RecordingState.idle);
+        _currentPath = null;
+        _startTime = null;
+        return data;
+      }
+
+      // ─── Native 分支（原逻辑不动） ─────────────────────────────────
       final file = File(_currentPath!);
       final size = await file.exists() ? await file.length() : 0;
 
@@ -268,9 +370,12 @@ class VoiceRecordService extends StateNotifier<VoiceRecordState> {
   Future<void> cancelRecording() async {
     try {
       _stopTimers();
-      await _recorder.stop();
+      // record 5.x 有 cancel() 语义（停止 + 丢弃产出），Native/Web 两端行为一致，
+      // 相比原来"先 stop 再 File.delete"更简洁，也避免 web 上访问 File 报错。
+      await _recorder.cancel();
 
-      if (_currentPath != null) {
+      // Native 上再兜一层 File.delete，防止个别设备 cancel 未完全清理临时文件。
+      if (!PlatformUtils.isWeb && _currentPath != null) {
         final file = File(_currentPath!);
         if (await file.exists()) {
           await file.delete();

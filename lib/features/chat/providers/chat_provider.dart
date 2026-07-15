@@ -17,13 +17,13 @@ import '../../../core/services/storage/models/chat_model.dart' as storage;
 import '../../../core/services/storage/models/message_model.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../utils/system_message_text.dart';
+import '../utils/call_status_text.dart';
 import 'package:flutter/material.dart';
 import '../../../core/router/app_router.dart';
 import '../../contacts/providers/friend_request_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 import 'message_provider.dart' show MessageItem, persistMessageItemsToIsarCache;
 import 'package:go_router/go_router.dart';
-import '../utils/call_status_text.dart';
 
 DateTime? _normalizeChatListTime(DateTime? value) {
   if (value == null) return null;
@@ -272,6 +272,25 @@ class ChatListState {
 
   /// 是否在加载中（包括静默加载）
   bool get isRefreshing => isLoading || isSilentLoading;
+
+  /// 可见会话（用于底部导航角标、系统通知角标、托盘等）的未读总数。
+  ///
+  /// 聊天列表 UI 已经过滤掉了 `ChatItemType.channel`（见 chat_page 的
+  /// `_getChatList`），但历史上底部导航/系统角标仍然把 channel 的 unread 计入求和，
+  /// 造成"列表全已读，但导航栏仍显示 1 条未读"的错觉。
+  /// 这里统一按"用户能看到的会话"求和，避免不可见 channel 影响外部角标。
+  int get visibleUnreadCount {
+    var total = 0;
+    for (final chat in pinnedChats) {
+      if (chat.type == ChatItemType.channel) continue;
+      if (chat.unreadCount > 0) total += chat.unreadCount;
+    }
+    for (final chat in regularChats) {
+      if (chat.type == ChatItemType.channel) continue;
+      if (chat.unreadCount > 0) total += chat.unreadCount;
+    }
+    return total;
+  }
 }
 
 /// 聊天列表 Provider
@@ -1074,7 +1093,14 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       case 10:
         return ('[联系人名片]', MessageContentType.contact);
       case 11:
-        return (message.content.text ?? '[通话]', MessageContentType.call);
+        // 通话消息：后端偶尔仍把"视频通话 cancelled / declined / rejected"
+        // 这类英文状态词直接落库，聊天详情气泡里由 [message_bubble] 走
+        // normalizeCallStatusText 汉化了，但列表最后一条预览之前直接使用
+        // 原始文本，就会露出英文。这里在预览生成时也过一次规范化。
+        return (
+          normalizeCallStatusText(message.content.text ?? '[通话]'),
+          MessageContentType.call,
+        );
       case 12:
         return ('[红包]', MessageContentType.text);
       case 13:
@@ -1093,7 +1119,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   }
 
   /// 处理新消息
-  void _handleNewMessage(api.Message message) {
+  ///
+  /// [playSound]：是否允许触发提示音 / 桌面推送 / Android 前台服务角标提示。
+  /// 默认 true；WS 重连后用 [_prefetchMissedMessagesAfterReconnect] 补漏时
+  /// 会传 false —— 那些消息虽然是"我们本地没见过"，但对用户来说不是"刚到"，
+  /// 不应该重放一堆提示音。（老实现每次 WS 重连都会把最近 40 会话的历史
+  /// 消息重灌一次 _handleNewMessage → 提示音狂响，即使用户所有消息都已读。）
+  void _handleNewMessage(api.Message message, {bool playSound = true}) {
     if (!_rememberMessageId(message.msgId)) {
       if (kDebugMode) debugPrint('[Chat] Skip duplicate new_message: ${message.msgId}');
       return;
@@ -1111,9 +1143,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       final isSelf = message.senderId == _getCurrentUserId();
       final isSystemMsg = message.type == 99;
       final isViewing = _activeChatId == message.chatId;
-      final newUnread = (isSelf || isViewing || isSystemMsg)
-          ? chat.unreadCount
-          : chat.unreadCount + 1;
+
+      // 这条消息是否会给用户带来一个"新未读增量"（会触发红点 +1）
+      final createsUnread = !isSelf && !isViewing && !isSystemMsg;
+      final newUnread =
+          createsUnread ? chat.unreadCount + 1 : chat.unreadCount;
 
       final updatedChat = chat.copyWith(
         lastMessage: lastMessage,
@@ -1127,17 +1161,24 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       // 移动到列表顶部
       _moveToTop(updatedChat);
 
-      // 播放通知音效（如果不是静音且不是自己发送的消息）
-      if (!chat.isMuted && message.senderId != _getCurrentUserId()) {
+      // 触发提示音 / 通知的条件：
+      //   · playSound: 调用方允许（重连补漏拉历史时传 false）
+      //   · createsUnread: 消息确实带来"用户视角的新未读"（排除 self / viewing / system）
+      //   · !chat.isMuted: 会话没被用户设为免打扰
+      //
+      // 之前的老逻辑只判断 !isMuted && !isSelf，导致：
+      //   1) 用户正在看着聊天页时每来一条消息响一声
+      //   2) 群里入群 / 权限变更等系统消息也响（红点不加、只有声）
+      //   3) WS 重连后 40 个会话的历史批量回放，"没有新消息但一直响"
+      final shouldNotify = playSound && createsUnread && !chat.isMuted;
+      if (shouldNotify) {
         _playNotificationSound(chat.type);
-        if (newUnread > chat.unreadCount) {
-          _updateAndroidBackgroundNotification(
-            chat: chat,
-            senderName: message.senderName ?? '未知',
-            content: lastMessage,
-            unreadCount: _totalUnreadCount(),
-          );
-        }
+        _updateAndroidBackgroundNotification(
+          chat: chat,
+          senderName: message.senderName ?? '未知',
+          content: lastMessage,
+          unreadCount: _totalUnreadCount(),
+        );
         // 发送桌面端通知
         _showDesktopNotification(
           chat: chat,
@@ -1175,14 +1216,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   }
 
   int _totalUnreadCount() {
-    var total = 0;
-    for (final chat in state.pinnedChats) {
-      total += chat.unreadCount;
-    }
-    for (final chat in state.regularChats) {
-      total += chat.unreadCount;
-    }
-    return total;
+    // 与底部导航/系统角标保持一致：仅统计"可见会话"，
+    // 排除已被 UI 过滤掉的 channel 类型，避免脏 channel 未读把
+    // 后台通知、Android 前台服务角标推高。
+    return state.visibleUnreadCount;
   }
 
   /// 播放通知音效
@@ -1600,6 +1637,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                         userChat.lastMsgText ?? '',
                         currentUserId: _getCurrentUserId(),
                       )
+                    // 非系统消息：先把历史遗留的英文通话状态词
+                    // ("视频通话 cancelled") 规范化成中文，避免会话列表预览露英文
                     : normalizeCallStatusText(userChat.lastMsgText ?? ''),
                 lastMessageTime: userChat.lastMsgTime,
                 lastMessageType: _mapMessageContentType(userChat.lastMsgType),
@@ -1777,6 +1816,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                         userChat.lastMsgText ?? '',
                         currentUserId: _getCurrentUserId(),
                       )
+                    // 非系统消息：先把历史遗留的英文通话状态词
+                    // ("视频通话 cancelled") 规范化成中文，避免会话列表预览露英文
                     : normalizeCallStatusText(userChat.lastMsgText ?? ''),
                 lastMessageTime: userChat.lastMsgTime,
                 lastMessageType: _mapMessageContentType(userChat.lastMsgType),
@@ -1941,9 +1982,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           if (!PlatformUtils.isWeb && IsarService.instance.isAvailable) {
             await persistMessageItemsToIsarCache(items);
           }
-          // Web端和App端都更新内存消息列表
+          // Web 端和 App 端都更新内存消息列表。
+          // ⚠️ playSound: false —— 重连补漏拉回来的历史消息，用户视角上不是
+          //   "刚到"，不该重放提示音。否则每次 WS 重连（切前台 / Wi-Fi 抖 /
+          //    心跳超时）都会把最近 40 会话的最近消息响一遍，用户报的
+          //   "所有消息已读还一直响"就是这里的锅。
           for (final msg in resp.data!) {
-            _handleNewMessage(msg);
+            _handleNewMessage(msg, playSound: false);
           }
           if (kDebugMode) debugPrint(
             '[Chat] Reconnect prefetch: ${items.length} messages → Isar, chat=${chat.id}',

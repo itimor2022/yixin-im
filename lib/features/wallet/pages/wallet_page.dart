@@ -60,7 +60,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   String _getOrderId(Map<String, dynamic> o) =>
       o['id']?.toString() ??
       o['order_id']?.toString() ??
-      o['uuid']?.toString() ?? '';
+      o['uuid']?.toString() ??
+      '';
 
   Future<void> _loadSettings() async {
     try {
@@ -93,9 +94,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     final wallet = walletState.wallet;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF1C1C1E)
-          : const Color(0xFFF5F5F7),
+      backgroundColor:
+          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         elevation: 0,
@@ -348,9 +348,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                         child: Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF2C2C2E)
-                                : Colors.white,
+                            color:
+                                isDark ? const Color(0xFF2C2C2E) : Colors.white,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -571,8 +570,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   subtitle,
                   style: TextStyle(
                     fontSize: 13,
-                    color:
-                        subtitleColor ??
+                    color: subtitleColor ??
                         (isDark ? Colors.white54 : Colors.grey[500]),
                   ),
                 ),
@@ -649,7 +647,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                '壹信钱包',
+                '易信钱包',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,

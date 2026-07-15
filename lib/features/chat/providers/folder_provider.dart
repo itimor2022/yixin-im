@@ -139,8 +139,21 @@ class FolderNotifier extends StateNotifier<FolderState> {
       
       if (jsonString != null) {
         final List<dynamic> jsonList = json.decode(jsonString);
-        final folders = jsonList.map((e) => ChatFolder.fromJson(e)).toList();
+        var folders = jsonList.map((e) => ChatFolder.fromJson(e)).toList();
+        // 频道功能已下线：清理本地缓存里可能存在的 channels folder
+        // 以及任何包含 ChatItemType.channel 的分组
+        final originalCount = folders.length;
+        folders = folders
+            .where((f) =>
+                f.id != 'channels' &&
+                (f.includeTypes == null ||
+                    !f.includeTypes!.contains(ChatItemType.channel)))
+            .toList();
         state = state.copyWith(folders: folders, isLoading: false);
+        // 若做了清理，回写覆盖旧缓存
+        if (folders.length != originalCount) {
+          await _saveFolders();
+        }
       } else {
         // 首次使用，创建默认分组
         await _createDefaultFolders();
@@ -170,12 +183,6 @@ class FolderNotifier extends StateNotifier<FolderState> {
         name: '群组',
         includeTypes: [ChatItemType.group],
         order: 2,
-      ),
-      ChatFolder(
-        id: 'channels',
-        name: '频道',
-        includeTypes: [ChatItemType.channel],
-        order: 3,
       ),
     ];
     

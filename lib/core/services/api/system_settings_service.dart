@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 
-const String kDefaultAppDisplayName = '壹信IM';
+const String kDefaultAppDisplayName = '易信';
 const String kSystemSettingsCacheKey = 'system_settings_cache';
 
 enum MessageCryptoMode {
@@ -45,7 +45,8 @@ Future<SystemSettings?> loadCachedSystemSettings() async {
       );
     }
   } catch (e) {
-    if (kDebugMode) debugPrint('[SystemSettings] Failed to load cached settings: $e');
+    if (kDebugMode)
+      debugPrint('[SystemSettings] Failed to load cached settings: $e');
   }
   return null;
 }
@@ -324,7 +325,8 @@ class SystemSettingsService {
         return settings;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[SystemSettings] Error fetching settings: $e');
+      if (kDebugMode)
+        debugPrint('[SystemSettings] Error fetching settings: $e');
     }
 
     final cachedFallback = _cachedSettings ?? await loadCachedSystemSettings();
@@ -360,7 +362,8 @@ class SystemSettingsService {
       final age = DateTime.now().millisecondsSinceEpoch - cacheTime;
       return age <= _cacheDuration.inMilliseconds;
     } catch (e) {
-      if (kDebugMode) debugPrint('[SystemSettings] Error reading cache freshness: $e');
+      if (kDebugMode)
+        debugPrint('[SystemSettings] Error reading cache freshness: $e');
       return false;
     }
   }
@@ -382,7 +385,8 @@ class SystemSettingsService {
         );
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[SystemSettings] Error loading from cache: $e');
+      if (kDebugMode)
+        debugPrint('[SystemSettings] Error loading from cache: $e');
     }
     return null;
   }
@@ -410,7 +414,8 @@ class SystemSettingsService {
         await prefs.setString(kApiTxtUrlPrefsKey, trimmed);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[SystemSettings] Error persisting api_txt_url: $e');
+      if (kDebugMode)
+        debugPrint('[SystemSettings] Error persisting api_txt_url: $e');
     }
   }
 
@@ -442,7 +447,8 @@ class SystemSettingsService {
         return response.data!['added'] as int? ?? 0;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[SystemSettings] Error syncing official contacts: $e');
+      if (kDebugMode)
+        debugPrint('[SystemSettings] Error syncing official contacts: $e');
     }
     return 0;
   }
@@ -471,7 +477,8 @@ final systemSettingsProvider = FutureProvider<SystemSettings>((ref) async {
             ref.invalidateSelf();
           }
         } catch (e) {
-          if (kDebugMode) debugPrint('[SystemSettings] Background refresh failed: $e');
+          if (kDebugMode)
+            debugPrint('[SystemSettings] Background refresh failed: $e');
         }
       });
     }

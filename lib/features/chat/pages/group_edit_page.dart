@@ -889,7 +889,6 @@ class _GroupEditPageState extends ConsumerState<GroupEditPage> {
             SnackBar(
               content: const Text('上传头像失败'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           );
@@ -901,7 +900,6 @@ class _GroupEditPageState extends ConsumerState<GroupEditPage> {
           SnackBar(
             content: Text('上传失败: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );

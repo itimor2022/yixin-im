@@ -104,17 +104,20 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       try {
         _setupMeetingInviteHandler();
       } catch (e) {
-        if (kDebugMode) debugPrint('[App] _setupMeetingInviteHandler error: $e');
+        if (kDebugMode)
+          debugPrint('[App] _setupMeetingInviteHandler error: $e');
       }
       try {
         _setupMeetingJoinRequestHandler();
       } catch (e) {
-        if (kDebugMode) debugPrint('[App] _setupMeetingJoinRequestHandler error: $e');
+        if (kDebugMode)
+          debugPrint('[App] _setupMeetingJoinRequestHandler error: $e');
       }
       try {
         _setupMeetingStateHandlers();
       } catch (e) {
-        if (kDebugMode) debugPrint('[App] _setupMeetingStateHandlers error: $e');
+        if (kDebugMode)
+          debugPrint('[App] _setupMeetingStateHandlers error: $e');
       }
       try {
         _setupForceLogoutHandler();
@@ -129,12 +132,14 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       try {
         _bindApiTokenRefreshToWebSocket();
       } catch (e) {
-        if (kDebugMode) debugPrint('[App] _bindApiTokenRefreshToWebSocket error: $e');
+        if (kDebugMode)
+          debugPrint('[App] _bindApiTokenRefreshToWebSocket error: $e');
       }
       try {
         _bindPhoneRequiredRedirect();
       } catch (e) {
-        if (kDebugMode) debugPrint('[App] _bindPhoneRequiredRedirect error: $e');
+        if (kDebugMode)
+          debugPrint('[App] _bindPhoneRequiredRedirect error: $e');
       }
       try {
         _setupBrowserTitleSync();
@@ -165,7 +170,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         if (!mounted) return;
         ref.invalidate(systemSettingsProvider);
       }).catchError((Object error) {
-        if (kDebugMode) debugPrint('[App] Browser title refresh failed: $error');
+        if (kDebugMode)
+          debugPrint('[App] Browser title refresh failed: $error');
       }),
     );
 
@@ -188,12 +194,9 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   }
 
   int _computeUnreadChatCount(ChatListState state) {
-    return state.pinnedChats
-            .where((c) => c.unreadCount > 0)
-            .fold<int>(0, (sum, c) => sum + c.unreadCount) +
-        state.regularChats
-            .where((c) => c.unreadCount > 0)
-            .fold<int>(0, (sum, c) => sum + c.unreadCount);
+    // 与底部导航角标保持一致：只统计用户实际可见的会话（排除 channel），
+    // 保证 App 图标角标 / Android 前台服务通知 / 桌面 tray 与 UI 一致。
+    return state.visibleUnreadCount;
   }
 
   void _syncUnreadBadgeCount(int count) {
@@ -224,7 +227,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
 
   void _bindApiTokenRefreshToWebSocket() {
     ref.read(apiClientProvider).onAccessTokenRefreshed = (String newToken) {
-      if (kDebugMode) debugPrint('[App] HTTP token refreshed -> WebSocket reconnect');
+      if (kDebugMode)
+        debugPrint('[App] HTTP token refreshed -> WebSocket reconnect');
       ref
           .read(webSocketServiceProvider.notifier)
           .applyRefreshedHttpToken(newToken);
@@ -284,7 +288,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           .read(messageListProvider(message.chatId).notifier)
           .markQueuedMessageFailed(message.id);
     } catch (e) {
-      if (kDebugMode) debugPrint('[App] Failed to update active offline message state: $e');
+      if (kDebugMode)
+        debugPrint('[App] Failed to update active offline message state: $e');
     }
 
     if (PlatformUtils.isWeb || !IsarService.instance.isAvailable) return;
@@ -300,7 +305,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         await IsarService.instance.isar.messageModels.put(model);
       });
     } catch (e) {
-      if (kDebugMode) debugPrint('[App] Failed to mark offline message failed: $e');
+      if (kDebugMode)
+        debugPrint('[App] Failed to mark offline message failed: $e');
     }
   }
 
@@ -309,7 +315,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     _discoverItemsUpdatedHandlerId ??= wsService.registerHandler(
       WSMessageType.discoverItemsUpdated,
       (_) {
-        if (kDebugMode) debugPrint('[Discover] Received discover_items_updated, refreshing');
+        if (kDebugMode)
+          debugPrint('[Discover] Received discover_items_updated, refreshing');
         unawaited(refreshDiscoverEntries(ref));
       },
     );
@@ -390,7 +397,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           final currentDeviceId = await DeviceService.getDeviceId();
           final deviceIds = (data['device_ids'] as List?)?.cast<String>() ?? [];
           if (deviceIds.contains(currentDeviceId)) {
-            if (kDebugMode) debugPrint('[App] Force logout triggered for this device');
+            if (kDebugMode)
+              debugPrint('[App] Force logout triggered for this device');
             await ref.read(authServiceProvider.notifier).logout();
           }
         } catch (e) {
@@ -593,7 +601,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   void _setupPushNotifications() {
     if (DesktopNotificationService.isDesktop) {
       DesktopNotificationService().onNotificationTap = (payload) {
-        if (kDebugMode) debugPrint('[DesktopNotification] Notification tapped: $payload');
+        if (kDebugMode)
+          debugPrint('[DesktopNotification] Notification tapped: $payload');
         if (payload != null && payload.isNotEmpty) {
           if (payload.startsWith('call:')) {
             return;
@@ -611,9 +620,10 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       if (kDebugMode) debugPrint('[Push] Notification received: $data');
       final type = data['type'] as String?;
       if (type == 'incoming_call') {
-        if (kDebugMode) debugPrint(
-          '[Push] Incoming call push received, triggering CallService',
-        );
+        if (kDebugMode)
+          debugPrint(
+            '[Push] Incoming call push received, triggering CallService',
+          );
         final isVideoPush =
             data['is_video'] == true || data['is_video'] == 'true';
         final pushCallType =
@@ -631,7 +641,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         ref.read(callServiceProvider.notifier).handleIncomingCall(callData);
       } else {
         // 普通消息：仅在 WS 离线时弹本地通知，在线时 WS 已直推无需重复
-        final wsOnline = ref.read(webSocketServiceProvider.notifier).state == WSConnectionState.connected;
+        final wsOnline = ref.read(webSocketServiceProvider.notifier).state ==
+            WSConnectionState.connected;
         if (!wsOnline) {
           final title = data['title'] as String? ?? '';
           final body = data['body'] as String? ?? '';
@@ -739,7 +750,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
   }
 
   void _navigateToChat(String chatId, String chatType) {
-    if (kDebugMode) debugPrint('[Push] Navigating to chat: $chatId (type: $chatType)');
+    if (kDebugMode)
+      debugPrint('[Push] Navigating to chat: $chatId (type: $chatType)');
     final router = ref.read(appRouterProvider);
 
     ChatType type;
@@ -866,7 +878,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       return true;
     });
     if (isAlreadyOnIncomingCallPage) {
-      if (kDebugMode) debugPrint('[App] IncomingCallPage already visible, skipping push');
+      if (kDebugMode)
+        debugPrint('[App] IncomingCallPage already visible, skipping push');
       return;
     }
 
@@ -891,7 +904,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     final callService = ref.read(callServiceProvider.notifier);
 
     callService.onIncomingCall = (callInfo) {
-      if (kDebugMode) debugPrint('[App] onIncomingCall triggered, showing IncomingCallPage');
+      if (kDebugMode)
+        debugPrint('[App] onIncomingCall triggered, showing IncomingCallPage');
 
       if (DesktopNotificationService.isDesktop) {
         DesktopNotificationService().showIncomingCallNotification(
@@ -901,7 +915,8 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
         );
       }
 
-      if (kDebugMode) debugPrint('[App] Navigator: ${rootNavigatorKey.currentState}');
+      if (kDebugMode)
+        debugPrint('[App] Navigator: ${rootNavigatorKey.currentState}');
       _showIncomingCallPage(callInfo);
     };
 
@@ -945,7 +960,6 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           ScaffoldMessenger.of(ctx).showSnackBar(
             SnackBar(
               content: Text(error),
-              backgroundColor: Colors.red,
               duration: const Duration(seconds: 3),
             ),
           );
@@ -983,13 +997,15 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
           });
 
           if (isAlreadyOnCallPage) {
-            if (kDebugMode) debugPrint('[App] Already on CallPage, skipping auto-navigation');
+            if (kDebugMode)
+              debugPrint('[App] Already on CallPage, skipping auto-navigation');
             return;
           }
 
-          if (kDebugMode) debugPrint(
-            '[App] Auto-navigating to CallPage: $_lastCallState -> $newState',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[App] Auto-navigating to CallPage: $_lastCallState -> $newState',
+            );
           navigator.popUntil((route) => route.isFirst);
           navigator.push(
             MaterialPageRoute(
@@ -1010,10 +1026,14 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     final language = ref.watch(languageProvider);
 
     return MaterialApp.router(
-      title: '壹信IM',
+      title: '易信',
       debugShowCheckedModeBanner: false,
-      theme: appThemeMode == AppThemeMode.chineseRed ? AppTheme.chineseRed : AppTheme.light,
-      darkTheme: appThemeMode == AppThemeMode.chineseRed ? AppTheme.chineseRed : AppTheme.dark,
+      theme: appThemeMode == AppThemeMode.chineseRed
+          ? AppTheme.chineseRed
+          : AppTheme.light,
+      darkTheme: appThemeMode == AppThemeMode.chineseRed
+          ? AppTheme.chineseRed
+          : AppTheme.dark,
       themeMode: appThemeMode.flutterThemeMode,
       locale: language.locale,
       supportedLocales: AppLanguage.values.map((l) => l.locale).toList(),

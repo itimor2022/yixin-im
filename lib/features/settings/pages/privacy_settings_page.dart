@@ -13,9 +13,12 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/notification_sound_service.dart';
+import '../../../shared/widgets/settings_ui.dart';
 import 'blocked_users_page.dart';
 import 'devices_page.dart';
 import 'settings_page.dart' show deviceCountProvider;
+
+const Color _kPrivacyPrimary = Color(0xFFFF6B6B);
 
 /// 隐私设置服务
 class PrivacySettingsService extends StateNotifier<PrivacySettings> {
@@ -342,7 +345,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final settings = ref.watch(privacySettingsProvider);
     final settingsService = ref.read(privacySettingsProvider.notifier);
@@ -353,251 +355,179 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       loading: () => _activeSessionsCount,
       error: (_, __) => _activeSessionsCount,
     );
-
     final isLoadingDevices = deviceCountAsync.isLoading;
 
-    // 桌面面板模式：只返回内容
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, settings, settingsService, activeSessionsCount,
-          isLoadingDevices, l10n);
-    }
-
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          l10n.privacy,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: _buildBody(isDark, settings, settingsService, activeSessionsCount,
-          isLoadingDevices, l10n),
+    return SettingsScaffold(
+      title: l10n.privacy,
+      isDesktopPanel: widget.isDesktopPanel,
+      children: _buildIslands(settings, settingsService,
+          activeSessionsCount, isLoadingDevices, l10n),
     );
   }
 
-  Widget _buildBody(
-      bool isDark,
+  List<Widget> _buildIslands(
       PrivacySettings settings,
       PrivacySettingsService settingsService,
       int activeSessionsCount,
       bool isLoadingDevices,
       AppLocalizations l10n) {
-    return ListView(
-      children: [
-        const SizedBox(height: 24),
-
-        // 隐私设置
-        _SectionTitle(title: l10n.privacy, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.get('online_status') ?? '在线状态',
-              subtitle: settings.lastSeenVisibility,
-              isDark: isDark,
-              onTap: () => _showPrivacyPicker(
-                l10n.get('online_status') ?? '在线状态',
-                settings.lastSeenVisibility,
-                (v) => settingsService.updateLastSeenVisibility(v),
-              ),
-            ),
-            _TapTile(
-              title: l10n.get('phone_number') ?? '手机号',
-              subtitle: settings.phoneVisibility,
-              isDark: isDark,
-              onTap: () => _showPrivacyPicker(
-                l10n.get('phone_number') ?? '手机号',
-                settings.phoneVisibility,
-                (v) => settingsService.updatePhoneVisibility(v),
-              ),
-            ),
-            _TapTile(
-              title: l10n.get('groups') ?? '群组',
-              subtitle: settings.groupInvitePermission,
-              isDark: isDark,
-              onTap: () => _showPrivacyPicker(
-                l10n.get('groups') ?? '群组',
-                settings.groupInvitePermission,
-                (v) => settingsService.updateGroupInvitePermission(v),
-                description: l10n.get('who_can_add_to_group') ?? '谁可以将你添加到群组',
-              ),
-            ),
-            _SwitchTile(
-              title: '允许手机号搜索',
-              subtitle: '关闭后，其他用户无法通过手机号搜索到你',
-              value: settings.allowPhoneSearch,
-              isDark: isDark,
-              onChanged: settingsService.updateAllowPhoneSearch,
-            ),
-            _SwitchTile(
-              title: '允许平台短号搜索',
-              subtitle: '关闭后，其他用户无法通过平台短号搜索到你',
-              value: settings.allowShortIdSearch,
-              isDark: isDark,
-              onChanged: settingsService.updateAllowShortIdSearch,
-            ),
-          ],
+    return [
+      // 隐私可见性
+      SettingsSection(l10n.privacy),
+      SettingsChoiceIsland(
+        icon: Icons.visibility_outlined,
+        iconColor: _kPrivacyPrimary,
+        label: l10n.get('online_status') ?? '在线状态',
+        value: settings.lastSeenVisibility,
+        onTap: () => _showPrivacyPicker(
+          l10n.get('online_status') ?? '在线状态',
+          settings.lastSeenVisibility,
+          (v) => settingsService.updateLastSeenVisibility(v),
         ),
-
-        _SectionNote(
-          text: l10n.get('privacy_hint') ?? '选择谁可以看到你的在线状态、手机号等信息',
-          isDark: isDark,
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.phone_iphone_rounded,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.get('phone_number') ?? '手机号',
+        value: settings.phoneVisibility,
+        onTap: () => _showPrivacyPicker(
+          l10n.get('phone_number') ?? '手机号',
+          settings.phoneVisibility,
+          (v) => settingsService.updatePhoneVisibility(v),
         ),
-
-        const SizedBox(height: 24),
-
-        // 安全
-        _SectionTitle(title: l10n.get('security') ?? '安全', isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _SwitchTile(
-              title: l10n.get('two_step_verification') ?? '两步验证',
-              subtitle: l10n.get('add_extra_protection') ?? '为账号添加额外保护',
-              value: settings.twoStepEnabled,
-              isDark: isDark,
-              onChanged: (v) => _handleTwoStepChange(v, settingsService),
-            ),
-            _SwitchTile(
-              title: '设备锁',
-              subtitle: '开启后，新设备登录需要短信验证手机号',
-              value: settings.deviceLockEnabled,
-              isDark: isDark,
-              onChanged: settingsService.updateDeviceLock,
-            ),
-            if (_canCheckBiometrics)
-              _SwitchTile(
-                title: l10n.get('biometric_unlock') ?? '面容/指纹解锁',
-                subtitle: l10n.get('use_biometric_to_unlock') ?? '使用生物识别解锁应用',
-                value: settings.biometricEnabled,
-                isDark: isDark,
-                onChanged: (v) => _handleBiometricChange(v, settingsService),
-              ),
-            _TapTile(
-              title: l10n.get('app_lock_password') ?? '应用锁定密码',
-              subtitle: settings.appLockEnabled
-                  ? (l10n.get('set') ?? '已设置')
-                  : (l10n.get('not_set') ?? '未设置'),
-              isDark: isDark,
-              onTap: () => _showSetPasscodeDialog(settingsService),
-            ),
-            _TapTile(
-              title: l10n.get('auto_lock') ?? '自动锁定',
-              subtitle: settings.autoLockTime,
-              isDark: isDark,
-              onTap: () =>
-                  _showAutoLockPicker(settings.autoLockTime, settingsService),
-            ),
-            _TapTile(
-              title: '短信修改登录密码',
-              subtitle: '通过短信验证码修改',
-              isDark: isDark,
-              onTap: _showChangePasswordByCodeDialog,
-            ),
-          ],
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.groups_outlined,
+        iconColor: const Color(0xFFAF52DE),
+        label: l10n.get('groups') ?? '群组',
+        value: settings.groupInvitePermission,
+        onTap: () => _showPrivacyPicker(
+          l10n.get('groups') ?? '群组',
+          settings.groupInvitePermission,
+          (v) => settingsService.updateGroupInvitePermission(v),
+          description: l10n.get('who_can_add_to_group') ?? '谁可以将你添加到群组',
         ),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.search_rounded,
+        iconColor: const Color(0xFFFF9500),
+        label: '允许手机号搜索',
+        subtitle: '关闭后，其他用户无法通过手机号搜索到你',
+        value: settings.allowPhoneSearch,
+        onChanged: settingsService.updateAllowPhoneSearch,
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.badge_outlined,
+        iconColor: const Color(0xFF5AC8FA),
+        label: '允许平台短号搜索',
+        subtitle: '关闭后，其他用户无法通过平台短号搜索到你',
+        value: settings.allowShortIdSearch,
+        onChanged: settingsService.updateAllowShortIdSearch,
+      ),
+      SettingsNote(l10n.get('privacy_hint') ?? '选择谁可以看到你的在线状态、手机号等信息'),
 
-        const SizedBox(height: 24),
-
-        // 已登录设备
-        _SectionTitle(title: l10n.activeSessions, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.activeSessions,
-              subtitle: isLoadingDevices
-                  ? '...'
-                  : '$activeSessionsCount ${l10n.get('devices_count') ?? '台设备'}',
-              isDark: isDark,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const DevicesPage()),
-              ),
-            ),
-            _TapTile(
-              title: l10n.terminateAllOtherDevices,
-              titleColor: AppColors.error,
-              isDark: isDark,
-              onTap: () => _showTerminateConfirm(),
-            ),
-          ],
+      // 安全
+      SettingsSection(l10n.get('security') ?? '安全'),
+      SettingsSwitchIsland(
+        icon: Icons.verified_user_outlined,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.get('two_step_verification') ?? '两步验证',
+        subtitle: l10n.get('add_extra_protection') ?? '为账号添加额外保护',
+        value: settings.twoStepEnabled,
+        onChanged: (v) => _handleTwoStepChange(v, settingsService),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.lock_outline_rounded,
+        iconColor: _kPrivacyPrimary,
+        label: '设备锁',
+        subtitle: '开启后，新设备登录需要短信验证手机号',
+        value: settings.deviceLockEnabled,
+        onChanged: settingsService.updateDeviceLock,
+      ),
+      if (_canCheckBiometrics)
+        SettingsSwitchIsland(
+          icon: Icons.fingerprint_rounded,
+          iconColor: const Color(0xFFAF52DE),
+          label: l10n.get('biometric_unlock') ?? '面容/指纹解锁',
+          subtitle: l10n.get('use_biometric_to_unlock') ?? '使用生物识别解锁应用',
+          value: settings.biometricEnabled,
+          onChanged: (v) => _handleBiometricChange(v, settingsService),
         ),
+      SettingsChoiceIsland(
+        icon: Icons.pin_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: l10n.get('app_lock_password') ?? '应用锁定密码',
+        value: settings.appLockEnabled
+            ? (l10n.get('set') ?? '已设置')
+            : (l10n.get('not_set') ?? '未设置'),
+        onTap: () => _showSetPasscodeDialog(settingsService),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.timer_outlined,
+        iconColor: const Color(0xFF5AC8FA),
+        label: l10n.get('auto_lock') ?? '自动锁定',
+        value: settings.autoLockTime,
+        onTap: () => _showAutoLockPicker(settings.autoLockTime, settingsService),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.sms_outlined,
+        iconColor: const Color(0xFFFF2D55),
+        label: '短信修改登录密码',
+        subtitle: '通过短信验证码修改',
+        onTap: _showChangePasswordByCodeDialog,
+      ),
 
-        const SizedBox(height: 24),
-
-        // 账号
-        _SectionTitle(title: l10n.get('account') ?? '账号', isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.get('auto_delete_account') ?? '账号自动注销',
-              subtitle: settings.autoDeleteAccount,
-              isDark: isDark,
-              onTap: () => _showAutoDeletePicker(
-                  settings.autoDeleteAccount, settingsService),
-            ),
-          ],
+      // 已登录设备
+      SettingsSection(l10n.activeSessions),
+      SettingsChoiceIsland(
+        icon: Icons.devices_other_outlined,
+        iconColor: _kPrivacyPrimary,
+        label: l10n.activeSessions,
+        value: isLoadingDevices
+            ? '...'
+            : '$activeSessionsCount ${l10n.get('devices_count') ?? '台设备'}',
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DevicesPage()),
         ),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.logout_rounded,
+        iconColor: AppColors.error,
+        label: l10n.terminateAllOtherDevices,
+        labelColor: AppColors.error,
+        onTap: () => _showTerminateConfirm(),
+      ),
 
-        _SectionNote(
-          text: l10n.get('auto_delete_hint') ?? '如果你在此期间未登录过，账号将被自动删除',
-          isDark: isDark,
-        ),
+      // 账号
+      SettingsSection(l10n.get('account') ?? '账号'),
+      SettingsChoiceIsland(
+        icon: Icons.person_remove_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: l10n.get('auto_delete_account') ?? '账号自动注销',
+        value: settings.autoDeleteAccount,
+        onTap: () =>
+            _showAutoDeletePicker(settings.autoDeleteAccount, settingsService),
+      ),
+      SettingsNote(
+          l10n.get('auto_delete_hint') ?? '如果你在此期间未登录过，账号将被自动删除'),
 
-        const SizedBox(height: 24),
-
-        // 黑名单
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.get('blocked_users') ?? '已屏蔽用户',
-              subtitle: _isLoading ? '...' : '$_blockedUsersCount',
-              isDark: isDark,
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const BlockedUsersPage()),
-                );
-                // 返回后刷新数据
-                _loadData();
-              },
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // 删除账号
-        // _SettingsCard(
-        //   isDark: isDark,
-        //   children: [
-        //     _TapTile(
-        //       title: l10n.get('delete_my_account') ?? '删除我的账号',
-        //       titleColor: AppColors.error,
-        //       isDark: isDark,
-        //       onTap: () => _showDeleteAccountConfirm(),
-        //     ),
-        //   ],
-        // ),
-
-        const SizedBox(height: 100),
-      ],
-    );
+      // 黑名单
+      SettingsSection(l10n.get('blocked_users') ?? '已屏蔽用户'),
+      SettingsChoiceIsland(
+        icon: Icons.block_rounded,
+        iconColor: const Color(0xFFFF2D55),
+        label: l10n.get('blocked_users') ?? '已屏蔽用户',
+        value: _isLoading ? '...' : '$_blockedUsersCount',
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const BlockedUsersPage()),
+          );
+          _loadData();
+        },
+      ),
+    ];
   }
 
   void _showPrivacyPicker(
@@ -1230,7 +1160,7 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       builder: (context) => AlertDialog(
         title: const Text('删除账号'),
         content:
-            const Text('⚠️ 警告：此操作不可逆！\n\n删除账号后，你的所有聊天记录、群组、频道等数据将被永久删除，无法恢复。'),
+            const Text('⚠️ 警告：此操作不可逆！\n\n删除账号后，你的所有聊天记录、群组等数据将被永久删除，无法恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1399,189 +1329,3 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final bool isDark;
-
-  const _SectionTitle({required this.title, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 0, 16, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: isDark ? Colors.white38 : Colors.black38,
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionNote extends StatelessWidget {
-  final String text;
-  final bool isDark;
-
-  const _SectionNote({required this.text, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 8, 32, 0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 13,
-          color: isDark ? Colors.white38 : Colors.black38,
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsCard extends StatelessWidget {
-  final bool isDark;
-  final List<Widget> children;
-
-  const _SettingsCard({required this.isDark, required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: List.generate(children.length * 2 - 1, (index) {
-          if (index.isOdd) {
-            return Divider(
-              height: 1,
-              indent: 16,
-              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
-            );
-          }
-          return children[index ~/ 2];
-        }),
-      ),
-    );
-  }
-}
-
-class _SwitchTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final bool isDark;
-  final ValueChanged<bool> onChanged;
-
-  const _SwitchTile({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.isDark,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TapTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final Color? titleColor;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  const _TapTile({
-    required this.title,
-    this.subtitle,
-    this.titleColor,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        GlobalHaptics.selection();
-        onTap();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: titleColor ?? (isDark ? Colors.white : Colors.black),
-                ),
-              ),
-            ),
-            if (subtitle != null)
-              Text(
-                subtitle!,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-              ),
-            if (subtitle != null) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: isDark ? Colors.white24 : Colors.black26,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}

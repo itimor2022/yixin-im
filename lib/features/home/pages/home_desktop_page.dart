@@ -17,7 +17,6 @@ import '../../chat/pages/chat_page.dart';
 import '../../chat/pages/chat_detail_page.dart';
 import '../../chat/pages/group_profile_page.dart';
 import '../../chat/pages/user_profile_page.dart';
-import '../../chat/pages/channel_profile_page.dart';
 import '../../chat/pages/search_page.dart';
 import '../../contacts/pages/new_contact_page.dart';
 import '../../discover/pages/discover_page.dart';
@@ -31,8 +30,8 @@ import '../../moments/pages/moments_page.dart'
         MomentNotificationsPage,
         MomentSearchPage;
 import '../../moments/providers/moment_provider.dart' show Moment;
-import '../../settings/pages/settings_page.dart';
 import '../../settings/pages/profile_page.dart';
+import '../../me/pages/me_page.dart';
 import '../../settings/pages/notification_settings_page.dart';
 import '../../settings/pages/privacy_settings_page.dart';
 import '../../settings/pages/data_storage_page.dart';
@@ -654,13 +653,11 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
   }
 
   int _getUnreadChatCount() {
-    final state = ref.watch(chatListProvider);
-    return state.pinnedChats
-            .where((c) => c.unreadCount > 0)
-            .fold<int>(0, (sum, c) => sum + c.unreadCount) +
-        state.regularChats
-            .where((c) => c.unreadCount > 0)
-            .fold<int>(0, (sum, c) => sum + c.unreadCount);
+    // 与移动端底部导航角标保持一致：排除已从聊天列表 UI 过滤掉的 channel 类型，
+    // 避免不可见的 channel 未读干扰角标显示。
+    return ref.watch(
+      chatListProvider.select((state) => state.visibleUnreadCount),
+    );
   }
 
   /// 侧边栏内容
@@ -679,7 +676,10 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
       case kDesktopNavMoments:
         return MomentsPage(isDesktopSidebar: true);
       case kDesktopNavSettings:
-        return const SettingsPage(isDesktopSidebar: true);
+        // 桌面端「我的」tab 与 H5 / 移动端保持一致，统一走新版 MePage —— 蓝色渐变
+        // 顶部 + 扁平菜单卡片 + 退出登录卡片。二开时更新了 app_router 但漏掉了
+        // 这里，导致 PC web 打包后「我的」是老版 SettingsPage 的样子。
+        return const MePage();
       default:
         return const ChatPage(isDesktopSidebar: true);
     }
@@ -794,14 +794,8 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
         );
         break;
       case DesktopPanelType.channel:
-        panelPage = ChannelProfilePage(
-          key: ValueKey('channel_profile_${info.id}'),
-          channelId: info.id,
-          name: info.name,
-          avatar: info.avatar,
-          isDesktopPanel: true,
-        );
-        break;
+        // 频道功能已移除，回退到空状态
+        return _buildEmptyState(isDark);
       case DesktopPanelType.search:
         panelPage = const DesktopSearchPanel(key: ValueKey('search_panel'));
         break;
@@ -905,12 +899,8 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
         );
         break;
       case DesktopPanelType.channelEdit:
-        panelPage = DesktopSettingsPanel(
-          key: ValueKey('channel_edit_${info.id}'),
-          title: '编辑频道',
-          child: GroupEditPage(chatId: info.id, isDesktopPanel: true),
-        );
-        break;
+        // 频道功能已移除
+        return _buildEmptyState(isDark);
       default:
         return _buildEmptyState(isDark);
     }
@@ -1253,7 +1243,7 @@ class DesktopAboutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              '壹信IM',
+              '易信',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1270,7 +1260,7 @@ class DesktopAboutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
             Text(
-              '© 2024 壹信网络',
+              '© 易信',
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.white38 : Colors.black38,

@@ -8,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../shared/widgets/settings_ui.dart';
+
+const Color _kDataPrimary = Color(0xFFFF6B6B);
 
 /// 数据存储设置服务
 class DataStorageService extends StateNotifier<DataStorageSettings> {
@@ -342,184 +345,139 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
     final settings = ref.watch(dataStorageProvider);
     final service = ref.read(dataStorageProvider.notifier);
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    
-    // 桌面端面板模式：只返回内容，不需要 Scaffold 和 AppBar
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, settings, service, l10n);
-    }
-    
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          l10n.dataAndStorage,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: _buildBody(isDark, settings, service, l10n),
+
+    return SettingsScaffold(
+      title: l10n.dataAndStorage,
+      isDesktopPanel: widget.isDesktopPanel,
+      children: _buildIslands(isDark, settings, service, l10n),
     );
   }
 
-  Widget _buildBody(bool isDark, DataStorageSettings settings, DataStorageService service, AppLocalizations l10n) {
-    return ListView(
-        children: [
-          const SizedBox(height: 24),
-          
-          // 存储使用
-          _SectionTitle(title: l10n.storage, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _StorageTile(
-                isDark: isDark,
-                storageInfo: _storageInfo,
-                isLoading: _isLoading,
-                formatSize: _formatSize,
-                l10n: l10n,
-              ),
-              _TapTile(
-                title: l10n.manageStorageSpace,
-                isDark: isDark,
-                onTap: () => _showManageStorageSheet(l10n),
-              ),
-              _TapTile(
-                title: l10n.clearCache,
-                subtitle: _isLoading 
-                    ? l10n.calculating 
-                    : _formatSize(_storageInfo?.cacheSize ?? 0),
-                isDark: isDark,
-                isLoading: _isClearing,
-                onTap: () => _showClearCacheConfirm(l10n),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // 自动下载媒体
-          _SectionTitle(title: l10n.autoDownloadMedia, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _SwitchTile(
-                title: l10n.images,
-                value: settings.autoDownloadPhoto,
-                isDark: isDark,
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  service.updateAutoDownloadPhoto(v);
-                },
-              ),
-              _SwitchTile(
-                title: l10n.videos,
-                value: settings.autoDownloadVideo,
-                isDark: isDark,
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  service.updateAutoDownloadVideo(v);
-                },
-              ),
-              _SwitchTile(
-                title: l10n.files,
-                value: settings.autoDownloadFile,
-                isDark: isDark,
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  service.updateAutoDownloadFile(v);
-                },
-              ),
-            ],
-          ),
-          
-          _SectionNote(
-            text: l10n.autoDownloadHint,
-            isDark: isDark,
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // 网络设置
-          _SectionTitle(title: l10n.network, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _TapTile(
-                title: l10n.whenUsingWifi,
-                subtitle: settings.wifiDownloadMode,
-                isDark: isDark,
-                onTap: () => _showNetworkPicker('Wi-Fi', settings.wifiDownloadMode, service.updateWifiDownloadMode, l10n),
-              ),
-              _TapTile(
-                title: l10n.whenUsingMobile,
-                subtitle: settings.mobileDownloadMode,
-                isDark: isDark,
-                onTap: () => _showNetworkPicker(l10n.get('mobile_network'), settings.mobileDownloadMode, service.updateMobileDownloadMode, l10n),
-              ),
-              _TapTile(
-                title: l10n.whenRoaming,
-                subtitle: settings.roamingDownloadMode,
-                isDark: isDark,
-                onTap: () => _showNetworkPicker(l10n.get('roaming'), settings.roamingDownloadMode, service.updateRoamingDownloadMode, l10n),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // 保存到相册
-          _SectionTitle(title: l10n.saveSettings, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _SwitchTile(
-                title: l10n.saveToGallery,
-                subtitle: l10n.autoSaveToGallery,
-                value: settings.saveToGallery,
-                isDark: isDark,
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  service.updateSaveToGallery(v);
-                },
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // 数据使用
-          _SectionTitle(title: l10n.dataUsage, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _TapTile(
-                title: l10n.networkUsageStats,
-                subtitle: '${l10n.sent}: ${_formatSize(settings.networkUsageSent)} / ${l10n.received}: ${_formatSize(settings.networkUsageReceived)}',
-                isDark: isDark,
-                onTap: () => _showNetworkUsageDetail(settings, l10n),
-              ),
-              _TapTile(
-                title: l10n.resetNetworkUsage,
-                titleColor: AppColors.error,
-                isDark: isDark,
-                onTap: () => _showResetDataConfirm(service, l10n),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 100),
-        ],
-      );
+  List<Widget> _buildIslands(bool isDark, DataStorageSettings settings,
+      DataStorageService service, AppLocalizations l10n) {
+    return [
+      // 存储使用
+      SettingsSection(l10n.storage),
+      SettingsLooseCard(
+        padding: const EdgeInsets.all(16),
+        child: _StorageOverview(
+          isDark: isDark,
+          storageInfo: _storageInfo,
+          isLoading: _isLoading,
+          formatSize: _formatSize,
+          l10n: l10n,
+        ),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.folder_open_outlined,
+        iconColor: _kDataPrimary,
+        label: l10n.manageStorageSpace,
+        onTap: () => _showManageStorageSheet(l10n),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.cleaning_services_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: l10n.clearCache,
+        value: _isLoading
+            ? l10n.calculating
+            : _formatSize(_storageInfo?.cacheSize ?? 0),
+        loading: _isClearing,
+        onTap: () => _showClearCacheConfirm(l10n),
+      ),
+
+      // 自动下载媒体
+      SettingsSection(l10n.autoDownloadMedia),
+      SettingsSwitchIsland(
+        icon: Icons.image_outlined,
+        iconColor: _kDataPrimary,
+        label: l10n.images,
+        value: settings.autoDownloadPhoto,
+        onChanged: (v) {
+          HapticFeedback.selectionClick();
+          service.updateAutoDownloadPhoto(v);
+        },
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.videocam_outlined,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.videos,
+        value: settings.autoDownloadVideo,
+        onChanged: (v) {
+          HapticFeedback.selectionClick();
+          service.updateAutoDownloadVideo(v);
+        },
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.insert_drive_file_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: l10n.files,
+        value: settings.autoDownloadFile,
+        onChanged: (v) {
+          HapticFeedback.selectionClick();
+          service.updateAutoDownloadFile(v);
+        },
+      ),
+      SettingsNote(l10n.autoDownloadHint),
+
+      // 网络设置
+      SettingsSection(l10n.network),
+      SettingsChoiceIsland(
+        icon: Icons.wifi_rounded,
+        iconColor: _kDataPrimary,
+        label: l10n.whenUsingWifi,
+        value: settings.wifiDownloadMode,
+        onTap: () => _showNetworkPicker(
+            'Wi-Fi', settings.wifiDownloadMode, service.updateWifiDownloadMode, l10n),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.signal_cellular_alt_rounded,
+        iconColor: const Color(0xFF5AC8FA),
+        label: l10n.whenUsingMobile,
+        value: settings.mobileDownloadMode,
+        onTap: () => _showNetworkPicker(l10n.get('mobile_network'),
+            settings.mobileDownloadMode, service.updateMobileDownloadMode, l10n),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.public_rounded,
+        iconColor: const Color(0xFFAF52DE),
+        label: l10n.whenRoaming,
+        value: settings.roamingDownloadMode,
+        onTap: () => _showNetworkPicker(l10n.get('roaming'),
+            settings.roamingDownloadMode, service.updateRoamingDownloadMode, l10n),
+      ),
+
+      // 保存到相册
+      SettingsSection(l10n.saveSettings),
+      SettingsSwitchIsland(
+        icon: Icons.photo_library_outlined,
+        iconColor: const Color(0xFFFF2D55),
+        label: l10n.saveToGallery,
+        subtitle: l10n.autoSaveToGallery,
+        value: settings.saveToGallery,
+        onChanged: (v) {
+          HapticFeedback.selectionClick();
+          service.updateSaveToGallery(v);
+        },
+      ),
+
+      // 数据使用
+      SettingsSection(l10n.dataUsage),
+      SettingsChoiceIsland(
+        icon: Icons.data_saver_off_rounded,
+        iconColor: _kDataPrimary,
+        label: l10n.networkUsageStats,
+        subtitle:
+            '${l10n.sent}: ${_formatSize(settings.networkUsageSent)} / ${l10n.received}: ${_formatSize(settings.networkUsageReceived)}',
+        onTap: () => _showNetworkUsageDetail(settings, l10n),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.restart_alt_rounded,
+        iconColor: AppColors.error,
+        label: l10n.resetNetworkUsage,
+        labelColor: AppColors.error,
+        onTap: () => _showResetDataConfirm(service, l10n),
+      ),
+    ];
   }
 
   void _showManageStorageSheet(AppLocalizations l10n) {
@@ -599,7 +557,6 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
                       _showClearCacheConfirm(l10n);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -846,14 +803,14 @@ class _StorageRow extends StatelessWidget {
   }
 }
 
-class _StorageTile extends StatelessWidget {
+class _StorageOverview extends StatelessWidget {
   final bool isDark;
   final StorageInfo? storageInfo;
   final bool isLoading;
   final String Function(int) formatSize;
   final AppLocalizations l10n;
 
-  const _StorageTile({
+  const _StorageOverview({
     required this.isDark,
     required this.storageInfo,
     required this.isLoading,
@@ -870,9 +827,7 @@ class _StorageTile extends StatelessWidget {
     final cache = storageInfo?.cacheSize ?? 0;
     final allUsed = total + cache;
     
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 标题行
@@ -987,8 +942,7 @@ class _StorageTile extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
+      );
   }
 }
 

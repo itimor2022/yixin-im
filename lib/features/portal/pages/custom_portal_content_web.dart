@@ -5,21 +5,6 @@ import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/utils/floating_nav_layout.dart';
-
-/// 计算内嵌网页底部需要预留的高度，避开悬浮底部导航栏，
-/// 与 [HomePage] 中悬浮导航栏定位逻辑保持一致，兼容各种设备。
-double _floatingNavBottomInset(
-  BuildContext context, {
-  required bool isDesktopSidebar,
-  double extra = 12,
-}) {
-  if (isDesktopSidebar) return 0;
-  final rawBottomOffset = FloatingNavLayout.bottomOffset(context);
-  final navBarBottomOffset = rawBottomOffset > 0 ? rawBottomOffset : 14.0;
-  return FloatingNavLayout.barHeight + 12 + navBarBottomOffset + extra;
-}
-
 class CustomPortalContent extends StatefulWidget {
   final String title;
   final String url;
@@ -101,44 +86,36 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
       );
     }
 
-    final bottomInset = _floatingNavBottomInset(
-      context,
-      isDesktopSidebar: widget.isDesktopSidebar,
-    );
-
     return SafeArea(
       top: false,
       bottom: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: HtmlElementView(
-                key: ValueKey(_viewType),
-                viewType: _viewType,
-              ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: HtmlElementView(
+              key: ValueKey(_viewType),
+              viewType: _viewType,
             ),
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: Tooltip(
-                message: '如果页面未正常显示，可在新窗口打开',
-                child: FilledButton.tonal(
-                  onPressed: _openInNewTab,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(42, 42),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Tooltip(
+              message: '如果页面未正常显示，可在新窗口打开',
+              child: FilledButton.tonal(
+                onPressed: _openInNewTab,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(42, 42),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-                  child: const Icon(Icons.open_in_new_rounded, size: 18),
                 ),
+                child: const Icon(Icons.open_in_new_rounded, size: 18),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -34,7 +34,7 @@ Future<void> bootstrapApp() async {
   //   3. 拉到节点列表后依次 ping /api/v1/ping，挑最优活节点写入 ApiConfig。
   //
   // 前置条件（部署侧必须已经就绪，代码这边只负责发起请求）：
-  //   - api.txt 所在域名（如 admin.legg.click）的 Nginx 必须为 Web 站点的 origin
+  //   - api.txt 所在域名（如 admin.aopwx.icu）的 Nginx 必须为 Web 站点的 origin
   //     配好 Access-Control-Allow-Origin，否则浏览器 CORS 直接拦掉；
   //   - 所有候选 API 节点的 /api/v1/ping 也要放行同样的 origin，否则 probe 全部失败。
   //
@@ -48,7 +48,9 @@ Future<void> bootstrapApp() async {
   try {
     await ServerDiscovery.instance.initialize();
   } catch (e) {
-    if (kDebugMode) debugPrint('[Bootstrap] Web ServerDiscovery failed, using compile-time fallback: $e');
+    if (kDebugMode)
+      debugPrint(
+          '[Bootstrap] Web ServerDiscovery failed, using compile-time fallback: $e');
   }
 
   final container = ProviderContainer();

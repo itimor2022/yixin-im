@@ -140,7 +140,15 @@ class NotificationSoundService extends StateNotifier<NotificationSoundSettings> 
   final Ref _ref;
   bool _isPlaying = false;
   bool _isDisposed = false;
-  
+
+  /// 兜底：连续多条消息也只在 [_minSoundInterval] 内响一次。
+  ///
+  /// 上层已经在 [ChatListNotifier._handleNewMessage] 里把 self / viewing /
+  /// system / 静音 / 重连补漏 等场景排除；这里的节流是"防呆"，
+  /// 避免某条罕见路径漏出来（比如同一秒内多路径重复投递）导致连响。
+  static const Duration _minSoundInterval = Duration(milliseconds: 800);
+  DateTime? _lastSoundAt;
+
   NotificationSoundService(this._ref) : super(const NotificationSoundSettings()) {
     _loadSettings();
   }
@@ -217,19 +225,28 @@ class NotificationSoundService extends StateNotifier<NotificationSoundSettings> 
   Future<void> playNotificationSound(NotificationType type, {bool isInApp = true}) async {
     // 检查是否应该播放声音
     if (!_shouldPlaySound(type, isInApp)) return;
-    
+
     // 获取要播放的音效
     final sound = state.selectedSound;
     if (sound.assetPath == null) return;
-    
-    // 防止重复播放
+
+    // 防止重复播放（同一条声音仍在播）
     if (_isPlaying) return;
-    
+
+    // 全局最小间隔节流：即便被并发调多次，也保证两次响声之间至少间隔
+    // _minSoundInterval，避免"叮叮叮"连响。
+    final now = DateTime.now();
+    if (_lastSoundAt != null &&
+        now.difference(_lastSoundAt!) < _minSoundInterval) {
+      return;
+    }
+    _lastSoundAt = now;
+
     try {
       _isPlaying = true;
       await _audioPlayer.stop();
       await _audioPlayer.play(AssetSource(sound.assetPath!));
-      
+
       // 播放完成后重置状态
       _audioPlayer.onPlayerComplete.first.then((_) {
         _isPlaying = false;

@@ -181,5 +181,5 @@ flutter_launcher_icons:
     theme_color: "#1a1a1a"
   image_path: "assets/logo.png"
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/icon_foreground.png"
+  adaptive_icon_foreground: "assets/logo.png"
   remove_alpha_ios: true

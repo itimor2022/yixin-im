@@ -261,13 +261,33 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     final isTopHalf = widget.tapPosition.dy < screenSize.height / 2;
     final menuWidth = screenSize.width * 0.65;
 
+    // ─── 布局说明（长消息 bug 修复的核心）───────────────────────────
+    //
+    // 旧实现用 `Spacer()` 把布局推向顶/底，同时 `_buildMessagePreview`
+    // 直接放进 Column 没有任何高度约束——长消息（几千字）自然高度撑到
+    // 几千像素，把下方的操作菜单直接挤出屏幕。第一版尝试用
+    // ConstrainedBox(maxHeight = X%) 限高，但 X 无论取多少都会在
+    // "菜单项多 + 屏幕小" 的组合里翻车。
+    //
+    // 新做法：
+    //   1. **删掉 Spacer**。改用 Column 的 `mainAxisAlignment`（start
+    //      或 end）来处理"顶半屏推向顶 / 底半屏推向底"——短消息时
+    //      靠 mainAxisAlignment 把整块内容贴到该贴的一侧。
+    //   2. 预览放进 `Flexible(fit: FlexFit.loose)`——不设 flex 权重
+    //      （默认 1），因为已经**没有 Spacer 跟它抢空间**了，它可以
+    //      独占所有"剩余空间"。
+    //   3. 预览外套一层 `SingleChildScrollView`：如果消息太长，
+    //      Flexible 会把预览 clamp 到"屏幕高度 - 菜单 - 反应栏 -
+    //      安全区 - 间距"，超出部分**在气泡内部滚动**。菜单永远
+    //      在屏幕内完整显示，不再被挤出。
+    //
+    // 顺带：菜单本身也没有硬编码高度上限——它按 `_buildActionMenu`
+    // 里可见项数自然收缩，先"抢"到自然高度，剩下的才给预览。
     return Column(
       mainAxisAlignment: isTopHalf
           ? MainAxisAlignment.start
           : MainAxisAlignment.end,
       children: [
-        if (!isTopHalf) const Spacer(),
-
         if (isTopHalf) ...[
           SizedBox(height: padding.top + 60),
           // 表情反应栏 + 展开面板
@@ -275,8 +295,15 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           const SizedBox(height: 12),
         ],
 
-        // 消息预览
-        _buildMessagePreview(context, isDark, screenSize),
+        // 消息预览：Flexible.loose 让菜单先拿走它需要的高度，剩下的
+        // 才给预览；短消息按自然大小显示；超长消息在气泡内滚动。
+        Flexible(
+          fit: FlexFit.loose,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: _buildMessagePreview(context, isDark, screenSize),
+          ),
+        ),
 
         const SizedBox(height: 12),
 
@@ -297,7 +324,6 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           ),
         ),
 
-        if (isTopHalf) const Spacer(),
         if (!isTopHalf) SizedBox(height: padding.bottom + 20),
       ],
     );

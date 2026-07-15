@@ -41,7 +41,6 @@ import '../../../core/services/api/websocket_service.dart';
 import '../../settings/pages/chat_settings_page.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input_bar.dart';
-import '../widgets/chat_background.dart';
 import '../widgets/message_context_menu.dart';
 import '../widgets/voice_record_overlay.dart';
 import '../services/emoji_store_service.dart';
@@ -118,6 +117,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   bool _showScrollToBottom = false;
   bool _showEmojiPickerState = false;
+  // 微信式内嵌加号面板（相册/相机/文件/收藏）：从输入栏下方展开，
+  // 与表情面板互斥，与软键盘也互斥。
+  bool _showAttachmentPanel = false;
   bool _isRecordingVoice = false;
   bool _isDragging = false; // 桌面端拖拽状态
 
@@ -204,6 +206,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _scrollController.addListener(_onScroll);
     // 监听输入变化发送 typing 状态
     _inputController.addListener(_onInputChanged);
+    // 输入框获得焦点时（键盘弹起），自动收起加号附件面板
+    // —— 与"表情面板/键盘互斥"完全一致的语义
+    _inputFocusNode.addListener(_onInputFocusChangedForAttachment);
     // Web/桌面：注册 Ctrl+V 粘贴图片快捷键
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     // 初始化时加载消息（下一帧，让 UI 先渲染框架）
@@ -1605,6 +1610,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
     // 移除输入监听器
     _inputController.removeListener(_onInputChanged);
+    _inputFocusNode.removeListener(_onInputFocusChangedForAttachment);
 
     // 清理输入相关
     _inputController.dispose();
@@ -1703,15 +1709,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
-  /// 收起键盘和表情选择器
+  /// 收起键盘、表情选择器与加号附件面板
   void _dismissKeyboardAndEmoji() {
     // 收起键盘
     if (_inputFocusNode.hasFocus) {
       _inputFocusNode.unfocus();
     }
-    // 收起表情选择器
-    if (_showEmojiPickerState) {
-      setState(() => _showEmojiPickerState = false);
+    // 收起表情选择器 / 加号附件面板
+    if (_showEmojiPickerState || _showAttachmentPanel) {
+      setState(() {
+        _showEmojiPickerState = false;
+        _showAttachmentPanel = false;
+      });
     }
   }
 
@@ -1800,10 +1809,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     });
     // 不在顶层 watch messageList，避免每条消息触发整页 rebuild
     // messages 只在 _buildMessageList 的 Consumer 内 watch
-    final chatBackground = ref.watch(chatBackgroundProvider);
 
     final isDesktop =
         PlatformUtils.isPhysicalDesktop;
+
+    // 聊天背景 —— 微信风格：浅色下 #EDEDED 灰底，深色下沿用深灰
+    final Color chatSurfaceColor =
+        isDark ? const Color(0xFF0E1015) : AppColors.lightChatBackground;
 
     Widget content = PopScope(
       canPop: true, // 允许左滑返回
@@ -1814,23 +1826,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
       },
       child: Scaffold(
-        backgroundColor: isDark
-            ? AppColors.darkBackground
-            : AppColors.lightBackground,
+        backgroundColor: chatSurfaceColor,
         extendBodyBehindAppBar: true,
         extendBody: true,
         body: Stack(
           children: [
-            // 聊天背景 - 全屏显示（使用 RepaintBoundary 避免重绘）
-            Positioned.fill(
-              child: RepaintBoundary(
-                child: ChatBackgroundWidget(
-                  background: chatBackground,
-                  isDark: isDark,
-                ),
-              ),
-            ),
-
             // 主内容
             SafeArea(
               top: false,
@@ -2246,11 +2246,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       listChat,
       privateContact,
     );
+    // 头像已在顶栏移除（微信风格：只显示居中的名字 + 在线状态），
+    // 仅保留头像和 userId 变量供其他调用点（如资料页跳转）使用。
+    // ignore: unused_local_variable
     final displayAvatar =
         privateContact?.avatar ??
         detailChat?.avatar ??
         listChat?.avatar ??
         widget.avatar;
+    // ignore: unused_local_variable
     final displayUserId = widget.chatType == ChatType.private
         ? (privateContact?.uuid ??
               privateContact?.id ??
@@ -2259,154 +2263,116 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               listChat?.targetUserId ??
               widget.chatId)
         : widget.chatId;
-    final displayPremiumType =
-        privateContact?.premiumType ??
-        detailChat?.premiumType ??
-        listChat?.premiumType;
-    final displayIsMember =
-        (privateContact?.isMember ??
-            detailChat?.isMember ??
-            listChat?.isMember) ??
-        false;
-    final displayBadgeColor =
-        privateContact?.badgeColor ??
-        detailChat?.badgeColor ??
-        listChat?.badgeColor;
-    final displayBadgeText =
-        privateContact?.badgeText ??
-        detailChat?.badgeText ??
-        listChat?.badgeText;
-    final displayNicknameColor =
-        privateContact?.nicknameColor ??
-        detailChat?.nicknameColor ??
-        listChat?.nicknameColor;
-    final displayEmojiAvatar =
-        privateContact?.emojiAvatar ??
-        detailChat?.emojiAvatar ??
-        listChat?.emojiAvatar;
-
-    final bgColor = Platform.isAndroid || widget.isDesktopMode
-        ? (isDark ? AppColors.darkBackground : AppColors.lightBackground)
-        : (isDark ? Colors.black : Colors.white).withOpacity(0.5);
+    final Color bgColor = isDark ? const Color(0xFF14161E) : Colors.white;
+    final Color titleColor =
+        isDark ? Colors.white : const Color(0xFF111827);
+    final Color actionBg =
+        isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF3F4F6);
+    final Color actionIconColor =
+        isDark ? Colors.white : const Color(0xFF374151);
 
     final topPadding = widget.isDesktopMode
         ? 0.0
         : MediaQuery.of(context).padding.top;
 
+    Widget circleAction({
+      required IconData icon,
+      required VoidCallback onTap,
+      Color? overrideColor,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Material(
+          color: actionBg,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(
+              width: 38,
+              height: 38,
+              child: Icon(
+                icon,
+                size: 20,
+                color: overrideColor ?? actionIconColor,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     Widget content = Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
         color: bgColor,
-        boxShadow: [
-          BoxShadow(
-            color: (isDark ? Colors.black : const Color(0xFF94A3B8))
-                .withOpacity(0.10),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark
+                ? Colors.white.withOpacity(0.06)
+                : const Color(0xFFF0F1F3),
+            width: 0.5,
           ),
-        ],
+        ),
       ),
       child: Container(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        height: 62,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
         child: Row(
           children: [
             _buildBackButton(ref),
+            const SizedBox(width: 2),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _showChatInfo(context),
-                child: Row(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    AvatarWidget(
-                      avatar: displayAvatar,
-                      name: displayName,
-                      userId: displayUserId,
-                      size: 40,
-                      premiumType: displayPremiumType,
-                      isMember: displayIsMember,
-                      memberBadgeColor: displayBadgeColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: PremiumContainer(
-                        premiumType: displayPremiumType,
-                        borderRadius: BorderRadius.circular(14),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: ColoredNameWidget(
-                                      name: displayName,
-                                      nicknameColor: displayNicknameColor,
-                                      premiumType: displayPremiumType,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      defaultColor: isDark
-                                          ? AppColors.darkTextPrimary
-                                          : AppColors.lightTextPrimary,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  MemberBadgeWidget(
-                                    isMember: displayIsMember,
-                                    badgeText: displayBadgeText,
-                                    badgeColor: displayBadgeColor,
-                                    fontSize: 9,
-                                    margin: const EdgeInsets.only(left: 4),
-                                  ),
-                                  if (displayEmojiAvatar != null &&
-                                      displayEmojiAvatar.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 4),
-                                      child: EmojiStatusWidget(
-                                        emoji: displayEmojiAvatar,
-                                        size: 18,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              _buildSubtitle(chatDetailAsync, isDark),
-                            ],
-                          ),
-                        ),
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor,
+                        letterSpacing: 0.1,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    Align(
+                      alignment: Alignment.center,
+                      child: _buildSubtitle(chatDetailAsync, isDark),
                     ),
                   ],
                 ),
               ),
             ),
             if (widget.chatType == ChatType.private) ...[
-              IconButton(
-                icon: Icon(Icons.videocam_outlined, color: AppColors.primary),
-                onPressed: () => _startCall(CallType.video),
+              circleAction(
+                icon: Icons.videocam_rounded,
+                onTap: () => _startCall(CallType.video),
               ),
-              IconButton(
-                icon: Icon(Icons.call_outlined, color: AppColors.primary),
-                onPressed: () => _startCall(CallType.voice),
+              circleAction(
+                icon: Icons.call_rounded,
+                onTap: () => _startCall(CallType.voice),
               ),
             ] else ...[
-              IconButton(
-                icon: Icon(Icons.search, color: AppColors.primary),
-                onPressed: () => _openSearchPage(),
+              circleAction(
+                icon: Icons.search_rounded,
+                onTap: () => _openSearchPage(),
               ),
               Builder(
-                builder: (moreCtx) => IconButton(
-                  icon: Icon(Icons.more_vert, color: AppColors.primary),
-                  onPressed: () => _showMoreOptions(moreCtx),
+                builder: (moreCtx) => circleAction(
+                  icon: Icons.more_horiz_rounded,
+                  onTap: () => _showMoreOptions(moreCtx),
                 ),
               ),
             ],
+            const SizedBox(width: 4),
           ],
         ),
       ),
@@ -2425,15 +2391,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   Widget _buildSubtitle(AsyncValue<dynamic> chatDetailAsync, bool isDark) {
     final defaultStyle = TextStyle(
-      fontSize: 13,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
       color: isDark
           ? AppColors.darkTextSecondary
           : AppColors.lightTextSecondary,
     );
-    final onlineStyle = const TextStyle(fontSize: 13, color: Colors.green);
+    final onlineStyle = const TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      color: Color(0xFF34C759),
+    );
     final typingStyle = const TextStyle(
-      fontSize: 13,
-      color: Colors.blue,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      color: Color(0xFFFF6B6B),
       fontStyle: FontStyle.italic,
     );
 
@@ -3239,19 +3211,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   Widget _buildDateDivider(DateTime date) {
+    // 微信风格：去掉灰色胶囊背景，仅保留居中的浅灰文字
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(16),
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
         child: Text(
           _formatDateDivider(date),
-          style: const TextStyle(
-            fontSize: 13,
-            color: Colors.white,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark
+                ? Colors.white.withOpacity(0.45)
+                : const Color(0xFF9CA3AF),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -3259,27 +3230,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     );
   }
 
-  // 系统消息（如"xxx 加入了群组"）居中小字显示
+  // 系统消息（如"xxx 加入了群组"）——微信风格：无背景，仅居中小字
   Widget _buildSystemMessage(String content) {
     final displayText = resolveSystemMessageText(
       content,
       currentUserId: ref.read(authServiceProvider).user?.uuid,
     );
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(16),
+        child: Text(
+          displayText,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark
+                ? Colors.white.withOpacity(0.45)
+                : const Color(0xFF9CA3AF),
+            height: 1.35,
           ),
-          child: Text(
-            displayText,
-            style: const TextStyle(fontSize: 13, color: Colors.white70),
-            textAlign: TextAlign.center,
-          ),
+          textAlign: TextAlign.center,
         ),
       ),
     );
@@ -3491,6 +3462,22 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           allowBurnAfterRead: false,
           burnAfterReadEnabled: false,
           hasPendingAttachments: _pendingImages.isNotEmpty,
+        ),
+
+        // 微信式内嵌"加号"附件面板：在输入栏底部展开
+        _InlineAttachmentPanel(
+          visible: _showAttachmentPanel,
+          isDark: isDark,
+          onPickFromGallery: _pickFromGallery,
+          onTakePhoto: _takePhotoOrVideo,
+          onPickFile: _pickFile,
+          onOpenFavorites: _openFavoriteMessages,
+          onItemTapped: () {
+            // 点了任何一个功能按钮后自动收起面板
+            if (_showAttachmentPanel) {
+              setState(() => _showAttachmentPanel = false);
+            }
+          },
         ),
       ],
     );
@@ -3960,7 +3947,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             SnackBar(
               content: const Text('编辑失败'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -4457,25 +4443,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         );
   }
 
-  void _showAttachmentOptions() {
-    final isPrivateChat = widget.chatType == ChatType.private;
-    final isGroupChat = widget.chatType == ChatType.group;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _AttachmentSheet(
-        onPickFromGallery: _pickFromGallery,
-        onTakePhoto: _takePhotoOrVideo,
-        onStartMeeting: isGroupChat ? _showMeetingStartOptionsCompact : null,
-        onSendLocation: _sendCurrentLocation,
-        onOpenFavorites: _openFavoriteMessages,
-        onPickFile: _pickFile,
-        onSendRedPacket: (isPrivateChat || isGroupChat) ? _sendRedPacket : null,
-        onTransfer: isPrivateChat ? _transfer : null,
-      ),
-    );
-  }
+  /// 加号按钮回调：不再弹出 modal bottom sheet，改为在输入栏底部内嵌
+  /// 展开一个微信式的 4 图标面板（[_InlineAttachmentPanel]）。
+  ///
+  /// 真正的展开与收起由 [_toggleAttachmentPanel] 处理，这里保留旧名字
+  /// 只是为了兼容外部调用点 (`ChatInputBar.onAttachment`)。
+  void _showAttachmentOptions() => _toggleAttachmentPanel();
 
   void _toggleBurnAfterRead() {
     if (!_isBurnAfterReadAllowed) {
@@ -4899,11 +4872,37 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       backgroundColor: Colors.transparent,
       builder: (context) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
+        final Color sheetBg = isDark ? const Color(0xFF1B1D24) : Colors.white;
+        final Color cardBg =
+            isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF6F7FA);
+        final Color labelColor =
+            isDark ? Colors.white70 : const Color(0xFF374151);
+        final items = [
+          _AttachmentItemData(
+            icon: Icons.photo_camera_rounded,
+            iconColor: const Color(0xFFFF3B30),
+            label: '拍照',
+            onTap: () => Navigator.pop(context, 'photo'),
+          ),
+          _AttachmentItemData(
+            icon: Icons.videocam_rounded,
+            iconColor: const Color(0xFF00B4A6),
+            label: '录像',
+            onTap: () => Navigator.pop(context, 'video'),
+          ),
+        ];
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            color: sheetBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.35 : 0.10),
+                blurRadius: 30,
+                offset: const Offset(0, -8),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -4912,28 +4911,24 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? AppColors.darkDivider
-                      : AppColors.lightDivider,
+                  color: isDark ? Colors.white24 : const Color(0xFFE5E7EB),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _AttachmentOption(
-                    icon: Icons.photo_camera,
-                    label: '拍照',
-                    color: const Color(0xFFFF6B6B),
-                    onTap: () => Navigator.pop(context, 'photo'),
-                  ),
-                  _AttachmentOption(
-                    icon: Icons.videocam,
-                    label: '录像',
-                    color: const Color(0xFF4ECDC4),
-                    onTap: () => Navigator.pop(context, 'video'),
-                  ),
+                  for (int i = 0; i < items.length; i++) ...[
+                    Expanded(
+                      child: _AttachmentOption(
+                        data: items[i],
+                        cardBg: cardBg,
+                        labelColor: labelColor,
+                        onDone: () {},
+                      ),
+                    ),
+                    if (i != items.length - 1) const SizedBox(width: 12),
+                  ],
                 ],
               ),
               SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
@@ -5264,6 +5259,41 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   void _toggleEmojiPicker() {
     setState(() {
       _showEmojiPickerState = !_showEmojiPickerState;
+      // 打开表情面板时同步关闭加号附件面板（两者互斥）
+      if (_showEmojiPickerState) {
+        _showAttachmentPanel = false;
+      }
+    });
+  }
+
+  /// 输入框获得焦点（键盘弹起）时，自动收起加号附件面板。
+  ///
+  /// 场景：面板已展开时用户点击输入框 → 键盘弹起，如果面板还挂着，键盘和面板
+  /// 就重叠了；因此这里在获取焦点的瞬间关掉面板，让 UX 与"表情面板/键盘互斥"
+  /// 完全一致。
+  void _onInputFocusChangedForAttachment() {
+    if (_inputFocusNode.hasFocus && _showAttachmentPanel) {
+      setState(() => _showAttachmentPanel = false);
+    }
+  }
+
+  /// 切换微信式内嵌"加号"附件面板（相册/相机/文件/收藏）
+  ///
+  /// 与软键盘、表情面板互斥：
+  ///   · 打开面板时先 unfocus 输入框收起键盘、关闭表情面板；
+  ///   · 再次点加号收起面板，让键盘自然弹回。
+  void _toggleAttachmentPanel() {
+    final willShow = !_showAttachmentPanel;
+    if (willShow) {
+      if (_inputFocusNode.hasFocus) {
+        _inputFocusNode.unfocus();
+      }
+    }
+    setState(() {
+      _showAttachmentPanel = willShow;
+      if (willShow) {
+        _showEmojiPickerState = false;
+      }
     });
   }
 
@@ -5419,7 +5449,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         SnackBar(
           content: const Text('操作失败'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           duration: const Duration(seconds: 1),
         ),
       );
@@ -5855,7 +5884,6 @@ await FileSaver.instance.saveFile(
         SnackBar(
           content: const Text('转发失败'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -6010,7 +6038,7 @@ await FileSaver.instance.saveFile(
     });
   }
 
-  /// 全选 / 取消全选。取消全选时同步退出多选模式，与"单条取消到 0 自动退出"逻辑保持一致。
+  /// 全选 / 取消全选（可选择的消息范围由调用方过滤好后传进来）
   void _toggleSelectAllMessages(Set<String> selectableIds, bool selectAll) {
     if (selectableIds.isEmpty) return;
     GlobalHaptics.selection();
@@ -6191,7 +6219,6 @@ await FileSaver.instance.saveFile(
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 14,
                                         ),
-                                        backgroundColor: AppColors.error,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
                                             12,
@@ -6751,7 +6778,6 @@ await FileSaver.instance.saveFile(
         SnackBar(
           content: const Text('撤回失败'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -7598,7 +7624,6 @@ class _GroupInfoSheet extends ConsumerWidget {
                         ScaffoldMessenger.of(pageContext).showSnackBar(
                           SnackBar(
                             content: Text(result.message ?? '操作失败'),
-                            backgroundColor: Colors.red,
                           ),
                         );
                       }
@@ -7607,7 +7632,6 @@ class _GroupInfoSheet extends ConsumerWidget {
                         ScaffoldMessenger.of(pageContext).showSnackBar(
                           SnackBar(
                             content: Text('操作失败: $e'),
-                            backgroundColor: Colors.red,
                           ),
                         );
                       }
@@ -7718,14 +7742,13 @@ class _GroupInfoSheet extends ConsumerWidget {
         ScaffoldMessenger.of(pageContext).showSnackBar(
           SnackBar(
             content: Text(result.message ?? '操作失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (pageContext.mounted) {
         ScaffoldMessenger.of(pageContext).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -8047,190 +8070,250 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-// ==================== 附件面板 ====================
+// ==================== 附件面板（微信式内嵌） ====================
 
-class _AttachmentSheet extends StatelessWidget {
+/// 微信式内嵌"加号"附件面板
+///
+/// 用户点击输入栏左侧的加号按钮时，本面板从输入栏底部展开，占据本来属于软
+/// 键盘的空间（≈ 240dp）。与旧版 modal bottom sheet 相比：
+///
+///   · **位置**：直接内嵌到 [_buildInputWithPreview] 的 Column 里，不是弹层 modal；
+///   · **背景**：与输入栏 / 微信底色一致的浅灰 (#F7F7F7)，深色为 #1C1E24；
+///   · **图标风格**：白色圆角卡片 (56×56, radius=14) + 内嵌纯色图标（28dp），
+///     旧版是带浅色底的方形卡片、图标 30dp，视觉完全不同；
+///   · **布局**：固定 4 列 GridView，图标下方 12dp 深灰文字，
+///     旧版是横向 Row + 上下 Padding，栏目更松；
+///   · **展开动效**：[AnimatedSize] + [AnimatedOpacity]，
+///     从 0 高滑到内容高度，模拟键盘出入。
+///
+/// 面板与软键盘、表情面板互斥，切换逻辑见 [_toggleAttachmentPanel]。
+class _InlineAttachmentPanel extends StatelessWidget {
+  final bool visible;
+  final bool isDark;
   final VoidCallback onPickFromGallery;
   final VoidCallback onTakePhoto;
-  final VoidCallback? onStartMeeting;
-  final VoidCallback? onSendLocation;
-  final VoidCallback? onOpenFavorites;
   final VoidCallback onPickFile;
-  final VoidCallback? onSendRedPacket;
-  final VoidCallback? onTransfer;
+  final VoidCallback? onOpenFavorites;
+  final VoidCallback onItemTapped;
 
-  const _AttachmentSheet({
+  const _InlineAttachmentPanel({
+    required this.visible,
+    required this.isDark,
     required this.onPickFromGallery,
     required this.onTakePhoto,
-    this.onStartMeeting,
-    this.onSendLocation,
-    this.onOpenFavorites,
     required this.onPickFile,
-    this.onSendRedPacket,
-    this.onTransfer,
+    required this.onOpenFavorites,
+    required this.onItemTapped,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+    // 4 个功能：相册 / 相机 / 文件 / 收藏
+    final items = <_InlineAttachmentItem>[
+      _InlineAttachmentItem(
+        icon: Icons.image_outlined,
+        iconColor: const Color(0xFF52C41A),
+        label: '相册',
+        onTap: onPickFromGallery,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 20,
-            runSpacing: 20,
-            children: [
-              _AttachmentOption(
-                icon: Icons.perm_media_rounded,
-                label: '相册',
-                color: const Color(0xFF7B68EE),
-                onTap: () {
-                  Navigator.pop(context);
-                  onPickFromGallery();
-                },
-              ),
-              _AttachmentOption(
-                icon: Icons.camera_alt,
-                label: '相机',
-                color: const Color(0xFFFF6B6B),
-                onTap: () {
-                  Navigator.pop(context);
-                  onTakePhoto();
-                },
-              ),
-              // if (onStartMeeting != null)
-              //   _AttachmentOption(
-              //     icon: Icons.video_call_outlined,
-              //     label: '会议',
-              //     color: const Color(0xFF5B8CFF),
-              //     onTap: () {
-              //       Navigator.pop(context);
-              //       onStartMeeting!();
-              //     },
-              //   ),
-              // if (onSendLocation != null)
-              //   _AttachmentOption(
-              //     icon: Icons.location_on_outlined,
-              //     label: '位置',
-              //     color: const Color(0xFFEF6C57),
-              //     onTap: () {
-              //       Navigator.pop(context);
-              //       onSendLocation!();
-              //     },
-              //   ),
-              _AttachmentOption(
-                icon: Icons.insert_drive_file,
-                label: '文件',
-                color: const Color(0xFF4ECDC4),
-                onTap: () {
-                  Navigator.pop(context);
-                  onPickFile();
-                },
-              ),
-              // if (onSendRedPacket != null)
-              //   _AttachmentOption(
-              //     imagePath: 'assets/stickers/hongbao.png',
-              //     label: '红包',
-              //     color: const Color(0xFFE53935),
-              //     onTap: () {
-              //       Navigator.pop(context);
-              //       onSendRedPacket!();
-              //     },
-              //   ),
-              // if (onTransfer != null)
-              //   _AttachmentOption(
-              //     imagePath: 'assets/stickers/zhuanzhang.png',
-              //     label: '转账',
-              //     color: const Color(0xFFFF9800),
-              //     onTap: () {
-              //       Navigator.pop(context);
-              //       onTransfer!();
-              //     },
-              //   ),
-              if (onOpenFavorites != null)
-                _AttachmentOption(
-                  icon: Icons.favorite_border_rounded,
-                  label: '收藏',
-                  color: const Color(0xFFFF6FA9),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onOpenFavorites!();
-                  },
+      _InlineAttachmentItem(
+        icon: Icons.photo_camera_outlined,
+        iconColor: const Color(0xFF2F80ED),
+        label: '相机',
+        onTap: onTakePhoto,
+      ),
+      _InlineAttachmentItem(
+        icon: Icons.folder_open_rounded,
+        iconColor: const Color(0xFFFAAD14),
+        label: '文件',
+        onTap: onPickFile,
+      ),
+      if (onOpenFavorites != null)
+        _InlineAttachmentItem(
+          icon: Icons.star_border_rounded,
+          iconColor: const Color(0xFFEB2F96),
+          label: '收藏',
+          onTap: onOpenFavorites!,
+        ),
+    ];
+
+    // 面板底色 —— 参考微信 iOS 版加号面板：浅灰底
+    final Color panelBg = isDark ? const Color(0xFF1C1E24) : const Color(0xFFF7F7F7);
+    final Color hairline = isDark ? const Color(0x22FFFFFF) : const Color(0x14000000);
+    final Color labelColor = isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563);
+    final Color tileBg = isDark ? const Color(0xFF2A2D36) : Colors.white;
+    final Color tileBorder = isDark ? const Color(0x33FFFFFF) : const Color(0xFFECECEC);
+
+    // 底部安全区（iOS home bar）—— 面板收起时高度为 0，展开时才补 padding
+    final double safeBottom = MediaQuery.of(context).padding.bottom;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: visible ? 1 : 0,
+        child: !visible
+            ? const SizedBox(width: double.infinity, height: 0)
+            : Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: panelBg,
+                  border: Border(top: BorderSide(color: hairline, width: 0.5)),
                 ),
-            ],
-          ),
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
-        ],
+                padding: EdgeInsets.fromLTRB(18, 20, 18, 20 + safeBottom),
+                child: GridView.count(
+                  crossAxisCount: 4,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 20,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.82,
+                  children: [
+                    for (final it in items)
+                      _InlineAttachmentCell(
+                        item: it,
+                        tileBg: tileBg,
+                        tileBorder: tileBorder,
+                        labelColor: labelColor,
+                        onDone: onItemTapped,
+                      ),
+                  ],
+                ),
+              ),
       ),
     );
   }
 }
 
-class _AttachmentOption extends StatelessWidget {
-  final IconData? icon;
-  final String? imagePath;
+class _InlineAttachmentItem {
+  final IconData icon;
+  final Color iconColor;
   final String label;
-  final Color color;
   final VoidCallback onTap;
 
-  const _AttachmentOption({
-    this.icon,
-    this.imagePath,
+  const _InlineAttachmentItem({
+    required this.icon,
+    required this.iconColor,
     required this.label,
-    required this.color,
     required this.onTap,
+  });
+}
+
+// ==================== "拍照/录像" 小选择器 —— 由 _takePhotoOrVideo 使用 ====================
+//
+// 说明：主"加号"面板已改成微信内嵌样式（[_InlineAttachmentPanel]），
+// 但用户点"相机"后仍需要一个二选一"拍照 / 录像"迷你 modal，
+// 这里保留原先的 modal 卡片样式，专供该场景使用。
+
+class _AttachmentItemData {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AttachmentItemData({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+  });
+}
+
+class _AttachmentOption extends StatelessWidget {
+  final _AttachmentItemData data;
+  final Color cardBg;
+  final Color labelColor;
+  final VoidCallback onDone;
+
+  const _AttachmentOption({
+    required this.data,
+    required this.cardBg,
+    required this.labelColor,
+    required this.onDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return Material(
+      color: cardBg,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        splashColor: data.iconColor.withOpacity(0.08),
+        highlightColor: data.iconColor.withOpacity(0.04),
+        onTap: () {
+          onDone();
+          data.onTap();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(data.icon, color: data.iconColor, size: 30),
+              const SizedBox(height: 8),
+              Text(
+                data.label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: labelColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineAttachmentCell extends StatelessWidget {
+  final _InlineAttachmentItem item;
+  final Color tileBg;
+  final Color tileBorder;
+  final Color labelColor;
+  final VoidCallback onDone;
+
+  const _InlineAttachmentCell({
+    required this.item,
+    required this.tileBg,
+    required this.tileBorder,
+    required this.labelColor,
+    required this.onDone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        onDone();
+        item.onTap();
+      },
       child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              shape: BoxShape.circle,
+              color: tileBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tileBorder, width: 0.5),
             ),
-            child: imagePath != null
-                ? Center(
-                    child: Image.asset(
-                      imagePath!,
-                      width: 32,
-                      height: 32,
-                      errorBuilder: (_, __, ___) =>
-                          Icon(icon ?? Icons.error, color: color, size: 26),
-                    ),
-                  )
-                : Icon(icon, color: color, size: 26),
+            alignment: Alignment.center,
+            child: Icon(item.icon, color: item.iconColor, size: 28),
           ),
           const SizedBox(height: 8),
           Text(
-            label,
+            item.label,
             style: TextStyle(
               fontSize: 12,
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.darkTextSecondary
-                  : AppColors.lightTextSecondary,
+              fontWeight: FontWeight.w500,
+              color: labelColor,
             ),
           ),
         ],

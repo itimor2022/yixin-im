@@ -7,9 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/constants/emoji_animations.dart';
+import '../../../shared/widgets/settings_ui.dart';
 import '../../chat/pages/emoji_store_page.dart';
 
-/// 贴纸和表情页面
+/// 贴纸和表情页面 v3
+///
+/// 复用全局 [SettingsScaffold]（蓝色渐变 + 左对齐白字标题），把原来的两段
+/// [TabController]+[TabBarView] 拆成本页内部的枚举切换，以便所有内容都能
+/// 在 [SettingsScaffold] 的 `ListView` 里一起滚动。
 class StickersPage extends ConsumerStatefulWidget {
   final bool isDesktopPanel;
 
@@ -22,17 +27,18 @@ class StickersPage extends ConsumerStatefulWidget {
   ConsumerState<StickersPage> createState() => _StickersPageState();
 }
 
-class _StickersPageState extends ConsumerState<StickersPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+enum _StickerTab { installed, discover }
 
-  // 已安装的贴纸包ID
+class _StickersPageState extends ConsumerState<StickersPage> {
+  _StickerTab _tab = _StickerTab.installed;
+
+  // 已安装的贴纸包 ID
   Set<String> _installedPackIds = {};
 
   // 最近使用的表情
   List<String> _recentEmojis = [];
 
-  // 设置
+  // 设置项
   bool _showAnimationOnSend = true;
   bool _autoPlayStickers = true;
   bool _emojiSuggestions = true;
@@ -40,42 +46,28 @@ class _StickersPageState extends ConsumerState<StickersPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadSettings();
   }
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      // 加载已安装的贴纸包
       final installed = prefs.getStringList('installed_sticker_packs') ?? [];
       _installedPackIds = installed.toSet();
 
-      // 如果没有安装过任何包，默认安装内置包
+      // 无安装记录时，默认全部安装内置包
       if (_installedPackIds.isEmpty) {
         _installedPackIds = BuiltInStickerPacks.all.map((p) => p.id).toSet();
         prefs.setStringList(
             'installed_sticker_packs', _installedPackIds.toList());
       }
 
-      // 加载最近使用的表情(使用有动画的)
       _recentEmojis = prefs.getStringList('recent_emojis') ??
           [
-            '👋',
-            '😂',
-            '❤️',
-            '😎',
-            '🤔',
-            '👍',
-            '🔥',
-            '🎉',
-            '😍',
-            '✨',
-            '👏',
-            '🙏'
+            '👋', '😂', '❤️', '😎', '🤔', '👍',
+            '🔥', '🎉', '😍', '✨', '👏', '🙏',
           ];
 
-      // 加载设置
       _showAnimationOnSend = prefs.getBool('show_animation_on_send') ?? true;
       _autoPlayStickers = prefs.getBool('auto_play_stickers') ?? true;
       _emojiSuggestions = prefs.getBool('emoji_suggestions') ?? true;
@@ -93,345 +85,207 @@ class _StickersPageState extends ConsumerState<StickersPage>
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-
-    // 桌面端面板模式：只返回内容，不需要 Scaffold 和 AppBar
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, l10n);
-    }
-
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          l10n.stickersEmoji,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: _buildBody(isDark, l10n),
-    );
-  }
-
-  Widget _buildBody(bool isDark, AppLocalizations l10n) {
-    return Column(
+    return SettingsScaffold(
+      title: l10n.stickersEmoji,
+      isDesktopPanel: widget.isDesktopPanel,
       children: [
-        // 分段控制器
-        Container(
-          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Container(
-            height: 36,
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withOpacity(0.08)
-                  : const Color(0xFFEFEFF4),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: isDark ? const Color(0xFF3A3A3C) : Colors.white,
-                borderRadius: BorderRadius.circular(7),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 1,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              indicatorPadding: const EdgeInsets.all(2),
-              dividerColor: Colors.transparent,
-              labelColor: isDark ? Colors.white : Colors.black,
-              unselectedLabelColor: isDark ? Colors.white54 : Colors.black54,
-              labelStyle:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              unselectedLabelStyle:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              tabs: [
-                Tab(text: l10n.installed),
-                Tab(text: l10n.discoverMore),
-              ],
-            ),
-          ),
-        ),
-
-        // 内容
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildInstalledTab(isDark, l10n),
-              _buildDiscoverTab(isDark, l10n),
-            ],
-          ),
-        ),
+        _buildSegmentedControl(l10n),
+        const SizedBox(height: 6),
+        if (_tab == _StickerTab.installed)
+          ..._buildInstalledChildren(l10n)
+        else
+          ..._buildDiscoverChildren(l10n),
       ],
     );
   }
 
-  Widget _buildInstalledTab(bool isDark, AppLocalizations l10n) {
+  // ============================================================================
+  // 顶部分段控件 —— 已安装 / 发现更多
+  // ============================================================================
+  Widget _buildSegmentedControl(AppLocalizations l10n) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Row(
+        children: [
+          _SegBtn(
+            label: l10n.installed,
+            selected: _tab == _StickerTab.installed,
+            isDark: isDark,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _tab = _StickerTab.installed);
+            },
+          ),
+          const SizedBox(width: 24),
+          _SegBtn(
+            label: l10n.discoverMore,
+            selected: _tab == _StickerTab.discover,
+            isDark: isDark,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _tab = _StickerTab.discover);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================================
+  // 已安装 Tab
+  // ============================================================================
+  List<Widget> _buildInstalledChildren(AppLocalizations l10n) {
     final installedPacks = BuiltInStickerPacks.all
         .where((p) => _installedPackIds.contains(p.id))
         .toList();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // 最近使用 - 动态表情
-        _SectionTitle(title: l10n.recentlyUsed, isDark: isDark),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: _recentEmojis.map((e) {
-              final animated = EmojiAnimations.findByEmoji(e);
-              return GestureDetector(
-                onTap: () => _onEmojiTap(e),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: animated != null
-                      ? Lottie.asset(animated.path, repeat: true)
-                      : Center(
-                          child: Text(e, style: const TextStyle(fontSize: 28))),
-                ),
-              );
-            }).toList(),
-          ),
+    return [
+      // 最近使用（Lottie 表情网格）
+      SettingsSection(l10n.recentlyUsed),
+      SettingsLooseCard(
+        padding: const EdgeInsets.all(12),
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: _recentEmojis.map((e) {
+            final animated = EmojiAnimations.findByEmoji(e);
+            return GestureDetector(
+              onTap: () => _onEmojiTap(e),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: animated != null
+                    ? Lottie.asset(animated.path, repeat: true)
+                    : Center(
+                        child:
+                            Text(e, style: const TextStyle(fontSize: 28))),
+              ),
+            );
+          }).toList(),
         ),
+      ),
 
-        const SizedBox(height: 24),
-
-        // 已安装的贴纸包 - 动态头像
-        _SectionTitle(title: '已安装 (${installedPacks.length})', isDark: isDark),
-        const SizedBox(height: 12),
-        ...installedPacks.map((pack) => _AnimatedStickerPackCard(
+      // 已安装的贴纸包
+      SettingsSection('已安装 (${installedPacks.length})'),
+      if (installedPacks.isEmpty)
+        SettingsLooseCard(
+          padding: const EdgeInsets.symmetric(vertical: 28),
+          child: _EmptyPacks(
+            onGoDiscover: () =>
+                setState(() => _tab = _StickerTab.discover),
+          ),
+        )
+      else
+        ...installedPacks.map(
+          (pack) => SettingsCustomIsland(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            onTap: () => _showPackDetail(pack),
+            child: _StickerPackRow(
               pack: pack,
-              isDark: isDark,
               isInstalled: true,
-              onTap: () => _showPackDetail(pack),
               onAction: () => _showPackOptions(pack),
-            )),
-
-        if (installedPacks.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(40),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.emoji_emotions_outlined,
-                  size: 64,
-                  color: isDark ? Colors.white24 : Colors.black12,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  '还没有安装贴纸包',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? Colors.white38 : Colors.black38,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => _tabController.animateTo(1),
-                  child:
-                      Text('去发现更多', style: TextStyle(color: AppColors.primary)),
-                ),
-              ],
             ),
           ),
-
-        const SizedBox(height: 24),
-
-        // 设置
-        _SectionTitle(title: '设置', isDark: isDark),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            children: [
-              _SettingSwitch(
-                title: '发送贴纸时显示动画',
-                value: _showAnimationOnSend,
-                isDark: isDark,
-                onChanged: (v) {
-                  setState(() => _showAnimationOnSend = v);
-                  _saveSettings();
-                },
-              ),
-              Divider(
-                  height: 1,
-                  indent: 16,
-                  color:
-                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
-              _SettingSwitch(
-                title: '自动播放动态贴纸',
-                value: _autoPlayStickers,
-                isDark: isDark,
-                onChanged: (v) {
-                  setState(() => _autoPlayStickers = v);
-                  _saveSettings();
-                },
-              ),
-              Divider(
-                  height: 1,
-                  indent: 16,
-                  color:
-                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
-              _SettingSwitch(
-                title: '表情包建议',
-                value: _emojiSuggestions,
-                isDark: isDark,
-                onChanged: (v) {
-                  setState(() => _emojiSuggestions = v);
-                  _saveSettings();
-                },
-              ),
-            ],
-          ),
         ),
-      ],
-    );
+
+      // 设置
+      SettingsSection('设置'),
+      SettingsSwitchIsland(
+        icon: Icons.emoji_events_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: '发送贴纸时显示动画',
+        value: _showAnimationOnSend,
+        onChanged: (v) {
+          setState(() => _showAnimationOnSend = v);
+          _saveSettings();
+        },
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.play_circle_outline_rounded,
+        iconColor: const Color(0xFF34C759),
+        label: '自动播放动态贴纸',
+        value: _autoPlayStickers,
+        onChanged: (v) {
+          setState(() => _autoPlayStickers = v);
+          _saveSettings();
+        },
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.tips_and_updates_outlined,
+        iconColor: const Color(0xFF5AC8FA),
+        label: '表情包建议',
+        value: _emojiSuggestions,
+        onChanged: (v) {
+          setState(() => _emojiSuggestions = v);
+          _saveSettings();
+        },
+      ),
+    ];
   }
 
-  Widget _buildDiscoverTab(bool isDark, AppLocalizations l10n) {
+  // ============================================================================
+  // 发现更多 Tab
+  // ============================================================================
+  List<Widget> _buildDiscoverChildren(AppLocalizations l10n) {
     final availablePacks = BuiltInStickerPacks.all
         .where((p) => !_installedPackIds.contains(p.id))
         .toList();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // 可安装的贴纸包
-        if (availablePacks.isNotEmpty) ...[
-          _SectionTitle(title: l10n.available, isDark: isDark),
-          const SizedBox(height: 12),
-          ...availablePacks.map((pack) => _AnimatedStickerPackCard(
-                pack: pack,
-                isDark: isDark,
-                isInstalled: false,
-                onTap: () => _showPackDetail(pack),
-                onAction: () => _installPack(pack),
-              )),
-        ],
-
-        // 已全部安装
-        if (availablePacks.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(40),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.check_circle_outline,
-                  size: 64,
-                  color: AppColors.primary.withOpacity(0.5),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  l10n.allPacksInstalled,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? Colors.white54 : Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        const SizedBox(height: 24),
-
-        // 创建贴纸
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: _openCreateStickerPack,
-            child: Ink(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(Icons.add_rounded,
-                        color: AppColors.primary, size: 28),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '新建贴纸包',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : Colors.black,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '使用照片创建专属贴纸',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isDark ? Colors.white38 : Colors.black38,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: isDark ? Colors.white24 : Colors.black26,
-                  ),
-                ],
-              ),
+    return [
+      if (availablePacks.isNotEmpty) ...[
+        SettingsSection(l10n.available),
+        ...availablePacks.map(
+          (pack) => SettingsCustomIsland(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            onTap: () => _showPackDetail(pack),
+            child: _StickerPackRow(
+              pack: pack,
+              isInstalled: false,
+              onAction: () => _installPack(pack),
             ),
           ),
         ),
-      ],
-    );
+      ] else
+        SettingsLooseCard(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          child: Column(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 56,
+                color: AppColors.primary.withOpacity(0.6),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l10n.allPacksInstalled,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white60
+                      : const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+      SettingsSection('创建'),
+      SettingsChoiceIsland(
+        icon: Icons.add_rounded,
+        iconColor: AppColors.primary,
+        label: '新建贴纸包',
+        subtitle: '使用照片创建专属贴纸',
+        onTap: _openCreateStickerPack,
+      ),
+    ];
   }
 
+  // ============================================================================
+  // Actions & modals（沿用旧逻辑）
+  // ============================================================================
   Future<void> _openCreateStickerPack() async {
     HapticFeedback.selectionClick();
     if (!mounted) return;
@@ -444,7 +298,6 @@ class _StickersPageState extends ConsumerState<StickersPage>
 
   void _onEmojiTap(String emoji) {
     HapticFeedback.selectionClick();
-    // 更新最近使用
     setState(() {
       _recentEmojis.remove(emoji);
       _recentEmojis.insert(0, emoji);
@@ -470,11 +323,11 @@ class _StickersPageState extends ConsumerState<StickersPage>
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(16)),
           ),
           child: Column(
             children: [
-              // 拖动条
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 width: 36,
@@ -484,8 +337,6 @@ class _StickersPageState extends ConsumerState<StickersPage>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-
-              // 标题 - 动态头像
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -512,7 +363,8 @@ class _StickersPageState extends ConsumerState<StickersPage>
                             '${pack.count} 个贴纸',
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white54 : Colors.black54,
+                              color:
+                                  isDark ? Colors.white54 : Colors.black54,
                             ),
                           ),
                         ],
@@ -539,13 +391,12 @@ class _StickersPageState extends ConsumerState<StickersPage>
                   ],
                 ),
               ),
-
-              // 贴纸网格
               Expanded(
                 child: GridView.builder(
                   controller: scrollController,
                   padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 4,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
@@ -580,7 +431,8 @@ class _StickersPageState extends ConsumerState<StickersPage>
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(12)),
         ),
         child: SafeArea(
           child: Column(
@@ -616,9 +468,10 @@ class _StickersPageState extends ConsumerState<StickersPage>
                 onTap: () => Navigator.pop(context),
               ),
               ListTile(
-                leading:
-                    Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                title: Text('卸载', style: TextStyle(color: AppColors.error)),
+                leading: Icon(Icons.delete_outline_rounded,
+                    color: AppColors.error),
+                title:
+                    Text('卸载', style: TextStyle(color: AppColors.error)),
                 onTap: () {
                   Navigator.pop(context);
                   _uninstallPack(pack);
@@ -649,173 +502,216 @@ class _StickersPageState extends ConsumerState<StickersPage>
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
+// ============================================================================
+// 顶部分段按钮
+// ============================================================================
+/// 极简文字 tab —— 选中态下方用主色 2dp 短线暗示，无填充无卡片
+class _SegBtn extends StatelessWidget {
+  final String label;
+  final bool selected;
   final bool isDark;
+  final VoidCallback onTap;
 
-  const _SectionTitle({required this.title, required this.isDark});
+  const _SegBtn({
+    required this.label,
+    required this.selected,
+    required this.isDark,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        color: isDark ? Colors.white54 : Colors.black54,
+    final Color color = selected
+        ? AppColors.primary
+        : (isDark ? Colors.white70 : const Color(0xFF6B7280));
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: color,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                height: 2,
+                width: selected ? 24 : 0,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// 动态贴纸包卡片
-class _AnimatedStickerPackCard extends StatelessWidget {
+// ============================================================================
+// 单条贴纸包行（在 SettingsCustomIsland 内使用）
+// ============================================================================
+class _StickerPackRow extends StatelessWidget {
   final StickerPack pack;
-  final bool isDark;
   final bool isInstalled;
-  final VoidCallback onTap;
   final VoidCallback onAction;
 
-  const _AnimatedStickerPackCard({
+  const _StickerPackRow({
     required this.pack,
-    required this.isDark,
     required this.isInstalled,
-    required this.onTap,
     required this.onAction,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        SizedBox(
+          width: 46,
+          height: 46,
+          child: Lottie.asset(pack.previewPath, repeat: true),
         ),
-        child: Row(
-          children: [
-            // 动态头像
-            SizedBox(
-              width: 52,
-              height: 52,
-              child: Lottie.asset(pack.previewPath, repeat: true),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        pack.name,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white : Colors.black,
-                        ),
+                  Flexible(
+                    child: Text(
+                      pack.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white
+                            : const Color(0xFF111827),
                       ),
-                      if (pack.isBuiltIn) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '内置',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${pack.count} 个贴纸',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
                     ),
                   ),
+                  if (pack.isBuiltIn) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '内置',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            ),
-            if (isInstalled)
-              IconButton(
-                icon: Icon(
-                  Icons.more_horiz,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-                onPressed: onAction,
-              )
-            else
-              TextButton(
-                onPressed: onAction,
-                style: TextButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Text(
-                  '安装',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w500),
+              const SizedBox(height: 3),
+              Text(
+                '${pack.count} 个贴纸',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
-      ),
+        if (isInstalled)
+          IconButton(
+            icon: Icon(
+              Icons.more_horiz,
+              color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+            ),
+            onPressed: onAction,
+          )
+        else
+          TextButton(
+            onPressed: onAction,
+            style: TextButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999)),
+            ),
+            child: const Text(
+              '安装',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
 
-class _SettingSwitch extends StatelessWidget {
-  final String title;
-  final bool value;
-  final bool isDark;
-  final ValueChanged<bool> onChanged;
-
-  const _SettingSwitch({
-    required this.title,
-    required this.value,
-    required this.isDark,
-    required this.onChanged,
-  });
+// ============================================================================
+// 空态：还没安装任何包
+// ============================================================================
+class _EmptyPacks extends StatelessWidget {
+  final VoidCallback onGoDiscover;
+  const _EmptyPacks({required this.onGoDiscover});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                color: isDark ? Colors.white : Colors.black,
-              ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      children: [
+        Icon(
+          Icons.emoji_emotions_outlined,
+          size: 56,
+          color: isDark ? Colors.white24 : const Color(0xFFDDE1E7),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '还没有安装贴纸包',
+          style: TextStyle(
+            fontSize: 14.5,
+            color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextButton(
+          onPressed: onGoDiscover,
+          child: Text(
+            '去发现更多',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
