@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:url_launcher/url_launcher.dart'; // 需要添加这个依赖
 
 import '../../../core/services/api/api_client.dart';
 import '../../../core/i18n/app_localizations.dart';
@@ -30,7 +31,6 @@ const Color _kHeroEnd = Color(0xFF00B4FF);
 const Color _kTileBg = Colors.white;
 const Color _kTileBorder = Color(0xFFEDEFF2);
 const Color _kTileTitle = Color(0xFF111827);
-const Color _kTileUrl = Color(0xFF9CA3AF);
 
 final discoverBannerProvider =
     FutureProvider.autoDispose<String?>((ref) async {
@@ -73,7 +73,7 @@ class DiscoverEntry {
   }
 }
 
-/// 每个入口从这里挑一个色调（用于 2 列彩色瓦片网格的渐变背景）
+/// 每个入口从这里挑一个色调（用于图标背景）
 const _accentColors = <Color>[
   Color(0xFFFF6B6B), // sky
   Color(0xFF34C759), // green
@@ -124,9 +124,7 @@ final discoverEntriesProvider =
 ///   1. **顶部一行 = 广场 Hero + 公告图（左右并排）**：有公告图时，一行两半，
 ///      左侧广场 Hero（蓝色渐变 + "广场" + 副标题 + 箭头），右侧后台下发的
 ///      公告图纯图卡；没有公告图时广场 Hero 占满整行（16:9 aspect）。
-///   2. **自定义入口 2 列瓦片网格**：白底 · 轻边框 · 左上 accent 色浅底图标芯片,
-///      右上圆形"复制"芯片，底部标题 + URL + 复制小图标 —— 把"点击=复制链接"
-///      的意图直接表达在瓦片上。
+///   2. **自定义入口 4 列图标网格**：只显示图标+名称，点击直接打开链接
 class DiscoverPage extends ConsumerStatefulWidget {
   final bool isDesktopSidebar;
 
@@ -322,7 +320,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // 自定义入口 —— 2 列清爽白色瓦片网格（白底 · 轻边框 · accent 色浅底图标）
+  // 自定义入口 —— 4 列图标网格（只显示图标 + 名称）
   // ---------------------------------------------------------------------------
 
   Widget _buildEntriesGrid(AsyncValue<List<DiscoverEntry>> entries) {
@@ -336,18 +334,17 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
             physics: const NeverScrollableScrollPhysics(),
             itemCount: items.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              // 瓦片内容自上而下：图标 42 + spacer + 标题 + URL，
-              // 用 1.25 让 URL 有足够空间且整体不显得过高。
-              childAspectRatio: 1.25,
+              crossAxisCount: 4, // 改为4列
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              // 图标+名称，使用更接近正方形的比例
+              childAspectRatio: 0.9,
             ),
             itemBuilder: (context, index) {
               final entry = items[index];
               return _EntryTile(
                 entry: entry,
-                onTap: () => _copyEntry(entry),
+                onTap: () => _openEntry(entry),
               );
             },
           ),
@@ -367,47 +364,67 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     );
   }
 
-  void _copyEntry(DiscoverEntry entry) {
+  /// 打开发现项链接
+  Future<void> _openEntry(DiscoverEntry entry) async {
     HapticFeedback.selectionClick();
-    // 用户要求：只复制网址，不带"名称:"和"网址:"前缀，方便直接粘到浏览器。
-    Clipboard.setData(ClipboardData(text: entry.url));
+    
+    final url = entry.url;
+    if (url.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_rounded,
-              color: Colors.greenAccent,
-              size: 18,
+    try {
+      // 如果 openMode 是 webview，使用应用内 WebView
+      if (entry.openMode == 'webview') {
+        if (widget.isDesktopSidebar) {
+          // 桌面端特殊处理
+          // TODO: 实现桌面端 WebView 或新窗口打开
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        } else {
+          // 移动端使用应用内 WebView
+          context.push('/webview', extra: {
+            'url': url,
+            'title': entry.title,
+          });
+        }
+      } else {
+        // 外部浏览器打开
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      }
+    } catch (e) {
+      // 降级处理：尝试外部浏览器
+      try {
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } catch (_) {
+        // 完全失败时显示提示
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('无法打开链接: $url'),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.black.withOpacity(0.85),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              '已复制 ${entry.title} 的网址',
-              style: const TextStyle(fontSize: 13),
-            ),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 1),
-        width: 280,
-        backgroundColor: Colors.black.withOpacity(0.85),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
+          );
+        }
+      }
+    }
   }
 }
 
-/// 单格入口瓦片 —— 简洁清爽风格 + 显式复制意图。
+/// 单格入口瓦片 —— 极简风格：只显示图标 + 名称
 ///
 /// 结构：
-///   · 白色背景 + 0.8px 轻边框（#EDEFF2）
-///   · 顶行：左侧 42×42 accent 色浅底图标芯片；右侧 28×28 accent 色浅底
-///     "复制"圆芯片（含 `content_copy` 图标）—— 一眼就能看出这个卡片
-///     "点一下会把链接复制到剪贴板"
-///   · 底部：深色标题（1 行）+ 灰色 URL 副文本（1 行 · 自动去 http/https 前缀）
+///   · 图标（圆形背景 + 图标/网络图片）
+///   · 名称（居中，最多1行）
+///   · 点击直接打开链接
 class _EntryTile extends StatelessWidget {
   final DiscoverEntry entry;
   final VoidCallback onTap;
@@ -420,154 +437,70 @@ class _EntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = entry.accentColor;
+    final hasIcon = entry.iconUrl != null && entry.iconUrl!.isNotEmpty;
+
     return Material(
-      color: _kTileBg,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      elevation: 0,
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        splashColor: base.withOpacity(0.08),
-        highlightColor: base.withOpacity(0.04),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: _kTileBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _kTileBorder, width: 0.8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _TileIconChip(iconUrl: entry.iconUrl, tint: base),
-                    const Spacer(),
-                    _CopyAffordanceChip(tint: base),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  entry.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                    color: _kTileTitle,
-                    letterSpacing: 0.2,
-                    height: 1.2,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: base.withOpacity(0.12),
+        highlightColor: base.withOpacity(0.06),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 图标 - 圆形背景
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: hasIcon ? Colors.white : base.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: hasIcon ? const Color(0xFFEDEFF2) : Colors.transparent,
+                    width: 0.8,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  _prettifyUrl(entry.url),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: _kTileUrl,
-                    fontWeight: FontWeight.w500,
-                    height: 1.2,
-                  ),
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                child: hasIcon
+                    ? Image.network(
+                        entry.iconUrl!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.explore_rounded,
+                          color: base,
+                          size: 28,
+                        ),
+                      )
+                    : Icon(
+                        Icons.explore_rounded,
+                        color: base,
+                        size: 28,
+                      ),
+              ),
+              const SizedBox(height: 6),
+              // 名称
+              Text(
+                entry.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: _kTileTitle,
+                  height: 1.2,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  /// 展示用 URL —— 去掉协议头 / 末尾斜杠，让链接更清爽好读
-  String _prettifyUrl(String url) {
-    var u = url.trim();
-    if (u.isEmpty) return '';
-    if (u.startsWith('https://')) {
-      u = u.substring(8);
-    } else if (u.startsWith('http://')) {
-      u = u.substring(7);
-    }
-    while (u.endsWith('/')) {
-      u = u.substring(0, u.length - 1);
-    }
-    return u;
-  }
-}
-
-/// 瓦片右上角的复制圆芯片 —— accent 色 10% 浅底 + 细描边 + `content_copy` 图标。
-///
-/// 这是让用户"一眼看出这是可复制的链接卡片"的关键视觉锚点。
-class _CopyAffordanceChip extends StatelessWidget {
-  final Color tint;
-
-  const _CopyAffordanceChip({required this.tint});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: tint.withOpacity(0.10),
-        border: Border.all(color: tint.withOpacity(0.18), width: 0.6),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.content_copy_rounded,
-        color: tint,
-        size: 13,
-      ),
-    );
-  }
-}
-
-/// 瓦片左上角的图标芯片 —— accent 色 12% 浅底 + accent 色图标。
-///
-/// 有自定义 iconUrl 时显示网络图标（白底看着不脏）；失败或没有时显示 explore
-/// 图标，颜色跟随条目的 accentColor。
-class _TileIconChip extends StatelessWidget {
-  final String? iconUrl;
-  final Color tint;
-
-  const _TileIconChip({
-    required this.iconUrl,
-    required this.tint,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasIcon = iconUrl != null && iconUrl!.isNotEmpty;
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        // 有自定义 iconUrl 时用白底（让彩色 logo 干净展示），否则用 accent 浅底
-        color: hasIcon ? Colors.white : tint.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      alignment: Alignment.center,
-      clipBehavior: Clip.antiAlias,
-      child: hasIcon
-          ? Image.network(
-              iconUrl!,
-              width: 42,
-              height: 42,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Icon(
-                Icons.explore_rounded,
-                color: tint,
-                size: 22,
-              ),
-            )
-          : Icon(
-              Icons.explore_rounded,
-              color: tint,
-              size: 22,
-            ),
     );
   }
 }
