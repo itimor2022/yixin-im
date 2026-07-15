@@ -175,8 +175,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   /// Logo + app 名称（极简，居中）
   Widget _buildBrand(bool isDark) {
-    final logoUrl = ref.watch(systemSettingsProvider).valueOrNull?.logoImageUrl;
-    final settings = ref.watch(systemSettingsProvider).valueOrNull;
+    final settingsAsync = ref.watch(systemSettingsProvider);
+    final settings = settingsAsync.valueOrNull;
+    final logoUrl = settings?.logoImageUrl;
     final title = (settings?.systemName ?? '').trim().isNotEmpty
         ? settings!.systemName.trim()
         : (_appName.isNotEmpty ? _appName : '易信');
@@ -400,72 +401,37 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         SizedBox(height: isDesktop ? 28 : 16),
 
         if (!(PlatformUtils.isDesktop && _showDesktopQrLogin)) ...[
-          ref.watch(systemSettingsProvider).when(
-                data: (settings) {
-                  final logoUrl = settings.logoImageUrl;
-
-                  if (logoUrl.isEmpty) return const SizedBox(height: 32);
-
-                  // 时间戳只在 initState 采样一次，rebuild 拿到同一个 URL → 命中 ImageCache 不再重发请求
-                  final finalImgUrl =
-                      '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=$_logoCacheBust';
-
-                  debugPrint('🔥 [Login UI Log] 正在拉取最新的穿透直链: $finalImgUrl');
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    child: Image.network(
-                      finalImgUrl,
-                      height: 180,
-                      fit: BoxFit.contain,
-                      // 3. 核心大招：利用 Image 自身的 frameBuilder 或 loadingBuilder 确保不闪烁，但每次重绘都清除 ImageProvider 自身的缓存
-                      frameBuilder:
-                          (context, child, frame, wasSynchronouslyLoaded) {
-                        if (wasSynchronouslyLoaded) return child;
-                        return AnimatedOpacity(
-                          opacity: frame == null ? 0 : 1,
-                          duration: const Duration(milliseconds: 200),
-                          child: child,
-                        );
-                      },
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          height: 180,
-                          alignment: Alignment.center,
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        debugPrint('--- [BUG排查] UI 层渲染彻底崩溃，原因: $error ---');
-                        return const SizedBox(height: 32);
-                      },
-                    ),
+          Builder(builder: (context) {
+            final settingsState = ref.watch(systemSettingsProvider);
+            // loading 时显示占位，不要直接返回空（否则加载完也不会重建）
+            if (settingsState.isLoading) {
+              return const SizedBox(height: 180 + 32);
+            }
+            final settings = settingsState.valueOrNull;
+            final logoUrl = settings?.logoImageUrl ?? '';
+            if (logoUrl.isEmpty) return const SizedBox(height: 32);
+            final finalImgUrl = logoUrl.contains('?')
+                ? '$logoUrl&_t=$_logoCacheBust'
+                : '$logoUrl?_t=$_logoCacheBust';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: Image.network(
+                finalImgUrl,
+                height: 180,
+                fit: BoxFit.contain,
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (wasSynchronouslyLoaded) return child;
+                  return AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: const Duration(milliseconds: 200),
+                    child: child,
                   );
                 },
-                loading: () {
-                  final cachedSettings =
-                      ref.read(systemSettingsProvider).valueOrNull;
-                  if (cachedSettings != null &&
-                      cachedSettings.logoImageUrl.isNotEmpty) {
-                    final logoUrl = cachedSettings.logoImageUrl;
-                    // 同上：进入登录页时的固定时间戳，输入账号密码引发的 rebuild 都命中同一 URL
-                    final finalImgUrl =
-                        '${logoUrl}${logoUrl.contains('?') ? '&' : '?'}_t=$_logoCacheBust';
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 32),
-                      child: Image.network(finalImgUrl,
-                          height: 180, fit: BoxFit.contain),
-                    );
-                  }
-                  return const SizedBox(
-                      height: 180,
-                      child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2)));
-                },
-                error: (_, __) => const SizedBox(height: 32),
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox(height: 32),
               ),
+            );
+          }),
         ],
         // 登录表单
         if (PlatformUtils.isDesktop && _showDesktopQrLogin)

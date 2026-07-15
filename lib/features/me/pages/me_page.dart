@@ -13,6 +13,7 @@ import '../../chat/providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 import '../../settings/pages/profile_page.dart';
 import '../../settings/pages/checkin_page.dart';
+import '../../wallet/pages/wallet_page.dart';
 import '../../settings/pages/notification_settings_page.dart';
 // ── 隐私 / 数据 / 聊天 三个设置入口已下线，import 一并注释掉，
 //   避免 lint 报未使用；下次恢复时同步取消注释。
@@ -252,6 +253,14 @@ class MePage extends ConsumerWidget {
         title: '签到',
         onTap: () => _push(context, const CheckinPage()),
         visibleSelector: (s) => s?.checkinEnabled == true,
+      ),
+      // 钱包（受系统开关控制，未启用则隐藏）
+      _MeMenuData(
+        icon: Icons.account_balance_wallet_outlined,
+        iconColor: const Color(0xFF10B981),
+        title: '我的钱包',
+        onTap: () => _push(context, const WalletPage()),
+        visibleSelector: (s) => s?.walletEnabled == true,
       ),
       _MeMenuData(
         icon: Icons.notifications_active_outlined,

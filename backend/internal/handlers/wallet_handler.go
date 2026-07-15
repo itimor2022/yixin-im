@@ -604,8 +604,7 @@ func (h *WalletHandler) SendRedPacket(c *gin.Context) {
 			},
 		}
 		h.sendChatMessageWithRetry(func() context.Context {
-			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
+			c, _ := context.WithTimeout(context.Background(), 10*time.Second)
 			return c
 		}(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, targetUserIDs)
 	}
@@ -883,8 +882,7 @@ func (h *WalletHandler) ClaimRedPacket(c *gin.Context) {
 				},
 			}
 			h.sendChatMessageWithRetry(func() context.Context {
-				c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
+				c, _ := context.WithTimeout(context.Background(), 10*time.Second)
 				return c
 			}(), params, claimer.Nickname, claimer.Avatar, claimer.NicknameColor, claimer.PremiumType, claimer.EmojiAvatar, targetUserIDs)
 		}
@@ -1139,8 +1137,7 @@ func (h *WalletHandler) SendTransfer(c *gin.Context) {
 			},
 		}
 		h.sendChatMessageWithRetry(func() context.Context {
-			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
+			c, _ := context.WithTimeout(context.Background(), 10*time.Second)
 			return c
 		}(), params, sender.Nickname, sender.Avatar, sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar, []string{receiver.UUID})
 	}
@@ -1319,8 +1316,7 @@ func (h *WalletHandler) AcceptTransfer(c *gin.Context) {
 					},
 				}
 				h.sendChatMessageWithRetry(func() context.Context {
-					c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
+					c, _ := context.WithTimeout(context.Background(), 10*time.Second)
 					return c
 				}(), params, receiver.Nickname, receiver.Avatar, receiver.NicknameColor, receiver.PremiumType, receiver.EmojiAvatar, []string{sender.UUID, receiver.UUID})
 			}
