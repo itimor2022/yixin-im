@@ -251,6 +251,10 @@
             <ElSwitch v-model="featureForm.checkin_enabled" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">开启后客户端"设置"页显示签到入口</span>
           </ElFormItem>
+          <ElFormItem label="红包功能">
+            <ElSwitch v-model="featureForm.red_packet_enabled" :disabled="isDemoAdmin" />
+            <span class="ml-2 text-sm text-g-400">开启后聊天页"+"面板显示红包入口</span>
+          </ElFormItem>
           <ElFormItem label="非好友消息">
             <ElSwitch v-model="featureForm.allow_stranger_message" :disabled="isDemoAdmin" />
             <span class="ml-2 text-sm text-g-400">关闭后非好友只能加好友、不能直接发消息</span>
@@ -814,6 +818,7 @@
     group_invite_require_friend: false,
     member_only_create_group: false,
     checkin_enabled: false,
+      red_packet_enabled: false,
     allow_stranger_message: false,
     custom_portal_enabled: false,
     custom_portal_title: '',
@@ -1055,6 +1060,7 @@
       featureForm.group_invite_require_friend = settings.group_invite_require_friend || false
       featureForm.member_only_create_group = settings.member_only_create_group || false
       featureForm.checkin_enabled = settings.checkin_enabled || false
+      featureForm.red_packet_enabled = settings.red_packet_enabled || false
       featureForm.allow_stranger_message = settings.allow_stranger_message || false
       featureForm.custom_portal_enabled = settings.custom_portal_enabled || false
       featureForm.custom_portal_title = settings.custom_portal_title || ''

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +64,8 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
   }
 
   void _showAmountInput(bool isDark) {
+    // Web 端直接用 TextField，不弹自定义键盘
+    if (kIsWeb) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -333,6 +336,37 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
       return;
     }
 
+    // 检测是否已设置支付密码，未设置则先引导设置
+    final walletInfo = ref.read(walletProvider).wallet;
+    if (walletInfo != null && !walletInfo.hasPayPassword) {
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('设置支付密码'),
+          content: const Text('发送红包需要先设置支付密码，是否立即设置？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('立即设置'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      if (!mounted) return;
+      // 跳转到设置支付密码页
+      await Navigator.of(context).pushNamed('setPayPassword');
+      // 重新检查是否已设置
+      await ref.read(walletProvider.notifier).loadWallet();
+      final updated = ref.read(walletProvider).wallet;
+      if (updated == null || !updated.hasPayPassword) return;
+    }
+
     // 显示密码输入
     final password = await showPayPasswordDialog(
       context: context,
@@ -536,45 +570,91 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                             ),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => _showAmountInput(isDark),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                Text(
-                                  '¥',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w600,
-                                    color: _redPacketColor,
+                        // Web 端直接用 TextField 输入金额，移动端保留自定义数字键盘
+                        kIsWeb
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '¥',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w600,
+                                        color: _redPacketColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _amountController,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        autofocus: false,
+                                        onChanged: (_) => setState(() {}),
+                                        style: TextStyle(
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? Colors.white : Colors.black87,
+                                          letterSpacing: -1,
+                                        ),
+                                        decoration: InputDecoration(
+                                          border: InputBorder.none,
+                                          hintText: '0.00',
+                                          hintStyle: TextStyle(
+                                            fontSize: 36,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white24 : Colors.grey[300],
+                                            letterSpacing: -1,
+                                          ),
+                                        ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : GestureDetector(
+                                onTap: () => _showAmountInput(isDark),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
+                                      Text(
+                                        '¥',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
+                                          color: _redPacketColor,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _amountController.text.isEmpty
+                                            ? '0.00'
+                                            : _amountController.text,
+                                        style: TextStyle(
+                                          fontSize: 42,
+                                          fontWeight: FontWeight.w600,
+                                          color: _amountController.text.isEmpty
+                                              ? (isDark
+                                                  ? Colors.white24
+                                                  : Colors.grey[300])
+                                              : (isDark
+                                                  ? Colors.white
+                                                  : Colors.black87),
+                                          letterSpacing: -1,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _amountController.text.isEmpty
-                                      ? '0.00'
-                                      : _amountController.text,
-                                  style: TextStyle(
-                                    fontSize: 42,
-                                    fontWeight: FontWeight.w600,
-                                    color: _amountController.text.isEmpty
-                                        ? (isDark
-                                            ? Colors.white24
-                                            : Colors.grey[300])
-                                        : (isDark
-                                            ? Colors.white
-                                            : Colors.black87),
-                                    letterSpacing: -1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                              ),
                       ],
                     ),
 

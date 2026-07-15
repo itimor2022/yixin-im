@@ -90,6 +90,7 @@ class SystemSettings {
   final int maxVoiceSize;
   final int revokeMessageMinutes;
   final bool checkinEnabled;
+  final bool redPacketEnabled;
   final bool allowStrangerMessage;
 
   /// ServerDiscovery api.txt 拉取地址（后台数据库配置，管理后台只读）。
@@ -135,6 +136,7 @@ class SystemSettings {
     this.maxVoiceSize = 20,
     this.revokeMessageMinutes = 2,
     this.checkinEnabled = false,
+    this.redPacketEnabled = false,
     this.allowStrangerMessage = false,
     this.apiTxtUrl = '',
   });
@@ -185,6 +187,7 @@ class SystemSettings {
       maxVoiceSize: json['max_voice_size'] as int? ?? 20,
       revokeMessageMinutes: json['revoke_message_minutes'] as int? ?? 2,
       checkinEnabled: json['checkin_enabled'] == true,
+      redPacketEnabled: json['red_packet_enabled'] == true,
       allowStrangerMessage: json['allow_stranger_message'] == true,
       apiTxtUrl: json['api_txt_url']?.toString() ?? '',
     );
@@ -228,6 +231,7 @@ class SystemSettings {
         'max_voice_size': maxVoiceSize,
         'revoke_message_minutes': revokeMessageMinutes,
         'checkin_enabled': checkinEnabled,
+        'red_packet_enabled': redPacketEnabled,
         'api_txt_url': apiTxtUrl,
       };
 

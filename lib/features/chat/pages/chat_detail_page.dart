@@ -3472,6 +3472,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           onTakePhoto: _takePhotoOrVideo,
           onPickFile: _pickFile,
           onOpenFavorites: _openFavoriteMessages,
+          onSendRedPacket: ref.read(systemSettingsProvider).valueOrNull?.redPacketEnabled == true
+                  ? _sendRedPacket
+                  : null,
           onItemTapped: () {
             // 点了任何一个功能按钮后自动收起面板
             if (_showAttachmentPanel) {
@@ -8095,6 +8098,7 @@ class _InlineAttachmentPanel extends StatelessWidget {
   final VoidCallback onPickFile;
   final VoidCallback? onOpenFavorites;
   final VoidCallback onItemTapped;
+  final VoidCallback? onSendRedPacket;
 
   const _InlineAttachmentPanel({
     required this.visible,
@@ -8104,6 +8108,7 @@ class _InlineAttachmentPanel extends StatelessWidget {
     required this.onPickFile,
     required this.onOpenFavorites,
     required this.onItemTapped,
+    this.onSendRedPacket,
   });
 
   @override
@@ -8134,6 +8139,13 @@ class _InlineAttachmentPanel extends StatelessWidget {
           iconColor: const Color(0xFFEB2F96),
           label: '收藏',
           onTap: onOpenFavorites!,
+        ),
+      if (onSendRedPacket != null)
+        _InlineAttachmentItem(
+          icon: Icons.redeem_rounded,
+          iconColor: const Color(0xFFE74C3C),
+          label: '红包',
+          onTap: onSendRedPacket!,
         ),
     ];
 
