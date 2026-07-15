@@ -261,7 +261,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 三步：
   ///   1. 已经 disconnected → 直接强制重连
   ///   2. 已 connected → send ping，等 [probeTimeout]（默认 3s）内 pong；到就返回 true
-  ///   3. ping 没等到 pong → 强制重连，等 [reconnectTimeout]（默认 10s）内变 connected
+  ///   3. ping 没等到 pong → 强制重连，等 [reconnectTimeout]（默认 6s）内变 connected
   ///
   /// 不用担心跟正常心跳 pong 抢：pong 事件同时 complete 探活 completer 和正常心跳逻辑。
   Future<bool> ensureAliveForCriticalAction({

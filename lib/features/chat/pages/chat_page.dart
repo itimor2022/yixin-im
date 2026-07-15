@@ -22,6 +22,7 @@ import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../widgets/chat_list_item.dart';
 import '../widgets/create_sheets.dart';
 import '../providers/chat_provider.dart';
@@ -30,6 +31,26 @@ import '../../contacts/providers/contact_provider.dart';
 import '../../settings/pages/chat_settings_page.dart';
 import '../../home/pages/home_desktop_page.dart';
 import 'chat_detail_page.dart' show ChatType;
+
+/// ===== 聊天页面 UI Tokens =====
+///
+/// 主色跟 [AppColors.primary] 保持一致的海洋蓝 (#009CFF)。
+/// 单独抽出常量让本文件的按钮/胶囊/徽章配色一目了然。
+const Color _kChatPrimary = Color(0xFFFF6B6B);
+const Color _kChatDivider = Color(0xFFEDEFF2);
+const Color _kChatSubText = Color(0xFF9CA3AF);
+const Color _kChatTitleText = Color(0xFF111827);
+
+/// 顶部渐变区结构尺寸（用于把 CustomScrollView 顶部空白对齐到搜索栏底部）：
+///   · header 视觉高度 = 10 (top pad) + 44 (content) + 6 (bottom pad) = 60
+///   · search 视觉高度 = 2  (top pad) + 42 (content) + 10 (bottom pad) = 54
+///   · 渐变尾巴高度   = 80 —— 这段是「浅主色 → 透明」的淡出，叠到第一条
+///     列表项之上（≈ 第一条约 72~80px，因此 80px 恰好覆盖到中部再往下），
+///     再配合主色 0.22 的中段颜色，视觉上让渐变**明显穿过搜索栏、延伸到
+///     第一条列表项的一半**（而不是止步于搜索栏边缘）。
+const double _kHeaderContentHeight = 60;
+const double _kSearchContentHeight = 54;
+const double _kGradientFadeTail = 80;
 
 class ChatPage extends ConsumerStatefulWidget {
   /// 是否作为桌面端侧边栏使用
@@ -122,76 +143,50 @@ class _ChatPageState extends ConsumerState<ChatPage>
   }
 
   /// 构建标题（显示刷新状态）
-  Widget _buildTitle(bool isDark, AppLocalizations l10n) {
-    // 使用 select 只监听加载状态，避免不必要的重建
+  ///
+  /// [onGradient] 表示标题会放在顶部主色渐变背景上，此时文字/加载圈需为白色。
+  Widget _buildTitle(
+    bool isDark,
+    AppLocalizations l10n, {
+    bool onGradient = false,
+  }) {
     final isLoading = ref.watch(chatListProvider.select((s) => s.isLoading));
     final isSilentLoading = ref.watch(
       chatListProvider.select((s) => s.isSilentLoading),
     );
+    final refreshing = isLoading || isSilentLoading;
 
-    // 首次加载或手动刷新时显示"刷新中..."
-    if (isLoading) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    final Color titleColor = onGradient
+        ? Colors.white
+        : (isDark ? Colors.white : _kChatTitleText);
+    final Color spinnerColor = onGradient
+        ? Colors.white.withOpacity(0.9)
+        : (isDark ? Colors.white70 : _kChatSubText);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          refreshing ? l10n.refreshing : l10n.tabChat,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+            color: titleColor,
+          ),
+        ),
+        if (refreshing) ...[
+          const SizedBox(width: 8),
           SizedBox(
             width: 14,
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            l10n.refreshing,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              valueColor: AlwaysStoppedAnimation<Color>(spinnerColor),
             ),
           ),
         ],
-      );
-    }
-
-    // 从后台恢复时静默刷新，使用相同的刷新中样式
-    if (isSilentLoading) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            l10n.refreshing,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Text(
-      l10n.tabChat,
-      style: TextStyle(
-        fontSize: 17,
-        fontWeight: FontWeight.w600,
-        color: Theme.of(context).colorScheme.onSurface,
-      ),
+      ],
     );
   }
 
@@ -199,7 +194,6 @@ class _ChatPageState extends ConsumerState<ChatPage>
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final folderState = ref.watch(folderProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
     // 使用 select 只监听需要的字段，避免不必要的重建
@@ -232,437 +226,518 @@ class _ChatPageState extends ConsumerState<ChatPage>
       orElse: () => <String>{},
     );
 
-    // 当前选中的文件夹
-    final currentFolder = folderState.folders.isNotEmpty &&
-            folderState.selectedIndex < folderState.folders.length
-        ? folderState.folders[folderState.selectedIndex]
-        : null;
+    // 顶部分组 tabs 已移除：始终展示全部聊天
     final floatingBottomSpace = FloatingNavLayout.isEnabled
         ? FloatingNavLayout.reservedSpace(context, extra: 12)
         : 20.0;
 
-    // 过滤后的聊天
-    final filteredChats = currentFolder != null
-        ? ref.read(folderProvider.notifier).filterChats(currentFolder, chats)
-        : chats;
-
-    // 预先计算聊天列表，避免在 build 中重复调用
+    final filteredChats = chats;
     final allChats = _getChatList(filteredChats);
+
+    final Color bgColor = isDark ? const Color(0xFF0E1015) : Colors.white;
+    final Color cardColor = isDark ? const Color(0xFF1B1D24) : Colors.white;
+
+    // 顶部渐变区的**不透明**部分高度（status bar + header + 搜索栏）。
+    // 列表在滚动视图中会预留这么多高度，让第一条聊天项的顶部正好落到
+    // 渐变尾巴 (fade tail) 里 —— 这样视觉上"渐变延伸到第一条列表的一半"。
+    final double topPad = MediaQuery.of(context).padding.top;
+    final double gradientOpaqueHeight = topPad + _kHeaderContentHeight +
+        _kSearchContentHeight; // ≈ topPad + 60 + 54
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor:
-            Theme.of(context).scaffoldBackgroundColor,
-        body: CustomScrollView(
-          slivers: [
-            // 顶部标题栏 - 毛玻璃固定效果
-            SliverAppBar(
-              floating: false,
-              snap: false,
-              pinned: true,
-              backgroundColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              flexibleSpace: Platform.isAndroid
-                  ? Container(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                    )
-                  : ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                        child: Container(
-                          color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.85),
-                        ),
-                      ),
-                    ),
-              leadingWidth: widget.isDesktopSidebar ? 16 : 76,
-              leading: widget.isDesktopSidebar
-                  ? const SizedBox(width: 16) // 桌面端不显示编辑按钮
-                  : Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Center(
-                        child: GestureDetector(
-                          onTap: () {
-                            GlobalHaptics.selection();
-                            if (_isEditing) {
-                              ref.read(chatEditModeProvider.notifier).state =
-                                  false;
-                              setState(() => _selectedChatIds.clear());
-                            } else {
-                              ref.read(chatEditModeProvider.notifier).state =
-                                  true;
-                              setState(() => _selectedChatIds.clear());
-                            }
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white.withOpacity(0.12)
-                                      : Colors.white.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: isDark
-                                      ? Border.all(
-                                          color: Colors.white.withOpacity(0.1),
-                                          width: 0.5,
-                                        )
-                                      : null,
-                                  boxShadow: isDark
-                                      ? null
-                                      : [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.06,
-                                            ),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                ),
-                                child: Text(
-                                  _isEditing ? '完成' : '编辑',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-              title: _isEditing
-                  ? Text(
-                      _selectedChatIds.isEmpty
-                          ? '选择聊天'
-                          : '${l10n.selectedCount} ${_selectedChatIds.length}',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? AppColors.darkTextPrimary
-                            : AppColors.lightTextPrimary,
-                      ),
-                    )
-                  : _buildTitle(isDark, l10n),
-              centerTitle: true,
-              actions: [
-                if (!_isEditing) ...[
-                  // 右侧加号按钮
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: GestureDetector(
-                      onTap: () => _showCreateOptions(context),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.white.withOpacity(0.12)
-                                  : Colors.white.withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(18),
-                              border: isDark
-                                  ? Border.all(
-                                      color: Colors.white.withOpacity(0.1),
-                                      width: 0.5,
-                                    )
-                                  : null,
-                              boxShadow: isDark
-                                  ? null
-                                  : [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.06),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                            ),
-                            child: Icon(
-                              Icons.add,
-                              size: 22,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+        backgroundColor: bgColor,
+        // 用 Stack 让渐变尾巴叠在列表顶部，实现"渐变延伸到第一条项目一半"效果。
+        // ─ 底层：可滚动的聊天列表（前面留出 `gradientOpaqueHeight` 空位）
+        // ─ 顶层：主色渐变（含 header + 搜索栏 + 一段淡出到透明的尾巴）
+        body: Stack(
+          children: [
+            // ==================== 底层：聊天列表 ====================
+            Positioned.fill(
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  // 顶部预留位置 = 渐变的不透明部分高度
+                  // 渐变的尾巴 (fade tail) 会盖到下面第一条列表项的上半部分
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: gradientOpaqueHeight),
                   ),
-                ] else ...[
-                  // 编辑模式下的全选按钮
-                  GestureDetector(
-                    onTap: () {
-                      GlobalHaptics.selection();
-                      final allChats = _getChatList(filteredChats);
-                      setState(() {
-                        if (_selectedChatIds.length == allChats.length) {
-                          _selectedChatIds.clear();
-                        } else {
-                          _selectedChatIds.clear();
-                          _selectedChatIds.addAll(allChats.map((c) => c.id));
-                        }
-                      });
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: Text(
-                        _selectedChatIds.length ==
-                                _getChatList(filteredChats).length
-                            ? l10n.deselectAll
-                            : l10n.selectAll,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.primary,
+                  if (!chats.isInitialized && chats.isLoading)
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildSkeletonItem(
+                          isDark,
+                          showDivider: index != 7,
                         ),
+                        childCount: 8,
                       ),
+                    )
+                  else if (allChats.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _buildEmptyState(l10n),
+                    )
+                  else
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final chat = allChats[index];
+                        final isSelected = _selectedChatIds.contains(chat.id);
+                        final isLast = index == allChats.length - 1;
+
+                        if (_isEditing) {
+                          return _buildEditableChatItem(
+                            chat,
+                            isSelected,
+                            isDark,
+                            typingText: typingByChat[chat.id],
+                            showDivider: !isLast,
+                          );
+                        }
+
+                        final isOfficial = chat.type == ChatItemType.private
+                            ? officialUsers.contains(chat.targetUserUuid)
+                            : officialChats.contains(chat.id);
+                        final isChatActive = widget.isDesktopSidebar
+                            ? ref.watch(selectedChatIdProvider) == chat.id
+                            : false;
+
+                        return RepaintBoundary(
+                          key: ValueKey(chat.id),
+                          child: ChatListItem(
+                            chat: chat,
+                            typingText: typingByChat[chat.id],
+                            isOfficial: isOfficial,
+                            isSelected: isChatActive,
+                            isDesktop: widget.isDesktopSidebar,
+                            showPendingApprovalDot:
+                                chat.hasPendingJoinRequests,
+                            isMember: chat.isMember,
+                            badgeText: chat.badgeText,
+                            badgeColor: chat.badgeColor,
+                            showDivider: !isLast,
+                            onTap: () => _openChat(context, chat),
+                            onLongPress: widget.isDesktopSidebar
+                                ? null
+                                : () => _showChatPreview(context, ref, chat),
+                            onSwipeAction: (action) => _handleSwipeAction(
+                                context, ref, chat, action),
+                          ),
+                        );
+                      }, childCount: allChats.length),
+                    ),
+                  // 底部留白（编辑模式为底部操作栏预留空间）
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: _isEditing ? 100 : floatingBottomSpace,
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
 
-            // 搜索框（滑动时隐藏）
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: GestureDetector(
-                  onTap: () {
-                    if (widget.isDesktopSidebar) {
-                      // 桌面端：在右侧面板显示搜索
-                      ref.read(desktopProfileProvider.notifier).state =
-                          const DesktopProfileInfo(
-                        type: DesktopPanelType.search,
-                        id: 'search',
-                      );
-                    } else {
-                      context.push('/search');
-                    }
-                  },
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.darkInputBackground
-                          : const Color(0xFFEDEDED),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search,
-                          size: 18,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : const Color(0xFF8E8E93),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '搜索',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: isDark
-                                ? AppColors.darkTextTertiary
-                                : const Color(0xFF8E8E93),
-                          ),
-                        ),
-                      ],
-                    ),
+            // ==================== 中层：纯装饰渐变（IgnorePointer） ====================
+            //
+            // 这一层只负责画渐变（从 `#009fff` → 浅主色 → 透明），
+            // **必须**用 IgnorePointer 包起来 —— 它覆盖到第一条列表项之上，
+            // 如果不忽略指针事件就会挡住列表项的点击 / 长按 / 左滑。
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: topPad + _kHeaderContentHeight +
+                  _kSearchContentHeight + _kGradientFadeTail,
+              child: const IgnorePointer(
+                child: TopGradientBackdrop(),
+              ),
+            ),
+
+            // ==================== 顶层：交互式 header + 搜索栏 ====================
+            //
+            // 只放**可交互**的控件（header 里的图标按钮 + 搜索栏），
+            // 高度到搜索栏结束为止 —— 不覆盖下方渐变尾巴区，也不会挡列表。
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle.light,
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildAppHeader(
+                        isDark: isDark,
+                        l10n: l10n,
+                        filteredChats: filteredChats,
+                      ),
+                      _buildSearchField(
+                        isDark: isDark,
+                        cardColor: cardColor,
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ),
-
-            // 分组 Tab（滑动时隐藏）
-            SliverToBoxAdapter(
-              child: _FolderTabs(
-                folders: folderState.folders,
-                selectedIndex: folderState.selectedIndex,
-                chats: chats,
-                onSelect: (index) {
-                  GlobalHaptics.selection();
-                  ref.read(folderProvider.notifier).selectFolder(index);
-                },
-              ),
-            ),
-
-            // 聊天列表
-            if (!chats.isInitialized && chats.isLoading)
-              // 首次加载显示骨架屏
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildSkeletonItem(isDark),
-                  childCount: 8,
-                ),
-              )
-            else if (allChats.isEmpty)
-              SliverFillRemaining(child: _buildEmptyState(l10n))
-            else
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final chat = allChats[index];
-                  final isSelected = _selectedChatIds.contains(chat.id);
-
-                  if (_isEditing) {
-                    // 编辑模式 - 显示复选框
-                    return _buildEditableChatItem(
-                      chat,
-                      isSelected,
-                      isDark,
-                      typingText: typingByChat[chat.id],
-                    );
-                  }
-
-                  // 判断是否是官方用户/群组/频道
-                  final isOfficial = chat.type == ChatItemType.private
-                      ? officialUsers.contains(chat.targetUserUuid)
-                      : officialChats.contains(chat.id);
-
-                  // 桌面端：检查是否选中（用于高亮当前打开的聊天）
-                  final isChatActive = widget.isDesktopSidebar
-                      ? ref.watch(selectedChatIdProvider) == chat.id
-                      : false;
-
-                  // RepaintBoundary + key 隔离每个列表项的重绘，优化滚动性能
-                  return RepaintBoundary(
-                    key: ValueKey(chat.id),
-                    child: ChatListItem(
-                      chat: chat,
-                      typingText: typingByChat[chat.id],
-                      isOfficial: isOfficial,
-                      isSelected: isChatActive,
-                      isDesktop: widget.isDesktopSidebar,
-                      showPendingApprovalDot: chat.hasPendingJoinRequests,
-                      isMember: chat.isMember,
-                      badgeText: chat.badgeText,
-                      badgeColor: chat.badgeColor,
-                      onTap: () => _openChat(context, chat),
-                      onLongPress: widget.isDesktopSidebar
-                          ? null
-                          : () => _showChatPreview(context, ref, chat),
-                      onSwipeAction: (action) =>
-                          _handleSwipeAction(context, ref, chat, action),
-                    ),
-                  );
-                }, childCount: allChats.length),
-              ),
-
-            // 编辑模式下留出底部操作栏空间
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: _isEditing ? 100 : floatingBottomSpace,
               ),
             ),
           ],
         ),
-        // 编辑模式底部操作栏
         bottomNavigationBar:
             _isEditing ? _buildEditBottomBar(isDark, l10n) : null,
       ),
     );
   }
 
-  void _showCreateOptions(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomSpacing = FloatingNavLayout.isEnabled
-        ? FloatingNavLayout.reservedSpace(context, extra: 8)
-        : 8.0;
-    // 保存外部 context 用于导航（底部弹窗 pop 后内部 context 会失效）
-    final outerContext = context;
+  // ==============================================================
+  // 顶部主色渐变区（含 status bar + header + 搜索框 + 微渐变尾巴）
+  // ==============================================================
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+  // 顶部渐变背景现在由 [TopGradientBackdrop] 提供（纯装饰、被 IgnorePointer
+  // 包裹，绝不会拦截手势）。交互式 header + search 是独立的一层，见 build()。
+
+  /// 顶部标题栏
+  ///   - 正常模式：左侧标题「聊天」，右侧两个圆形图标按钮（选择 / 加号）
+  ///   - 编辑模式：左「完成」/ 中「已选 N」/ 右「全选」，全部白字
+  ///   - 桌面侧边栏：只显示居左标题
+  Widget _buildAppHeader({
+    required bool isDark,
+    required AppLocalizations l10n,
+    required ChatListState filteredChats,
+  }) {
+    if (widget.isDesktopSidebar) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+        child: SizedBox(
+          height: 40,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _buildTitle(isDark, l10n, onGradient: true),
+          ),
         ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      );
+    }
+
+    if (_isEditing) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+        child: SizedBox(
+          height: 44,
+          child: Row(
             children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color:
-                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                  borderRadius: BorderRadius.circular(2),
+              SizedBox(
+                width: 76,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _CircleActionButton(
+                    isDark: isDark,
+                    onGradient: true,
+                    wide: true,
+                    onTap: () {
+                      GlobalHaptics.selection();
+                      ref.read(chatEditModeProvider.notifier).state = false;
+                      setState(() => _selectedChatIds.clear());
+                    },
+                    child: const Text(
+                      '完成',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              _CreateOption(
-                icon: Icons.search,
-                iconColor: AppColors.primary,
-                title: '搜索用户',
-                subtitle: '搜索用户开始聊天',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  if (widget.isDesktopSidebar) {
-                    // 桌面端：在右侧面板显示搜索用户
-                    ref.read(desktopProfileProvider.notifier).state =
-                        const DesktopProfileInfo(
-                      type: DesktopPanelType.searchUsers,
-                      id: 'search_users',
-                    );
-                  } else {
-                    outerContext.push('/search-users');
-                  }
-                },
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _selectedChatIds.isEmpty
+                        ? '选择聊天'
+                        : '${l10n.selectedCount} ${_selectedChatIds.length}',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ),
-              _CreateOption(
-                icon: Icons.group_outlined,
-                iconColor: const Color(0xFF4CAF50),
-                title: '新建群组',
-                subtitle: '创建一个群聊',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCreateGroup(outerContext);
-                },
+              SizedBox(
+                width: 76,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _CircleActionButton(
+                    isDark: isDark,
+                    onGradient: true,
+                    wide: true,
+                    onTap: () {
+                      GlobalHaptics.selection();
+                      final all = _getChatList(filteredChats);
+                      setState(() {
+                        if (_selectedChatIds.length == all.length) {
+                          _selectedChatIds.clear();
+                        } else {
+                          _selectedChatIds
+                            ..clear()
+                            ..addAll(all.map((c) => c.id));
+                        }
+                      });
+                    },
+                    child: Builder(builder: (_) {
+                      final all = _getChatList(filteredChats);
+                      final allSelected = all.isNotEmpty &&
+                          _selectedChatIds.length == all.length;
+                      return Text(
+                        allSelected ? l10n.deselectAll : l10n.selectAll,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      );
+                    }),
+                  ),
+                ),
               ),
-              _CreateOption(
-                icon: Icons.campaign_outlined,
-                iconColor: const Color(0xFFFF9800),
-                title: '新建频道',
-                subtitle: '创建一个频道发布消息',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCreateChannel(outerContext);
-                },
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ================== 正常模式：左标题 + 右两图标 ==================
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 14, 6),
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            // 左侧标题
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildTitle(isDark, l10n, onGradient: true),
               ),
-              _CreateOption(
-                icon: Icons.qr_code_scanner,
-                iconColor: const Color(0xFF9C27B0),
-                title: '扫描二维码',
-                subtitle: '扫码添加好友或群组',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  outerContext.push('/scan');
-                },
+            ),
+            // 右侧两个圆形图标按钮
+            _CircleActionButton(
+              isDark: isDark,
+              onGradient: true,
+              onTap: () {
+                GlobalHaptics.selection();
+                ref.read(chatEditModeProvider.notifier).state = true;
+                setState(() => _selectedChatIds.clear());
+              },
+              child: const Icon(
+                Icons.check_circle_outline_rounded,
+                size: 20,
+                color: Colors.white,
               ),
-              SizedBox(height: bottomSpacing),
+            ),
+            const SizedBox(width: 10),
+            Builder(
+              builder: (btnCtx) => _CircleActionButton(
+                isDark: isDark,
+                onGradient: true,
+                onTap: () => _showCreateOptions(btnCtx),
+                child: const Icon(
+                  Icons.add_rounded,
+                  size: 22,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 搜索框（圆角胶囊、扁平浅底 + 主色搜索图标）
+  Widget _buildSearchField({
+    required bool isDark,
+    required Color cardColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 10),
+      child: GestureDetector(
+        onTap: () {
+          if (widget.isDesktopSidebar) {
+            ref.read(desktopProfileProvider.notifier).state =
+                const DesktopProfileInfo(
+              type: DesktopPanelType.search,
+              id: 'search',
+            );
+          } else {
+            context.push('/search');
+          }
+        },
+        child: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.035),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '搜索',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// 微信风格：点击右上角"+"在按钮下方弹出小卡片菜单。
+  ///
+  /// [buttonContext] 需要传入 "+" 按钮所在的局部 context（用 Builder 包一层），
+  /// 这样我们才能拿到按钮的全局位置，把菜单精准定位到按钮右下。
+  void _showCreateOptions(BuildContext buttonContext) {
+    final isDark = Theme.of(buttonContext).brightness == Brightness.dark;
+    // 保存外部 context 用于弹窗关闭后的导航
+    final outerContext = context;
+
+    // 计算按钮在 overlay 中的位置
+    final RenderBox? buttonBox =
+        buttonContext.findRenderObject() as RenderBox?;
+    final RenderBox? overlayBox = Overlay.of(buttonContext)
+        .context
+        .findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null) return;
+
+    final Offset topLeft =
+        buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final Offset bottomRight = buttonBox.localToGlobal(
+      buttonBox.size.bottomRight(Offset.zero),
+      ancestor: overlayBox,
+    );
+
+    // 菜单靠右对齐到按钮右边缘，向下偏移 8dp
+    const double menuWidth = 196;
+    final double left = (bottomRight.dx - menuWidth).clamp(8.0, double.infinity);
+    final double top = bottomRight.dy + 8;
+    final RelativeRect position = RelativeRect.fromLTRB(
+      left,
+      top,
+      overlayBox.size.width - bottomRight.dx,
+      overlayBox.size.height - top,
+    );
+
+    // 采用聊天详情页的灰底色 #EDEDED（深色主题下沿用深灰卡片）
+    final Color menuBg = isDark
+        ? const Color(0xFF1F2937)
+        : const Color(0xFFEDEDED);
+    final Color itemText =
+        isDark ? Colors.white : const Color(0xFF111827);
+    final Color itemIcon =
+        isDark ? Colors.white : const Color(0xFF111827);
+    final Color dividerColor = isDark
+        ? Colors.white.withOpacity(0.10)
+        : Colors.black.withOpacity(0.06);
+
+    Widget buildRow(IconData icon, String label) {
+      return Row(
+        children: [
+          Icon(icon, size: 24, color: itemIcon),
+          const SizedBox(width: 14),
+          Text(
+            label,
+            style: TextStyle(
+              color: itemText,
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+
+    PopupMenuItem<String> item(String value, IconData icon, String label) {
+      return PopupMenuItem<String>(
+        value: value,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        height: 52,
+        child: buildRow(icon, label),
+      );
+    }
+
+    // 用一个 0.5px 分割线代替标准 PopupMenuDivider（后者高度较大）
+    PopupMenuItem<String> divider() {
+      return PopupMenuItem<String>(
+        enabled: false,
+        padding: EdgeInsets.zero,
+        height: 0,
+        child: Container(
+          height: 0.5,
+          color: dividerColor,
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+      );
+    }
+
+    showMenu<String>(
+      context: buttonContext,
+      position: position,
+      color: menuBg,
+      elevation: 10,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      constraints: const BoxConstraints(minWidth: menuWidth, maxWidth: menuWidth),
+      items: [
+        item('search', Icons.person_search_rounded, '搜索用户'),
+        divider(),
+        item('group', Icons.group_add_outlined, '新建群组'),
+        divider(),
+        item('scan', Icons.qr_code_scanner_rounded, '扫描二维码'),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      switch (value) {
+        case 'search':
+          if (widget.isDesktopSidebar) {
+            ref.read(desktopProfileProvider.notifier).state =
+                const DesktopProfileInfo(
+              type: DesktopPanelType.searchUsers,
+              id: 'search_users',
+            );
+          } else {
+            outerContext.push('/search-users');
+          }
+          break;
+        case 'group':
+          _showCreateGroup(outerContext);
+          break;
+        case 'scan':
+          outerContext.push('/scan');
+          break;
+      }
+    });
   }
 
   void _showNewChat(BuildContext context) {
@@ -678,151 +753,170 @@ class _ChatPageState extends ConsumerState<ChatPage>
     showCreateGroupSheet(context);
   }
 
-  void _showCreateChannel(BuildContext context) {
-    showCreateChannelSheet(context);
-  }
-
   List<ChatItem> _getChatList(ChatListState chats) {
-    return [...chats.pinnedChats, ...chats.regularChats];
+    // 已移除「频道」功能：从列表中过滤掉所有 channel 类型
+    return [
+      ...chats.pinnedChats.where((c) => c.type != ChatItemType.channel),
+      ...chats.regularChats.where((c) => c.type != ChatItemType.channel),
+    ];
   }
 
-  /// 骨架屏加载项（带 shimmer 动画）
-  Widget _buildSkeletonItem(bool isDark) {
-    return Column(
-      children: [
-        const ChatListSkeletonItem(),
-        // 分割线
-        Container(
-          margin: const EdgeInsets.only(left: 82),
-          height: 0.5,
-          color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-        ),
-      ],
-    );
+  /// 骨架屏加载项（带 shimmer 动画）—— 扁平样式，无分隔线
+  Widget _buildSkeletonItem(
+    bool isDark, {
+    // ignore: unused_element_parameter
+    bool showDivider = true,
+  }) {
+    return const ChatListSkeletonItem();
   }
 
-  /// 编辑模式下的聊天项
+  /// 编辑模式下的聊天项 —— 扁平样式（去卡片 / 去边框 / 去阴影）
+  ///
+  /// 仅选中态时给一层非常淡的主色背景色 + 左侧 3px 主色 accent bar。
   Widget _buildEditableChatItem(
     ChatItem chat,
     bool isSelected,
     bool isDark, {
     String? typingText,
+    // ignore: unused_element_parameter
+    bool showDivider = true,
   }) {
-    return InkWell(
-      onTap: () {
-        GlobalHaptics.selection();
-        setState(() {
-          if (isSelected) {
-            _selectedChatIds.remove(chat.id);
-          } else {
-            _selectedChatIds.add(chat.id);
-          }
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            // 复选框
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 24,
-              height: 24,
-              margin: const EdgeInsets.only(right: 12),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? AppColors.primary : Colors.transparent,
-                border: Border.all(
-                  color: isSelected
-                      ? AppColors.primary
-                      : (isDark ? Colors.white38 : Colors.black26),
-                  width: 2,
-                ),
+    final Color cardBg = isSelected
+        ? (isDark ? const Color(0x1F009CFF) : const Color(0xFFF0F7FF))
+        : Colors.transparent;
+    return Material(
+      color: cardBg,
+      child: InkWell(
+        onTap: () {
+          GlobalHaptics.selection();
+          setState(() {
+            if (isSelected) {
+              _selectedChatIds.remove(chat.id);
+            } else {
+              _selectedChatIds.add(chat.id);
+            }
+          });
+        },
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 选中态左侧主色 accent bar
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: isSelected ? 3 : 0,
+                color: _kChatPrimary,
               ),
-              child: isSelected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                  : null,
-            ),
-            // 头像
-            AvatarWidget(avatar: chat.avatar, name: chat.name, size: 52),
-            const SizedBox(width: 12),
-            // 内容
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    isSelected ? 13 : 16,
+                    12,
+                    16,
+                    12,
+                  ),
+                  child: Row(
                     children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: ColoredNameWidget(
-                                name: chat.name,
-                                nicknameColor: chat.nicknameColor,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                defaultColor: isDark
-                                    ? AppColors.darkTextPrimary
-                                    : AppColors.lightTextPrimary,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            // 表情状态
-                            if (chat.emojiAvatar != null &&
-                                chat.emojiAvatar!.isNotEmpty) ...[
-                              const SizedBox(width: 4),
-                              EmojiStatusWidget(
-                                emoji: chat.emojiAvatar!,
-                                size: 20,
-                              ),
-                            ],
-                          ],
+                      // 复选框
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 24,
+                        height: 24,
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color:
+                              isSelected ? _kChatPrimary : Colors.transparent,
+                          border: Border.all(
+                            color: isSelected
+                                ? _kChatPrimary
+                                : (isDark
+                                    ? Colors.white38
+                                    : const Color(0xFFCBD1D9)),
+                            width: 1.8,
+                          ),
                         ),
+                        child: isSelected
+                            ? const Icon(Icons.check,
+                                size: 16, color: Colors.white)
+                            : null,
                       ),
-                      Text(
-                        _formatTime(chat.lastMessageTime),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : AppColors.lightTextTertiary,
+                      AvatarWidget(
+                        avatar: chat.avatar,
+                        name: chat.name,
+                        size: 52,
+                        borderRadius: 26,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    chat.name,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? AppColors.darkTextPrimary
+                                          : const Color(0xFF111827),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  _formatTime(chat.lastMessageTime),
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: isDark
+                                        ? AppColors.darkTextTertiary
+                                        : const Color(0xFF9CA3AF),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              (typingText != null && typingText.isNotEmpty)
+                                  ? typingText
+                                  : (chat.lastMessage?.isNotEmpty == true
+                                      ? chat.lastMessage!
+                                      : '快来发送第一条消息吧~'),
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: (typingText != null &&
+                                        typingText.isNotEmpty)
+                                    ? _kChatPrimary
+                                    : (chat.lastMessage?.isNotEmpty == true
+                                        ? (isDark
+                                            ? AppColors.darkTextSecondary
+                                            : const Color(0xFF6B7280))
+                                        : (isDark
+                                            ? AppColors.darkTextTertiary
+                                            : const Color(0xFF9CA3AF))),
+                                fontStyle: (typingText != null &&
+                                        typingText.isNotEmpty)
+                                    ? FontStyle.italic
+                                    : (chat.lastMessage?.isNotEmpty == true
+                                        ? FontStyle.normal
+                                        : FontStyle.italic),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    (typingText != null && typingText.isNotEmpty)
-                        ? typingText
-                        : (chat.lastMessage?.isNotEmpty == true
-                            ? chat.lastMessage!
-                            : '快来发送第一条消息吧～'),
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: (typingText != null && typingText.isNotEmpty)
-                          ? Colors.blue
-                          : (chat.lastMessage?.isNotEmpty == true
-                              ? (isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary)
-                              : (isDark
-                                  ? AppColors.darkTextTertiary
-                                  : AppColors.lightTextTertiary)),
-                      fontStyle: (typingText != null && typingText.isNotEmpty)
-                          ? FontStyle.italic
-                          : (chat.lastMessage?.isNotEmpty == true
-                              ? FontStyle.normal
-                              : FontStyle.italic),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -842,88 +936,47 @@ class _ChatPageState extends ConsumerState<ChatPage>
     return '${time.month}/${time.day}';
   }
 
-  /// 编辑模式底部操作栏（毛玻璃按钮）
+  /// 编辑模式底部操作栏（扁平白底 + 主色/危险色按钮）
   Widget _buildEditBottomBar(bool isDark, AppLocalizations l10n) {
     final hasSelection = _selectedChatIds.isNotEmpty;
+    final Color barColor = isDark ? const Color(0xFF14161E) : Colors.white;
+    final Color divColor =
+        isDark ? Colors.white.withOpacity(0.05) : _kChatDivider;
 
     return Container(
+      decoration: BoxDecoration(
+        color: barColor,
+        border: Border(top: BorderSide(color: divColor, width: 0.5)),
+      ),
       padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 12,
-        bottom: MediaQuery.of(context).viewPadding.bottom + 12,
+        left: 14,
+        right: 14,
+        top: 10,
+        bottom: MediaQuery.of(context).viewPadding.bottom + 10,
       ),
       child: Row(
         children: [
-          // 标记已读
           Expanded(
-            child: GestureDetector(
+            child: _EditPillButton(
+              label: l10n.markAsRead,
+              icon: Icons.done_all_rounded,
+              enabled: hasSelection,
+              foreground: _kChatPrimary,
+              background: _kChatPrimary.withOpacity(0.12),
+              isDark: isDark,
               onTap: hasSelection ? _markSelectedAsRead : null,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: hasSelection
-                          ? (isDark
-                              ? Colors.white.withOpacity(0.15)
-                              : Colors.white.withOpacity(0.9))
-                          : (isDark
-                              ? Colors.white.withOpacity(0.08)
-                              : Colors.grey.shade200),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      l10n.markAsRead,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: hasSelection
-                            ? AppColors.primary
-                            : (isDark ? Colors.white38 : Colors.grey),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             ),
           ),
-          const SizedBox(width: 12),
-          // 删除
+          const SizedBox(width: 10),
           Expanded(
-            child: GestureDetector(
+            child: _EditPillButton(
+              label: '删除',
+              icon: Icons.delete_outline_rounded,
+              enabled: hasSelection,
+              foreground: AppColors.error,
+              background: AppColors.error.withOpacity(0.12),
+              isDark: isDark,
               onTap: hasSelection ? _deleteSelected : null,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: hasSelection
-                          ? AppColors.error.withOpacity(0.15)
-                          : (isDark
-                              ? Colors.white.withOpacity(0.08)
-                              : Colors.grey.shade200),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      '删除',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: hasSelection
-                            ? AppColors.error
-                            : (isDark ? Colors.white38 : Colors.grey),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             ),
           ),
         ],
@@ -1117,24 +1170,53 @@ class _ChatPageState extends ConsumerState<ChatPage>
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 100,
-            height: 100,
+            width: 120,
+            height: 120,
             child: Lottie.asset(
               'assets/emoji/lottie/hatched_chick.json',
               repeat: true,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             l10n.noChats,
-            style: TextStyle(fontSize: 16, color: AppColors.lightTextSecondary),
+            style: const TextStyle(
+              fontSize: 15,
+              color: _kChatSubText,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => _showCreateOptions(context),
-            child: Text(l10n.startNewChat),
+          const SizedBox(height: 14),
+          Builder(
+            builder: (btnCtx) => GestureDetector(
+              onTap: () => _showCreateOptions(btnCtx),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _kChatPrimary,
+                  borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kChatPrimary.withOpacity(0.28),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Text(
+                l10n.startNewChat,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+              ),
+            ),
           ),
         ],
       ),
@@ -1919,6 +2001,7 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                                         chat.id)
                                                     : chat.id,
                                                 size: 38,
+                                                borderRadius: 12,
                                               ),
                                             ],
                                           ),
@@ -2575,8 +2658,8 @@ class _TGMenuDivider extends StatelessWidget {
   }
 }
 
-// ==================== 文件夹 Tab ====================
-
+// ==================== 文件夹 Tab（已停用，保留代码用于将来切换分组功能） ====================
+// ignore: unused_element
 class _FolderTabs extends ConsumerWidget {
   final List<ChatFolder> folders;
   final int selectedIndex;
@@ -2612,10 +2695,10 @@ class _FolderTabs extends ConsumerWidget {
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
     return SizedBox(
-      height: 48,
+      height: 40,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
         itemCount: folders.length,
         itemBuilder: (context, index) {
           final folder = folders[index];
@@ -2623,99 +2706,76 @@ class _FolderTabs extends ConsumerWidget {
           final unreadCount =
               ref.read(folderProvider.notifier).getUnreadCount(folder, chats);
 
-          return GestureDetector(
-            onTap: () => onSelect(index),
-            child: Container(
-              margin: const EdgeInsets.only(right: 10),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      // 选中渐变蓝色，未选中毛玻璃
-                      gradient: isSelected
-                          ? LinearGradient(
-                              colors: [
-                                AppColors.primary,
-                                AppColors.primaryLight,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : null,
-                      color: isSelected
-                          ? null
-                          : (isDark
-                              ? Colors.white.withOpacity(0.1)
-                              : Colors.white.withOpacity(0.9)),
-                      borderRadius: BorderRadius.circular(20),
-                      border: !isSelected && isDark
-                          ? Border.all(
-                              color: Colors.white.withOpacity(0.08),
-                              width: 0.5,
-                            )
-                          : null,
-                      boxShadow: [
-                        BoxShadow(
-                          color: isSelected
-                              ? AppColors.primary.withOpacity(0.3)
-                              : (isDark
-                                  ? Colors.black.withOpacity(0.2)
-                                  : Colors.black.withOpacity(0.05)),
-                          blurRadius: isSelected ? 12 : 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
+          final Color fg = isSelected
+              ? (isDark ? Colors.white : const Color(0xFF111827))
+              : (isDark ? Colors.white54 : const Color(0xFF8A94A6));
+
+          return Padding(
+            padding: EdgeInsets.only(right: index == folders.length - 1 ? 0 : 22),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => onSelect(index),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 6),
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           _getFolderName(folder, l10n),
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight:
-                                isSelected ? FontWeight.w600 : FontWeight.w500,
-                            color: isSelected
-                                ? Colors.white
-                                : (isDark ? Colors.white : Colors.black87),
+                            fontSize: 15.5,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: fg,
+                            letterSpacing: 0.1,
+                            height: 1.15,
                           ),
                         ),
                         if (unreadCount > 0) ...[
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 5,
+                              vertical: 0,
                             ),
+                            constraints:
+                                const BoxConstraints(minWidth: 16, minHeight: 14),
                             decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.white.withOpacity(0.25)
-                                  : (isDark
-                                      ? AppColors.primary.withOpacity(0.3)
-                                      : AppColors.primary.withOpacity(0.1)),
-                              borderRadius: BorderRadius.circular(10),
+                              color: const Color(0xFFFF3B30),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               unreadCount > 99 ? '99+' : unreadCount.toString(),
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.primary,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                                color: Colors.white,
                               ),
                             ),
                           ),
                         ],
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      height: 3,
+                      width: isSelected ? 22 : 0,
+                      decoration: BoxDecoration(
+                        color: _kChatPrimary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2727,43 +2787,6 @@ class _FolderTabs extends ConsumerWidget {
 }
 
 // ==================== 选项组件 ====================
-
-class _CreateOption extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _CreateOption({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: iconColor.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: iconColor),
-      ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 13, color: AppColors.lightTextSecondary),
-      ),
-      onTap: onTap,
-    );
-  }
-}
 
 // ==================== 新建私聊 ====================
 
@@ -2889,6 +2912,7 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
                             name: contact.name,
                             userId: contact.id,
                             size: 44,
+                            borderRadius: 14,
                             premiumType: contact.premiumType,
                           ),
                           title: ColoredNameWidget(
@@ -3005,3 +3029,128 @@ class _EditActionButton extends StatelessWidget {
     );
   }
 }
+
+// ==================== 新版聊天页顶部圆形按钮 ====================
+
+/// 顶部圆形按钮（左右两侧的"编辑/完成/加号/全选"胶囊）
+///
+/// 视觉：浅灰底、圆角胶囊、Ink 高亮，不使用毛玻璃。
+class _CircleActionButton extends StatelessWidget {
+  final Widget child;
+  final bool isDark;
+  final bool wide;
+
+  /// 当放置在渐变色（顶部主色渐变）背景之上时启用：
+  /// 背景变为半透明白，边框加一层白色 hairline，让按钮在蓝色上依然清晰。
+  final bool onGradient;
+  final VoidCallback onTap;
+
+  const _CircleActionButton({
+    required this.child,
+    required this.isDark,
+    required this.onTap,
+    this.wide = false,
+    this.onGradient = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg = onGradient
+        ? Colors.white.withOpacity(0.22)
+        : (isDark
+            ? Colors.white.withOpacity(0.08)
+            : const Color(0xFFF0F2F5));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          height: 36,
+          constraints: BoxConstraints(minWidth: wide ? 64 : 36),
+          padding: EdgeInsets.symmetric(horizontal: wide ? 12 : 8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(18),
+            border: onGradient
+                ? Border.all(
+                    color: Colors.white.withOpacity(0.30),
+                    width: 0.8,
+                  )
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// 编辑模式底部胶囊按钮（主色/危险色，扁平白底 pill）
+class _EditPillButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final Color foreground;
+  final Color background;
+  final bool isDark;
+  final VoidCallback? onTap;
+
+  const _EditPillButton({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.foreground,
+    required this.background,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = enabled
+        ? foreground
+        : (isDark ? Colors.white24 : const Color(0xFFBDC1C6));
+    final Color bg = enabled
+        ? background
+        : (isDark
+            ? Colors.white.withOpacity(0.04)
+            : const Color(0xFFF0F2F5));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 顶部主色渐变现由公共组件 [TopGradientBackdrop] 提供，
+// 请参见 `lib/shared/widgets/top_gradient_backdrop.dart`。

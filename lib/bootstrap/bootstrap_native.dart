@@ -11,6 +11,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../app.dart';
+import '../core/services/ip_tolerant_http_overrides.dart';
 import '../core/services/server_discovery.dart';
 import '../core/services/background_service.dart';
 import '../core/services/desktop/hotkey_service.dart';
@@ -56,6 +57,14 @@ Future<void> _deleteIsarFiles(String dirPath) async {
 
 Future<void> bootstrapApp() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ⚠️ 必须在 ServerDiscovery / Firebase / 任何 HTTP-WebSocket 客户端构造之前设置。
+  //   HttpOverrides.global 是通过拦截 `HttpClient()` 构造函数生效的，
+  //   一旦下游 (Dio 的 IOHttpClientAdapter、WebSocket.connect) 已经拿到 client
+  //   实例再改就没用了。native-only；web bootstrap 不装（dart:io 是 stub）。
+  //   作用：允许 `https://IPv4` 线路在 APK/iOS 上绕开 TLS 证书校验，
+  //   域名线路仍走系统 CA 严格校验，见 ip_tolerant_http_overrides.dart。
+  HttpOverrides.global = IpTolerantHttpOverrides();
 
   FlutterError.onError = (details) {
     FlutterError.presentError(details);

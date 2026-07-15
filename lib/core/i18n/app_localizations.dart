@@ -520,7 +520,7 @@ const Map<String, Map<String, String>> _translations = {
 };
 
 const Map<String, String> _zhCN = {
-  'app_name': '壹信',
+  'app_name': '易信',
 
   // 通用
   'confirm': '确认',
@@ -905,7 +905,7 @@ const Map<String, String> _zhCN = {
   'contact_support': '联系客服',
   'support_description': '在线客服，我们将尽快为您解答',
   'online_support': '在线客服',
-  'online_support_hint': '点击打开壹信客服系统，在线沟通',
+  'online_support_hint': '点击打开客服系统，在线沟通',
   'qq_support': 'QQ 客服',
   'questions_count': '个问题',
   'thank_you_feedback': '感谢您的反馈！',
@@ -951,7 +951,7 @@ const Map<String, String> _zhCN = {
 
   // 关于页
   'about_title': '关于',
-  'copyright': '© 2024 壹信网络',
+  'copyright': '© 易信',
 
   // 空状态
   'select_chat_to_start': '选择一个聊天开始消息',
@@ -989,7 +989,7 @@ const Map<String, String> _zhCN = {
   'crop_channel_avatar': '裁剪频道头像',
 
   // 搜索页面
-  'search_user_group_channel': '请输入手机号/群名/频道名',
+  'search_user_group_channel': '请输入搜索内容',
   'search_user_to_chat': '搜索用户开始聊天',
   'no_need_add_friend': '无需添加好友，直接发起私聊',
   'also_search_public_groups': '也可搜索公开群组和频道',

@@ -25,11 +25,35 @@ import '../../../shared/widgets/official_badge.dart';
 import '../../../shared/widgets/page_transitions.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
+import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/chat_service.dart' as api;
 import '../../../core/services/api/websocket_service.dart';
 import '../providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
+
+// ==================== 新版 UI 设计令牌（Profile Family） ====================
+const Color _kGpPrimary = Color(0xFFFF6B6B);
+// ignore: unused_element
+const Color _kGpPrimarySoft = Color(0xFFFF9E9E);
+const Color _kGpBg = Color(0xFFF7F8FA);
+const Color _kGpCard = Colors.white;
+const Color _kGpTitleText = Color(0xFF111827);
+const Color _kGpSubText = Color(0xFF6B7280);
+const Color _kGpHintText = Color(0xFF9CA3AF);
+const Color _kGpDivider = Color(0xFFEDEFF2);
+// ignore: unused_element
+const Color _kGpSectionTitle = Color(0xFF8A94A6);
+
+// ==================== 新版布局尺寸（Hero on Gradient） ====================
+/// 顶部 header 内容高度（返回按钮 + 标题）
+const double _kGpHeaderContentHeight = 44;
+
+/// Hero 区（头像 + 名字 + 成员数）主体在渐变上占用的高度
+const double _kGpHeroBodyHeight = 172;
+
+/// 渐变尾巴淡出到透明的额外高度，让渐变自然融进白色主体
+const double _kGpGradientFadeTail = 40;
 
 /// 群组资料页面
 class GroupProfilePage extends ConsumerStatefulWidget {
@@ -51,7 +75,6 @@ class GroupProfilePage extends ConsumerStatefulWidget {
 }
 
 class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
-  api.ChatMediaCounts? _mediaCounts;
   api.Chat? _lastChatDetail;
   final TextEditingController _memberSearchController = TextEditingController();
   bool _showMemberSearch = false;
@@ -61,7 +84,6 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
   @override
   void initState() {
     super.initState();
-    _loadMediaCounts();
   }
 
   @override
@@ -69,20 +91,6 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     _memberSearchDebounce?.cancel();
     _memberSearchController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadMediaCounts() async {
-    try {
-      final chatService = ref.read(api.chatServiceProvider);
-      final response = await chatService.getChatMediaCounts(widget.groupId);
-      if (response.isSuccess && response.data != null && mounted) {
-        setState(() {
-          _mediaCounts = response.data;
-        });
-      }
-    } catch (e) {
-      // 忽略错误
-    }
   }
 
   List<api.ChatMember> _filterMembers(List<api.ChatMember> members) {
@@ -145,417 +153,258 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     final activeMembersAsync = memberKeyword.isEmpty
         ? membersAsync
         : searchedMembersAsync!;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
-    final separatorColor = isDark
-        ? const Color(0xFF38383A)
-        : const Color(0xFFC6C6C8);
+    final bgColor = isDark ? const Color(0xFF0B0C10) : _kGpBg;
+
+    // ======================== 新版极简布局（群资料） ========================
+    //
+    // 顶部三层 Stack：
+    //   Bottom: CustomScrollView，first sliver 为透明占位 + Hero + 极简
+    //           信息行（群名称 / 群介绍 / 群号）+ 操作 pill + 成员列表 +
+    //           加入/退出群链接；
+    //   Middle: TopGradientBackdrop（IgnorePointer）；
+    //   Top:    可交互的返回按钮 + "群组信息" 标题 + 右侧 更多。
+    // ==========================================================================
+
+    final topPad = MediaQuery.of(context).padding.top;
+    // header 之后紧跟 Hero body —— 用它做 SizedBox 占位，Hero 就"贴"在
+    // header 下方（在渐变的深色部分之上）。
+    final double headerSpacerHeight = topPad + _kGpHeaderContentHeight;
+    final double gradientOpaqueHeight = headerSpacerHeight + _kGpHeroBodyHeight;
+    final double gradientTotalHeight =
+        gradientOpaqueHeight + _kGpGradientFadeTail;
+
+    final String groupName = widget.name?.trim().isNotEmpty == true
+        ? widget.name!.trim()
+        : '群组';
+    final String? groupDesc = chatDetail?.description?.trim().isNotEmpty == true
+        ? chatDetail!.description!.trim()
+        : null;
+    final String groupIdValue =
+        chatDetail?.username?.trim().isNotEmpty == true
+            ? '@${chatDetail!.username!.trim()}'
+            : widget.groupId;
+    final int memberCountVal = chatDetail?.memberCount ?? 0;
+    final int onlineCountVal = chatDetail?.onlineCount ?? 0;
+    final int myRole = chatDetail?.myRole ?? 0;
 
     // 桌面端使用居中布局
     Widget content = Scaffold(
       backgroundColor: bgColor,
-      body: CustomScrollView(
-        slivers: [
-          // iOS 风格导航栏
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            elevation: 0,
-            scrolledUnderElevation: 0.5,
-            leading: IconButton(
-              icon: Icon(
-                Icons.arrow_back_ios,
-                size: 20,
-                color: AppColors.primary,
-              ),
-              onPressed: () {
-                if (widget.isDesktopPanel) {
-                  // 桌面面板模式：关闭资料页，返回聊天
-                  ref.read(desktopProfileProvider.notifier).state =
-                      DesktopProfileInfo.none;
-                } else {
-                  context.pop();
-                }
-              },
+      body: Stack(
+        children: [
+          // -------- 底层：装饰渐变（先画在下面，Hero / 白色画布覆盖其上） --------
+          //
+          // 白色文字 / ID 需要落在足够蓝的部分才能读清楚，所以把 midStop
+          // 推到 0.75、midOpacity 提到 0.4，让主色一直延展到 Hero 底部。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: gradientTotalHeight,
+            child: const IgnorePointer(
+              child: TopGradientBackdrop(midStop: 0.75, midOpacity: 0.4),
             ),
-            actions: [
-              if (chatDetail != null && chatDetail.myRole >= 1)
-                FutureBuilder<int>(
-                  future: _loadJoinRequestCount(),
-                  builder: (context, snapshot) {
-                    final pendingCount =
-                        (chatDetail.myRole >= 2 && chatDetail.joinApproval)
-                        ? (snapshot.data ?? 0)
-                        : 0;
-                    return Stack(
-                      clipBehavior: Clip.none,
+          ),
+
+          // -------- 中层：滚动内容（Hero 直接叠在渐变上，Hero 下方
+          //         用白色画布挡住渐变尾巴，再往下就是 Scaffold 白色底） --------
+          Positioned.fill(
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                // 顶部渐变区占位（Hero 也画在渐变上）
+                SliverToBoxAdapter(
+                  child: SizedBox(height: headerSpacerHeight),
+                ),
+                // Hero 区：头像 + 群名 + pill + 成员数（透明背景 → 渐变透出）
+                SliverToBoxAdapter(
+                  child: _buildGroupHero(
+                    context: context,
+                    isDark: isDark,
+                    groupName: groupName,
+                    memberCount: memberCountVal,
+                    onlineCount: onlineCountVal,
+                    isLoading: chatDetailAsync.isLoading && chatDetail == null,
+                  ),
+                ),
+
+                // 白色画布：包裹 Hero 正下方那一段（会跟渐变尾巴重叠），
+                // 之后的成员列表等 sliver 天然落在 Scaffold 白色 body 上。
+                SliverToBoxAdapter(
+                  child: Container(
+                    color: bgColor,
+                    padding: const EdgeInsets.only(top: 20),
+                    child: Column(
                       children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.more_horiz,
-                            color: AppColors.primary,
+                        // 极简信息行：群名称 / 群介绍 / 群号
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 6, 24, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '群名称',
+                                valueText: groupName,
+                                editable: myRole >= 2,
+                                onEdit: myRole >= 2
+                                    ? () => _editGroup(context)
+                                    : null,
+                              ),
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '群介绍',
+                                valueText: groupDesc ?? '无',
+                                isPlaceholder: groupDesc == null,
+                                editable: myRole >= 2,
+                                onEdit: myRole >= 2
+                                    ? () => _editGroup(context)
+                                    : null,
+                              ),
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '群号',
+                                valueText: groupIdValue,
+                                onTap: () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: groupIdValue),
+                                  );
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text('群号已复制'),
+                                      duration: Duration(seconds: 1),
+                                      behavior:
+                                          SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                              ),
+                              if (chatDetail != null &&
+                                  (chatDetail.inviteLink
+                                          ?.trim()
+                                          .isNotEmpty ??
+                                      false))
+                                _buildFlatRow(
+                                  isDark: isDark,
+                                  label: '群二维码',
+                                  valueText: '查看',
+                                  onTap: () => _showGroupQrCode(
+                                      context, chatDetail!),
+                                ),
+                            ],
                           ),
-                          onPressed: () => _showMoreMenu(context, chatDetail),
                         ),
-                        if (pendingCount > 0)
-                          Positioned(
-                            right: 10,
-                            top: 10,
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                                border: Border.all(
+                        // 快捷操作（一行 pill）
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                              20, 26, 20, 0),
+                          child: Consumer(
+                            builder: (context, ref, _) {
+                              final chatListState =
+                                  ref.watch(chatListProvider);
+                              final currentChat = chatListState.allChats
+                                  .where((c) => c.id == widget.groupId)
+                                  .firstOrNull;
+                              final isMuted =
+                                  currentChat?.isMuted ?? false;
+                              return _buildActionPills(
+                                isDark: isDark,
+                                isMuted: isMuted,
+                                onToggleMute: () {
+                                  GlobalHaptics.medium();
+                                  ref
+                                      .read(chatListProvider.notifier)
+                                      .toggleMute(widget.groupId);
+                                },
+                                onSearch: () => _searchMessages(context),
+                                onAnnouncements: () =>
+                                    _openAnnouncements(context),
+                              );
+                            },
+                          ),
+                        ),
+                        // 成员分区：仅一条细线 + label + 搜索按钮
+                        _buildMembersSectionHeader(
+                          isDark: isDark,
+                          memberCount: memberCountVal,
+                          canAddMember: myRole >= 2,
+                          onAddMember: () => _showAddMemberSheet(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 加入请求（管理员可见，一条极简行）
+                if (chatDetail != null &&
+                    chatDetail.myRole >= 2 &&
+                    chatDetail.joinApproval)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.fromLTRB(24, 4, 24, 4),
+                      child: InkWell(
+                        onTap: () => _showJoinRequests(context),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.how_to_reg_outlined,
+                                size: 18,
+                                color: Color(0xFFFF9500),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '加入请求',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
                                   color: isDark
-                                      ? const Color(0xFF1C1C1E)
-                                      : Colors.white,
-                                  width: 1.5,
+                                      ? Colors.white
+                                      : const Color(0xFF111827),
                                 ),
                               ),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                )
-              else
-                const SizedBox.shrink(),
-            ],
-          ),
-
-          // 头像和基本信息
-          SliverToBoxAdapter(
-            child: Container(
-              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Column(
-                children: [
-                  // 群头像
-                  AvatarWidget(
-                    avatar: widget.avatar,
-                    name: widget.name ?? '群组',
-                    size: 100,
-                    borderRadius: 25,
-                  ),
-                  const SizedBox(height: 12),
-                  // 群名称 + 官方标识
-                  Consumer(
-                    builder: (context, ref, _) {
-                      final officialChatsAsync = ref.watch(
-                        officialChatsProvider,
-                      );
-                      final officialChats =
-                          officialChatsAsync.valueOrNull ?? {};
-                      final isOfficial = officialChats.contains(widget.groupId);
-
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.name ?? '群组',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black,
-                            ),
-                          ),
-                          if (isOfficial) ...[
-                            const SizedBox(width: 6),
-                            const OfficialBadge(size: 22),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 4),
-                  // 成员数
-                  Text(
-                    chatDetail != null
-                        ? '${chatDetail.memberCount} 位成员'
-                        : (chatDetailAsync.isLoading ? '加载中...' : '群组'),
-                    style: TextStyle(fontSize: 15, color: Colors.grey),
-                  ),
-                  // 在线人数（有数据时才展示）
-                  if (chatDetail != null && chatDetail.onlineCount > 0) ...
-                    [
-                      const SizedBox(height: 2),
-                      Text(
-                        '${chatDetail.onlineCount} 人在线',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.green.shade400,
-                        ),
-                      ),
-                    ],
-                ],
-              ),
-            ),
-          ),
-
-          // 操作按钮
-          SliverToBoxAdapter(
-            child: Container(
-              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              child: Consumer(
-                builder: (context, ref, _) {
-                  // 获取当前群组的静音状态
-                  final chatListState = ref.watch(chatListProvider);
-                  final allChats = chatListState.allChats;
-                  final currentChat = allChats
-                      .where((c) => c.id == widget.groupId)
-                      .firstOrNull;
-                  final isMuted = currentChat?.isMuted ?? false;
-
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _TGActionButton(
-                        icon: isMuted
-                            ? Icons.notifications_active_outlined
-                            : Icons.notifications_off_outlined,
-                        label: isMuted ? '取消静音' : '静音',
-                        isActive: isMuted,
-                        onTap: () {
-                          GlobalHaptics.medium();
-                          ref
-                              .read(chatListProvider.notifier)
-                              .toggleMute(widget.groupId);
-                        },
-                      ),
-                      _TGActionButton(
-                        icon: Icons.search,
-                        label: '搜索',
-                        onTap: () => _searchMessages(context),
-                      ),
-                      _TGActionButton(
-                        icon: Icons.campaign_outlined,
-                        label: '公告',
-                        onTap: () => _openAnnouncements(context),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-
-          // 间距
-          SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-          // 群信息卡片
-          SliverToBoxAdapter(
-            child: _TGSection(
-              cardColor: cardColor,
-              separatorColor: separatorColor,
-              children: [
-                // 群简介
-                if (chatDetail != null)
-                  _TGInfoCell(
-                    title: chatDetail.description?.isNotEmpty == true
-                        ? chatDetail.description!
-                        : '暂无简介',
-                    subtitle: '简介',
-                  )
-                else if (chatDetailAsync.isLoading)
-                  const _TGInfoCell(title: '加载中...', subtitle: '简介')
-                else
-                  const _TGInfoCell(title: '暂无简介', subtitle: '简介'),
-                // 群组号
-                if (chatDetail?.username?.isNotEmpty == true)
-                  _TGInfoCell(
-                    title: '@${chatDetail!.username}',
-                    subtitle: '群组号',
-                    titleColor: AppColors.primary,
-                    onTap: () {
-                      Clipboard.setData(
-                        ClipboardData(text: '@${chatDetail.username}'),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('群组号已复制'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  )
-                else
-                  const SizedBox.shrink(),
-              ],
-            ),
-          ),
-
-          SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-          // 共享媒体
-          SliverToBoxAdapter(
-            child: _TGSection(
-              cardColor: cardColor,
-              separatorColor: separatorColor,
-              children: [
-                _TGCell(
-                  icon: Icons.photo_outlined,
-                  iconColor: AppColors.primary,
-                  title: '照片和视频',
-                  trailing: _buildCountTrailing('${_mediaCounts?.media ?? 0}'),
-                  onTap: () => _showMediaList(context, '照片和视频', 'media'),
-                ),
-                _TGCell(
-                  icon: Icons.insert_drive_file_outlined,
-                  iconColor: AppColors.primary,
-                  title: '文件',
-                  trailing: _buildCountTrailing('${_mediaCounts?.file ?? 0}'),
-                  onTap: () => _showMediaList(context, '文件', 'file'),
-                ),
-                _TGCell(
-                  icon: Icons.link,
-                  iconColor: AppColors.primary,
-                  title: '链接',
-                  trailing: _buildCountTrailing('${_mediaCounts?.link ?? 0}'),
-                  onTap: () => _showMediaList(context, '链接', 'link'),
-                ),
-                _TGCell(
-                  icon: Icons.mic_outlined,
-                  iconColor: AppColors.primary,
-                  title: '语音消息',
-                  trailing: _buildCountTrailing('${_mediaCounts?.voice ?? 0}'),
-                  onTap: () => _showMediaList(context, '语音消息', 'voice'),
-                ),
-                if (chatDetail != null &&
-                    (chatDetail.inviteLink?.trim().isNotEmpty ?? false))
-                  _TGCell(
-                    icon: Icons.qr_code_2_rounded,
-                    iconColor: AppColors.primary,
-                    title: '群二维码',
-                    trailing: _buildChevronTrailing(),
-                    onTap: () => _showGroupQrCode(context, chatDetail),
-                  )
-                else
-                  const SizedBox.shrink(),
-              ],
-            ),
-          ),
-
-          // 成员标题
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(32, 24, 16, 8),
-              child: Row(
-                children: [
-                  Text(
-                    '成员',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const Spacer(),
-                  activeMembersAsync.when(
-                    data: (members) => Text(
-                      '${members.length}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      _showMemberSearch ? Icons.close : Icons.search,
-                      size: 20,
-                      color: Colors.grey.shade600,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _showMemberSearch = !_showMemberSearch;
-                        if (!_showMemberSearch) {
-                          _memberSearchQuery = '';
-                          _memberSearchController.clear();
-                        }
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // 成员列表
-          SliverToBoxAdapter(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                children: [
-                  // 添加成员（管理员或群主可见）
-                  if (chatDetail != null && chatDetail.myRole >= 2)
-                    _TGCell(
-                      icon: Icons.person_add_outlined,
-                      iconColor: AppColors.primary,
-                      title: '添加成员',
-                      titleColor: AppColors.primary,
-                      onTap: () => _showAddMemberSheet(context),
-                    )
-                  else
-                    const SizedBox.shrink(),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 56),
-                    child: Divider(
-                      height: 0.5,
-                      thickness: 0.5,
-                      color: separatorColor,
-                    ),
-                  ),
-                  // 加入请求（管理员可见）
-                  if (chatDetail != null &&
-                      chatDetail.myRole >= 2 &&
-                      chatDetail.joinApproval)
-                    Column(
-                      children: [
-                        _TGCell(
-                          icon: Icons.how_to_reg_outlined,
-                          iconColor: Colors.orange,
-                          title: '加入请求',
-                          trailing: _JoinRequestCountBadge(
-                            chatId: widget.groupId,
-                          ),
-                          onTap: () => _showJoinRequests(context),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 56),
-                          child: Divider(
-                            height: 0.5,
-                            thickness: 0.5,
-                            color: separatorColor,
+                              const Spacer(),
+                              _JoinRequestCountBadge(
+                                chatId: widget.groupId,
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 20,
+                                color: isDark
+                                    ? Colors.white38
+                                    : const Color(0xFFC0C4CC),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    )
-                  else
-                    const SizedBox.shrink(),
-                  if (_showMemberSearch)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      ),
+                    ),
+                  ),
+
+                // 成员搜索输入框（可切换）
+                if (_showMemberSearch)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.fromLTRB(20, 6, 20, 6),
                       child: TextField(
                         controller: _memberSearchController,
                         onChanged: _onMemberSearchChanged,
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
                           hintText: '搜索成员昵称或用户名',
-                          prefixIcon: const Icon(Icons.search),
+                          prefixIcon: const Icon(Icons.search, size: 18),
                           suffixIcon: _memberSearchQuery.isEmpty
                               ? null
                               : IconButton(
-                                  icon: const Icon(Icons.clear),
+                                  icon: const Icon(Icons.clear, size: 18),
                                   onPressed: () {
                                     _memberSearchDebounce?.cancel();
                                     setState(() {
@@ -568,7 +417,7 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                           filled: true,
                           fillColor: isDark
                               ? const Color(0xFF1C1C1E)
-                              : const Color(0xFFF2F2F7),
+                              : const Color(0xFFF2F4F7),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -576,115 +425,171 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                         ),
                       ),
                     ),
-                  if (_showMemberSearch)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 56),
-                      child: Divider(
-                        height: 0.5,
-                        thickness: 0.5,
-                        color: separatorColor,
-                      ),
-                    ),
-                  // 成员列表
-                  activeMembersAsync.when(
-                    data: (members) {
-                      if (members.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.all(20),
+                  ),
+
+                // 成员列表（不再用白卡包裹）
+                activeMembersAsync.when(
+                  data: (members) {
+                    if (members.isEmpty) {
+                      return SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
                           child: Center(
                             child: Text(
                               memberKeyword.isEmpty ? '暂无成员' : '未找到成员',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark
+                                    ? Colors.white54
+                                    : const Color(0xFF9CA3AF),
+                              ),
                             ),
                           ),
-                        );
-                      }
-                      final myRole = chatDetail?.myRole ?? 0;
-                      return Column(
-                        children: members.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final member = entry.value;
-                          final isLast = index == members.length - 1;
-
-                          return Column(
-                            children: [
-                              _MemberCell(
-                                member: member,
-                                onTap: () {
-                                  // 管理员或群主点击显示操作菜单
-                                  if (myRole >= 2) {
-                                    _showMemberActions(context, member, myRole);
-                                  } else {
-                                    // 普通成员直接跳转资料页
-                                    context.push(
-                                      '/user/${member.userId}?name=${Uri.encodeComponent(member.displayName)}${member.avatar != null ? '&avatar=${Uri.encodeComponent(member.avatar!)}' : ''}',
-                                    );
-                                  }
-                                },
-                              ),
-                              if (!isLast)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 72),
-                                  child: Divider(
-                                    height: 0.5,
-                                    thickness: 0.5,
-                                    color: separatorColor,
-                                  ),
-                                ),
-                            ],
-                          );
-                        }).toList(),
+                        ),
                       );
-                    },
-                    loading: () => const Padding(
-                      padding: EdgeInsets.all(20),
+                    }
+                    return SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final member = members[index];
+                          return _MemberCell(
+                            member: member,
+                            onTap: () {
+                              if (myRole >= 2) {
+                                _showMemberActions(
+                                    context, member, myRole);
+                              } else {
+                                context.push(
+                                  '/user/${member.userId}?name=${Uri.encodeComponent(member.displayName)}${member.avatar != null ? '&avatar=${Uri.encodeComponent(member.avatar!)}' : ''}',
+                                );
+                              }
+                            },
+                          );
+                        },
+                        childCount: members.length,
+                      ),
+                    );
+                  },
+                  loading: () => const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
                       child: Center(child: CircularProgressIndicator()),
                     ),
-                    error: (_, __) => const Padding(
-                      padding: EdgeInsets.all(20),
+                  ),
+                  error: (_, __) => const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
                       child: Center(child: Text('加载失败')),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
+                ),
 
-          SliverToBoxAdapter(child: SizedBox(height: 20)),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-          // 加入/退出群组
-          SliverToBoxAdapter(
-            child: _TGSection(
-              cardColor: cardColor,
-              separatorColor: separatorColor,
-              children: [
-                if (chatDetail != null && chatDetail.myRole == 3)
-                  // 群主 - 显示解散群组
-                  _TGCell(
-                    title: '解散群组',
-                    titleColor: Colors.red,
-                    onTap: () => _showDissolveDialog(context),
-                  )
-                else if (chatDetail != null && chatDetail.myRole >= 1)
-                  // 已加入 - 显示退出群组
-                  _TGCell(
-                    title: '退出群组',
-                    titleColor: Colors.red,
-                    onTap: () => _showLeaveDialog(context),
-                  )
-                else if (chatDetailAsync.isLoading && _lastChatDetail == null)
-                  const SizedBox.shrink()
-                else
-                  // 未加入 - 显示加入群组
-                  _TGCell(
-                    title: '加入群组',
-                    titleColor: AppColors.primary,
-                    onTap: () => _joinGroup(context),
+                // 加入 / 退出 / 解散群 —— 一行文本按钮，无卡片
+                SliverToBoxAdapter(
+                  child: _buildGroupActionLink(
+                    context: context,
+                    isDark: isDark,
+                    chatDetail: chatDetail,
+                    chatDetailAsync: chatDetailAsync,
                   ),
+                ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 40)),
               ],
             ),
           ),
 
-          SliverToBoxAdapter(child: SizedBox(height: 40)),
+          // -------- 顶层：交互式返回按钮 + 标题 + 右侧更多 --------
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle.light,
+              child: SafeArea(
+                bottom: false,
+                child: SizedBox(
+                  height: _kGpHeaderContentHeight,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: Colors.white,
+                        ),
+                        onPressed: () {
+                          if (widget.isDesktopPanel) {
+                            ref
+                                .read(desktopProfileProvider.notifier)
+                                .state = DesktopProfileInfo.none;
+                          } else {
+                            context.pop();
+                          }
+                        },
+                      ),
+                      const Text(
+                        '群组信息',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (chatDetail != null && chatDetail.myRole >= 1)
+                        FutureBuilder<int>(
+                          future: _loadJoinRequestCount(),
+                          builder: (context, snapshot) {
+                            final pendingCount = (chatDetail.myRole >= 2 &&
+                                    chatDetail.joinApproval)
+                                ? (snapshot.data ?? 0)
+                                : 0;
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.more_horiz_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () =>
+                                      _showMoreMenu(context, chatDetail!),
+                                ),
+                                if (pendingCount > 0)
+                                  Positioned(
+                                    right: 8,
+                                    top: 8,
+                                    child: Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        )
+                      else
+                        const SizedBox(width: 12),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -710,19 +615,390 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     return content;
   }
 
+  // ==================== 新版 Hero / 极简行 / 操作 pill 辅助方法 ====================
+
+  /// 群 Hero：叠在渐变上，居中显示头像 + 群名 + pill + 成员数
+  Widget _buildGroupHero({
+    required BuildContext context,
+    required bool isDark,
+    required String groupName,
+    required int memberCount,
+    required int onlineCount,
+    required bool isLoading,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(23),
+            ),
+            child: AvatarWidget(
+              avatar: widget.avatar,
+              name: groupName,
+              size: 78,
+              borderRadius: 20,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  groupName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.35),
+                    width: 0.6,
+                  ),
+                ),
+                child: const Text(
+                  '群组名称',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Consumer(
+                builder: (context, ref, _) {
+                  final officialChatsAsync =
+                      ref.watch(officialChatsProvider);
+                  final officialChats =
+                      officialChatsAsync.valueOrNull ?? {};
+                  final isOfficial = officialChats.contains(widget.groupId);
+                  if (!isOfficial) return const SizedBox.shrink();
+                  return const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: OfficialBadge(size: 16),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // 成员数 + 在线数
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isLoading ? '加载中...' : '$memberCount 位成员',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withOpacity(0.85),
+                  letterSpacing: 0.2,
+                ),
+              ),
+              if (onlineCount > 0) ...[
+                const SizedBox(width: 10),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF34C759),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$onlineCount 在线',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 极简信息行（无卡片、无背景）：label + value + 可选编辑图标 / 点击回调
+  Widget _buildFlatRow({
+    required bool isDark,
+    required String label,
+    required String valueText,
+    bool editable = false,
+    bool isPlaceholder = false,
+    VoidCallback? onEdit,
+    VoidCallback? onTap,
+  }) {
+    final Color labelColor = isDark ? Colors.white70 : const Color(0xFF3A3F47);
+    final Color valueColor = isPlaceholder
+        ? (isDark ? Colors.white38 : const Color(0xFF9CA3AF))
+        : (isDark ? Colors.white : const Color(0xFF111827));
+
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 68,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: labelColor,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valueText,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: valueColor,
+              ),
+            ),
+          ),
+          if (editable)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Icon(
+                Icons.edit_outlined,
+                size: 16,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (onEdit != null) {
+      return InkWell(onTap: onEdit, child: row);
+    }
+    if (onTap != null) {
+      return InkWell(onTap: onTap, child: row);
+    }
+    return row;
+  }
+
+  /// 一行 pill 风格操作按钮：静音 / 搜索 / 公告
+  Widget _buildActionPills({
+    required bool isDark,
+    required bool isMuted,
+    required VoidCallback onToggleMute,
+    required VoidCallback onSearch,
+    required VoidCallback onAnnouncements,
+  }) {
+    final actions = <_GroupHeroActionSpec>[
+      _GroupHeroActionSpec(
+        icon: isMuted
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_off_outlined,
+        label: isMuted ? '取消静音' : '静音',
+        color: isMuted ? const Color(0xFFFF3B30) : _kGpPrimary,
+        onTap: onToggleMute,
+      ),
+      _GroupHeroActionSpec(
+        icon: Icons.search_rounded,
+        label: '搜索',
+        color: const Color(0xFF34C759),
+        onTap: onSearch,
+      ),
+      _GroupHeroActionSpec(
+        icon: Icons.campaign_rounded,
+        label: '公告',
+        color: const Color(0xFFFF9500),
+        onTap: onAnnouncements,
+      ),
+    ];
+
+    return Row(
+      children: [
+        for (int i = 0; i < actions.length; i++) ...[
+          Expanded(
+            child: _GroupActionPill(spec: actions[i]),
+          ),
+          if (i != actions.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+
+  /// "成员 N" 分区标题（左侧文字，右侧添加成员 + 搜索）
+  Widget _buildMembersSectionHeader({
+    required bool isDark,
+    required int memberCount,
+    required bool canAddMember,
+    required VoidCallback onAddMember,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 20, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '成员',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : const Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$memberCount',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+            ),
+          ),
+          const Spacer(),
+          if (canAddMember)
+            IconButton(
+              onPressed: onAddMember,
+              icon: Icon(
+                Icons.person_add_alt_1_rounded,
+                size: 20,
+                color: isDark ? Colors.white70 : const Color(0xFF3A3F47),
+              ),
+              tooltip: '添加成员',
+              splashRadius: 20,
+            ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _showMemberSearch = !_showMemberSearch;
+                if (!_showMemberSearch) {
+                  _memberSearchQuery = '';
+                  _memberSearchController.clear();
+                }
+              });
+            },
+            icon: Icon(
+              _showMemberSearch
+                  ? Icons.close_rounded
+                  : Icons.search_rounded,
+              size: 20,
+              color: isDark ? Colors.white70 : const Color(0xFF3A3F47),
+            ),
+            tooltip: _showMemberSearch ? '收起搜索' : '搜索成员',
+            splashRadius: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "加入 / 退出 / 解散" 单行文本按钮
+  Widget _buildGroupActionLink({
+    required BuildContext context,
+    required bool isDark,
+    required api.Chat? chatDetail,
+    required AsyncValue<api.Chat?> chatDetailAsync,
+  }) {
+    if (chatDetailAsync.isLoading && chatDetail == null) {
+      return const SizedBox.shrink();
+    }
+    late final String text;
+    late final Color textColor;
+    late final VoidCallback onTap;
+    if (chatDetail != null && chatDetail.myRole == 3) {
+      text = '解散群组';
+      textColor = const Color(0xFFFF3B30);
+      onTap = () => _showDissolveDialog(context);
+    } else if (chatDetail != null && chatDetail.myRole >= 1) {
+      text = '退出群组';
+      textColor = const Color(0xFFFF3B30);
+      onTap = () => _showLeaveDialog(context);
+    } else {
+      text = '加入群组';
+      textColor = _kGpPrimary;
+      onTap = () => _joinGroup(context);
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCountTrailing(String count) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(count, style: TextStyle(color: Colors.grey, fontSize: 17)),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : const Color(0xFFF1F3F6),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            count,
+            style: TextStyle(
+              color: isDark ? Colors.white70 : _kGpSubText,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         const SizedBox(width: 6),
-        Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+        Icon(
+          Icons.chevron_right_rounded,
+          color: isDark ? Colors.white24 : const Color(0xFFCBD1D9),
+          size: 20,
+        ),
       ],
     );
   }
 
   Widget _buildChevronTrailing() {
-    return Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Icon(
+      Icons.chevron_right_rounded,
+      color: isDark ? Colors.white24 : const Color(0xFFCBD1D9),
+      size: 20,
+    );
   }
 
   void _showMediaList(BuildContext context, String title, String type) {
@@ -1024,14 +1300,13 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '解散失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('解散失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('解散失败: $e')),
         );
       }
     }
@@ -1202,14 +1477,13 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         ScaffoldMessenger.of(pageContext).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '禁言失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(pageContext).showSnackBar(
-          SnackBar(content: Text('禁言失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('禁言失败: $e')),
         );
       }
     }
@@ -1243,14 +1517,13 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '操作失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -1287,14 +1560,13 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '操作失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -1351,14 +1623,13 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '操作失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -1617,23 +1888,34 @@ class _TGSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final validChildren = children
         .where((c) => c is! SizedBox || (c as SizedBox).height != 0)
         .toList();
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           for (int i = 0; i < validChildren.length; i++) ...[
             validChildren[i],
             if (i < validChildren.length - 1)
               Padding(
-                padding: const EdgeInsets.only(left: 16),
+                padding: const EdgeInsets.only(left: 64),
                 child: Divider(
                   height: 0.5,
                   thickness: 0.5,
@@ -1647,17 +1929,21 @@ class _TGSection extends StatelessWidget {
   }
 }
 
-//  信息单元格
+//  信息单元格（标签在上、值在下，左侧图标胶囊）
 class _TGInfoCell extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color? titleColor;
+  final IconData? icon;
+  final Color? iconColor;
   final VoidCallback? onTap;
 
   const _TGInfoCell({
     required this.title,
     required this.subtitle,
     this.titleColor,
+    this.icon,
+    this.iconColor,
     this.onTap,
   });
 
@@ -1665,41 +1951,80 @@ class _TGInfoCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      color:
-                          titleColor ?? (isDark ? Colors.white : Colors.black),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
-                  ),
-                ],
+    IconData effectiveIcon = icon ?? Icons.info_outline_rounded;
+    Color effectiveIconColor = iconColor ?? _kGpPrimary;
+    if (icon == null) {
+      if (subtitle.contains('简介') || subtitle.contains('描述')) {
+        effectiveIcon = Icons.description_outlined;
+        effectiveIconColor = const Color(0xFF34C759);
+      } else if (subtitle.contains('号') || subtitle.contains('username')) {
+        effectiveIcon = Icons.alternate_email_rounded;
+        effectiveIconColor = const Color(0xFF7C3AED);
+      }
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: effectiveIconColor.withOpacity(0.08),
+        highlightColor: effectiveIconColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: Icon(effectiveIcon, color: effectiveIconColor, size: 24),
               ),
-            ),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white54 : _kGpSubText,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor ??
+                            (isDark ? Colors.white : _kGpTitleText),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: isDark
+                      ? Colors.white24
+                      : const Color(0xFFBDBDBD),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-//  单元格
+//  单元格（无背景纯色图标 + 标题 + 右侧内容）
 class _TGCell extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
@@ -1720,29 +2045,212 @@ class _TGCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveIconColor = iconColor ?? _kGpPrimary;
+    final effectiveTitleColor =
+        titleColor ?? (isDark ? Colors.white : _kGpTitleText);
+    final isDestructive = titleColor == Colors.red;
+    // 无图标 (纯文字按钮) 时，居中显示更好
+    final centerNoIcon = icon == null;
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: iconColor ?? Colors.grey, size: 24),
-              const SizedBox(width: 16),
-            ],
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 17,
-                  color: titleColor ?? (isDark ? Colors.white : Colors.black),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: effectiveIconColor.withOpacity(0.08),
+        highlightColor: effectiveIconColor.withOpacity(0.04),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: centerNoIcon ? 14 : 14,
+          ),
+          child: Row(
+            children: [
+              if (icon != null) ...[
+                SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: Icon(icon, color: effectiveIconColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign:
+                      centerNoIcon ? TextAlign.center : TextAlign.start,
+                  style: TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: centerNoIcon
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                    color: effectiveTitleColor,
+                  ),
                 ),
               ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 白色宫格卡片
+class _GpGridCard extends StatelessWidget {
+  final List<Widget> items;
+  final Color cardColor;
+  final bool isDark;
+
+  const _GpGridCard({
+    required this.items,
+    required this.cardColor,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
-            if (trailing != null) trailing!,
           ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final w in items) Expanded(child: w),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 宫格内按钮：图标胶囊 +（可选数字）+ 名称，垂直排布
+class _GpGridButton extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String? count;
+  final VoidCallback onTap;
+
+  const _GpGridButton({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+    this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color labelColor =
+        isDark ? Colors.white70 : const Color(0xFF6B7280);
+    final Color countColor =
+        isDark ? Colors.white : const Color(0xFF111827);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: iconColor.withOpacity(0.08),
+        highlightColor: iconColor.withOpacity(0.04),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Icon(icon, color: iconColor, size: 30),
+              ),
+              const SizedBox(height: 8),
+              if (count != null) ...[
+                Text(
+                  count!,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: countColor,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: labelColor,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部 Hero 区域中使用的圆形玻璃按钮
+class _GpGlassCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _GpGlassCircleButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: Icon(
+            icon,
+            color: isDark ? Colors.white : _kGpTitleText,
+            size: 18,
+          ),
         ),
       ),
     );
@@ -2084,6 +2592,62 @@ class _TGActionSheetItem {
   });
 }
 
+// ==================== 新版群资料 pill 风格操作按钮（无卡片） ====================
+class _GroupHeroActionSpec {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _GroupHeroActionSpec({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+}
+
+class _GroupActionPill extends StatelessWidget {
+  final _GroupHeroActionSpec spec;
+
+  const _GroupActionPill({required this.spec});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = spec.onTap != null;
+    final Color base = spec.color;
+    return Material(
+      color: base.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: spec.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(spec.icon,
+                  size: 22, color: enabled ? base : base.withOpacity(0.5)),
+              const SizedBox(height: 6),
+              Text(
+                spec.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? base : base.withOpacity(0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 //  操作按钮
 class _TGActionButton extends StatelessWidget {
   final IconData icon;
@@ -2102,40 +2666,55 @@ class _TGActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 激活状态使用不同颜色
-    final activeColor = isActive ? Colors.red : AppColors.primary;
+    // 三个操作按钮在渐变头部区域内使用浅色玻璃感样式
+    final activeColor = isActive ? const Color(0xFFFF6B6B) : Colors.white;
+    final bgColor = Colors.white.withOpacity(isActive ? 0.14 : 0.18);
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
+      behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
-              color: activeColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
+              color: bgColor,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.28),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.10),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: isLoading
-                ? const Center(
+                ? Center(
                     child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: activeColor,
+                      ),
                     ),
                   )
                 : Icon(icon, size: 26, color: activeColor),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             label,
             style: TextStyle(
-              fontSize: 13,
-              color: isActive
-                  ? Colors.red
-                  : (isDark ? Colors.white70 : Colors.black87),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: activeColor,
+              letterSpacing: 0.2,
             ),
           ),
         ],
@@ -3196,7 +3775,6 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '设置失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
@@ -3204,7 +3782,7 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
       if (mounted) {
         _loadGroupInfo();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('设置失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('设置失败: $e')),
         );
       }
     }
@@ -3213,7 +3791,7 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
   Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('群组名称不能为空'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('群组名称不能为空')),
       );
       return;
     }
@@ -3255,14 +3833,13 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '保存失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('保存失败: $e')),
         );
       }
     } finally {
@@ -3309,14 +3886,13 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '删除失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('删除失败: $e')),
         );
       }
     }
@@ -3668,14 +4244,13 @@ class _AddMemberSheetState extends ConsumerState<_AddMemberSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '添加失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('添加失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('添加失败: $e')),
         );
       }
     } finally {
@@ -4418,14 +4993,13 @@ class _GroupAnnouncementsPageState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '操作失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('操作失败: $e')),
         );
       }
     }
@@ -4468,14 +5042,13 @@ class _GroupAnnouncementsPageState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message ?? '删除失败'),
-            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('删除失败: $e')),
         );
       }
     }

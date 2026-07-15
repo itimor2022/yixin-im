@@ -94,7 +94,7 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: $e'), backgroundColor: AppColors.error),
+        SnackBar(content: Text('保存失败: $e')),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -299,7 +299,7 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
-                    l10n.get('nickname_color_hint') ?? '在群聊和频道中显示的昵称颜色',
+                    l10n.get('nickname_color_hint') ?? '在群聊中显示的昵称颜色',
                     style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.black45),
                   ),
                 ),

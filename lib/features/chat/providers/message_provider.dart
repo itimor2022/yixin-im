@@ -20,6 +20,8 @@ import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/storage/models/message_model.dart';
 import '../../../core/services/offline_message_queue.dart';
+import '../../../core/services/voice_blob_bytes_stub.dart'
+    if (dart.library.html) '../../../core/services/voice_blob_bytes_web.dart';
 import '../../../core/utils/image_compress_util.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/services/storage/isar_service.dart';
@@ -2704,19 +2706,69 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
     Future.microtask(() => _saveMessagesToLocal([message]));
 
     try {
-      final file = File(localPath);
-      if (!await file.exists()) {
-        _updateMessageStatus(localId, MessageStatus.failed);
-        return;
-      }
+      // ─── 组装 FormData ─────────────────────────────────────────────
+      // Web: localPath 是 `blob:https://...` URL —— 先读成 bytes 再上传，
+      //      同时用 record 侧探测到的 mimeType/extension（对齐 backend 白名单）；
+      //      web 没有 dart:io File 可用，走 fromBytes。
+      // Native: 保持原来的 File → fromFile 上传，避免影响安卓 / iOS 行为。
+      final FormData formData;
+      if (PlatformUtils.isWeb) {
+        Uint8List bytes;
+        try {
+          bytes = await readBlobBytes(localPath);
+        } catch (e) {
+          if (kDebugMode) debugPrint('[Voice] Read blob failed: $e');
+          _updateMessageStatus(localId, MessageStatus.failed);
+          return;
+        }
+        if (bytes.isEmpty) {
+          _updateMessageStatus(localId, MessageStatus.failed);
+          return;
+        }
+        // 从 blob URL 里没法拿到扩展名 —— 用 opus/webm 兜底（Chrome/Firefox），
+        // Safari 的 MediaRecorder 会走 audio/mp4 分支，此时 blob URL 也是 mp4。
+        // 简单起见根据字节魔数猜一下，避免 backend 的 detectAudioTypeByMagic
+        // 因为 Content-Type 与内容不符拦下来。
+        final String ext;
+        final String mimeType;
+        if (_looksLikeWebm(bytes)) {
+          ext = 'webm';
+          mimeType = 'audio/webm';
+        } else if (_looksLikeOgg(bytes)) {
+          ext = 'ogg';
+          mimeType = 'audio/ogg';
+        } else if (_looksLikeMp4(bytes)) {
+          ext = 'm4a';
+          mimeType = 'audio/mp4';
+        } else {
+          // 未知：老实按 webm 走，多数情况就是 Chrome 的 opus。
+          ext = 'webm';
+          mimeType = 'audio/webm';
+        }
 
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          localPath,
-          filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
-        ),
-        'duration': durationMs.toString(),
-      });
+        formData = FormData.fromMap({
+          'file': MultipartFile.fromBytes(
+            bytes,
+            filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.$ext',
+            contentType: DioMediaType.parse(mimeType),
+          ),
+          'duration': durationMs.toString(),
+        });
+      } else {
+        final file = File(localPath);
+        if (!await file.exists()) {
+          _updateMessageStatus(localId, MessageStatus.failed);
+          return;
+        }
+
+        formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            localPath,
+            filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
+          ),
+          'duration': durationMs.toString(),
+        });
+      }
 
       final uploadResponse = await _apiClient.upload<Map<String, dynamic>>(
         '/upload/voice',
@@ -2774,6 +2826,36 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
       if (kDebugMode) debugPrint('[Voice] Send error: $e');
       _updateMessageStatus(localId, MessageStatus.failed);
     }
+  }
+
+  // ─── 音频魔数嗅探（仅 web 上传时用） ─────────────────────────────────
+  // 后端 upload_handler.detectAudioTypeByMagic 会做二次校验，前端先根据
+  // 首字节挑对 Content-Type/扩展名，避免把 webm 内容硬贴 audio/mp4 触发拦截。
+  static bool _looksLikeWebm(Uint8List b) {
+    // EBML header: 1A 45 DF A3
+    return b.length >= 4 &&
+        b[0] == 0x1A &&
+        b[1] == 0x45 &&
+        b[2] == 0xDF &&
+        b[3] == 0xA3;
+  }
+
+  static bool _looksLikeOgg(Uint8List b) {
+    // "OggS"
+    return b.length >= 4 &&
+        b[0] == 0x4F &&
+        b[1] == 0x67 &&
+        b[2] == 0x67 &&
+        b[3] == 0x53;
+  }
+
+  static bool _looksLikeMp4(Uint8List b) {
+    // MP4/M4A: [size(4)] 'f' 't' 'y' 'p'
+    return b.length >= 8 &&
+        b[4] == 0x66 &&
+        b[5] == 0x74 &&
+        b[6] == 0x79 &&
+        b[7] == 0x70;
   }
 
   Future<String?> sendLocationMessage({

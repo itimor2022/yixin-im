@@ -10,11 +10,9 @@ import '../../features/auth/pages/forgot_password_page.dart';
 import '../../features/auth/pages/register_page.dart';
 import '../../features/chat/pages/chat_page.dart';
 import '../../features/chat/pages/chat_detail_page.dart';
-import '../../features/chat/pages/channel_page.dart';
 import '../../features/chat/pages/group_edit_page.dart';
 import '../../features/chat/pages/user_profile_page.dart';
 import '../../features/chat/pages/group_profile_page.dart';
-import '../../features/chat/pages/channel_profile_page.dart';
 import '../../features/chat/pages/qr_scanner_page.dart';
 import '../../features/chat/pages/search_page.dart';
 import '../../features/settings/pages/personalization_page.dart';
@@ -30,6 +28,7 @@ import '../../features/settings/pages/settings_page.dart';
 import '../../features/settings/pages/chat_settings_page.dart';
 import '../../features/settings/pages/profile_page.dart';
 import '../../features/settings/pages/bind_phone_page.dart';
+import '../../features/me/pages/me_page.dart';
 import '../../features/home/pages/home_page.dart';
 import '../../features/meeting/pages/meeting_page.dart';
 import '../../features/splash/pages/splash_page.dart';
@@ -155,28 +154,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-      // 频道页面（公告/只读）
-      GoRoute(
-        path: '/channel/:channelId',
-        name: 'channel',
-        pageBuilder: (context, state) {
-          final channelId = state.pathParameters['channelId']!;
-          final channelName = state.uri.queryParameters['name'] ?? '';
-          final avatar = state.uri.queryParameters['avatar'];
-          final container = ProviderScope.containerOf(context);
-          final uid = container.read(authServiceProvider).user?.uuid ?? '';
-          return IOSPage(
-            key: state.pageKey,
-            child: ChannelPage(
-              key: ValueKey('channel_${channelId}_$uid'),
-              channelId: channelId,
-              channelName: channelName,
-              avatar: avatar,
-            ),
-          );
-        },
-      ),
-
       // 搜索页面
       GoRoute(
         path: '/search',
@@ -235,25 +212,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             key: state.pageKey,
             child: GroupProfilePage(
               groupId: groupId,
-              name: name,
-              avatar: avatar,
-            ),
-          );
-        },
-      ),
-
-      // 频道资料页
-      GoRoute(
-        path: '/channel/:channelId/profile',
-        name: 'channelProfile',
-        pageBuilder: (context, state) {
-          final channelId = state.pathParameters['channelId']!;
-          final name = state.uri.queryParameters['name'];
-          final avatar = state.uri.queryParameters['avatar'];
-          return IOSPage(
-            key: state.pageKey,
-            child: ChannelProfilePage(
-              channelId: channelId,
               name: name,
               avatar: avatar,
             ),
@@ -432,7 +390,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
 
-          // 设置
+          // 我的（主页）
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -440,7 +398,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 name: 'settings',
                 pageBuilder: (context, state) => CustomTransitionPage(
                   key: state.pageKey,
-                  child: const SettingsPage(),
+                  child: const MePage(),
                   transitionsBuilder: noTransition, // Tab 页面使用无过渡，更流畅
                 ),
                 routes: [

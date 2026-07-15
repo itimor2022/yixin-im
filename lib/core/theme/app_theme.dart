@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../shared/utils/snackbar_utils.dart';
 import 'app_colors.dart';
 import 'app_text_styles.dart';
 
@@ -160,16 +161,9 @@ class AppTheme {
       ),
     ),
     
-    // Snackbar
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.darkSurface,
-      contentTextStyle: AppTextStyles.bodyMedium.copyWith(color: Colors.white),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-    ),
-    
+    // Snackbar：统一采用深色中性卡片 + 圆角，见 snackbar_utils.dart
+    snackBarTheme: buildAppSnackBarTheme(),
+
     // 文字主题
     textTheme: _textTheme(AppColors.lightTextPrimary, AppColors.lightTextSecondary),
   );
@@ -326,16 +320,9 @@ class AppTheme {
       ),
     ),
     
-    // Snackbar
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.darkCard,
-      contentTextStyle: AppTextStyles.bodyMedium.copyWith(color: Colors.white),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-    ),
-    
+    // Snackbar：统一采用深色中性卡片 + 圆角，见 snackbar_utils.dart
+    snackBarTheme: buildAppSnackBarTheme(),
+
     // 文字主题
     textTheme: _textTheme(AppColors.darkTextPrimary, AppColors.darkTextSecondary),
   );
@@ -501,15 +488,8 @@ class AppTheme {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     ),
 
-    // Snackbar：墨色底，白字
-    snackBarTheme: const SnackBarThemeData(
-      backgroundColor: Color(0xFF2C1A10),
-      contentTextStyle: TextStyle(color: Colors.white),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(8)),
-      ),
-      behavior: SnackBarBehavior.floating,
-    ),
+    // Snackbar：统一采用深色中性卡片，全站一致（见 snackbar_utils.dart）
+    snackBarTheme: buildAppSnackBarTheme(),
 
     // Dialog：宣纸白，细边
     dialogTheme: DialogThemeData(

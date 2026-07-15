@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -8,26 +11,23 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:webview_windows/webview_windows.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/utils/platform_utils.dart';
 
-/// 计算内嵌网页底部需要预留的高度，
-/// 以避开悬浮底部导航栏，兼容各种设备（含刘海屏 / 全面屏 / Home 键机型 / 桌面端）。
+/// 把 WebView 伪装成真实的 Chrome for Android。
 ///
-/// 逻辑与 [HomePage] 中悬浮导航栏定位一致：
-/// - 移动设备使用 safeArea 底部 + 缓冲；
-/// - 无 safeArea 的设备（老机型 / 桌面 mobile layout）使用固定 14.0；
-/// - 桌面侧边栏模式下不显示悬浮导航栏，无需预留。
-double _floatingNavBottomInset(
-  BuildContext context, {
-  required bool isDesktopSidebar,
-  double extra = 12,
-}) {
-  if (isDesktopSidebar) return 0;
-  final rawBottomOffset = FloatingNavLayout.bottomOffset(context);
-  final navBarBottomOffset = rawBottomOffset > 0 ? rawBottomOffset : 14.0;
-  return FloatingNavLayout.barHeight + 12 + navBarBottomOffset + extra;
-}
+/// 修 bug：内嵌客服系统里一条消息显示两条（服务器上其实只有一条，
+/// 外部浏览器打开正常）。根因是很多客服系统 JS 里根据 User-Agent 判断：
+/// 检测到 UA 里带 "; wv)"（Android WebView 的默认标记）时，就走
+/// 一条不太一样的降级分支——常见是同时开 WebSocket + long-poll，
+/// 结果服务器推送到达两次，本地去重失败就出现重复消息。
+///
+/// 把 UA 换成完全干净的 Chrome for Android，客服 JS 就会走跟外部
+/// 浏览器一模一样的代码路径。UA 里的 Android 版本 / Chrome 版本
+/// 可以过一段时间维护一次以保持"新鲜"，但只是为了避开某些站点
+/// 对超旧浏览器的兼容降级，不换也不影响功能。
+const String _kBrowserUserAgent =
+    'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
 
 class CustomPortalContent extends StatelessWidget {
   final String title;
@@ -54,7 +54,7 @@ class CustomPortalContent extends StatelessWidget {
     if (PlatformUtils.isAndroid ||
         PlatformUtils.isIOS ||
         PlatformUtils.isMacOS) {
-      return _PortalWebView(url: url, isDesktopSidebar: isDesktopSidebar);
+      return _PortalWebView(url: url);
     }
 
     return _PortalExternalFallback(
@@ -68,9 +68,8 @@ class CustomPortalContent extends StatelessWidget {
 
 class _PortalWebView extends StatefulWidget {
   final String url;
-  final bool isDesktopSidebar;
 
-  const _PortalWebView({required this.url, required this.isDesktopSidebar});
+  const _PortalWebView({required this.url});
 
   @override
   State<_PortalWebView> createState() => _PortalWebViewState();
@@ -80,6 +79,12 @@ class _PortalWebViewState extends State<_PortalWebView> {
   late final WebViewController _controller;
   bool _isLoading = true;
   double _progress = 0;
+
+  // 用于 Android WebView 的 <input type="file"> 处理：
+  // 内嵌客服系统里的"发图"按钮本质是原生 HTML file input，Android
+  // WebView 不注册 OnShowFileSelector 会静默丢弃点击。这里的 ImagePicker
+  // 用于覆盖 accept="image/*" + capture 的相机快拍分支。
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -113,6 +118,9 @@ class _PortalWebViewState extends State<_PortalWebView> {
     final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(jsMode)
       ..setBackgroundColor(Colors.white)
+      // 伪装成 Chrome for Android，让客服 JS 走跟外部浏览器一样的分支，
+      // 避免 WebView 特殊降级导致的消息重复渲染。详见 _kBrowserUserAgent 注释。
+      ..setUserAgent(_kBrowserUserAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
@@ -127,11 +135,19 @@ class _PortalWebViewState extends State<_PortalWebView> {
             setState(() {
               _isLoading = true;
             });
-            _controller.setJavaScriptMode(
-              url.startsWith('https://')
-                  ? JavaScriptMode.unrestricted
-                  : JavaScriptMode.disabled,
-            );
+            // 故意**不**在这里再调 setJavaScriptMode。
+            //
+            // 修 bug：内嵌客服系统里发一条消息会出现两条（重进又只剩一条）。
+            // 根因是 Android WebView 只要在 onPageStarted 里再次调用
+            // setJavaScriptMode（哪怕值不变），WebSettings.setJavaScriptEnabled
+            // 就会重新评估，在页面加载途中触发某些 SPA 的初始化脚本**跑第二遍**——
+            // 注册两次 WebSocket 监听 / 两次 send 事件处理器，结果每条消息就
+            // 会被本地渲染两遍。切走 tab 再回来时页面重新拉取服务器最新记录，
+            // 覆盖掉本地错误状态，所以看到「重新进入又是一条」。
+            //
+            // JS 模式在 controller 初始化时（上面 setJavaScriptMode(jsMode)）
+            // 按 initialUrl 的 scheme 决定一次就够了。真正跳到不同 scheme 的
+            // 危险 URL 会在 onNavigationRequest 里被拒。
           },
           onPageFinished: (_) {
             if (!mounted) return;
@@ -158,12 +174,172 @@ class _PortalWebViewState extends State<_PortalWebView> {
       );
 
     if (controller.platform is AndroidWebViewController) {
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
+      final androidController = controller.platform as AndroidWebViewController;
+      androidController
+        ..setMediaPlaybackRequiresUserGesture(false)
+        // 关键：注册文件选择器回调。不注册的话内嵌网页里的图片上传按钮
+        // （<input type="file">）在 Android WebView 上会**完全没反应**，
+        // 用户只能打字，无法发图。iOS 的 WKWebView 内置支持不需要额外注册。
+        ..setOnShowFileSelector(_handleAndroidFileSelection);
+      // 仅在 debug 模式下把内嵌页面的 console.log/warn/error 打到 Flutter
+      // 日志。方便以后定位客服 JS 里 dedup / WS 相关的坑，release 包不生效。
+      if (kDebugMode) {
+        androidController.setOnConsoleMessage((msg) {
+          debugPrint(
+            '[PortalWebView][console.${msg.level.name}] ${msg.message}',
+          );
+        });
+      }
     }
 
     controller.loadRequest(Uri.parse(initialUrl));
     return controller;
+  }
+
+  /// 处理 Android WebView 里的 `<input type="file">` 点击。
+  ///
+  /// 分类逻辑（**任何分支都必须给 FilePicker 一个合法组合**——否则会抛
+  /// "Unsupported filter" 异常，客服系统里就点了没反应）：
+  ///   1. `accept="image/*" capture` → 直接拉相机（单选）
+  ///   2. 只挑了图片（image/* / image/xxx / .jpg / .png / ...）
+  ///      → `FileType.image`
+  ///   3. 明确列了扩展名（`.pdf,.docx,...`）→ `FileType.custom + 扩展名列表`
+  ///   4. 兜底：accept 为空 / 只有 `*/*` / 只有 MIME 但没扩展名
+  ///      → `FileType.any`（能选任意文件，浏览器自己拒绝不合规上传）
+  ///
+  /// **关键坑**：任何时候都**不要**在没有 allowedExtensions 的情况下传
+  /// `FileType.custom`。file_picker 在这种组合下会直接抛
+  /// "Unsupported filter" 异常——很多客服系统 accept 值（比如空的、
+  /// `image/*,application/pdf` 这种混合 MIME 组合）都会踩到这个坑。
+  Future<List<String>> _handleAndroidFileSelection(
+    FileSelectorParams params,
+  ) async {
+    try {
+      final allowMultiple = params.mode == FileSelectorMode.openMultiple;
+      // 过滤掉空字符串和 */*（等于"任意类型"，不算限制）
+      final acceptedTypes = params.acceptTypes
+          .map((type) => type.trim())
+          .where((type) => type.isNotEmpty && type != '*/*')
+          .toList();
+
+      if (kDebugMode) {
+        debugPrint(
+          '[PortalWebView] file select: multi=$allowMultiple '
+          'capture=${params.isCaptureEnabled} '
+          'accept=$acceptedTypes',
+        );
+      }
+
+      // 1) capture=true 且包含图片类型 → 直接拉相机
+      final shouldUseCamera = params.isCaptureEnabled &&
+          acceptedTypes.any((type) => type.startsWith('image/'));
+      if (shouldUseCamera && !allowMultiple) {
+        final capturedFile = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 90,
+          maxWidth: 1920,
+          maxHeight: 1920,
+        );
+        if (capturedFile == null) {
+          return <String>[];
+        }
+        return <String>[_pathToWebViewUri(capturedFile.path)];
+      }
+
+      // 2) 图片专属：所有类型都是 image/* 或常见图片扩展名。
+      //    空 accept 不算图片专属，会 fallthrough 到最后的 FileType.any。
+      const imageExtensions = <String>{
+        '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif',
+      };
+      final isImageOnly = acceptedTypes.isNotEmpty &&
+          acceptedTypes.every(
+            (type) =>
+                type.startsWith('image/') ||
+                imageExtensions.contains(type.toLowerCase()),
+          );
+      if (isImageOnly) {
+        final result = await FilePicker.platform.pickFiles(
+          allowMultiple: allowMultiple,
+          type: FileType.image,
+        );
+        return _mapFiles(result);
+      }
+
+      // 3) 有明确扩展名 → 用 FileType.custom 精准过滤
+      final extensions = _extractAllowedExtensions(acceptedTypes);
+      if (extensions != null && extensions.isNotEmpty) {
+        final result = await FilePicker.platform.pickFiles(
+          allowMultiple: allowMultiple,
+          type: FileType.custom,
+          allowedExtensions: extensions,
+        );
+        return _mapFiles(result);
+      }
+
+      // 4) 兜底：accept 为空 / 只写了 MIME 但没有点分扩展名 / 只有 */*
+      //    用 FileType.any 让用户随便选，避免 "Unsupported filter" 异常。
+      //    网页端有需要会自己在 JS 里拒绝不合规的上传。
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: allowMultiple,
+        type: FileType.any,
+      );
+      return _mapFiles(result);
+    } catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[PortalWebView] File selection failed: $error\n$stack');
+      }
+      return <String>[];
+    }
+  }
+
+  /// 把 FilePicker 结果映射成 file:// URI 列表。
+  ///
+  /// **重要**：不能直接返回 file.path！Android WebView 的
+  /// onShowFileChooser 内部会做 `Uri.parse(...)`，裸文件路径（如
+  /// `/data/user/0/xxx/1.png`）没 scheme，Chromium 会报
+  /// `The file choice request has an invalid Uri` 直接拒收。
+  /// 必须转成 `file:///data/user/0/xxx/1.png`。
+  List<String> _mapFiles(FilePickerResult? result) {
+    if (result == null || result.files.isEmpty) {
+      return <String>[];
+    }
+    return result.files
+        .map((file) => file.path)
+        .whereType<String>()
+        .map(_pathToWebViewUri)
+        .toList();
+  }
+
+  /// 把 Android 本地文件路径转成 WebView 可接受的 file:// URI。
+  /// 如果输入已经是 URI（比如 content:// 或 file://）就原样返回。
+  String _pathToWebViewUri(String path) {
+    if (path.startsWith('file://') ||
+        path.startsWith('content://') ||
+        path.startsWith('http://') ||
+        path.startsWith('https://')) {
+      return path;
+    }
+    return Uri.file(path).toString();
+  }
+
+  /// 把 HTML `accept` 属性里的点分扩展名（如 ".pdf", ".doc"）
+  /// 提取成 FilePicker 需要的 List<String>（不带点，全小写）。
+  ///
+  /// 全是 MIME / 没有点分扩展名时返回 null。调用方需要据此选择
+  /// `FileType.any` 而不是 `FileType.custom`，否则 file_picker 会抛异常。
+  List<String>? _extractAllowedExtensions(List<String> acceptTypes) {
+    final extensions = acceptTypes
+        .where((type) => type.startsWith('.'))
+        .map((type) => type.substring(1).toLowerCase())
+        .where((type) => type.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (extensions.isEmpty) {
+      return null;
+    }
+
+    return extensions;
   }
 
   String _normalizeUrl(String url) {
@@ -198,32 +374,24 @@ class _PortalWebViewState extends State<_PortalWebView> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = _floatingNavBottomInset(
-      context,
-      isDesktopSidebar: widget.isDesktopSidebar,
-    );
-
     return SafeArea(
       top: false,
       bottom: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: Column(
-          children: [
-            if (_isLoading)
-              LinearProgressIndicator(
-                value: _progress == 0 ? null : _progress,
-                minHeight: 2,
-                backgroundColor: Colors.transparent,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  AppColors.primary,
-                ),
-              )
-            else
-              const SizedBox(height: 2),
-            Expanded(child: WebViewWidget(controller: _controller)),
-          ],
-        ),
+      child: Column(
+        children: [
+          if (_isLoading)
+            LinearProgressIndicator(
+              value: _progress == 0 ? null : _progress,
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.primary,
+              ),
+            )
+          else
+            const SizedBox(height: 2),
+          Expanded(child: WebViewWidget(controller: _controller)),
+        ],
       ),
     );
   }
@@ -383,57 +551,49 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
       );
     }
 
-    final bottomInset = _floatingNavBottomInset(
-      context,
-      isDesktopSidebar: widget.isDesktopSidebar,
-    );
-
     return SafeArea(
       top: false,
       bottom: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: _isReady
-                  ? Webview(_controller)
-                  : const Center(child: CircularProgressIndicator()),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: _isLoading
-                  ? const LinearProgressIndicator(
-                      minHeight: 2,
-                      backgroundColor: Colors.transparent,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                    )
-                  : const SizedBox(height: 2),
-            ),
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: Tooltip(
-                message: '在系统浏览器打开',
-                child: FilledButton.tonal(
-                  onPressed: _openExternally,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(42, 42),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _isReady
+                ? Webview(_controller)
+                : const Center(child: CircularProgressIndicator()),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: _isLoading
+                ? const LinearProgressIndicator(
+                    minHeight: 2,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
                     ),
+                  )
+                : const SizedBox(height: 2),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Tooltip(
+              message: '在系统浏览器打开',
+              child: FilledButton.tonal(
+                onPressed: _openExternally,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(42, 42),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-                  child: const Icon(Icons.open_in_new_rounded, size: 18),
                 ),
+                child: const Icon(Icons.open_in_new_rounded, size: 18),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -470,19 +630,9 @@ class _PortalExternalFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final resolvedTitle = title.isEmpty ? '打开网站' : title;
-    final bottomInset = _floatingNavBottomInset(
-      context,
-      isDesktopSidebar: isDesktopSidebar,
-      extra: 0,
-    );
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          isDesktopSidebar ? 12 : 20,
-          16,
-          20 + bottomInset,
-        ),
+        padding: EdgeInsets.fromLTRB(16, isDesktopSidebar ? 12 : 20, 16, 20),
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(

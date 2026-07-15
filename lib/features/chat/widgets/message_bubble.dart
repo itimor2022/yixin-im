@@ -15,7 +15,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
-import '../utils/call_status_text.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -28,6 +27,7 @@ import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/visible_lottie.dart';
 import '../../../core/utils/link_utils.dart';
+import '../utils/call_status_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/message_provider.dart';
 import '../pages/user_profile_page.dart';
@@ -101,14 +101,11 @@ class MessageBubble extends StatelessWidget {
     final bubbleLuminance = bubbleColor.computeLuminance();
     final textColor = bubbleLuminance > 0.5 ? Colors.black : Colors.white;
 
-    // 时间颜色 - 同样根据气泡亮度调整
+    // 时间颜色 - 白色气泡下统一使用微信风格的浅灰
     final Color timeColor;
     if (bubbleLuminance > 0.5) {
-      // 浅色气泡：使用深色时间
-      timeColor =
-          isOutgoing ? const Color(0xFF5D9B5D) : const Color(0xFF888888);
+      timeColor = const Color(0xFF9CA3AF);
     } else {
-      // 深色气泡：使用浅色时间
       timeColor = Colors.white60;
     }
 
@@ -675,16 +672,16 @@ class MessageBubble extends StatelessWidget {
         borderRadius: _getBubbleRadius(isOutgoing),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -949,7 +946,11 @@ class MessageBubble extends StatelessWidget {
   /// 优化：先快速检查是否包含动画表情，避免不必要的遍历
   Widget _buildRichTextContent(Color textColor) {
     final content = message.content;
-    final defaultStyle = AppTextStyles.bodyMedium.copyWith(color: textColor);
+    final defaultStyle = AppTextStyles.bodyMedium.copyWith(
+      color: textColor,
+      fontSize: 15.5,
+      height: 1.35,
+    );
     final isGroup = true;
 
     // 快速路径：如果消息较短或不包含 emoji 范围的字符，检查链接并返回
@@ -1740,7 +1741,10 @@ Widget _buildImageBubble(
     String content,
     bool isOutgoing,
   ) {
+    // 后端历史通话消息可能以英文小写状态词结尾（如 "视频通话 cancelled"），
+    // 先统一翻成中文，避免气泡里露出原始英文字样。
     content = normalizeCallStatusText(content);
+
     // 已有明确状态的消息直接返回
     if (content.contains('已取消') ||
         content.contains('对方忙') ||
@@ -1775,6 +1779,7 @@ Widget _buildImageBubble(
     // 有时长的通话，正常显示
     return (displayText: content, isMissed: false);
   }
+
 
   /// 构建红包消息气泡（带实时状态）
   Widget _buildRedPacketBubble(
@@ -1950,21 +1955,23 @@ Widget _buildImageBubble(
   }
 
   BorderRadius _getBubbleRadius(bool isOutgoing) {
-    const radius = Radius.circular(18);
-    const smallRadius = Radius.circular(4);
+    // 更圆润的气泡；同一发送方连续消息尖角处圆度更小以形成"连体"
+    const radius = Radius.circular(20);
+    const smallRadius = Radius.circular(6);
+    const tailRadius = Radius.circular(6);
 
     if (isOutgoing) {
       return BorderRadius.only(
         topLeft: radius,
         topRight: isFirstInGroup ? radius : smallRadius,
         bottomLeft: radius,
-        bottomRight: isLastInGroup ? radius : smallRadius,
+        bottomRight: isLastInGroup ? tailRadius : smallRadius,
       );
     } else {
       return BorderRadius.only(
         topLeft: isFirstInGroup ? radius : smallRadius,
         topRight: radius,
-        bottomLeft: isLastInGroup ? radius : smallRadius,
+        bottomLeft: isLastInGroup ? tailRadius : smallRadius,
         bottomRight: radius,
       );
     }
@@ -2394,7 +2401,6 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage>
               Expanded(child: Text('保存失败: $e')),
             ],
           ),
-          backgroundColor: Colors.red,
         ),
       );
     }
@@ -2567,7 +2573,7 @@ class _FileBubbleWidgetState extends State<_FileBubbleWidget>
           _progress = 0.0;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('下载失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('下载失败: $e')),
         );
       }
     }
@@ -2618,7 +2624,7 @@ class _FileBubbleWidgetState extends State<_FileBubbleWidget>
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开文件: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('无法打开文件: $e')),
         );
       }
     }
@@ -3007,7 +3013,7 @@ class _VoiceBubbleWidgetState extends State<_VoiceBubbleWidget>
         if (kDebugMode) debugPrint('[VoiceBubble] Play error: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('播放失败: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('播放失败: $e')),
           );
         }
       }
@@ -3826,7 +3832,6 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage>
               ],
             ),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),

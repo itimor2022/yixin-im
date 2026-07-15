@@ -7,8 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
-import '../../../core/theme/app_text_styles.dart';
 import '../../../core/theme/theme_provider.dart';
+import '../../../shared/widgets/settings_ui.dart';
 
 /// 气泡颜色 Provider
 final bubbleColorProvider = StateNotifierProvider<BubbleColorNotifier, BubbleColors>((ref) {
@@ -18,12 +18,13 @@ final bubbleColorProvider = StateNotifierProvider<BubbleColorNotifier, BubbleCol
 class BubbleColors {
   final Color outgoing;
   final Color incoming;
-  
+
+  /// 默认：微信风格纯白（发送 / 接收气泡都是 #FFFFFF）
   const BubbleColors({
-    this.outgoing = const Color(0xFFDDD6FE),  // 薰衣草
-    this.incoming = const Color(0xFFF5F3FF),
+    this.outgoing = const Color(0xFFFFFFFF),
+    this.incoming = const Color(0xFFFFFFFF),
   });
-  
+
   BubbleColors copyWith({Color? outgoing, Color? incoming}) {
     return BubbleColors(
       outgoing: outgoing ?? this.outgoing,
@@ -36,40 +37,67 @@ class BubbleColorNotifier extends StateNotifier<BubbleColors> {
   BubbleColorNotifier() : super(const BubbleColors()) {
     _loadColors();
   }
-  
+
   static const String _outgoingKey = 'bubble_outgoing_color';
   static const String _incomingKey = 'bubble_incoming_color';
   static const String _presetIndexKey = 'bubble_preset_index';
-  
-  int _presetIndex = 10;  // 默认薰衣草，索引10
+
+  /// 版本标记：写入 1 之后如果本地缓存里存了旧的薰衣草色，就当作
+  /// 未设置强制刷新为微信白色。避免老用户升级后气泡还是紫色。
+  static const String _defaultsVersionKey = 'bubble_defaults_version';
+  static const int _currentDefaultsVersion = 2;
+
+  /// 老版本的默认色（用于识别未主动改过颜色的用户）
+  static const int _legacyOutgoingValue = 0xFFDDD6FE; // 薰衣草
+  static const int _legacyIncomingValue = 0xFFF5F3FF;
+
+  int _presetIndex = 0;
   int get presetIndex => _presetIndex;
-  
+
   Future<void> _loadColors() async {
     final prefs = await SharedPreferences.getInstance();
-    final outgoingValue = prefs.getInt(_outgoingKey);
-    final incomingValue = prefs.getInt(_incomingKey);
+    final storedVersion = prefs.getInt(_defaultsVersionKey) ?? 1;
+    var outgoingValue = prefs.getInt(_outgoingKey);
+    var incomingValue = prefs.getInt(_incomingKey);
     _presetIndex = prefs.getInt(_presetIndexKey) ?? 0;
-    
+
+    // 升级：把旧默认色（薰衣草）当作"未设置"处理，回退到微信白
+    if (storedVersion < _currentDefaultsVersion) {
+      if (outgoingValue == _legacyOutgoingValue) {
+        outgoingValue = null;
+        await prefs.remove(_outgoingKey);
+      }
+      if (incomingValue == _legacyIncomingValue) {
+        incomingValue = null;
+        await prefs.remove(_incomingKey);
+      }
+      await prefs.setInt(_defaultsVersionKey, _currentDefaultsVersion);
+    }
+
     if (outgoingValue != null || incomingValue != null) {
       state = BubbleColors(
-        outgoing: outgoingValue != null ? Color(outgoingValue) : const Color(0xFFDDD6FE),
-        incoming: incomingValue != null ? Color(incomingValue) : const Color(0xFFF5F3FF),
+        outgoing: outgoingValue != null
+            ? Color(outgoingValue)
+            : const Color(0xFFFFFFFF),
+        incoming: incomingValue != null
+            ? Color(incomingValue)
+            : const Color(0xFFFFFFFF),
       );
     }
   }
-  
+
   Future<void> setOutgoingColor(Color color) async {
     state = state.copyWith(outgoing: color);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_outgoingKey, color.value);
   }
-  
+
   Future<void> setIncomingColor(Color color) async {
     state = state.copyWith(incoming: color);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_incomingKey, color.value);
   }
-  
+
   Future<void> setPresetIndex(int index) async {
     _presetIndex = index;
     final prefs = await SharedPreferences.getInstance();
@@ -194,247 +222,228 @@ class ChatSettingsPage extends ConsumerStatefulWidget {
 class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final chatBackground = ref.watch(chatBackgroundProvider);
     final bubbleColors = ref.watch(bubbleColorProvider);
     final messageSettings = ref.watch(messageSettingsProvider);
 
-    // 桌面端面板模式：只返回内容，不需要 Scaffold 和 AppBar
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, chatBackground, bubbleColors, messageSettings, l10n);
-    }
-
-    return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
-        title: Text(l10n.chatSettings),
-        backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        elevation: 0,
-      ),
-      body: _buildBody(isDark, chatBackground, bubbleColors, messageSettings, l10n),
+    return SettingsScaffold(
+      title: l10n.chatSettings,
+      isDesktopPanel: widget.isDesktopPanel,
+      children: _buildChildren(chatBackground, bubbleColors, messageSettings, l10n),
     );
   }
 
-  Widget _buildBody(bool isDark, ChatBackground chatBackground, BubbleColors bubbleColors, MessageSettings messageSettings, AppLocalizations l10n) {
-    return ListView(
-        children: [
-          // ============ 消息 ============
-          _SectionHeader(title: l10n.get('messages') ?? '消息', isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _SwitchTile(
-                title: l10n.get('message_preview') ?? '消息预览',
-                subtitle: l10n.get('show_message_in_notification') ?? '在通知中显示消息内容',
-                value: messageSettings.showPreview,
-                onChanged: (v) => ref.read(messageSettingsProvider.notifier).setShowPreview(v),
-                isDark: isDark,
-              ),
-              _Divider(isDark: isDark),
-              _SwitchTile(
-                title: l10n.get('link_preview') ?? '链接预览',
-                subtitle: l10n.get('show_link_preview_in_message') ?? '在消息中显示网页预览',
-                value: messageSettings.showLinkPreview,
-                onChanged: (v) => ref.read(messageSettingsProvider.notifier).setShowLinkPreview(v),
-                isDark: isDark,
-              ),
-            ],
+  List<Widget> _buildChildren(
+    ChatBackground chatBackground,
+    BubbleColors bubbleColors,
+    MessageSettings messageSettings,
+    AppLocalizations l10n,
+  ) {
+    return [
+      // ============ 消息 ============
+      SettingsSection(l10n.get('messages') ?? '消息'),
+      SettingsSwitchIsland(
+        icon: Icons.preview_outlined,
+        iconColor: const Color(0xFF5AC8FA),
+        label: l10n.get('message_preview') ?? '消息预览',
+        subtitle: l10n.get('show_message_in_notification') ?? '在通知中显示消息内容',
+        value: messageSettings.showPreview,
+        onChanged: (v) =>
+            ref.read(messageSettingsProvider.notifier).setShowPreview(v),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.link_rounded,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.get('link_preview') ?? '链接预览',
+        subtitle:
+            l10n.get('show_link_preview_in_message') ?? '在消息中显示网页预览',
+        value: messageSettings.showLinkPreview,
+        onChanged: (v) =>
+            ref.read(messageSettingsProvider.notifier).setShowLinkPreview(v),
+      ),
+
+      // ============ 外观 ============
+      SettingsSection(l10n.appearance),
+      SettingsChoiceIsland(
+        icon: Icons.wallpaper_rounded,
+        iconColor: const Color(0xFFAF52DE),
+        label: l10n.get('chat_background') ?? '聊天背景',
+        trailing: _buildBackgroundPreview(chatBackground),
+        onTap: () => _showBackgroundPicker(context),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.chat_bubble_outline_rounded,
+        iconColor: AppColors.primary,
+        label: l10n.get('bubble_color') ?? '气泡颜色',
+        trailing: _buildBubblePreview(bubbleColors),
+        onTap: () => _showBubbleColorPicker(context),
+      ),
+      SettingsCustomIsland(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: _buildFontSizeSlider(messageSettings, l10n),
+      ),
+
+      // ============ 媒体 ============
+      SettingsSection(l10n.get('media') ?? '媒体'),
+      SettingsSwitchIsland(
+        icon: Icons.image_outlined,
+        iconColor: const Color(0xFFFF9500),
+        label: '自动下载图片',
+        value: messageSettings.autoDownloadImages,
+        onChanged: (v) => ref
+            .read(messageSettingsProvider.notifier)
+            .setAutoDownloadImages(v),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.videocam_outlined,
+        iconColor: const Color(0xFFFF2D55),
+        label: '自动下载视频',
+        value: messageSettings.autoDownloadVideos,
+        onChanged: (v) => ref
+            .read(messageSettingsProvider.notifier)
+            .setAutoDownloadVideos(v),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.gif_box_outlined,
+        iconColor: const Color(0xFF5856D6),
+        label: '自动播放 GIF',
+        value: messageSettings.autoPlayGif,
+        onChanged: (v) =>
+            ref.read(messageSettingsProvider.notifier).setAutoPlayGif(v),
+      ),
+    ];
+  }
+
+  Widget _buildBackgroundPreview(ChatBackground chatBackground) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: chatBackground.gradient,
+        color: chatBackground.solidColor ?? const Color(0xFFE8D5E0),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x11000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
           ),
-          
-          // ============ 外观 ============
-          _SectionHeader(title: l10n.appearance, isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              // 聊天背景
-              _buildBackgroundTile(context, isDark, chatBackground, l10n),
-              _Divider(isDark: isDark),
-              // 气泡颜色
-              _buildBubbleColorTile(context, isDark, bubbleColors, l10n),
-              _Divider(isDark: isDark),
-              // 字体大小
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.get('font_size') ?? '字体大小',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(l10n.get('small') ?? '小', style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                        )),
-                        Expanded(
-                          child: Slider(
-                            value: messageSettings.fontSize,
-                            min: 12,
-                            max: 24,
-                            divisions: 6,
-                            activeColor: AppColors.primary,
-                            onChanged: (v) => ref.read(messageSettingsProvider.notifier).setFontSize(v),
-                          ),
-                        ),
-                        Text(l10n.get('large') ?? '大', style: TextStyle(
-                          fontSize: 20,
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                        )),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          
-          // ============ 媒体 ============
-          _SectionHeader(title: l10n.get('media') ?? '媒体', isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _SwitchTile(
-                title: '自动下载图片',
-                value: messageSettings.autoDownloadImages,
-                onChanged: (v) => ref.read(messageSettingsProvider.notifier).setAutoDownloadImages(v),
-                isDark: isDark,
-              ),
-              _Divider(isDark: isDark),
-              _SwitchTile(
-                title: '自动下载视频',
-                value: messageSettings.autoDownloadVideos,
-                onChanged: (v) => ref.read(messageSettingsProvider.notifier).setAutoDownloadVideos(v),
-                isDark: isDark,
-              ),
-              _Divider(isDark: isDark),
-              _SwitchTile(
-                title: '自动播放GIF',
-                value: messageSettings.autoPlayGif,
-                onChanged: (v) => ref.read(messageSettingsProvider.notifier).setAutoPlayGif(v),
-                isDark: isDark,
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 32),
         ],
-      );
-  }
-
-  /// 构建聊天背景设置项
-  Widget _buildBackgroundTile(BuildContext context, bool isDark, ChatBackground chatBackground, AppLocalizations l10n) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (kDebugMode) debugPrint('[ChatSettings] 点击聊天背景');
-        _showBackgroundPicker(context);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                l10n.get('chat_background') ?? '聊天背景',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                ),
-              ),
-            ),
-            Text(
-              l10n.get('custom_chat_background') ?? '自定义聊天背景',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            // 背景预览
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                gradient: chatBackground.gradient,
-                color: chatBackground.solidColor ?? const Color(0xFFE8D5E0),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  /// 构建气泡颜色设置项
-  Widget _buildBubbleColorTile(BuildContext context, bool isDark, BubbleColors bubbleColors, AppLocalizations l10n) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (kDebugMode) debugPrint('[ChatSettings] 点击气泡颜色');
-        _showBubbleColorPicker(context);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                l10n.get('bubble_color') ?? '气泡颜色',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                ),
-              ),
-            ),
-            Text(
-              l10n.get('default') ?? '默认',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            // 气泡颜色预览
-            Container(
+  Widget _buildBubblePreview(BubbleColors bubbleColors) {
+    return SizedBox(
+      width: 48,
+      height: 24,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
                 color: bubbleColors.incoming,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                border: Border.all(color: const Color(0x22000000)),
               ),
             ),
-            const SizedBox(width: 4),
-            Container(
+          ),
+          Positioned(
+            left: 18,
+            top: 0,
+            child: Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
                 color: bubbleColors.outgoing,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                border: Border.all(color: const Color(0x22000000)),
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFontSizeSlider(
+      MessageSettings messageSettings, AppLocalizations l10n) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.get('font_size') ?? '字体大小',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? Colors.white : const Color(0xFF111827),
+                ),
+              ),
+            ),
+            Text(
+              '${messageSettings.fontSize.toInt()}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+              ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Text(
+              l10n.get('small') ?? '小',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+            ),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2,
+                  thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 7),
+                  overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14),
+                ),
+                child: Slider(
+                  value: messageSettings.fontSize,
+                  min: 12,
+                  max: 24,
+                  divisions: 6,
+                  activeColor: AppColors.primary,
+                  inactiveColor:
+                      isDark ? Colors.white10 : const Color(0xFFE5E7EB),
+                  onChanged: (v) => ref
+                      .read(messageSettingsProvider.notifier)
+                      .setFontSize(v),
+                ),
+              ),
+            ),
+            Text(
+              l10n.get('large') ?? '大',
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -876,12 +885,11 @@ class _BubbleColorPickerSheet extends ConsumerStatefulWidget {
 }
 
 class _BubbleColorPickerSheetState extends ConsumerState<_BubbleColorPickerSheet> {
-  int _selectedPresetIndex = 10;  // 默认薰衣草
-  
+  int _selectedPresetIndex = 0; // 默认：微信白
+
   @override
   void initState() {
     super.initState();
-    // 从 Provider 读取保存的索引
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final savedIndex = ref.read(bubbleColorProvider.notifier).presetIndex;
       if (savedIndex != _selectedPresetIndex && savedIndex < _bubblePresets.length) {
@@ -889,11 +897,13 @@ class _BubbleColorPickerSheetState extends ConsumerState<_BubbleColorPickerSheet
       }
     });
   }
-  
+
   // 气泡颜色预设
   static const List<Map<String, Color>> _bubblePresets = [
-    // === 经典风格 ===
-    // 默认 (TG 风格)
+    // === 简约风格 ===
+    // 微信白（默认）—— 发送 / 接收都是白色，微信简约风
+    {'outgoing': Colors.white, 'incoming': Colors.white},
+    // TG 风格（浅绿 + 白）
     {'outgoing': Color(0xFFEFFEDD), 'incoming': Colors.white},
     // 经典蓝
     {'outgoing': Color(0xFFD6EAF8), 'incoming': Color(0xFFF8F9FA)},
@@ -1251,183 +1261,5 @@ class _CustomOptionButton extends StatelessWidget {
   }
 }
 
-/// 设置卡片
-class _SettingsCard extends StatelessWidget {
-  final bool isDark;
-  final List<Widget> children;
-
-  const _SettingsCard({
-    required this.isDark,
-    required this.children,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(children: children),
-    );
-  }
-}
-
-/// 分割线
-class _Divider extends StatelessWidget {
-  final bool isDark;
-
-  const _Divider({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      indent: 16,
-      color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-    );
-  }
-}
-
-/// 开关设置项
-class _SwitchTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  final bool isDark;
-
-  const _SwitchTile({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-    required this.isDark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 导航设置项
-class _NavigationTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback onTap;
-  final bool isDark;
-
-  const _NavigationTile({
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    required this.onTap,
-    required this.isDark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (trailing != null) trailing!,
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 分组标题
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final bool isDark;
-
-  const _SectionHeader({required this.title, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-        ),
-      ),
-    );
-  }
-}
+// _SettingsCard / _Divider / _SwitchTile / _NavigationTile / _SectionHeader
+// 已迁移到 shared/widgets/settings_ui.dart 的 SettingsScaffold + Island 家族。

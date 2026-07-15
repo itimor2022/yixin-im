@@ -123,12 +123,10 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
               _currentUrl = url;
               _isSecure = url.startsWith('https://');
             });
-            // 页面跳转时同步更新 JS 模式
-            _controller.setJavaScriptMode(
-              url.startsWith('https://')
-                  ? JavaScriptMode.unrestricted
-                  : JavaScriptMode.disabled,
-            );
+            // 故意**不**在这里再调 setJavaScriptMode。
+            // 详见 custom_portal_content_native.dart 里的注释：这样做会让
+            // 某些 SPA 的初始化脚本跑第二遍，出现消息 / 事件被处理两次。
+            // JS 模式在 controller 初始化时决定一次即可。
           },
           onPageFinished: (url) async {
             setState(() {
@@ -213,6 +211,9 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
     }
   }
 
+  // 详见 CustomPortalContent._handleAndroidFileSelection 里的注释：
+  // 关键坑是 FileType.custom + null/empty allowedExtensions 会抛
+  // "Unsupported filter" 异常。任何时候都得给 FilePicker 一个合法组合。
   Future<List<String>> _handleAndroidFileSelection(
     FileSelectorParams params,
   ) async {
@@ -220,12 +221,18 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
       final allowMultiple = params.mode == FileSelectorMode.openMultiple;
       final acceptedTypes = params.acceptTypes
           .map((type) => type.trim())
-          .where((type) => type.isNotEmpty)
+          .where((type) => type.isNotEmpty && type != '*/*')
           .toList();
+
+      if (kDebugMode) {
+        debugPrint(
+          '[WebView] file select: multi=$allowMultiple '
+          'capture=${params.isCaptureEnabled} accept=$acceptedTypes',
+        );
+      }
 
       final shouldUseCamera = params.isCaptureEnabled &&
           acceptedTypes.any((type) => type.startsWith('image/'));
-
       if (shouldUseCamera && !allowMultiple) {
         final capturedFile = await _imagePicker.pickImage(
           source: ImageSource.camera,
@@ -236,39 +243,72 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
         if (capturedFile == null) {
           return <String>[];
         }
-        return <String>[capturedFile.path];
+        return <String>[_pathToWebViewUri(capturedFile.path)];
       }
 
+      const imageExtensions = <String>{
+        '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif',
+      };
       final isImageOnly = acceptedTypes.isNotEmpty &&
           acceptedTypes.every(
             (type) =>
                 type.startsWith('image/') ||
-                type == '.jpg' ||
-                type == '.jpeg' ||
-                type == '.png' ||
-                type == '.gif' ||
-                type == '.webp',
+                imageExtensions.contains(type.toLowerCase()),
           );
-
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: allowMultiple,
-        type: isImageOnly ? FileType.image : FileType.custom,
-        allowedExtensions:
-            isImageOnly ? null : _extractAllowedExtensions(acceptedTypes),
-      );
-
-      if (result == null || result.files.isEmpty) {
-        return <String>[];
+      if (isImageOnly) {
+        final result = await FilePicker.platform.pickFiles(
+          allowMultiple: allowMultiple,
+          type: FileType.image,
+        );
+        return _mapFilePickerResult(result);
       }
 
-      return result.files
-          .map((file) => file.path)
-          .whereType<String>()
-          .toList();
-    } catch (error) {
-      if (kDebugMode) debugPrint('[WebView] File selection failed: $error');
+      final extensions = _extractAllowedExtensions(acceptedTypes);
+      if (extensions != null && extensions.isNotEmpty) {
+        final result = await FilePicker.platform.pickFiles(
+          allowMultiple: allowMultiple,
+          type: FileType.custom,
+          allowedExtensions: extensions,
+        );
+        return _mapFilePickerResult(result);
+      }
+
+      // 兜底：accept 空 / 只有 MIME / */* → FileType.any
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: allowMultiple,
+        type: FileType.any,
+      );
+      return _mapFilePickerResult(result);
+    } catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[WebView] File selection failed: $error\n$stack');
+      }
       return <String>[];
     }
+  }
+
+  // 详见 CustomPortalContent._mapFiles 里的注释：
+  // 必须把文件路径转成 file:// URI，否则 Android WebView 会以
+  // "invalid Uri" 拒绝接收。
+  List<String> _mapFilePickerResult(FilePickerResult? result) {
+    if (result == null || result.files.isEmpty) {
+      return <String>[];
+    }
+    return result.files
+        .map((file) => file.path)
+        .whereType<String>()
+        .map(_pathToWebViewUri)
+        .toList();
+  }
+
+  String _pathToWebViewUri(String path) {
+    if (path.startsWith('file://') ||
+        path.startsWith('content://') ||
+        path.startsWith('http://') ||
+        path.startsWith('https://')) {
+      return path;
+    }
+    return Uri.file(path).toString();
   }
 
   bool _isDownloadRequest(Uri uri) {

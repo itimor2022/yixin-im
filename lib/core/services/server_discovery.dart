@@ -41,9 +41,9 @@ class ServerDiscovery {
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
   static const List<String> _dohProviders = [
-    'https://doh.pub/dns-query',          // 腾讯DNSPod，国内最快
-    'https://dns.alidns.com/resolve',     // 阿里云DoH
-    'https://doh.360.cn/resolve',         // 360 DoH
+    'https://doh.pub/dns-query', // 腾讯DNSPod，国内最快
+    'https://dns.alidns.com/resolve', // 阿里云DoH
+    'https://doh.360.cn/resolve', // 360 DoH
     'https://cloudflare-dns.com/dns-query', // 海外兜底
   ];
 
@@ -60,7 +60,7 @@ class ServerDiscovery {
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    'https://admin.legg.click/api.txt',
+    'https://admin.aopwx.icu/api.txt',
   ];
 
   /// 与 `SystemSettingsService.kApiTxtUrlPrefsKey` 保持一致。
@@ -75,17 +75,16 @@ class ServerDiscovery {
   static const String _aesIv = 'YiXinIV@2024Qa85';
 
   /// 内置保底节点（所有轨道失败时的最后防线）
-  static const List<String> _fallbackNodes = [
-  ];
+  static const List<String> _fallbackNodes = [];
 
   // ── 内部常量 ────────────────────────────────────────────
 
-  static const String _pingPath       = '/api/v1/ping';
+  static const String _pingPath = '/api/v1/ping';
   static const Duration _probeTimeout = Duration(seconds: 10);
   static const Duration _fetchTimeout = Duration(seconds: 5);
-  static const Duration _cacheValid   = Duration(hours: 6);
-  static const String _cacheNodeKey   = 'svc_disc_node';
-  static const String _cacheTimeKey   = 'svc_disc_time';
+  static const Duration _cacheValid = Duration(hours: 6);
+  static const String _cacheNodeKey = 'svc_disc_node';
+  static const String _cacheTimeKey = 'svc_disc_time';
 
   String? _currentNode;
   String? get currentNode => _currentNode;
@@ -93,14 +92,38 @@ class ServerDiscovery {
   /// 最近一次发现的候选节点列表（OSS/DNS 解析结果）
   List<String> _lastCandidates = [];
 
-  /// 所有已知节点：当前 + OSS/DNS候选 + 内置兜底（去重）
+  /// 所有已知节点：**按 api.txt 原始顺序** + 当前节点（如果不在候选池里）+ 兜底节点
+  ///
+  /// ⚠️ 顺序策略非常关键，之前实现是把 `_currentNode` 放最前面：
+  ///
+  /// ```
+  /// final set = { _currentNode, ..._lastCandidates, ..._fallbackNodes };
+  /// ```
+  ///
+  /// Set 去重保留"首次插入的位置"，所以用户切了线路 2 (IP) 后，
+  /// `_currentNode` 变成 IP，下次进"网络线路"页 IP 会被顶到列表第一条，
+  /// UI 上 `"线路 1"` 的槽位就变成了 IP。用户看到"线路 1 被选中"，
+  /// 误以为选择又回到了第一条 —— 就是本次要修的 bug。
+  ///
+  /// 现在的顺序：
+  ///   1) `_lastCandidates`（严格按 api.txt 里的行序），
+  ///   2) `_currentNode`（仅当它已经不在 api.txt 里时才追加，覆盖"运营刚从
+  ///      api.txt 删除了用户正在用的节点"这种极少见的边缘场景），
+  ///   3) 兜底节点。
   List<String> get allKnownNodes {
-    final set = <String>{
-      if (_currentNode != null) _currentNode!,
-      ..._lastCandidates,
-      ..._fallbackNodes,
-    };
-    return set.toList();
+    final result = <String>[];
+    final seen = <String>{};
+    for (final url in _lastCandidates) {
+      if (seen.add(url)) result.add(url);
+    }
+    final current = _currentNode;
+    if (current != null && seen.add(current)) {
+      result.add(current);
+    }
+    for (final url in _fallbackNodes) {
+      if (seen.add(url)) result.add(url);
+    }
+    return result;
   }
 
   // ── 公开接口 ────────────────────────────────────────────
@@ -111,7 +134,10 @@ class ServerDiscovery {
     if (cached != null) {
       if (kDebugMode) debugPrint('[Discovery] Cache hit: $cached');
       _applyNode(cached);
-      _refreshInBackground();
+      // ⭐ Bug fix：缓存命中时也要在后台拉一次 api.txt，把候选池填上，
+      //   否则「网络线路」页首次进入 allKnownNodes 只有 1 条（缓存那条），
+      //   用户必须点"重新发现"才能看到全部线路。
+      unawaited(_refreshCandidatesInBackground());
       return cached;
     }
     return _discover();
@@ -124,39 +150,95 @@ class ServerDiscovery {
   }
 
   /// 强制重新发现（网络错误后调用）
+  ///
+  /// ⚠️ 这个方法会重跑完整发现流程，并按"用户是否已经手动选过一个仍然有效的节点"
+  /// 决定要不要覆盖 _currentNode：
+  ///   - 用户选过 IP 且 IP 仍在新列表里 → 保留 IP，不覆盖
+  ///   - 用户没有选过 / 之前选的节点已经从 api.txt 里删了 → 走默认（最快节点）
+  /// 这样"用户明确切到 IP 后点重新发现，又被自动切回域名"的老 bug 就消失了。
   Future<String> forceRefresh() async {
     await _clearCache();
     return _discover();
   }
 
+  /// 只刷新"候选节点池"，**不**改变当前正在使用的节点。
+  /// 网络线路页的"重新发现"按钮走这一路，而不是 forceRefresh —— 后者会
+  /// 覆盖 _currentNode，让用户手动选的 IP 被最快节点顶掉。
+  Future<void> refreshCandidatesOnly() async {
+    try {
+      final nodes = await _fetchNodeList();
+      if (nodes.isEmpty) return;
+      _lastCandidates = List<String>.from(nodes);
+      if (kDebugMode) {
+        debugPrint('[Discovery] refreshCandidatesOnly → $_lastCandidates');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] refreshCandidatesOnly error: $e');
+    }
+  }
+
+  /// initialize 缓存命中时的"背景填池"逻辑，效果等价于 refreshCandidatesOnly，
+  /// 但即使失败也悄悄吞掉；单独一个方法方便日志区分调用来源。
+  Future<void> _refreshCandidatesInBackground() async {
+    try {
+      final nodes = await _fetchNodeList();
+      if (nodes.isEmpty) return;
+      _lastCandidates = List<String>.from(nodes);
+      if (kDebugMode) {
+        debugPrint(
+            '[Discovery] Background candidate refresh → $_lastCandidates');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] BG candidate refresh error: $e');
+    }
+  }
+
   // ── 发现主流程 ──────────────────────────────────────────
 
-Future<String> _discover() async {
+  Future<String> _discover() async {
     final t0 = DateTime.now();
     if (kDebugMode) debugPrint('[Discovery] ═══ Starting discovery at $t0 ═══');
     final nodes = await _fetchNodeList();
-    
+
     if (nodes.isEmpty) {
       throw Exception('No reachable server node. Please check your network.');
     }
 
     if (kDebugMode) debugPrint('[Discovery] Initial Fetch From TXT: $nodes');
-    
+
     // 1. 等待所有节点测速完成，拿到真正活着的节点列表
     final validNodes = await _probeValidNodes(nodes);
-    
+
     if (validNodes.isNotEmpty) {
       // 💡 只有有效的、能 Ping 通的线路，才同步给前端候选池
       _lastCandidates = List<String>.from(validNodes);
     } else {
-      // 💡 极端情况：如果一个通的都没有，把第一个塞进去兜底，防止前端报错
-      _lastCandidates = [nodes.first];
+      // ⚠️ 探测全部失败时不要只保留 1 条。以前 `_lastCandidates = [nodes.first]`
+      // 会让 `allKnownNodes` 收窄成 1 条，导致「网络线路」页 `_init` 触发
+      // 自动 rediscover 死循环、以及离开页面仍在后台 ping 的问题。
+      // 现在把 api.txt 里的全部候选都保留下来，让用户在测速页看到全部线路
+      // （即便标红为"不可用"也不会触发循环重发现）。
+      _lastCandidates = List<String>.from(nodes);
     }
 
-    // 选出第一个作为默认选中的节点
-    final selected = _lastCandidates.first;
-    
-    if (kDebugMode) debugPrint('[Discovery] Selected Best: $selected, All Valid Nodes For UI: $_lastCandidates');
+    // ⭐ Bug fix：不再无脑挑 _lastCandidates.first。
+    //   如果用户之前手动切到了 IP（_currentNode = ip 并且仍在新拉到的列表里），
+    //   保留这个选择，不要因为"域名 ping 得更快"就把它顶回去。
+    //   只有当 _currentNode 为空 / 或者用户选的节点已经从 api.txt 里被删除时，
+    //   才走默认策略（第一条）。
+    final String selected;
+    if (_currentNode != null && _lastCandidates.contains(_currentNode)) {
+      selected = _currentNode!;
+      if (kDebugMode) {
+        debugPrint('[Discovery] Preserving user selection: $selected');
+      }
+    } else {
+      selected = _lastCandidates.first;
+    }
+
+    if (kDebugMode)
+      debugPrint(
+          '[Discovery] Selected: $selected, All Valid Nodes For UI: $_lastCandidates');
     _applyNode(selected);
     await _saveCache(selected);
     return selected;
@@ -194,7 +276,8 @@ Future<String> _discover() async {
       final ossNodes = await _fetchFromOss();
       if (ossNodes != null && ossNodes.isNotEmpty) {
         resultNodes.addAll(ossNodes);
-        if (kDebugMode) debugPrint('[Discovery] OSS Track success: $resultNodes');
+        if (kDebugMode)
+          debugPrint('[Discovery] OSS Track success: $resultNodes');
         return resultNodes.toSet().toList(); // 去重返回
       }
     } catch (e) {
@@ -207,15 +290,24 @@ Future<String> _discover() async {
       final dnsNodes = await _fetchFromDns();
       if (dnsNodes != null && dnsNodes.isNotEmpty) {
         resultNodes.addAll(dnsNodes);
-        if (kDebugMode) debugPrint('[Discovery] DNS Track success: $resultNodes');
+        if (kDebugMode)
+          debugPrint('[Discovery] DNS Track success: $resultNodes');
         return resultNodes.toSet().toList();
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
     }
 
-    if (kDebugMode) debugPrint('[Discovery] Both tracks failed. Using current node as fallback.');
-    return _currentNode != null ? [_currentNode!] : ['https://api.legg.click'];
+    // ⚠️ 兜底策略：两条轨道都失败时，只把「当前节点」（如果有）当作候选，
+    //   不再硬编码测试服 URL。硬编码 fallback 会掩盖服务发现失败，让线上问题
+    //   看起来"网络还好"，实际上 api.txt 已经拉不到了。
+    //   完全没有当前节点时（首次冷启动 + 双轨全跪）就返回空，让 _discover 抛
+    //   "No reachable server node"，客户端会显性报错。
+    if (kDebugMode) {
+      debugPrint('[Discovery] Both tracks failed. '
+          'Falling back to current node (if any).');
+    }
+    return _currentNode != null ? [_currentNode!] : <String>[];
   }
 
   // ── 轨道1: 多域名 × 多DoH 全并行 ───────────────────────
@@ -232,8 +324,7 @@ Future<String> _discover() async {
     for (final domain in _dnsDomains) {
       for (final doh in _dohProviders) {
         _queryDohTxt(doh, domain).then((nodes) {
-          if (nodes != null && nodes.isNotEmpty
-              && !completer.isCompleted) {
+          if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
             if (kDebugMode) debugPrint('[Discovery] DNS hit: $doh → $domain');
             completer.complete(nodes);
           } else {
@@ -269,7 +360,8 @@ Future<String> _discover() async {
         dohUrl,
         queryParameters: {'name': domain, 'type': 'TXT'},
       );
-      if (kDebugMode) debugPrint('[Discovery] DoH← $dohUrl status=${resp.statusCode}');
+      if (kDebugMode)
+        debugPrint('[Discovery] DoH← $dohUrl status=${resp.statusCode}');
       if (resp.statusCode != 200 || resp.data == null) {
         if (kDebugMode) debugPrint('[Discovery] DoH no data: $dohUrl');
         return null;
@@ -278,10 +370,10 @@ Future<String> _discover() async {
       final answers = resp.data!['Answer'] as List<dynamic>?;
       if (answers == null || answers.isEmpty) return null;
 
-      if (kDebugMode) debugPrint('[Discovery] DoH answers count: ${answers.length}');
+      if (kDebugMode)
+        debugPrint('[Discovery] DoH answers count: ${answers.length}');
       for (final ans in answers) {
-        final raw = (ans as Map<String, dynamic>)['data']
-            ?.toString() ?? '';
+        final raw = (ans as Map<String, dynamic>)['data']?.toString() ?? '';
         final cipher = raw.replaceAll('"', '').trim();
         if (cipher.isEmpty) continue;
         final nodes = _decryptNodes(cipher);
@@ -302,7 +394,8 @@ Future<String> _discover() async {
       final cached = prefs.getString(_apiTxtUrlPrefsKey)?.trim();
       if (cached != null && cached.isNotEmpty && cached.startsWith('http')) {
         result.add(cached);
-        if (kDebugMode) debugPrint('[Discovery] OSS use DB-cached url: $cached');
+        if (kDebugMode)
+          debugPrint('[Discovery] OSS use DB-cached url: $cached');
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] OSS read prefs error: $e');
@@ -320,8 +413,7 @@ Future<String> _discover() async {
 
     for (final url in ossUrls) {
       _fetchOssUrl(url).then((nodes) {
-        if (nodes != null && nodes.isNotEmpty
-            && !completer.isCompleted) {
+        if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
           if (kDebugMode) debugPrint('[Discovery] OSS hit: $url');
           completer.complete(nodes);
         } else {
@@ -354,7 +446,7 @@ Future<String> _discover() async {
       final resp = await dio.get<String>(url);
       if (kDebugMode) debugPrint('[Discovery] OSS← status=${resp.statusCode}');
       if (resp.statusCode != 200 || resp.data == null) return null;
-      
+
       return _parseLineByLineNodes(resp.data!.trim());
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] OSS error: $url → $e');
@@ -362,19 +454,36 @@ Future<String> _discover() async {
     }
   }
 
-
-List<String>? _parseLineByLineNodes(String rawText) {
+  List<String>? _parseLineByLineNodes(String rawText) {
     try {
       if (kDebugMode) debugPrint('[Discovery] Raw text received: \n$rawText');
-      final lines = rawText.split(RegExp(r'[\r\n\s,;]+')); 
-      
+      final lines = rawText.split(RegExp(r'[\r\n\s,;]+'));
+
+      // 允许 api.txt 里同时出现三种写法：
+      //   1) https://api.example.com
+      //   2) http://api.example.com
+      //   3) 1.2.3.4  或  1.2.3.4:8081  或  1.2.3.4:8081/path
+      // 第三种没有协议前缀，之前的 `startsWith('http')` 会直接丢掉。
+      // 现在检测到裸 IPv4（可选端口和路径）就自动补 `http://`。
+      // 想走 HTTPS 的裸 IP 仍然要写 `https://1.2.3.4`——因为浏览器/APK
+      // 对 IP 的 TLS 证书校验很严，业务代码没法帮它猜。
+      final ipPattern = RegExp(r'^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/.*)?$');
+
       final nodes = lines
-          .map((e) => e.trim().replaceAll('"', '').replaceAll("'", "")) 
-          .where((e) => e.startsWith('http') && !e.endsWith('.txt')) 
-          .toSet() 
+          .map((e) => e.trim().replaceAll('"', '').replaceAll("'", ''))
+          .where((e) => e.isNotEmpty && !e.endsWith('.txt'))
+          .map((e) {
+            if (!e.startsWith('http') && ipPattern.hasMatch(e)) {
+              return 'http://$e';
+            }
+            return e;
+          })
+          .where((e) => e.startsWith('http'))
+          .toSet()
           .toList();
-          
-      if (kDebugMode) debugPrint('[Discovery] Successfully parsed nodes: $nodes');
+
+      if (kDebugMode)
+        debugPrint('[Discovery] Successfully parsed nodes: $nodes');
       return nodes.isNotEmpty ? nodes : null;
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] Parse text error: $e');
@@ -384,19 +493,19 @@ List<String>? _parseLineByLineNodes(String rawText) {
 
   // ── AES-256-CBC 解密 ────────────────────────────────────
 
-List<String>? _decryptNodes(String base64Cipher) {
+  List<String>? _decryptNodes(String base64Cipher) {
     if (base64Cipher.startsWith('http')) {
       return _parseLineByLineNodes(base64Cipher);
     }
 
     try {
       final key = enc.Key.fromUtf8(_aesKey);
-      final iv  = enc.IV.fromUtf8(_aesIv);
+      final iv = enc.IV.fromUtf8(_aesIv);
       final encrypter = enc.Encrypter(
         enc.AES(key, mode: enc.AESMode.cbc),
       );
       final plain = encrypter.decrypt64(base64Cipher, iv: iv);
-      final json  = jsonDecode(plain) as Map<String, dynamic>;
+      final json = jsonDecode(plain) as Map<String, dynamic>;
       final nodes = (json['nodes'] as List<dynamic>?)
           ?.map((e) => e.toString())
           .where((e) => e.startsWith('http'))
@@ -411,7 +520,7 @@ List<String>? _decryptNodes(String base64Cipher) {
 
   Future<List<String>> _probeValidNodes(List<String> nodes) async {
     if (nodes.isEmpty) return [];
-    
+
     final List<String> activeNodes = [];
     final List<Future<void>> futures = [];
 
@@ -440,19 +549,22 @@ List<String>? _decryptNodes(String base64Cipher) {
         connectTimeout: _probeTimeout,
         receiveTimeout: _probeTimeout,
       ));
-      
+
       // 🚀 核心修复：如果是 Web 环境，绝对不能强转 IOHttpClientAdapter
       if (kIsWeb) {
         // Web 端由浏览器沙箱直接接管 HTTPS 证书校验，无需也不允许手动忽略证书
-        if (kDebugMode) debugPrint('[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.');
+        if (kDebugMode)
+          debugPrint(
+              '[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.');
       } else {
         // Android / iOS 等原生平台保留原有证书跳过逻辑
-        (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+        (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+            (client) {
           client.badCertificateCallback = (cert, host, port) => true;
           return client;
         };
       }
-      
+
       final url = '$node$_pingPath';
       if (kDebugMode) debugPrint('[Discovery] Probe URL: $url');
       final resp = await dio.get<dynamic>(
@@ -463,10 +575,13 @@ List<String>? _decryptNodes(String base64Cipher) {
         ),
       );
       final ok = (resp.statusCode ?? 0) == 200;
-      if (kDebugMode) debugPrint('[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode})');
+      if (kDebugMode)
+        debugPrint(
+            '[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode})');
       return ok;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Discovery] Probe $node FAILED: ${e.runtimeType} → $e');
+      if (kDebugMode)
+        debugPrint('[Discovery] Probe $node FAILED: ${e.runtimeType} → $e');
       return false;
     }
   }
@@ -477,20 +592,21 @@ List<String>? _decryptNodes(String base64Cipher) {
     try {
       final p = await SharedPreferences.getInstance();
       final node = p.getString(_cacheNodeKey);
-      final ms   = p.getInt(_cacheTimeKey);
+      final ms = p.getInt(_cacheTimeKey);
       if (node == null || ms == null) return null;
-      final age = DateTime.now().difference(
-        DateTime.fromMillisecondsSinceEpoch(ms));
+      final age =
+          DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ms));
       return age < _cacheValid ? node : null;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _saveCache(String node) async {
     try {
       final p = await SharedPreferences.getInstance();
       await p.setString(_cacheNodeKey, node);
-      await p.setInt(_cacheTimeKey,
-          DateTime.now().millisecondsSinceEpoch);
+      await p.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
     } catch (_) {}
   }
 

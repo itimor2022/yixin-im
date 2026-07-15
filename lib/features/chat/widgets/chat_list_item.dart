@@ -6,11 +6,50 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/emoji_animations.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
-import '../../../shared/widgets/colored_name_widget.dart';
-import '../../../shared/widgets/emoji_status_widget.dart';
-import '../../../shared/widgets/official_badge.dart';
-import '../../../shared/widgets/member_badge_widget.dart';
 import '../providers/chat_provider.dart';
+
+/// ============================================================
+/// 聊天列表项 —— **扁平** 版本 (v4)
+/// ============================================================
+///
+/// 已彻底移除卡片风格（无背景 / 无边框 / 无阴影 / 无底部装饰条），
+/// 让整个列表在纯白 Scaffold 上呈现"零框线"的极简样式。
+///
+/// 视觉变更：
+///   · 单条会话是**没有任何 chrome 的平铺行**，直接坐在白色背景上
+///   · 选中态：极淡主色底 (#F0F7FF) + 左侧 3px 主色 accent 竖条
+///   · 未读徽标仍位于头像右上角
+///   · 置顶 / 静音 / 待审批仍作为底部状态 chip 显示
+///
+/// 保留全部旧行为：
+///   · SwipeAction 枚举 & onSwipeAction 回调
+///   · 移动端左滑（3+1 按钮，二次展开删除确认）
+///   · 桌面端 Secondary-tap 右键菜单
+///   · 富文本消息预览 + Lottie 表情内联
+///   · 草稿 / 输入中 / 语音/图片/视频/文件/位置/名片/通话 前缀
+///   · isOfficial / isMember / badgeText / badgeColor 等所有 flag
+
+/// ===== 视觉 Token =====
+const Color _kListPrimary = AppColors.primary;
+
+/// 在头像上叠加的"贴纸"（在线小点 / 未读徽标）需要一圈跟 Scaffold
+/// 背景色一致的描边，形成"从背景里挖出来"的视觉。这里仅保留深色主题
+/// 的 Scaffold 底色作为描边色（浅色主题直接用白色）。
+const Color _kListStickerCutout = Color(0xFF0E1015);
+const Color _kListTitleText = Color(0xFF111827);
+const Color _kListSubText = Color(0xFF6B7280);
+const Color _kListTimeText = Color(0xFF9CA3AF);
+const Color _kListMutedTint = Color(0xFFB8BEC7);
+
+/// 选中背景（浅色/深色主题各一）——非常淡，仅指示 active 项。
+const Color _kListSelectedBgLight = Color(0xFFF0F7FF);
+const Color _kListSelectedBgDark = Color(0x1F009CFF);
+
+/// 每一行的水平内边距 & 垂直内边距（扁平样式，没有卡片外 margin）。
+const double _kRowHPadding = 16;
+const double _kRowVPadding = 10;
+const double _kAvatarSize = 52;
+const double _kAvatarGap = 12;
 
 /// 左滑操作类型
 enum SwipeAction { pin, mute, read, delete }
@@ -20,14 +59,17 @@ class ChatListItem extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Function(SwipeAction)? onSwipeAction;
-  final bool isOfficial; // 是否是官方用户/群组/频道
-  final bool isSelected; // 是否被选中（桌面端用）
-  final bool isDesktop; // 是否是桌面端（禁用滑动，启用右键菜单）
+  final bool isOfficial;
+  final bool isSelected;
+  final bool isDesktop;
   final bool showPendingApprovalDot;
   final String? typingText;
   final bool isMember;
   final String? badgeText;
   final String? badgeColor;
+
+  /// 兼容旧参数——新版不再画整条 divider，改用留白，此 flag 现在被忽略。
+  final bool showDivider;
 
   const ChatListItem({
     super.key,
@@ -43,6 +85,7 @@ class ChatListItem extends StatefulWidget {
     this.isMember = false,
     this.badgeText,
     this.badgeColor,
+    this.showDivider = true,
   });
 
   @override
@@ -52,19 +95,13 @@ class ChatListItem extends StatefulWidget {
 class _ChatListItemState extends State<ChatListItem>
     with TickerProviderStateMixin {
   late AnimationController _controller;
-  late AnimationController _deleteController; // 删除确认动画控制器
+  late AnimationController _deleteController;
   double _dragExtent = 0;
   bool _isOpen = false;
-  bool _showDeleteConfirm = false; // 是否显示删除确认
+  bool _showDeleteConfirm = false;
 
   static const double _actionButtonWidth = 70.0;
-  static const double _normalMaxDragExtent =
-      _actionButtonWidth * 3; // 3个按钮（未读、静音、置顶）
-  static const double _deleteMaxDragExtent = _actionButtonWidth * 4; // 加上删除按钮
-
-  double get _maxDragExtent => _showDeleteConfirm
-      ? _actionButtonWidth * 2.3 // 删除确认模式（更紧凑）
-      : _deleteMaxDragExtent;
+  static const double _deleteMaxDragExtent = _actionButtonWidth * 4;
 
   @override
   void initState() {
@@ -86,9 +123,10 @@ class _ChatListItemState extends State<ChatListItem>
     super.dispose();
   }
 
-  void _handleDragUpdate(DragUpdateDetails details) {
-    if (_showDeleteConfirm) return; // 删除确认模式下不允许拖动
+  // ============ 拖动手势 ============
 
+  void _handleDragUpdate(DragUpdateDetails details) {
+    if (_showDeleteConfirm) return;
     setState(() {
       _dragExtent -= details.delta.dx;
       _dragExtent = _dragExtent.clamp(0.0, _deleteMaxDragExtent);
@@ -99,11 +137,9 @@ class _ChatListItemState extends State<ChatListItem>
     if (_showDeleteConfirm) return;
 
     if (_dragExtent > _deleteMaxDragExtent / 2) {
-      // 打开
       _animateTo(_deleteMaxDragExtent);
       _isOpen = true;
     } else {
-      // 关闭
       _close();
     }
   }
@@ -137,13 +173,11 @@ class _ChatListItemState extends State<ChatListItem>
     _isOpen = false;
   }
 
-  /// 显示删除确认（二次展开）
   void _showDeleteConfirmation() {
     HapticFeedback.mediumImpact();
     setState(() {
       _showDeleteConfirm = true;
     });
-    // 动画展开到确认删除的宽度（更紧凑）
     _animateTo(_actionButtonWidth * 2.3);
   }
 
@@ -153,135 +187,32 @@ class _ChatListItemState extends State<ChatListItem>
     widget.onSwipeAction?.call(action);
   }
 
-  /// 构建普通操作按钮
-  Widget _buildNormalButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        // 标记已读
-        _ActionButton(
-          icon: Icons.done_all,
-          label: widget.chat.unreadCount > 0 ? '已读' : '未读',
-          color: AppColors.primary,
-          onTap: () => _handleAction(SwipeAction.read),
-        ),
-        // 静音/取消静音
-        _ActionButton(
-          icon: widget.chat.isMuted
-              ? Icons.notifications_active_outlined
-              : Icons.notifications_off_outlined,
-          label: widget.chat.isMuted ? '取消静音' : '静音',
-          color: const Color(0xFFFF9500),
-          onTap: () => _handleAction(SwipeAction.mute),
-        ),
-        // 置顶/取消置顶
-        _ActionButton(
-          icon: widget.chat.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
-          label: widget.chat.isPinned ? '取消置顶' : '置顶',
-          color: const Color(0xFF8E8E93),
-          onTap: () => _handleAction(SwipeAction.pin),
-        ),
-        // 删除（点击后展开确认）
-        _ActionButton(
-          icon: Icons.delete_outline,
-          label: '删除',
-          color: const Color(0xFFFF3B30),
-          onTap: _showDeleteConfirmation,
-        ),
-      ],
-    );
-  }
-
-  /// 构建删除确认按钮（二次展开）
-  Widget _buildDeleteConfirmButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        // 确认删除按钮
-        GestureDetector(
-          onTap: () {
-            HapticFeedback.heavyImpact();
-            _close();
-            widget.onSwipeAction?.call(SwipeAction.delete);
-          },
-          child: Container(
-            width: _actionButtonWidth * 2.3,
-            color: const Color(0xFFFF3B30),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.delete_forever, color: Colors.white, size: 24),
-                SizedBox(height: 2),
-                Text(
-                  '删除',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // ============ 顶层入口 ============
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 桌面端：使用右键菜单，无滑动
     if (widget.isDesktop) {
       return _buildDesktopItem(context, isDark);
     }
-
-    // 移动端：使用滑动操作
     return _buildMobileItem(context, isDark);
   }
 
-  /// 桌面端列表项（右键菜单）
+  // ============ 桌面端 ============
+
   Widget _buildDesktopItem(BuildContext context, bool isDark) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 76,
-          child: GestureDetector(
-            onTap: widget.onTap,
-            onSecondaryTapUp: (details) =>
-                _showContextMenu(context, details.globalPosition, isDark),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: Container(
-                color: widget.isSelected
-                    ? (isDark
-                        ? AppColors.primary.withOpacity(0.15)
-                        : AppColors.primary.withOpacity(0.1))
-                    : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                child: _buildContent(isDark),
-              ),
-            ),
-          ),
-        ),
-        // 分隔线
-        Padding(
-          padding: const EdgeInsets.only(left: 82),
-          child: Divider(
-            height: 1,
-            thickness: 0.5,
-            color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-          ),
-        ),
-      ],
+    return GestureDetector(
+      onTap: widget.onTap,
+      onSecondaryTapUp: (details) =>
+          _showContextMenu(context, details.globalPosition, isDark),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: _buildCard(isDark),
+      ),
     );
   }
 
-  /// 显示右键菜单
   void _showContextMenu(BuildContext context, Offset position, bool isDark) {
     showMenu<SwipeAction>(
       context: context,
@@ -303,7 +234,7 @@ class _ChatListItemState extends State<ChatListItem>
                     ? Icons.mark_chat_read
                     : Icons.mark_chat_unread,
                 size: 20,
-                color: AppColors.primary,
+                color: _kListPrimary,
               ),
               const SizedBox(width: 12),
               Text(widget.chat.unreadCount > 0 ? '标为已读' : '标为未读'),
@@ -344,10 +275,10 @@ class _ChatListItemState extends State<ChatListItem>
         PopupMenuItem(
           value: SwipeAction.delete,
           child: Row(
-            children: [
-              const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-              const SizedBox(width: 12),
-              const Text('删除', style: TextStyle(color: Colors.red)),
+            children: const [
+              Icon(Icons.delete_outline, size: 20, color: Colors.red),
+              SizedBox(width: 12),
+              Text('删除', style: TextStyle(color: Colors.red)),
             ],
           ),
         ),
@@ -359,270 +290,225 @@ class _ChatListItemState extends State<ChatListItem>
     });
   }
 
-  /// 移动端列表项（滑动操作）
+  // ============ 移动端（带左滑） ============
+
   Widget _buildMobileItem(BuildContext context, bool isDark) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 76, // 统一高度
-          child: Stack(
-            children: [
-              // 背景操作按钮
-              Positioned.fill(
-                child: _showDeleteConfirm
-                    ? _buildDeleteConfirmButtons()
-                    : _buildNormalButtons(),
+    return ClipRect(
+      // 用 ClipRect（矩形裁剪，无圆角）把左滑操作按钮限制在这一行内部，
+      // 保证前景 translate 时不会越出行边界
+      child: IntrinsicHeight(
+        child: Stack(
+          children: [
+            // 底层：滑动操作按钮
+            Positioned.fill(
+              child: _showDeleteConfirm
+                  ? _buildDeleteConfirmButtons()
+                  : _buildNormalButtons(),
+            ),
+            // 前景行：跟随手指偏移
+            GestureDetector(
+              onHorizontalDragUpdate: _handleDragUpdate,
+              onHorizontalDragEnd: _handleDragEnd,
+              onTap: () {
+                if (_isOpen) {
+                  _close();
+                } else {
+                  HapticFeedback.selectionClick();
+                  widget.onTap?.call();
+                }
+              },
+              onLongPress: widget.onLongPress != null
+                  ? () {
+                      HapticFeedback.heavyImpact();
+                      widget.onLongPress?.call();
+                    }
+                  : null,
+              child: Transform.translate(
+                offset: Offset(-_dragExtent, 0),
+                child: _buildCard(isDark),
               ),
-              // 前景内容
-              GestureDetector(
-                onHorizontalDragUpdate: _handleDragUpdate,
-                onHorizontalDragEnd: _handleDragEnd,
-                onTap: () {
-                  if (_isOpen) {
-                    _close();
-                  } else {
-                    HapticFeedback.selectionClick();
-                    widget.onTap?.call();
-                  }
-                },
-                onLongPress: widget.onLongPress != null
-                    ? () {
-                        // 触觉反馈
-                        HapticFeedback.heavyImpact();
-                        widget.onLongPress?.call();
-                      }
-                    : null,
-                child: Transform.translate(
-                  offset: Offset(-_dragExtent, 0),
-                  child: Container(
-                    color: widget.isSelected
-                        ? (isDark
-                            ? AppColors.primary.withOpacity(0.15)
-                            : AppColors.primary.withOpacity(0.1))
-                        : (isDark
-                            ? AppColors.darkSurface
-                            : AppColors.lightSurface),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: _buildContent(isDark),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNormalButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        _ActionButton(
+          icon: Icons.done_all,
+          label: widget.chat.unreadCount > 0 ? '已读' : '未读',
+          color: _kListPrimary,
+          onTap: () => _handleAction(SwipeAction.read),
+        ),
+        _ActionButton(
+          icon: widget.chat.isMuted
+              ? Icons.notifications_active_outlined
+              : Icons.notifications_off_outlined,
+          label: widget.chat.isMuted ? '取消静音' : '静音',
+          color: const Color(0xFFFF9500),
+          onTap: () => _handleAction(SwipeAction.mute),
+        ),
+        _ActionButton(
+          icon: widget.chat.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+          label: widget.chat.isPinned ? '取消置顶' : '置顶',
+          color: const Color(0xFF8E8E93),
+          onTap: () => _handleAction(SwipeAction.pin),
+        ),
+        _ActionButton(
+          icon: Icons.delete_outline,
+          label: '删除',
+          color: const Color(0xFFFF3B30),
+          onTap: _showDeleteConfirmation,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeleteConfirmButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.heavyImpact();
+            _close();
+            widget.onSwipeAction?.call(SwipeAction.delete);
+          },
+          child: Container(
+            width: _actionButtonWidth * 2.3,
+            color: const Color(0xFFFF3B30),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.delete_forever, color: Colors.white, size: 24),
+                SizedBox(height: 2),
+                Text(
+                  '删除',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        // 分隔线
-        Padding(
-          padding: const EdgeInsets.only(left: 82),
-          child: Divider(
-            height: 1,
-            thickness: 0.5,
-            color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  /// 构建列表项内容（头像、名称、消息等）
-  Widget _buildContent(bool isDark) {
-    return Row(
-      children: [
-        // 头像
-        Stack(
+  // ============ 卡片主体（前景） ============
+
+  /// 单行前景 —— **扁平样式**：
+  ///   · 未选中：跟 Scaffold 一样的**不透明背景**（浅色为白色，深色为 #0E1015），
+  ///     以确保能盖住底层的左滑操作按钮（未读/静音/置顶/删除）
+  ///   · 选中：极淡主色底 (#F0F7FF) + 左侧 3px 主色 accent 竖条
+  ///
+  /// 已彻底移除卡片圆角、阴影、边框和底部装饰条。
+  Widget _buildCard(bool isDark) {
+    final selected = widget.isSelected;
+    final Color bg = selected
+        ? (isDark ? _kListSelectedBgDark : _kListSelectedBgLight)
+        : (isDark ? const Color(0xFF0E1015) : Colors.white);
+
+    return Container(
+      color: bg,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AvatarWidget(
-              name: widget.chat.name,
-              avatar: widget.chat.avatar,
-              userId: widget.chat.type == ChatItemType.private
-                  ? (widget.chat.targetUserId ?? widget.chat.id)
-                  : widget.chat.id,
-              size: 54,
-              premiumType: widget.chat.premiumType,
-              isMember: widget.chat.isMember,
-              memberBadgeText: widget.chat.badgeText,
-              memberBadgeColor: widget.chat.badgeColor,
+            // 选中态左侧主色 accent bar
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: selected ? 3 : 0,
+              color: _kListPrimary,
             ),
-            // 在线状态
-            if (widget.chat.isOnline)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: AppColors.online,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.darkBackground
-                          : AppColors.lightBackground,
-                      width: 2,
-                    ),
-                  ),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  selected ? _kRowHPadding - 3 : _kRowHPadding,
+                  _kRowVPadding,
+                  _kRowHPadding,
+                  _kRowVPadding,
                 ),
+                child: _buildContent(isDark),
               ),
+            ),
           ],
         ),
-        const SizedBox(width: 12),
-        // 内容
+      ),
+    );
+  }
+
+  Widget _buildContent(bool isDark) {
+    final Color titleColor =
+        isDark ? AppColors.darkTextPrimary : _kListTitleText;
+    final Color subColor =
+        isDark ? AppColors.darkTextSecondary : _kListSubText;
+    final Color timeColor =
+        isDark ? AppColors.darkTextTertiary : _kListTimeText;
+
+    // 判断底部是否需要 Chip 排
+    final hasChips = widget.chat.isPinned ||
+        widget.chat.isMuted ||
+        (widget.showPendingApprovalDot);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ============ 左侧：头像 + 未读徽标 + 在线点 ============
+        _AvatarBlock(
+          chat: widget.chat,
+          isDark: isDark,
+        ),
+        const SizedBox(width: _kAvatarGap),
+        // ============ 右侧：名字 / 消息 / Chip 排 ============
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 第一行：名称 + 表情状态 + 类型标签 + 静音图标 + 时间
+              // 第一行：名字 + 时间
               Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
                   Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: ColoredNameWidget(
-                            name: widget.chat.name,
-                            nicknameColor: widget.chat.nicknameColor,
-                            premiumType: widget.chat.premiumType,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            defaultColor: isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        // 会员徽章
-                        if (widget.chat.isMember && (widget.chat.badgeText ?? '').isNotEmpty)
-                          MemberBadgeWidget(
-                            isMember: true,
-                            badgeText: widget.chat.badgeText,
-                            badgeColor: widget.chat.badgeColor,
-                            fontSize: 10,
-                            margin: const EdgeInsets.only(left: 4),
-                          ),
-                        // 官方认证标识（在名字/表情后面）
-                        if (widget.isOfficial) ...[
-                          const SizedBox(width: 4),
-                          const OfficialBadge(size: 16),
-                        ],
-                        // 类型标签（放在名字后面）
-                        if (widget.chat.type != ChatItemType.private)
-                          Container(
-                            margin: const EdgeInsets.only(left: 6),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _getTagBackgroundColor(isDark),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              _getTypeLabel(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: _getTagTextColor(isDark),
-                              ),
-                            ),
-                          ),
-                        if (widget.showPendingApprovalDot) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.25),
-                                  blurRadius: 4,
-                                  spreadRadius: 0.5,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        // 静音图标 - TG 风格
-                        if (widget.chat.isMuted)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Icon(
-                              Icons.volume_off_rounded,
-                              size: 16,
-                              color: isDark ? Colors.white38 : Colors.black38,
-                            ),
-                          ),
-                        // 认证标志
-                        if (widget.chat.isVerified)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Icon(
-                              Icons.verified,
-                              size: 16,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                      ],
+                    child: Text(
+                      widget.chat.name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor,
+                        letterSpacing: 0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // 时间
+                  const SizedBox(width: 8),
                   Text(
                     widget.chat.time,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : AppColors.lightTextTertiary,
+                      fontSize: 11.5,
+                      color: timeColor,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
-              // 第二行：最后消息 + 置顶/未读
-              Row(
-                children: [
-                  Expanded(child: _buildLastMessage(isDark)),
-                  const SizedBox(width: 8),
-                  // 置顶图标
-                  if (widget.chat.isPinned && widget.chat.unreadCount == 0)
-                    Icon(
-                      Icons.push_pin,
-                      size: 16,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : AppColors.lightTextTertiary,
-                    )
-                  // 未读数 - TG 风格
-                  else if (widget.chat.unreadCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: widget.chat.isMuted
-                            ? (isDark ? Colors.white24 : Colors.black26)
-                            : AppColors.success,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        widget.chat.unreadCount > 999
-                            ? '${(widget.chat.unreadCount / 1000).toStringAsFixed(1)}K'
-                            : widget.chat.unreadCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              // 第二行：消息内容
+              _buildLastMessage(isDark, subColor),
+              // 第三行（可选）：Chip 排
+              if (hasChips) ...[
+                const SizedBox(height: 8),
+                _buildStatusChips(isDark),
+              ],
             ],
           ),
         ),
@@ -630,50 +516,68 @@ class _ChatListItemState extends State<ChatListItem>
     );
   }
 
-  Color _getTagBackgroundColor(bool isDark) {
-    if (isDark) {
-      return widget.chat.type == ChatItemType.channel
-          ? const Color(0xFF1E3A4C)
-          : const Color(0xFF1E3C2E);
+  // ============ 状态 Chip 排 ============
+
+  Widget _buildStatusChips(bool isDark) {
+    final chips = <Widget>[];
+
+    if (widget.chat.isPinned) {
+      chips.add(
+        _StatusChip(
+          icon: Icons.push_pin_rounded,
+          label: '已置顶',
+          fg: _kListPrimary,
+          bg: _kListPrimary.withOpacity(isDark ? 0.20 : 0.12),
+        ),
+      );
     }
-    return widget.chat.type == ChatItemType.channel
-        ? AppColors.channelTagBackground
-        : AppColors.groupTagBackground;
+    if (widget.chat.isMuted) {
+      chips.add(
+        _StatusChip(
+          icon: Icons.notifications_off_rounded,
+          label: '免打扰',
+          fg: isDark ? Colors.white70 : const Color(0xFF6B7280),
+          bg: isDark
+              ? Colors.white.withOpacity(0.08)
+              : const Color(0xFFF1F2F4),
+        ),
+      );
+    }
+    if (widget.showPendingApprovalDot) {
+      final pendingCount = widget.chat.pendingJoinRequestCount;
+      chips.add(
+        _StatusChip(
+          icon: Icons.notification_important_rounded,
+          label: pendingCount > 0
+              ? (pendingCount > 99 ? '待审批 99+' : '待审批 $pendingCount')
+              : '待审批',
+          fg: const Color(0xFFDC2626),
+          bg: const Color(0xFFFEE2E2),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: chips,
+    );
   }
 
-  Color _getTagTextColor(bool isDark) {
-    if (isDark) {
-      return widget.chat.type == ChatItemType.channel
-          ? const Color(0xFF65AADD)
-          : const Color(0xFF7BC862);
-    }
-    return widget.chat.type == ChatItemType.channel
-        ? AppColors.channelTagText
-        : AppColors.groupTagText;
-  }
+  // ============ 消息行 =============
 
-  String _getTypeLabel() {
-    switch (widget.chat.type) {
-      case ChatItemType.group:
-        return '群组';
-      case ChatItemType.channel:
-        return '频道';
-      default:
-        return '';
-    }
-  }
+  Widget _buildLastMessage(bool isDark, Color subColor) {
+    final Color textColor = subColor;
 
-  Widget _buildLastMessage(bool isDark) {
-    final textColor =
-        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
-
+    // 优先级：typing > draft > 正文
     if (widget.typingText != null && widget.typingText!.isNotEmpty) {
       return Text(
         widget.typingText!,
         style: const TextStyle(
           fontSize: 14,
-          color: Colors.blue,
+          color: _kListPrimary,
           fontStyle: FontStyle.italic,
+          fontWeight: FontWeight.w500,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -685,7 +589,6 @@ class _ChatListItemState extends State<ChatListItem>
         ? '${widget.chat.lastMessageSender}: '
         : '';
 
-    // 草稿
     if (widget.chat.draft != null && widget.chat.draft!.isNotEmpty) {
       return RichText(
         maxLines: 1,
@@ -694,7 +597,11 @@ class _ChatListItemState extends State<ChatListItem>
           children: [
             TextSpan(
               text: '草稿: ',
-              style: TextStyle(color: AppColors.error, fontSize: 14),
+              style: TextStyle(
+                color: AppColors.error,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
             TextSpan(
               text: widget.chat.draft,
@@ -705,44 +612,42 @@ class _ChatListItemState extends State<ChatListItem>
       );
     }
 
-    // 消息内容前缀图标
+    // 类型前缀图标
     Widget? prefixIcon;
-    String? typeText; // 类型文本（用于替代空内容）
+    String? typeText;
     final msgType = widget.chat.lastMessageType;
     if (msgType != null) {
       if (msgType == MessageContentType.photo) {
-        prefixIcon = Icon(Icons.photo, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.photo, size: 15, color: textColor);
         typeText = '[图片]';
       } else if (msgType == MessageContentType.video) {
-        prefixIcon = Icon(Icons.videocam, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.videocam, size: 15, color: textColor);
         typeText = '[视频]';
       } else if (msgType == MessageContentType.voice) {
-        prefixIcon = Icon(Icons.mic, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.mic, size: 15, color: textColor);
         typeText = '[语音]';
       } else if (msgType == MessageContentType.file) {
-        prefixIcon = Icon(Icons.insert_drive_file, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.insert_drive_file, size: 15, color: textColor);
         typeText = '[文件]';
       } else if (msgType == MessageContentType.sticker) {
-        prefixIcon = Icon(Icons.emoji_emotions, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.emoji_emotions, size: 15, color: textColor);
         typeText = '[表情]';
       } else if (msgType == MessageContentType.location) {
-        prefixIcon = Icon(Icons.location_on, size: 16, color: textColor);
+        prefixIcon = Icon(Icons.location_on, size: 15, color: textColor);
         typeText = '[位置]';
       } else if (msgType == MessageContentType.contact) {
         prefixIcon = Icon(
           Icons.contact_page_outlined,
-          size: 16,
+          size: 15,
           color: textColor,
         );
         typeText = '[联系人名片]';
       } else if (msgType == MessageContentType.call) {
-        prefixIcon = Icon(Icons.call, size: 16, color: textColor);
-        // 通话消息直接显示内容（如"语音通话 00:03"）
+        prefixIcon = Icon(Icons.call, size: 15, color: textColor);
         typeText = '[通话]';
       }
     }
 
-    // 如果消息内容为空但有类型，使用类型文本
     final displayMessage =
         (widget.chat.lastMessage == null || widget.chat.lastMessage!.isEmpty)
             ? typeText
@@ -750,26 +655,6 @@ class _ChatListItemState extends State<ChatListItem>
 
     return Row(
       children: [
-        if (widget.showPendingApprovalDot) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(isDark ? 0.18 : 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              widget.chat.pendingJoinRequestCount > 0
-                  ? '待审批 ${widget.chat.pendingJoinRequestCount > 99 ? '99+' : widget.chat.pendingJoinRequestCount}'
-                  : '待审批',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.red,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-        ],
         if (prefixIcon != null) ...[prefixIcon, const SizedBox(width: 4)],
         Expanded(
           child: _buildMessageContent(senderText, textColor, displayMessage),
@@ -778,7 +663,6 @@ class _ChatListItemState extends State<ChatListItem>
     );
   }
 
-  /// 构建消息内容（支持动画表情）
   Widget _buildMessageContent(
     String senderText,
     Color textColor,
@@ -786,11 +670,10 @@ class _ChatListItemState extends State<ChatListItem>
   ) {
     final message = displayMsg ?? widget.chat.lastMessage ?? '';
     if (message.isEmpty && senderText.isEmpty) {
-      // 没有消息时显示提示文案
       return Text(
-        '快来发送第一条消息吧～',
+        '快来发送第一条消息吧~',
         style: TextStyle(
-          fontSize: 14,
+          fontSize: 13,
           color: textColor.withValues(alpha: 0.6),
           fontStyle: FontStyle.italic,
         ),
@@ -807,7 +690,7 @@ class _ChatListItemState extends State<ChatListItem>
       );
     }
 
-    // 检测是否是纯表情消息（1-3个表情）
+    // 检测是否是 1-3 个纯表情
     final chars = message.trim().characters.toList();
     if (chars.isNotEmpty && chars.length <= 3) {
       final animatedEmojis = <AnimatedEmoji>[];
@@ -823,7 +706,6 @@ class _ChatListItemState extends State<ChatListItem>
         }
       }
 
-      // 如果是纯表情消息，渲染动画
       if (allEmoji && animatedEmojis.isNotEmpty) {
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -833,7 +715,6 @@ class _ChatListItemState extends State<ChatListItem>
                 senderText,
                 style: TextStyle(fontSize: 14, color: textColor),
               ),
-            // 列表预览中禁用动画以节省 CPU/GPU
             ...animatedEmojis.map(
               (emoji) => SizedBox(
                 width: 20,
@@ -851,11 +732,9 @@ class _ChatListItemState extends State<ChatListItem>
       }
     }
 
-    // 普通消息或混合内容 - 渲染带内嵌小动画的富文本
     return _buildRichMessagePreview(senderText, message, textColor);
   }
 
-  /// 构建富文本消息预览（文字+小动画表情）
   Widget _buildRichMessagePreview(
     String senderText,
     String message,
@@ -874,14 +753,13 @@ class _ChatListItemState extends State<ChatListItem>
     for (final char in chars) {
       final animated = EmojiAnimations.findByEmoji(char);
       if (animated != null) {
-        // 先添加累积的文本
         if (textBuffer.isNotEmpty) {
           widgets.add(
-            Text(textBuffer, style: TextStyle(fontSize: 14, color: textColor)),
+            Text(textBuffer,
+                style: TextStyle(fontSize: 14, color: textColor)),
           );
           textBuffer = '';
         }
-        // 添加动画表情（列表预览中禁用动画）
         widgets.add(
           SizedBox(
             width: 18,
@@ -899,7 +777,6 @@ class _ChatListItemState extends State<ChatListItem>
       }
     }
 
-    // 添加剩余文本
     if (textBuffer.isNotEmpty) {
       widgets.add(
         Flexible(
@@ -913,7 +790,6 @@ class _ChatListItemState extends State<ChatListItem>
       );
     }
 
-    // 如果没有动画表情，使用普通文本
     if (widgets.length == (senderText.isNotEmpty ? 2 : 1) &&
         widgets.last is Flexible) {
       return Text(
@@ -927,7 +803,6 @@ class _ChatListItemState extends State<ChatListItem>
     return Row(mainAxisSize: MainAxisSize.min, children: widgets);
   }
 
-  /// 检测字符是否是emoji
   bool _isEmoji(String char) {
     if (char.isEmpty) return false;
     final rune = char.runes.first;
@@ -941,7 +816,174 @@ class _ChatListItemState extends State<ChatListItem>
   }
 }
 
-/// 左滑操作按钮
+// ============================================================
+// 头像块（含右上未读徽标 + 右下在线绿点）
+// ============================================================
+
+class _AvatarBlock extends StatelessWidget {
+  final ChatItem chat;
+  final bool isDark;
+
+  const _AvatarBlock({
+    required this.chat,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final unread = chat.unreadCount;
+    final showUnread = unread > 0;
+
+    return SizedBox(
+      width: _kAvatarSize,
+      height: _kAvatarSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AvatarWidget(
+            name: chat.name,
+            avatar: chat.avatar,
+            userId: chat.type == ChatItemType.private
+                ? (chat.targetUserId ?? chat.id)
+                : chat.id,
+            size: _kAvatarSize,
+            borderRadius: _kAvatarSize / 2,
+          ),
+          // 右下：在线绿点
+          if (chat.isOnline)
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: AppColors.online,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDark ? _kListStickerCutout : Colors.white,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+          // 右上：未读数徽标（贴在头像上）
+          if (showUnread)
+            Positioned(
+              right: -6,
+              top: -6,
+              child: _UnreadStickerBadge(
+                count: unread,
+                muted: chat.isMuted,
+                isDark: isDark,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnreadStickerBadge extends StatelessWidget {
+  final int count;
+  final bool muted;
+  final bool isDark;
+
+  const _UnreadStickerBadge({
+    required this.count,
+    required this.muted,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg = muted ? _kListMutedTint : _kListPrimary;
+    final label = count > 99 ? '99+' : count.toString();
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isDark ? _kListStickerCutout : Colors.white,
+          width: 2,
+        ),
+        boxShadow: muted
+            ? null
+            : [
+                BoxShadow(
+                  color: _kListPrimary.withOpacity(0.28),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          height: 1.0,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 状态 Chip（置顶 / 免打扰 / 待审批）
+// ============================================================
+
+class _StatusChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color fg;
+  final Color bg;
+
+  const _StatusChip({
+    required this.icon,
+    required this.label,
+    required this.fg,
+    required this.bg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: fg,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 左滑操作按钮
+// ============================================================
+
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;

@@ -6016,7 +6016,6 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           SnackBar(
             content: const Text('上传失败，请重试'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.redAccent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -6099,7 +6098,6 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           SnackBar(
             content: Text(errMsg),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.redAccent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -7676,7 +7674,6 @@ class _MomentNotificationsPageState
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  backgroundColor: AppColors.error,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),

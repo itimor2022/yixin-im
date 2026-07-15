@@ -12,6 +12,9 @@ import '../../../core/services/android_notification_settings_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/notification_sound_service.dart';
+import '../../../shared/widgets/settings_ui.dart';
+
+const Color _kNotifPrimary = Color(0xFFFF6B6B);
 
 /// 通知和声音设置页面
 class NotificationSettingsPage extends ConsumerStatefulWidget {
@@ -58,211 +61,159 @@ class _NotificationSettingsPageState
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final settings = ref.watch(notificationSoundServiceProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    // 桌面面板模式：只返回内容
-    if (widget.isDesktopPanel) {
-      return _buildBody(isDark, settings, l10n);
-    }
-
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          l10n.notificationsAndSounds,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: _buildBody(isDark, settings, l10n),
+    return SettingsScaffold(
+      title: l10n.notificationsAndSounds,
+      isDesktopPanel: widget.isDesktopPanel,
+      children: _buildIslands(settings, l10n),
     );
   }
 
-  Widget _buildBody(
-      bool isDark, NotificationSoundSettings settings, AppLocalizations l10n) {
-    return ListView(
-      children: [
-        const SizedBox(height: 24),
-
-        if (kIsWeb) ...[
-          _SectionTitle(title: '浏览器推送通知', isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _WebPushTile(
-                isDark: isDark,
-                permission: _webNotificationPermission,
-                onTap: () { _requestWebNotificationPermission(); },
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-        ],
-
-        if (!kIsWeb && Platform.isAndroid) ...[
-          _SectionTitle(title: '系统通知权限', isDark: isDark),
-          _SettingsCard(
-            isDark: isDark,
-            children: [
-              _TapTile(
-                title: '允许系统通知',
-                subtitle: _notificationPermissionLabel(),
-                isDark: isDark,
-                onTap: _openNotificationSettings,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-        ],
-
-        // 消息通知
-        _SectionTitle(title: l10n.messageNotifications, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _SwitchTile(
-              title: l10n.privateMessages,
-              value: settings.messageNotification,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(messageNotification: v)),
-            ),
-            _SwitchTile(
-              title: l10n.groupMessages,
-              value: settings.groupNotification,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(groupNotification: v)),
-            ),
-            _SwitchTile(
-              title: l10n.channelMessages,
-              value: settings.channelNotification,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(channelNotification: v)),
-            ),
-            _SwitchTile(
-              title: l10n.momentNotifications,
-              subtitle: l10n.likesCommentsReplies,
-              value: settings.momentNotification,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(momentNotification: v)),
-            ),
-          ],
+  List<Widget> _buildIslands(
+      NotificationSoundSettings settings, AppLocalizations l10n) {
+    return [
+      if (kIsWeb) ...[
+        const SettingsSection('浏览器推送通知'),
+        SettingsChoiceIsland(
+          icon: Icons.notifications_active_rounded,
+          iconColor: const Color(0xFFFF9500),
+          label: '后台消息推送',
+          subtitle: _webNotificationPermission == 'granted'
+              ? '已开启，切换到其他标签页时可收到推送'
+              : _webNotificationPermission == 'denied'
+                  ? '已拒绝，请在浏览器地址栏手动开启'
+                  : '点击开启，切换其他标签页仍可收到消息推送',
+          trailing: _webNotificationPermission == 'granted'
+              ? const Icon(Icons.check_circle_rounded,
+                  color: Color(0xFF34C759), size: 20)
+              : null,
+          onTap: _webNotificationPermission == 'granted'
+              ? null
+              : () {
+                  _requestWebNotificationPermission();
+                },
         ),
-
-        const SizedBox(height: 24),
-
-        // 通知预览
-        _SectionTitle(title: l10n.notificationContent, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _SwitchTile(
-              title: l10n.showMessagePreview,
-              subtitle: l10n.showMessageInNotification,
-              value: settings.showPreview,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(showPreview: v)),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // 声音和振动
-        _SectionTitle(title: l10n.soundAndVibration, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _SwitchTile(
-              title: l10n.notificationSound,
-              value: settings.soundEnabled,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(soundEnabled: v)),
-            ),
-            _TapTile(
-              title: l10n.alertTone,
-              subtitle: settings.selectedSound.label,
-              isDark: isDark,
-              onTap: () => _showSoundPicker(settings, l10n),
-            ),
-            _SwitchTile(
-              title: l10n.momentSound,
-              subtitle: l10n.get('likes_comments_play_sound'),
-              value: settings.momentSound,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(momentSound: v)),
-            ),
-            _SwitchTile(
-              title: l10n.vibration,
-              value: settings.vibrateEnabled,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(vibrateEnabled: v)),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // 应用内通知
-        _SectionTitle(title: l10n.inAppNotifications, isDark: isDark),
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _SwitchTile(
-              title: l10n.inAppSound,
-              value: settings.inAppSound,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(inAppSound: v)),
-            ),
-            _SwitchTile(
-              title: l10n.inAppVibration,
-              value: settings.inAppVibrate,
-              isDark: isDark,
-              onChanged: (v) =>
-                  _updateSettings(settings.copyWith(inAppVibrate: v)),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // 重置
-        _SettingsCard(
-          isDark: isDark,
-          children: [
-            _TapTile(
-              title: l10n.resetAllNotificationSettings,
-              titleColor: AppColors.error,
-              isDark: isDark,
-              onTap: () => _showResetConfirm(l10n),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 100),
       ],
-    );
+      if (!kIsWeb && Platform.isAndroid) ...[
+        const SettingsSection('系统通知权限'),
+        SettingsChoiceIsland(
+          icon: Icons.notifications_active_rounded,
+          iconColor: const Color(0xFFFF9500),
+          label: '允许系统通知',
+          value: _notificationPermissionLabel(),
+          onTap: _openNotificationSettings,
+        ),
+      ],
+
+      // 消息通知
+      SettingsSection(l10n.messageNotifications),
+      SettingsSwitchIsland(
+        icon: Icons.chat_bubble_outline_rounded,
+        iconColor: _kNotifPrimary,
+        label: l10n.privateMessages,
+        value: settings.messageNotification,
+        onChanged: (v) =>
+            _updateSettings(settings.copyWith(messageNotification: v)),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.groups_2_outlined,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.groupMessages,
+        value: settings.groupNotification,
+        onChanged: (v) =>
+            _updateSettings(settings.copyWith(groupNotification: v)),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.campaign_outlined,
+        iconColor: const Color(0xFFAF52DE),
+        label: l10n.channelMessages,
+        value: settings.channelNotification,
+        onChanged: (v) =>
+            _updateSettings(settings.copyWith(channelNotification: v)),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.favorite_outline_rounded,
+        iconColor: const Color(0xFFFF2D55),
+        label: l10n.momentNotifications,
+        subtitle: l10n.likesCommentsReplies,
+        value: settings.momentNotification,
+        onChanged: (v) =>
+            _updateSettings(settings.copyWith(momentNotification: v)),
+      ),
+
+      // 通知预览
+      SettingsSection(l10n.notificationContent),
+      SettingsSwitchIsland(
+        icon: Icons.preview_rounded,
+        iconColor: const Color(0xFF5AC8FA),
+        label: l10n.showMessagePreview,
+        subtitle: l10n.showMessageInNotification,
+        value: settings.showPreview,
+        onChanged: (v) => _updateSettings(settings.copyWith(showPreview: v)),
+      ),
+
+      // 声音和振动
+      SettingsSection(l10n.soundAndVibration),
+      SettingsSwitchIsland(
+        icon: Icons.volume_up_outlined,
+        iconColor: _kNotifPrimary,
+        label: l10n.notificationSound,
+        value: settings.soundEnabled,
+        onChanged: (v) => _updateSettings(settings.copyWith(soundEnabled: v)),
+      ),
+      SettingsChoiceIsland(
+        icon: Icons.music_note_rounded,
+        iconColor: const Color(0xFFAF52DE),
+        label: l10n.alertTone,
+        value: settings.selectedSound.label,
+        onTap: () => _showSoundPicker(settings, l10n),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.notifications_none_rounded,
+        iconColor: const Color(0xFFFF2D55),
+        label: l10n.momentSound,
+        subtitle: l10n.get('likes_comments_play_sound'),
+        value: settings.momentSound,
+        onChanged: (v) => _updateSettings(settings.copyWith(momentSound: v)),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.vibration_rounded,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.vibration,
+        value: settings.vibrateEnabled,
+        onChanged: (v) =>
+            _updateSettings(settings.copyWith(vibrateEnabled: v)),
+      ),
+
+      // 应用内通知
+      SettingsSection(l10n.inAppNotifications),
+      SettingsSwitchIsland(
+        icon: Icons.speaker_notes_outlined,
+        iconColor: _kNotifPrimary,
+        label: l10n.inAppSound,
+        value: settings.inAppSound,
+        onChanged: (v) => _updateSettings(settings.copyWith(inAppSound: v)),
+      ),
+      SettingsSwitchIsland(
+        icon: Icons.phonelink_ring_outlined,
+        iconColor: const Color(0xFF34C759),
+        label: l10n.inAppVibration,
+        value: settings.inAppVibrate,
+        onChanged: (v) => _updateSettings(settings.copyWith(inAppVibrate: v)),
+      ),
+
+      // 重置
+      const SizedBox(height: 16),
+      SettingsChoiceIsland(
+        icon: Icons.restart_alt_rounded,
+        iconColor: AppColors.error,
+        label: l10n.resetAllNotificationSettings,
+        labelColor: AppColors.error,
+        onTap: () => _showResetConfirm(l10n),
+      ),
+    ];
   }
 
   void _updateSettings(NotificationSoundSettings settings) {
@@ -536,228 +487,3 @@ class _SoundOptionTile extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final bool isDark;
-
-  const _SectionTitle({required this.title, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 0, 16, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: isDark ? Colors.white38 : Colors.black38,
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsCard extends StatelessWidget {
-  final bool isDark;
-  final List<Widget> children;
-
-  const _SettingsCard({required this.isDark, required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: List.generate(children.length * 2 - 1, (index) {
-          if (index.isOdd) {
-            return Divider(
-              height: 1,
-              indent: 16,
-              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
-            );
-          }
-          return children[index ~/ 2];
-        }),
-      ),
-    );
-  }
-}
-
-class _SwitchTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final bool isDark;
-  final ValueChanged<bool> onChanged;
-
-  const _SwitchTile({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.isDark,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TapTile extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final Color? titleColor;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  const _TapTile({
-    required this.title,
-    this.subtitle,
-    this.titleColor,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: titleColor ?? (isDark ? Colors.white : Colors.black),
-                ),
-              ),
-            ),
-            if (subtitle != null)
-              Text(
-                subtitle!,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-              ),
-            if (subtitle != null) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: isDark ? Colors.white24 : Colors.black26,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WebPushTile extends StatelessWidget {
-  final bool isDark;
-  final String permission;
-  final VoidCallback onTap;
-
-  const _WebPushTile({
-    required this.isDark,
-    required this.permission,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final granted = permission == 'granted';
-    final denied = permission == 'denied';
-    final subtitle = granted
-        ? '✅ 已开启，切换到其他标签页时可收到推送'
-        : denied
-            ? '❌ 已拒绝，请在浏览器地址栏手动开启通知权限'
-            : '点击开启，切换到其他标签页时仍可收到消息推送';
-
-    return InkWell(
-      onTap: granted ? null : onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '后台消息推送',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white54 : Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!granted && !denied)
-              const Icon(Icons.chevron_right, color: Colors.grey),
-            if (granted)
-              const Icon(Icons.check_circle, color: Colors.green, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}

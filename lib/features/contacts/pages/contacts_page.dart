@@ -14,18 +14,22 @@ import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
-import '../../../shared/widgets/emoji_status_widget.dart';
-import '../../../shared/widgets/colored_name_widget.dart';
-import '../../../shared/widgets/official_badge.dart';
-import '../../../shared/widgets/member_badge_widget.dart';
-import '../../../shared/widgets/premium_widgets.dart';
-import '../../../shared/widgets/premium_widgets.dart';
+import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../../chat/widgets/create_sheets.dart';
 import '../../chat/providers/chat_provider.dart';
 import '../../chat/pages/chat_detail_page.dart' show ChatType;
 import '../../home/pages/home_desktop_page.dart';
 import '../providers/contact_provider.dart';
 import '../providers/friend_request_provider.dart';
+
+/// 顶部渐变区结构尺寸（与"聊天"页节奏保持一致）：
+///   · header 视觉高度 = 10 (top pad) + 44 (content) + 6 (bottom pad) = 60
+///   · search 视觉高度 = 2  (top pad) + 42 (content) + 10 (bottom pad) = 54
+///   · 渐变尾巴高度 = 80 —— 延伸到快捷操作卡上方，视觉上"渐变穿过搜索栏、
+///     淡入到快捷操作卡里"
+const double _kContactsHeaderContentHeight = 60;
+const double _kContactsSearchContentHeight = 54;
+const double _kContactsGradientFadeTail = 80;
 
 class ContactsPage extends ConsumerStatefulWidget {
   /// 是否作为桌面端侧边栏使用
@@ -134,141 +138,101 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       extra: 12,
     );
 
+    // 浅灰底色，让白色卡片能"浮起来"，与「我的」页面风格一致
+    final Color pageBg =
+        isDark ? AppColors.darkBackground : const Color(0xFFF7F8FA);
+    final Color cardBg = isDark ? const Color(0xFF14161E) : Colors.white;
+
+    final double topPad = MediaQuery.of(context).padding.top;
+    // 渐变**不透明**区域高度（status bar + header + 搜索栏）
+    final double gradientOpaqueHeight = topPad +
+        _kContactsHeaderContentHeight +
+        _kContactsSearchContentHeight;
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor:
-            isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        appBar: AppBar(
-          backgroundColor:
-              isDark ? AppColors.darkBackground : AppColors.lightBackground,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          title: Text(
-            l10n.tabContacts,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : Colors.black,
-            ),
-          ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: IconButton(
-                icon: Icon(
-                  Icons.person_add_outlined,
-                  color: AppColors.primary,
-                  size: 26,
-                ),
-                onPressed: () {
-                  if (widget.isDesktopSidebar) {
-                    // 桌面端：在右侧面板显示搜索用户
-                    ref.read(desktopProfileProvider.notifier).state =
-                        const DesktopProfileInfo(
-                      type: DesktopPanelType.searchUsers,
-                      id: 'search_users',
-                    );
-                  } else {
-                    if (kDebugMode) debugPrint(
-                      '[Contacts] Add button pressed, pushing /search-users',
-                    );
-                    context.push('/search-users');
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        body: Column(
+        backgroundColor: pageBg,
+        // 3 层 Stack 结构，与"聊天"页完全一致
+        body: Stack(
           children: [
-            // 微信风格搜索框
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            // ==================== 底层：可滚动内容 ====================
+            //
+            // 顶部预留 gradientOpaqueHeight，让快捷操作卡刚好落到渐变尾巴中间，
+            // 视觉上"渐变穿过搜索栏、淡入到快捷操作卡里"。
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.only(top: gradientOpaqueHeight),
+                child: Column(
+                  children: [
+                    // 顶部快捷操作卡（一整张白卡 + 3 个按钮横向平分，图标+文字上下结构）
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
               child: Container(
-                height: 36,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? AppColors.darkInputBackground
-                      : const Color(0xFFEDEDED),
-                  borderRadius: BorderRadius.circular(8),
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: isDark
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                 ),
-                child: TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: l10n.search,
-                    hintStyle: TextStyle(
-                      fontSize: 15,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : const Color(0xFF8E8E93),
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search,
-                      size: 18,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : const Color(0xFF8E8E93),
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                            child: Icon(
-                              Icons.cancel,
-                              size: 18,
-                              color: isDark
-                                  ? AppColors.darkTextTertiary
-                                  : const Color(0xFF8E8E93),
-                            ),
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                clipBehavior: Clip.antiAlias,
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ContactQuickAction(
+                          icon: Icons.person_add_alt_1_rounded,
+                          iconColor: const Color(0xFFFF3B30),
+                          label: '新的朋友',
+                          badgeCount: ref.watch(friendRequestProvider),
+                          isDark: isDark,
+                          onTap: () => context.push('/friend-requests'),
+                        ),
+                      ),
+                      _ContactActionDivider(isDark: isDark),
+                      Expanded(
+                        child: _ContactQuickAction(
+                          icon: Icons.person_search_rounded,
+                          iconColor: const Color(0xFF7C3AED),
+                          label: '添加好友',
+                          isDark: isDark,
+                          onTap: () {
+                            if (widget.isDesktopSidebar) {
+                              ref
+                                  .read(desktopProfileProvider.notifier)
+                                  .state = const DesktopProfileInfo(
+                                type: DesktopPanelType.searchUsers,
+                                id: 'search_users',
+                              );
+                            } else {
+                              context.push('/search-users');
+                            }
+                          },
+                        ),
+                      ),
+                      _ContactActionDivider(isDark: isDark),
+                      Expanded(
+                        child: _ContactQuickAction(
+                          icon: Icons.group_add_rounded,
+                          iconColor: const Color(0xFF34C759),
+                          label: l10n.createGroup,
+                          isDark: isDark,
+                          onTap: () => _showCreateGroup(context),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-
-            // 快捷操作 - 透明背景
-            Column(
-              children: [
-                _TGActionTile(
-                  icon: Icons.person_add_alt_1_outlined,
-                  title: '新的朋友',
-                  isDark: isDark,
-                  badgeCount: ref.watch(friendRequestProvider),
-                  onTap: () => context.push('/friend-requests'),
-                ),
-                _TGActionTile(
-                  icon: Icons.group_add_outlined,
-                  title: l10n.createGroup,
-                  isDark: isDark,
-                  onTap: () => _showCreateGroup(context),
-                ),
-                _TGActionTile(
-                  icon: Icons.campaign_outlined,
-                  title: l10n.createChannel,
-                  isDark: isDark,
-                  onTap: () => _showCreateChannel(context),
-                ),
-                // 分割线
-                Divider(
-                  height: 1,
-                  thickness: 0.5,
-                  color:
-                      isDark ? Colors.white12 : Colors.black.withOpacity(0.08),
-                ),
-              ],
             ),
 
             // 联系人列表 - 可滚动区域 + 侧边字母索引
@@ -291,81 +255,91 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                             // 为每个字母创建 key
                             _letterKeys.putIfAbsent(letter, () => GlobalKey());
 
-                            return Column(
+                            return Padding(
                               key: _letterKeys[letter],
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // 字母分隔头
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    16,
-                                    6,
-                                  ),
-                                  color: letter == '★'
-                                      ? AppColors.primary.withOpacity(isDark ? 0.18 : 0.10)
-                                      : (isDark
-                                          ? AppColors.darkBackground
-                                          : AppColors.lightBackground),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        letter == '★' ? '★' : letter,
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: letter == '★'
-                                              ? AppColors.primary
-                                              : (isDark
-                                                  ? Colors.white54
-                                                  : Colors.black54),
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                              padding:
+                                  const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  // 字母分隔头（放到卡片外侧）
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        6, 8, 6, 6),
+                                    child: Text(
+                                      letter == '★' ? '★' : letter,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        letterSpacing: 0.6,
+                                        color: letter == '★'
+                                            ? AppColors.primary
+                                            : (isDark
+                                                ? Colors.white54
+                                                : const Color(0xFF8A94A6)),
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                // 该字母下的联系人
-                                Container(
-                                  color: isDark
-                                      ? AppColors.darkBackground
-                                      : AppColors.lightBackground,
-                                  child: Column(
-                                    children: contactsInGroup
-                                        .asMap()
-                                        .entries
-                                        .map((entry) {
-                                      final contact = entry.value;
-                                      final isLast = entry.key ==
-                                          contactsInGroup.length - 1;
-                                      return Column(
-                                        children: [
-                                          _ContactListItem(
-                                            contact: contact,
-                                            onTap: () => _openChat(contact),
-                                            onAvatarTap: () =>
-                                                _openProfile(contact),
-                                            isOfficial: contact.uuid != null &&
-                                                officialUsers.contains(
-                                                  contact.uuid,
-                                                ),
-                                          ),
-                                          if (!isLast)
-                                            Divider(
-                                              height: 1,
-                                              indent: 74,
-                                              color: isDark
-                                                  ? Colors.white10
-                                                  : Colors.black
-                                                      .withOpacity(0.08),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: cardBg,
+                                      borderRadius:
+                                          BorderRadius.circular(16),
+                                      boxShadow: isDark
+                                          ? null
+                                          : [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.03),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Column(
+                                      children: contactsInGroup
+                                          .asMap()
+                                          .entries
+                                          .map((entry) {
+                                        final contact = entry.value;
+                                        final isLast = entry.key ==
+                                            contactsInGroup.length - 1;
+                                        return Column(
+                                          children: [
+                                            _ContactListItem(
+                                              contact: contact,
+                                              onTap: () => _openChat(contact),
+                                              onAvatarTap: () =>
+                                                  _openProfile(contact),
+                                              isOfficial: contact.uuid !=
+                                                      null &&
+                                                  officialUsers.contains(
+                                                    contact.uuid,
+                                                  ),
                                             ),
-                                        ],
-                                      );
-                                    }).toList(),
+                                            if (!isLast)
+                                              Padding(
+                                                padding:
+                                                    const EdgeInsets.only(
+                                                        left: 78),
+                                                child: Divider(
+                                                  height: 0.5,
+                                                  thickness: 0.5,
+                                                  color: isDark
+                                                      ? Colors.white10
+                                                      : const Color(
+                                                          0xFFF0F1F3),
+                                                ),
+                                              ),
+                                          ],
+                                        );
+                                      }).toList(),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             );
                           },
                         ),
@@ -415,6 +389,145 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                       ],
                     ),
             ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ==================== 中层：纯装饰渐变（IgnorePointer） ====================
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: topPad +
+                  _kContactsHeaderContentHeight +
+                  _kContactsSearchContentHeight +
+                  _kContactsGradientFadeTail,
+              child: const IgnorePointer(
+                child: TopGradientBackdrop(),
+              ),
+            ),
+
+            // ==================== 顶层：交互式左对齐标题 + 搜索栏 ====================
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle.light,
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildAppHeader(l10n),
+                      _buildSearchBar(isDark, cardBg, l10n),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 左对齐白字标题栏 —— 与"聊天"页 header 保持视觉一致
+  ///
+  /// 视觉高度 = 10 (top pad) + 44 (content) + 6 (bottom pad) = [_kContactsHeaderContentHeight]
+  Widget _buildAppHeader(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+      child: SizedBox(
+        height: 44,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            l10n.tabContacts,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 搜索栏 —— 白卡 + TextField，与"聊天"页搜索栏一致
+  Widget _buildSearchBar(bool isDark, Color cardBg, AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 10),
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.035),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: TextStyle(
+                  fontSize: 14.5,
+                  color: isDark ? Colors.white : const Color(0xFF111827),
+                ),
+                decoration: InputDecoration(
+                  hintText: l10n.search,
+                  hintStyle: TextStyle(
+                    fontSize: 14.5,
+                    color: isDark
+                        ? Colors.white54
+                        : const Color(0xFF9CA3AF),
+                  ),
+                  // 关键：显式关闭全局 InputDecorationTheme 的 filled + fillColor
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+            if (_searchQuery.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                child: Icon(
+                  Icons.cancel,
+                  size: 18,
+                  color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+                ),
+              ),
           ],
         ),
       ),
@@ -571,23 +684,21 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   void _showCreateGroup(BuildContext context) {
     showCreateGroupSheet(context);
   }
-
-  void _showCreateChannel(BuildContext context) {
-    showCreateChannelSheet(context);
-  }
 }
 
-///  的操作按钮 - 简洁无背景
-class _TGActionTile extends StatelessWidget {
+/// 顶部快捷操作按钮：图标 + 文字上下结构，右上角红点角标
+class _ContactQuickAction extends StatelessWidget {
   final IconData icon;
-  final String title;
+  final Color iconColor;
+  final String label;
+  final int badgeCount;
   final bool isDark;
   final VoidCallback onTap;
-  final int badgeCount;
 
-  const _TGActionTile({
+  const _ContactQuickAction({
     required this.icon,
-    required this.title,
+    required this.iconColor,
+    required this.label,
     required this.isDark,
     required this.onTap,
     this.badgeCount = 0,
@@ -595,54 +706,89 @@ class _TGActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            // 蓝色图标 - 无背景，与联系人列表风格一致
-            Icon(icon, color: AppColors.primary, size: 24),
-            const SizedBox(width: 12),
-
-            // 标题
-            Expanded(
-              child: Text(
-                title,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        splashColor: iconColor.withOpacity(0.08),
+        highlightColor: iconColor.withOpacity(0.04),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: iconColor, size: 28),
+                  if (badgeCount > 0)
+                    Positioned(
+                      right: -8,
+                      top: -6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1.5),
+                        constraints: const BoxConstraints(minWidth: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B30),
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF14161E)
+                                : Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : '$badgeCount',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            height: 1.1,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 17,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w400,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color:
+                      isDark ? Colors.white70 : const Color(0xFF374151),
                 ),
               ),
-            ),
-            // 未读申请红点
-            if (badgeCount > 0)
-              Container(
-                margin: const EdgeInsets.only(right: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                constraints: const BoxConstraints(minWidth: 18),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF3B30),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Text(
-                  badgeCount > 99 ? '99+' : '$badgeCount',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// 快捷操作卡内部的竖向分割线
+class _ContactActionDivider extends StatelessWidget {
+  final bool isDark;
+  const _ContactActionDivider({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 0.6,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      color: isDark
+          ? Colors.white.withOpacity(0.06)
+          : const Color(0xFFF0F1F3),
     );
   }
 }
@@ -677,23 +823,22 @@ class _ContactListItem extends StatelessWidget {
                 onAvatarTap?.call();
               },
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
                   AvatarWidget(
                     avatar: contact.avatar,
                     name: contact.name,
                     userId: contact.id,
                     size: 46,
-                    premiumType: contact.premiumType,
-                    isMember: contact.isMember,
-                    memberBadgeColor: contact.badgeColor,
+                    borderRadius: 23,
                   ),
                   if (contact.isOnline)
                     Positioned(
-                      right: 0,
-                      bottom: 0,
+                      right: -2,
+                      bottom: -2,
                       child: Container(
-                        width: 12,
-                        height: 12,
+                        width: 13,
+                        height: 13,
                         decoration: BoxDecoration(
                           color: AppColors.online,
                           shape: BoxShape.circle,
@@ -712,78 +857,41 @@ class _ContactListItem extends StatelessWidget {
             const SizedBox(width: 12),
             // 名字和状态 - 点击进入聊天
             Expanded(
-              child: PremiumContainer(
-                premiumType: contact.premiumType,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: contact.premiumType?.isNotEmpty == true ? 8 : 0,
-                    vertical: contact.premiumType?.isNotEmpty == true ? 6 : 0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    contact.name,
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : const Color(0xFF111827),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: ColoredNameWidget(
-                              name: contact.name,
-                              nicknameColor: contact.nicknameColor,
-                              premiumType: contact.premiumType,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              defaultColor: isDark
-                                  ? AppColors.darkTextPrimary
-                                  : AppColors.lightTextPrimary,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // 表情状态
-                          if (contact.emojiAvatar != null &&
-                              contact.emojiAvatar!.isNotEmpty) ...[
-                            const SizedBox(width: 4),
-                            EmojiStatusWidget(
-                              emoji: contact.emojiAvatar!,
-                              size: 18,
-                            ),
-                          ],
-                          // 会员徽章
-                          MemberBadgeWidget(
-                            isMember: contact.isMember,
-                            badgeText: contact.badgeText,
-                            badgeColor: contact.badgeColor,
-                            fontSize: 10,
-                          ),
-                          // 官方认证标识
-                          if (isOfficial) ...[
-                            const SizedBox(width: 4),
-                            const OfficialBadge(size: 16),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        contact.isOnline
-                            ? '在线'
-                            : (contact.lastSeen != null
-                                ? '最近在线 ${_formatLastSeen(contact.lastSeen!)}'
-                                : (contact.bio ?? '')),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: contact.isOnline
-                              ? AppColors.online
-                              : (isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                  const SizedBox(height: 3),
+                  Text(
+                    contact.isOnline
+                        ? '在线'
+                        : (contact.lastSeen != null
+                            ? '最近在线 ${_formatLastSeen(contact.lastSeen!)}'
+                            : (contact.bio ?? '')),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: contact.isOnline
+                          ? AppColors.online
+                          : (isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
+                ],
               ),
             ),
           ],

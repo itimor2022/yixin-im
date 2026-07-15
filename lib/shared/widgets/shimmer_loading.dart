@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
+
 /// Shimmer 加载效果组件
 class ShimmerLoading extends StatefulWidget {
   final Widget child;
@@ -123,35 +125,38 @@ class SkeletonBox extends StatelessWidget {
   }
 }
 
-/// 聊天列表骨架屏项
+/// 聊天列表骨架屏项 —— 匹配 v4 **扁平** 列表样式
+///
+/// 无卡片、无阴影、无边框，直接在白色 Scaffold 上呈现。
 class ChatListSkeletonItem extends StatelessWidget {
   const ChatListSkeletonItem({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return ShimmerLoading(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 头像
-            const SkeletonBox(height: 54, isCircle: true),
+            const SkeletonBox(width: 52, height: 52, borderRadius: 26),
             const SizedBox(width: 12),
-            // 文字
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SkeletonBox(width: 120, height: 16),
+                  Row(
+                    children: const [
+                      SkeletonBox(width: 120, height: 16),
+                      Spacer(),
+                      SkeletonBox(width: 40, height: 12),
+                    ],
+                  ),
                   const SizedBox(height: 8),
-                  SkeletonBox(width: 200, height: 14),
+                  const SkeletonBox(width: 220, height: 14),
                 ],
               ),
             ),
-            // 时间
-            SkeletonBox(width: 40, height: 12),
           ],
         ),
       ),

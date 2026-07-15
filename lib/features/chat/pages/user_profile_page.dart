@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
@@ -29,10 +28,34 @@ import '../../../shared/widgets/official_badge.dart';
 import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/page_transitions.dart';
 import '../../../shared/widgets/premium_widgets.dart';
+import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../../contacts/providers/contact_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/message_provider.dart';
 import 'chat_detail_page.dart' show ChatType;
+
+// ==================== 新版 UI 设计令牌（Profile Family） ====================
+const Color _kUpPrimary = Color(0xFFFF6B6B);
+const Color _kUpPrimarySoft = Color(0xFFFF9E9E);
+const Color _kUpBg = Color(0xFFF7F8FA);
+const Color _kUpCard = Colors.white;
+const Color _kUpTitleText = Color(0xFF111827);
+const Color _kUpSubText = Color(0xFF6B7280);
+const Color _kUpHintText = Color(0xFF9CA3AF);
+const Color _kUpDivider = Color(0xFFEDEFF2);
+// ignore: unused_element
+const Color _kUpSectionTitle = Color(0xFF8A94A6);
+
+// ==================== 新版布局尺寸（Hero on Gradient） ====================
+/// 顶部 header 内容高度（返回按钮 + 标题）
+const double _kUpHeaderContentHeight = 44;
+
+/// Hero 区（头像 + 名字 + ID）主体在渐变上占用的高度 —— 用来估算渐变的
+/// 不透明区域，确保白色的名字 / ID 完全落在深色主色上，不会滑到白色部分。
+const double _kUpHeroBodyHeight = 172;
+
+/// 渐变尾巴淡出到透明的额外高度，让渐变自然融进白色主体
+const double _kUpGradientFadeTail = 40;
 
 /// 用户资料页面
 class UserProfilePage extends ConsumerStatefulWidget {
@@ -78,9 +101,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   DateTime? _lastSeen;
   bool _loadingUserInfo = true;
 
-  // 私聊信息和媒体统计
+  // 私聊信息
   String? _privateChatId;
-  api.ChatMediaCounts? _mediaCounts;
 
   // 静音状态
   bool _isMuted = false;
@@ -269,12 +291,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
   }
 
-  /// 查找私聊并加载媒体数量和静音状态
+  /// 查找私聊并加载静音状态
   Future<void> _findPrivateChatAndLoadCounts() async {
     // 如果直接传入了 chatId，直接使用
     if (widget.chatId != null && widget.chatId!.isNotEmpty) {
       _privateChatId = widget.chatId;
-      _loadMediaCounts();
       _loadMuteStatusFromChat();
       return;
     }
@@ -298,11 +319,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         }
       }
     }
-
-    // 如果找到私聊，加载媒体数量
-    if (_privateChatId != null) {
-      _loadMediaCounts();
-    }
   }
 
   /// 从聊天列表加载静音状态
@@ -320,22 +336,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
   }
 
-  /// 加载媒体数量统计
-  Future<void> _loadMediaCounts() async {
-    if (_privateChatId == null) return;
-
-    try {
-      final chatService = ref.read(api.chatServiceProvider);
-      final response = await chatService.getChatMediaCounts(_privateChatId!);
-      if (response.isSuccess && response.data != null && mounted) {
-        setState(() {
-          _mediaCounts = response.data;
-        });
-      }
-    } catch (e) {
-      // 忽略错误
-    }
-  }
 
   void _checkIsContact() {
     final contacts = ref.read(contactListProvider);
@@ -461,70 +461,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     return '离线';
   }
 
-  // 个人资料页背景渐变色（与 personalization_page.dart 保持一致）
-  static const List<List<Color>> _profileBgGradients = [
-    [Color(0xFF5B9EE1), Color(0xFF2575BC)], // 蓝色
-    [Color(0xFF43C6AC), Color(0xFF1D976C)], // 绿色
-    [Color(0xFFFFB347), Color(0xFFFF8008)], // 橙色
-    [Color(0xFFFF6B6B), Color(0xFFEE0979)], // 红色
-    [Color(0xFFA18CD1), Color(0xFF6A3093)], // 紫色
-    [Color(0xFF4ECDC4), Color(0xFF009688)], // 青色
-    [Color(0xFFFF9A9E), Color(0xFFFECFEF)], // 粉色
-    [Color(0xFF8E9AAF), Color(0xFF5C6B7A)], // 灰色
-  ];
-
-  /// 获取用户背景颜色
-  Color _getUserBackgroundColor() {
-    if (_nicknameColor != null && _nicknameColor!.isNotEmpty) {
-      // 解析格式 "bg:0,name:0"
-      final parts = _nicknameColor!.split(',');
-      for (final part in parts) {
-        if (part.startsWith('bg:')) {
-          final index = int.tryParse(part.substring(3)) ?? 0;
-          final clampedIndex = index.clamp(0, _profileBgGradients.length - 1);
-          return _profileBgGradients[clampedIndex][0];
-        }
-      }
-    }
-    // 默认使用基于用户 ID 的颜色
-    return AppColors.getAvatarColor(widget.userId);
-  }
-
-  /// 获取用户背景渐变色
-  List<Color> _getUserBackgroundGradient() {
-    if (_premiumType != null && _premiumType!.isNotEmpty) {
-      if (_premiumType == 'yearly') {
-        return const [Color(0xFF111827), Color(0xFF7C2D12), Color(0xFFF59E0B)];
-      }
-      if (_premiumType == 'quarterly') {
-        return const [Color(0xFF1E1B4B), Color(0xFF4338CA), Color(0xFF06B6D4)];
-      }
-      return const [Color(0xFF0F172A), Color(0xFF312E81), Color(0xFF7C3AED)];
-    }
-    if (_nicknameColor != null && _nicknameColor!.isNotEmpty) {
-      // 解析格式 "bg:0,name:0"
-      final parts = _nicknameColor!.split(',');
-      for (final part in parts) {
-        if (part.startsWith('bg:')) {
-          final index = int.tryParse(part.substring(3)) ?? 0;
-          final clampedIndex = index.clamp(0, _profileBgGradients.length - 1);
-          return _profileBgGradients[clampedIndex];
-        }
-      }
-    }
-    // 默认使用基于用户 ID 的颜色
-    final baseColor = AppColors.getAvatarColor(widget.userId);
-    return [baseColor, baseColor.withOpacity(0.8)];
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
-    final separatorColor =
-        isDark ? const Color(0xFF38383A) : const Color(0xFFC6C6C8);
+    final bgColor = isDark ? const Color(0xFF0B0C10) : _kUpBg;
 
     // 监听联系人列表变化
     ref.listen(contactListProvider, (_, contacts) {
@@ -573,461 +514,236 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       });
     });
 
-    final profileBgGradient = _getUserBackgroundGradient();
-    final profileBgColor = profileBgGradient[0];
+    // ======================== 新版极简布局 ========================
+    //
+    // 顶部三层 Stack：
+    //   Bottom: CustomScrollView，first sliver 为一段透明占位（让下面的
+    //           内容自然落到渐变尾巴以下）+ Hero + 极简信息行 + 操作 pill；
+    //   Middle: TopGradientBackdrop，覆盖 header + Hero + 一小段淡出尾巴；
+    //   Top:    可交互的返回按钮 + "个人信息" 标题 + 右侧编辑/更多按钮。
+    //
+    // 参考设计：白色/极简、无卡片包裹、字段 label + value 平铺。
+    // ================================================================
+
+    final topPad = MediaQuery.of(context).padding.top;
+    // header 之后紧跟 Hero body —— 用它做 SizedBox 占位，Hero 就"贴"在
+    // header 下方（在渐变的深色部分之上），而不是被推到下方的白色区域。
+    final double headerSpacerHeight = topPad + _kUpHeaderContentHeight;
+    final double gradientOpaqueHeight = headerSpacerHeight + _kUpHeroBodyHeight;
+    final double gradientTotalHeight =
+        gradientOpaqueHeight + _kUpGradientFadeTail;
+
+    final bool hasRemark =
+        _contactRemark != null && _contactRemark!.trim().isNotEmpty;
+    final String remarkValue = hasRemark ? _contactRemark!.trim() : '';
+    final String nicknameValue = _realNickname?.trim().isNotEmpty == true
+        ? _realNickname!.trim()
+        : (widget.name ?? '');
+    final String bioValue = _realBio?.trim().isNotEmpty == true
+        ? _realBio!.trim()
+        : '';
+    final String idValue = _realUsername?.trim().isNotEmpty == true
+        ? _realUsername!.trim()
+        : widget.userId;
+    // 顶部大字：优先显示昵称本身，让 pill 标签保持"个人昵称"语义；
+    // 如果同时有备注，则显示备注（用户当前视角下的显示名）。
+    final String heroName = hasRemark ? remarkValue : nicknameValue;
+    final String heroPillLabel = hasRemark ? '备注' : '个人昵称';
 
     Widget content = Scaffold(
-      backgroundColor: bgColor, // 页面背景
+      backgroundColor: bgColor,
       body: Stack(
         children: [
-          // 顶部背景（渐变+SVG图案，覆盖到四个按钮以下）
+          // -------- 底层：装饰渐变（先画在最下面，再由 Hero / header 覆盖） --------
+          //
+          // 相比"聊天/联系人/我的"页，这里在渐变上放了整个头像 + 名字 + ID
+          // —— 白色文字必须落在足够蓝的部分才能读清楚。所以把 midStop
+          // 推到 0.75、midOpacity 提到 0.4，让主色从头一直延展到 Hero 底部，
+          // 只在最后一小段淡出到透明。
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            height: 450,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: profileBgGradient,
-                ),
-              ),
-              child: Opacity(
-                opacity: 0.2,
-                child: SvgPicture.asset(
-                  'assets/images/backgrounds/bg5.svg',
-                  fit: BoxFit.cover,
-                  colorFilter: const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.srcIn,
-                  ),
-                ),
-              ),
+            height: gradientTotalHeight,
+            child: const IgnorePointer(
+              child: TopGradientBackdrop(midStop: 0.75, midOpacity: 0.4),
             ),
           ),
-          // 主内容
-          CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              // iOS 风格导航栏（透明，让底层SVG图案显示）
-              SliverAppBar(
-                pinned: true,
-                stretch: true,
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-                leading: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios,
-                    size: 20,
-                    color: Colors.white,
+
+          // -------- 中层：滚动内容（Hero + 下方白色主体） --------
+          //
+          // ScrollView 本身透明 —— Hero 段透过它能看到渐变作为背景；
+          // Hero 下方的极简信息行、pill 按钮等被 [Container(bgColor)] 包住，
+          // 形成不透明白色画布，避免和渐变尾巴混色。
+          Positioned.fill(
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                // 顶部 header 占位（只让 header 那部分留白，Hero 紧贴 header 下方）
+                SliverToBoxAdapter(
+                  child: SizedBox(height: headerSpacerHeight),
+                ),
+                // Hero 区域：头像 / 名字 + pill / ID —— 直接画在渐变主色区
+                SliverToBoxAdapter(
+                  child: _buildProfileHero(
+                    context: context,
+                    isDark: isDark,
+                    heroName: heroName,
+                    heroPillLabel: heroPillLabel,
+                    idValue: idValue,
                   ),
-                  onPressed: () {
-                    if (widget.isDesktopPanel) {
-                      // 桌面面板模式：关闭资料页，返回聊天
-                      ref.read(desktopProfileProvider.notifier).state =
-                          DesktopProfileInfo.none;
-                    } else {
-                      context.pop();
-                    }
-                  },
                 ),
-                actions: [
-                  if (_isCurrentUser)
-                    TextButton(
-                      onPressed: () => context.push('/settings/profile'),
-                      child: const Text(
-                        '编辑',
-                        style: TextStyle(color: Colors.white, fontSize: 17),
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(Icons.more_horiz, color: Colors.white),
-                      onPressed: () => _showMoreOptions(context),
-                    ),
-                ],
-              ),
 
-              // 头像、名字、在线状态和操作按钮（透明背景，由底层提供图案）
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    // 头像
-                    GestureDetector(
-                      onTap: () => _showAvatarFullScreen(context),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withOpacity(
-                              _premiumType?.isNotEmpty == true ? 0.0 : 1.0,
-                            ),
-                            width: _premiumType?.isNotEmpty == true ? 0 : 4,
+                // 下方全部内容用白色画布包裹，遮住底层渐变尾巴
+                SliverToBoxAdapter(
+                  child: Container(
+                    color: bgColor,
+                    padding: const EdgeInsets.only(top: 20),
+                    child: Column(
+                      children: [
+                        // 极简信息行（无卡片）：备注名 / 昵称 / 个性签名 / @用户名
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 6, 24, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (!_isCurrentUser)
+                                _buildFlatRow(
+                                  isDark: isDark,
+                                  label: '备注名',
+                                  valueText:
+                                      hasRemark ? remarkValue : '',
+                                  editable: _isContact,
+                                  onEdit: _isContact
+                                      ? () {
+                                          _showEditRemarkDialog();
+                                        }
+                                      : null,
+                                ),
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '昵称',
+                                valueText: nicknameValue,
+                              ),
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '个性签名',
+                                valueText:
+                                    bioValue.isEmpty ? '无' : bioValue,
+                                isPlaceholder: bioValue.isEmpty,
+                              ),
+                              if (_realUsername != null &&
+                                  _realUsername!.isNotEmpty)
+                                _buildFlatRow(
+                                  isDark: isDark,
+                                  label: '用户名',
+                                  valueText: '@$_realUsername',
+                                  onTap: () => _copyToClipboard(
+                                      '@$_realUsername'),
+                                ),
+                            ],
                           ),
                         ),
-                        child: Hero(
-                          tag: 'avatar_${widget.userId}',
-                          child: AvatarWidget(
-                            name: _displayName,
-                            avatar: _realAvatar ?? widget.avatar,
-                            userId: widget.userId,
-                            size: 100,
-                            premiumType: _premiumType,
-                            isMember: _isMember,
-                            memberBadgeColor: _badgeColor,
+                        // 快捷操作（不用卡片、直接一行 pill 按钮）
+                        if (!_isCurrentUser)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                20, 26, 20, 0),
+                            child: _buildActionPills(l10n),
                           ),
+                        // 共同群组：作为纯文本链接放到底部
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 28, 24, 0),
+                          child: _buildCommonGroupsLink(isDark, l10n),
+                        ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // -------- 顶层：交互式返回按钮 + 标题 + 右侧操作 --------
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle.light,
+              child: SafeArea(
+                bottom: false,
+                child: SizedBox(
+                  height: _kUpHeaderContentHeight,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: Colors.white,
+                        ),
+                        onPressed: () {
+                          if (widget.isDesktopPanel) {
+                            ref
+                                .read(desktopProfileProvider.notifier)
+                                .state = DesktopProfileInfo.none;
+                          } else {
+                            context.pop();
+                          }
+                        },
+                      ),
+                      const Text(
+                        '个人信息',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    // 名称 + 表情状态 + 官方标识
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final officialUsersAsync = ref.watch(
-                          officialUsersProvider,
-                        );
-                        final officialUsers =
-                            officialUsersAsync.valueOrNull ?? {};
-                        // 使用 _userUuid 来检查是否是官方用户，如果还没加载完则尝试 widget.userId
-                        final userUuidToCheck = _userUuid ?? widget.userId;
-                        final isOfficial = officialUsers.contains(
-                          userUuidToCheck,
-                        );
-
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ColoredNameWidget(
-                              name: _displayName,
-                              nicknameColor: _nicknameColor,
-                              premiumType: _premiumType,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w600,
-                              defaultColor: Colors.white,
+                      const Spacer(),
+                      if (_isCurrentUser)
+                        TextButton(
+                          onPressed: () =>
+                              context.push('/settings/profile'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            '编辑',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
                             ),
-                            if (_emojiAvatar != null &&
-                                _emojiAvatar!.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              EmojiStatusWidget(emoji: _emojiAvatar!, size: 26),
-                            ],
-                            // 会员徽章
-                            MemberBadgeWidget(
-                              isMember: _isMember,
-                              badgeText: _badgeText,
-                              badgeColor: _badgeColor,
-                              fontSize: 11,
-                              margin: const EdgeInsets.only(left: 6),
-                            ),
-                            // 官方认证标识
-                            if (isOfficial) ...[
-                              const SizedBox(width: 6),
-                              const OfficialBadge(size: 22),
-                            ],
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    // 在线状态
-                    Text(
-                      _onlineStatusText,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: _isOnline ? Colors.white : Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // 操作按钮（不显示给自己）
-                    if (!_isCurrentUser)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            // F-12: 非好友且未开启「允许非好友消息」时，显示「加好友」替代「消息」
-                            (!_isContact &&
-                                    !(ref
-                                            .watch(systemSettingsProvider)
-                                            .valueOrNull
-                                            ?.allowStrangerMessage ??
-                                        false))
-                                ? _TGActionButton(
-                                    icon: Icons.person_add_alt_1,
-                                    label: l10n.get('add_contact') ?? '加好友',
-                                    onTap: () => _toggleContact(),
-                                    isLoading: _isLoading,
-                                    lightStyle: true,
-                                  )
-                                : _TGActionButton(
-                                    icon: Icons.chat_bubble_outline,
-                                    label: l10n.get('message') ?? '消息',
-                                    onTap: () => _startChat(context),
-                                    isLoading: _isLoading,
-                                    lightStyle: true,
-                                  ),
-                            _TGActionButton(
-                              icon: Icons.call_outlined,
-                              label: l10n.get('call') ?? '通话',
-                              onTap: () => _startCall(context, CallType.voice),
-                              lightStyle: true,
-                            ),
-                            _TGActionButton(
-                              icon: Icons.videocam_outlined,
-                              label: l10n.get('video') ?? '视频',
-                              onTap: () => _startCall(context, CallType.video),
-                              lightStyle: true,
-                            ),
-                            _TGActionButton(
-                              icon: _isMuted
-                                  ? Icons.volume_up_outlined
-                                  : Icons.volume_off_outlined,
-                              label: _isMuted
-                                  ? (l10n.get('unmute') ?? '取消静音')
-                                  : (l10n.get('mute') ?? '静音'),
-                              onTap: () => _toggleMute(),
-                              lightStyle: true,
-                            ),
-                          ],
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(
+                            Icons.more_horiz_rounded,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => _showMoreOptions(context),
                         ),
-                      ),
-                    if (_isCurrentUser) const SizedBox(height: 20),
-                    // Padding(
-                    //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                    //   child: PremiumCard(
-                    //     isDark: true,
-                    //     premiumType: _premiumType,
-                    //     padding: const EdgeInsets.all(18),
-                    //     borderRadius: BorderRadius.circular(24),
-                    //     colors: profileBgGradient,
-                    //     child: Column(
-                    //       crossAxisAlignment: CrossAxisAlignment.start,
-                    //       children: [
-                    //         Row(
-                    //           children: [
-                    //             Icon(
-                    //               Icons.auto_awesome_rounded,
-                    //               color: Colors.white.withOpacity(0.95),
-                    //               size: 20,
-                    //             ),
-                    //             const SizedBox(width: 8),
-                    //             Text(
-                    //               PremiumThemeTokens.isPremium(_premiumType)
-                    //                   ? 'Premium Profile'
-                    //                   : 'Profile Snapshot',
-                    //               style: const TextStyle(
-                    //                 color: Colors.white,
-                    //                 fontSize: 16,
-                    //                 fontWeight: FontWeight.w700,
-                    //               ),
-                    //             ),
-                    //           ],
-                    //         ),
-                    //         const SizedBox(height: 10),
-                    //         Text(
-                    //           (_realBio != null && _realBio!.isNotEmpty)
-                    //               ? _realBio!
-                    //               : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
-                    //           style: TextStyle(
-                    //             color: Colors.white.withOpacity(0.84),
-                    //             fontSize: 14,
-                    //             height: 1.45,
-                    //           ),
-                    //         ),
-                    //         if (_realUsername != null &&
-                    //             _realUsername!.isNotEmpty) ...[
-                    //           const SizedBox(height: 12),
-                    //           PremiumContainer(
-                    //             premiumType: _premiumType,
-                    //             borderRadius: BorderRadius.circular(14),
-                    //             child: Padding(
-                    //               padding: const EdgeInsets.symmetric(
-                    //                 horizontal: 10,
-                    //                 vertical: 8,
-                    //               ),
-                    //               child: Row(
-                    //                 mainAxisSize: MainAxisSize.min,
-                    //                 children: [
-                    //                   Icon(
-                    //                     Icons.alternate_email,
-                    //                     size: 16,
-                    //                     color: Colors.white.withOpacity(0.92),
-                    //                   ),
-                    //                   const SizedBox(width: 6),
-                    //                   Text(
-                    //                     '@$_realUsername',
-                    //                     style: const TextStyle(
-                    //                       color: Colors.white,
-                    //                       fontSize: 13,
-                    //                       fontWeight: FontWeight.w600,
-                    //                     ),
-                    //                   ),
-                    //                 ],
-                    //               ),
-                    //             ),
-                    //           ),
-                    //         ],
-                    //       ],
-                    //     ),
-                    //   ),
-                    // ),
-                  ],
-                ),
-              ),  
-
-              // 间距
-              SliverToBoxAdapter(child: SizedBox(height: 40)),
-
-              // 用户信息卡片
-              SliverToBoxAdapter(
-                child: _TGSection(
-                  cardColor: cardColor,
-                  separatorColor: separatorColor,
-                  children: [
-                    if (_realUsername != null && _realUsername!.isNotEmpty)
-                      _TGInfoCell(
-                        title: '@$_realUsername',
-                        subtitle: l10n.username,
-                        onTap: () => _copyToClipboard('@$_realUsername'),
-                      ),
-                    _TGInfoCell(
-                      title: (_realBio != null && _realBio!.isNotEmpty)
-                          ? _realBio!
-                          : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
-                      subtitle: l10n.bio,
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                    ],
+                  ),
                 ),
               ),
-
-              SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-              // 共享媒体
-              SliverToBoxAdapter(
-                child: _TGSection(
-                  cardColor: cardColor,
-                  separatorColor: separatorColor,
-                  children: [
-                    _TGCell(
-                      icon: Icons.photo_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('photos_and_videos') ?? '照片和视频',
-                      trailing: _buildCountTrailing(
-                        '${_mediaCounts?.media ?? 0}',
-                      ),
-                      onTap: () => _showMediaList(
-                        context,
-                        l10n.get('photos_and_videos') ?? '照片和视频',
-                        'media',
-                      ),
-                    ),
-                    _TGCell(
-                      icon: Icons.link,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('shared_links') ?? '共享链接',
-                      trailing: _buildCountTrailing(
-                        '${_mediaCounts?.link ?? 0}',
-                      ),
-                      onTap: () => _showMediaList(
-                        context,
-                        l10n.get('shared_links') ?? '共享链接',
-                        'link',
-                      ),
-                    ),
-                    _TGCell(
-                      icon: Icons.insert_drive_file_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('files') ?? '文件',
-                      trailing: _buildCountTrailing(
-                        '${_mediaCounts?.file ?? 0}',
-                      ),
-                      onTap: () => _showMediaList(
-                        context,
-                        l10n.get('files') ?? '文件',
-                        'file',
-                      ),
-                    ),
-                    _TGCell(
-                      icon: Icons.mic_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('voice_messages') ?? '语音消息',
-                      trailing: _buildCountTrailing(
-                        '${_mediaCounts?.voice ?? 0}',
-                      ),
-                      onTap: () => _showMediaList(
-                        context,
-                        l10n.get('voice_messages') ?? '语音消息',
-                        'voice',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              SliverToBoxAdapter(child: SizedBox(height: 20)),
-
-              // 共同群组
-              SliverToBoxAdapter(
-                child: _TGSection(
-                  cardColor: cardColor,
-                  separatorColor: separatorColor,
-                  children: [
-                    _TGCell(
-                      icon: Icons.group_outlined,
-                      iconColor: Colors.green,
-                      title: l10n.get('common_groups') ?? '共同群组',
-                      titlePrefix:
-                          '${_commonGroups.length} ${l10n.get('count_suffix') ?? '个'}',
-                      trailing: _buildArrowTrailing(),
-                      onTap: () => _showCommonGroups(context),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 危险操作（不显示给自己）
-              // if (!_isCurrentUser) ...[
-              //   SliverToBoxAdapter(child: SizedBox(height: 20)),
-              //   SliverToBoxAdapter(
-              //     child: _TGSection(
-              //       cardColor: cardColor,
-              //       separatorColor: separatorColor,
-              //       children: [
-              //         _TGCell(
-              //           title: _isBlocked
-              //               ? (l10n.get('unblock_user') ?? '取消屏蔽')
-              //               : (l10n.get('block_user') ?? '屏蔽用户'),
-              //           titleColor: _isBlocked ? Colors.orange : Colors.red,
-              //           trailing: _loadingBlockStatus
-              //               ? SizedBox(
-              //                   width: 16,
-              //                   height: 16,
-              //                   child: CircularProgressIndicator(
-              //                     strokeWidth: 2,
-              //                   ),
-              //                 )
-              //               : null,
-              //           onTap: _loadingBlockStatus
-              //               ? null
-              //               : () => _toggleBlock(context),
-              //         ),
-              //         _TGCell(
-              //           title: l10n.get('report') ?? '举报',
-              //           titleColor: Colors.red,
-              //           onTap: () => _showReportPage(context),
-              //         ),
-              //       ],
-              //     ),
-              //   ),
-              // ],
-
-              SliverToBoxAdapter(child: SizedBox(height: 40)),
-            ],
+            ),
           ),
         ],
       ),
@@ -1054,19 +770,350 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     return content;
   }
 
+  // ==================== 新版 Hero / 极简行 / 操作 pill 辅助方法 ====================
+
+  /// 顶部 Hero 区（叠在渐变上）：头像 + 名字 + pill 标签 + ID。
+  Widget _buildProfileHero({
+    required BuildContext context,
+    required bool isDark,
+    required String heroName,
+    required String heroPillLabel,
+    required String idValue,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 头像（圆角方块，白色描边把它从渐变里"浮"出来）
+          GestureDetector(
+            onTap: () => _showAvatarFullScreen(context),
+            child: Hero(
+              tag: 'avatar_${widget.userId}',
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.35),
+                  borderRadius: BorderRadius.circular(23),
+                ),
+                child: AvatarWidget(
+                  name: heroName,
+                  avatar: _realAvatar ?? widget.avatar,
+                  userId: widget.userId,
+                  size: 78,
+                  borderRadius: 20,
+                  premiumType: _premiumType,
+                  isMember: _isMember,
+                  memberBadgeColor: _badgeColor,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // 名字 + pill
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  heroName.isEmpty ? '用户' : heroName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.35),
+                    width: 0.6,
+                  ),
+                ),
+                child: Text(
+                  heroPillLabel,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (_emojiAvatar != null && _emojiAvatar!.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                EmojiStatusWidget(emoji: _emojiAvatar!, size: 18),
+              ],
+              Consumer(
+                builder: (context, ref, _) {
+                  final officialUsersAsync =
+                      ref.watch(officialUsersProvider);
+                  final officialUsers =
+                      officialUsersAsync.valueOrNull ?? {};
+                  final isOfficial = officialUsers
+                      .contains(_userUuid ?? widget.userId);
+                  if (!isOfficial) return const SizedBox.shrink();
+                  return const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: OfficialBadge(size: 16),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // ID + 在线状态点（一起放在同一行，浅白色）
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'ID: $idValue',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withOpacity(0.85),
+                  letterSpacing: 0.2,
+                ),
+              ),
+              if (!_isCurrentUser) ...[
+                const SizedBox(width: 10),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: _isOnline
+                        ? const Color(0xFF34C759)
+                        : Colors.white.withOpacity(0.55),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _onlineStatusText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 极简信息行（无卡片、无背景）：label + value，可选编辑铅笔 / 点击回调。
+  Widget _buildFlatRow({
+    required bool isDark,
+    required String label,
+    required String valueText,
+    bool editable = false,
+    bool isPlaceholder = false,
+    VoidCallback? onEdit,
+    VoidCallback? onTap,
+  }) {
+    final Color labelColor = isDark ? Colors.white70 : const Color(0xFF3A3F47);
+    final Color valueColor = isPlaceholder
+        ? (isDark ? Colors.white38 : const Color(0xFF9CA3AF))
+        : (isDark ? Colors.white : const Color(0xFF111827));
+
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 68,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: labelColor,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valueText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: valueColor,
+              ),
+            ),
+          ),
+          if (editable)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Icon(
+                Icons.edit_outlined,
+                size: 16,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (onEdit != null) {
+      return InkWell(onTap: onEdit, child: row);
+    }
+    if (onTap != null) {
+      return InkWell(onTap: onTap, child: row);
+    }
+    return row;
+  }
+
+  /// 一行 pill 风格操作按钮（发消息 / 加好友 / 通话 / 视频 / 静音），无卡片包裹。
+  Widget _buildActionPills(AppLocalizations l10n) {
+    final systemSettings = ref.watch(systemSettingsProvider).valueOrNull;
+    final allowStranger = systemSettings?.allowStrangerMessage ?? false;
+    final showAdd = !_isContact && !allowStranger;
+
+    final List<_HeroActionSpec> actions = [
+      showAdd
+          ? _HeroActionSpec(
+              icon: Icons.person_add_alt_1_rounded,
+              label: l10n.get('add_contact') ?? '加好友',
+              color: _kUpPrimary,
+              onTap: _isLoading ? null : () => _toggleContact(),
+            )
+          : _HeroActionSpec(
+              icon: Icons.chat_bubble_outline_rounded,
+              label: l10n.get('message') ?? '消息',
+              color: _kUpPrimary,
+              onTap: () => _startChat(context),
+            ),
+      _HeroActionSpec(
+        icon: Icons.phone_outlined,
+        label: l10n.get('call') ?? '通话',
+        color: const Color(0xFF34C759),
+        onTap: () => _startCall(context, CallType.voice),
+      ),
+      _HeroActionSpec(
+        icon: Icons.videocam_outlined,
+        label: l10n.get('video') ?? '视频',
+        color: const Color(0xFFFF9500),
+        onTap: () => _startCall(context, CallType.video),
+      ),
+      _HeroActionSpec(
+        icon: _isMuted
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_off_outlined,
+        label: _isMuted
+            ? (l10n.get('unmute') ?? '取消静音')
+            : (l10n.get('mute') ?? '静音'),
+        color: const Color(0xFF7C3AED),
+        onTap: () => _toggleMute(),
+      ),
+    ];
+
+    return Row(
+      children: [
+        for (int i = 0; i < actions.length; i++) ...[
+          Expanded(
+            child: _ProfileActionPill(spec: actions[i]),
+          ),
+          if (i != actions.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+
+  /// "共同群组 N 个" 单行链接（纯文本，无卡片）
+  Widget _buildCommonGroupsLink(bool isDark, AppLocalizations l10n) {
+    if (_isCurrentUser) return const SizedBox.shrink();
+    final countSuffix = l10n.get('count_suffix') ?? '个';
+    final label = l10n.get('common_groups') ?? '共同群组';
+    return InkWell(
+      onTap: () => _showCommonGroups(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : const Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _loadingGroups ? '...' : '${_commonGroups.length} $countSuffix',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: isDark ? Colors.white38 : const Color(0xFFC0C4CC),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCountTrailing(String count) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(count, style: TextStyle(color: Colors.grey, fontSize: 17)),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : const Color(0xFFF1F3F6),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            count,
+            style: TextStyle(
+              color: isDark ? Colors.white70 : _kUpSubText,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         const SizedBox(width: 6),
-        Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+        Icon(
+          Icons.chevron_right_rounded,
+          color: isDark ? Colors.white24 : const Color(0xFFCBD1D9),
+          size: 20,
+        ),
       ],
     );
   }
 
   Widget _buildArrowTrailing() {
-    return Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Icon(
+      Icons.chevron_right_rounded,
+      color: isDark ? Colors.white24 : const Color(0xFFCBD1D9),
+      size: 20,
+    );
   }
 
   void _showFeatureNotAvailable(BuildContext context, String feature) {
@@ -1303,33 +1350,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   }
 
   Future<void> _showEditRemarkDialog() async {
-    final controller = TextEditingController(text: _contactRemark ?? '');
+    // NOTE: 使用独立 StatefulWidget 承载 TextEditingController，避免在 dialog
+    // 关闭动画期间 dispose 导致的 `_dependents.isEmpty` assertion。
     final remark = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改备注'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 30,
-          decoration: const InputDecoration(
-            hintText: '填写备注名，留空则显示昵称',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (context) => _RemarkEditDialog(
+        initialValue: _contactRemark ?? '',
       ),
     );
-    controller.dispose();
 
+    if (!mounted) return;
     if (remark == null) return;
     final userUuid = _userUuid ?? widget.userId;
     final success = await ref
@@ -1349,6 +1379,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
             name: nextDisplayName,
           );
       ref.read(chatListProvider.notifier).silentRefresh(bypassDebounce: true);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('备注已保存'),
@@ -1360,7 +1391,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         const SnackBar(
           content: Text('备注保存失败，请重试'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
         ),
       );
     }
@@ -1410,7 +1440,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           const SnackBar(
             content: Text('移除失败，请重试'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -1441,7 +1470,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           SnackBar(
             content: Text(result.message?.isNotEmpty == true ? result.message! : '添加失败，请重试'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -1737,7 +1765,6 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
                     SnackBar(
                       content: Text(sendResponse.message ?? '发送失败'),
                       behavior: SnackBarBehavior.floating,
-                      backgroundColor: AppColors.error,
                     ),
                   );
                 }
@@ -1747,7 +1774,6 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
                 SnackBar(
                   content: Text(chatResponse.message ?? '创建会话失败'),
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: AppColors.error,
                 ),
               );
             }
@@ -1757,7 +1783,6 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
                 const SnackBar(
                   content: Text('发送失败，请重试'),
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: AppColors.error,
                 ),
               );
             }
@@ -1965,6 +1990,62 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
   }
 }
 
+// ==================== 新版 pill 风格操作按钮（无卡片） ====================
+class _HeroActionSpec {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _HeroActionSpec({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+}
+
+class _ProfileActionPill extends StatelessWidget {
+  final _HeroActionSpec spec;
+
+  const _ProfileActionPill({required this.spec});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = spec.onTap != null;
+    final Color base = spec.color;
+    return Material(
+      color: base.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: spec.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(spec.icon,
+                  size: 22, color: enabled ? base : base.withOpacity(0.5)),
+              const SizedBox(height: 6),
+              Text(
+                spec.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? base : base.withOpacity(0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 //  操作按钮
 class _TGActionButton extends StatelessWidget {
   final IconData icon;
@@ -1984,24 +2065,41 @@ class _TGActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = lightStyle
-        ? Colors.white.withOpacity(0.2)
-        : AppColors.primary.withOpacity(0.1);
-    final iconColor = lightStyle ? Colors.white : AppColors.primary;
-    final textColor = lightStyle ? Colors.white : AppColors.primary;
+        ? Colors.white.withOpacity(0.18)
+        : _kUpPrimary.withOpacity(0.10);
+    final iconColor = lightStyle ? Colors.white : _kUpPrimary;
+    final textColor = lightStyle ? Colors.white : _kUpPrimary;
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
+      behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(20),
+              border: lightStyle
+                  ? Border.all(color: Colors.white.withOpacity(0.28), width: 1)
+                  : null,
+              boxShadow: lightStyle
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
             child: isLoading
                 ? Center(
                     child: SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: iconColor,
@@ -2010,15 +2108,23 @@ class _TGActionButton extends StatelessWidget {
                   )
                 : Icon(icon, color: iconColor, size: 26),
           ),
-          const SizedBox(height: 6),
-          Text(label, style: TextStyle(fontSize: 12, color: textColor)),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+              letterSpacing: 0.2,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-//  卡片容器
+//  卡片容器（新版：白底 + 圆角 18 + 浅阴影）
 class _TGSection extends StatelessWidget {
   final Color cardColor;
   final Color separatorColor;
@@ -2032,19 +2138,30 @@ class _TGSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           for (int i = 0; i < children.length; i++) ...[
             children[i],
             if (i < children.length - 1)
               Padding(
-                padding: const EdgeInsets.only(left: 16),
+                padding: const EdgeInsets.only(left: 64),
                 child: Divider(
                   height: 0.5,
                   thickness: 0.5,
@@ -2058,52 +2175,107 @@ class _TGSection extends StatelessWidget {
   }
 }
 
-//  信息单元格（值在上，标签在下）
+//  信息单元格（标签在上、值在下，左侧图标胶囊）
 class _TGInfoCell extends StatelessWidget {
   final String title;
   final String subtitle;
+  final IconData? icon;
+  final Color? iconColor;
   final VoidCallback? onTap;
 
-  const _TGInfoCell({required this.title, required this.subtitle, this.onTap});
+  const _TGInfoCell({
+    required this.title,
+    required this.subtitle,
+    this.icon,
+    this.iconColor,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 根据 subtitle 语义自动挑图标/颜色，未传入时的兜底
+    IconData effectiveIcon = icon ?? Icons.info_outline_rounded;
+    Color effectiveIconColor = iconColor ?? _kUpPrimary;
+    if (icon == null) {
+      final lower = subtitle.toLowerCase();
+      if (lower.contains('user') ||
+          subtitle.contains('用户名') ||
+          subtitle.contains('账号')) {
+        effectiveIcon = Icons.alternate_email_rounded;
+        effectiveIconColor = const Color(0xFF7C3AED);
+      } else if (subtitle.contains('简介') ||
+          subtitle.contains('签名') ||
+          lower.contains('bio')) {
+        effectiveIcon = Icons.description_outlined;
+        effectiveIconColor = const Color(0xFF34C759);
+      } else if (subtitle.contains('电话') || lower.contains('phone')) {
+        effectiveIcon = Icons.phone_outlined;
+        effectiveIconColor = const Color(0xFFFF9500);
+      }
+    }
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
-                  ),
-                ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: effectiveIconColor.withOpacity(0.08),
+        highlightColor: effectiveIconColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: Icon(effectiveIcon, color: effectiveIconColor, size: 24),
               ),
-            ),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white54 : _kUpSubText,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : _kUpTitleText,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: isDark
+                      ? Colors.white24
+                      : const Color(0xFFBDBDBD),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-//  单元格
+//  单元格（新版：图标胶囊 + 标题 + 右侧内容）
 class _TGCell extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
@@ -2126,45 +2298,274 @@ class _TGCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveIconColor = iconColor ?? _kUpPrimary;
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: iconColor ?? Colors.grey, size: 24),
-              const SizedBox(width: 16),
-            ],
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    if (titlePrefix != null)
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: effectiveIconColor.withOpacity(0.08),
+        highlightColor: effectiveIconColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              if (icon != null) ...[
+                SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: Icon(icon, color: effectiveIconColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      if (titlePrefix != null)
+                        TextSpan(
+                          text: '$titlePrefix ',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: titleColor ??
+                                (isDark
+                                    ? Colors.white54
+                                    : _kUpSubText),
+                          ),
+                        ),
                       TextSpan(
-                        text: '$titlePrefix ',
+                        text: title,
                         style: TextStyle(
-                          fontSize: 17,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w500,
                           color: titleColor ??
-                              (isDark ? Colors.white : Colors.black),
+                              (isDark ? Colors.white : _kUpTitleText),
                         ),
                       ),
-                    TextSpan(
-                      text: title,
-                      style: TextStyle(
-                        fontSize: 17,
-                        color: titleColor ??
-                            (isDark ? Colors.white : Colors.black),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 白色宫格卡片（承载 3~4 个 `_UpGridButton`），带浅阴影
+class _UpGridCard extends StatelessWidget {
+  final List<Widget> items;
+  final Color cardColor;
+  final bool isDark;
+
+  const _UpGridCard({
+    required this.items,
+    required this.cardColor,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
-            if (trailing != null) trailing!,
           ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (int i = 0; i < items.length; i++) ...[
+                Expanded(child: items[i]),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 宫格里的单个按钮：图标胶囊 + （可选数字）+ 名称，垂直排布
+class _UpGridButton extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String? count;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _UpGridButton({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+    this.count,
+    this.isLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color labelColor =
+        isDark ? Colors.white70 : const Color(0xFF6B7280);
+    final Color countColor =
+        isDark ? Colors.white : const Color(0xFF111827);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        splashColor: iconColor.withOpacity(0.08),
+        highlightColor: iconColor.withOpacity(0.04),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: isLoading
+                    ? Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation(iconColor),
+                          ),
+                        ),
+                      )
+                    : Icon(icon, color: iconColor, size: 30),
+              ),
+              const SizedBox(height: 8),
+              if (count != null) ...[
+                Text(
+                  count!,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: countColor,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: labelColor,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部 Hero 区域中使用的圆形玻璃按钮
+class _UpGlassCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _UpGlassCircleButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: Icon(
+            icon,
+            color: isDark ? Colors.white : _kUpTitleText,
+            size: 18,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部 Hero 区域中使用的胶囊按钮（如"编辑"）
+class _UpGlassPillButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _UpGlassPillButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : _kUpPrimary.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : _kUpPrimary,
+              letterSpacing: 0.2,
+            ),
+          ),
         ),
       ),
     );
@@ -4043,6 +4444,63 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ============================================================================
+// 备注编辑对话框 —— 独立 StatefulWidget，controller 生命周期由自身管理，
+// 避免 dialog 关闭动画未完成时外部 dispose(controller) 触发的
+// `_dependents.isEmpty` assertion。
+// ============================================================================
+
+class _RemarkEditDialog extends StatefulWidget {
+  const _RemarkEditDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_RemarkEditDialog> createState() => _RemarkEditDialogState();
+}
+
+class _RemarkEditDialogState extends State<_RemarkEditDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('修改备注'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 30,
+        decoration: const InputDecoration(
+          hintText: '填写备注名，留空则显示昵称',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(context, _controller.text.trim()),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

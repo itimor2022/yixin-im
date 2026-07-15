@@ -4,17 +4,17 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // ====================  靛蓝紫（高级科技感） ====================
-  
-  static const Color primary = Color(0xFF6366F1);
-  static const Color primaryLight = Color(0xFF818CF8);
-  static const Color primaryDark = Color(0xFF4F46E5);
-  
-  /// 渐变（蓝紫渐变，非常高级）
+  // ====================  海洋蓝（明亮清爽） ====================
+
+  static const Color primary = Color(0xFFFF6B6B);
+  static const Color primaryLight = Color(0xFF66C4FF);
+  static const Color primaryDark = Color(0xFF0077CC);
+
+  /// 渐变（蓝→浅蓝，更清爽）
   static const LinearGradient primaryGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+    colors: [Color(0xFFFF6B6B), Color(0xFF3ABEFF)],
   );
 
   // ==================== 亮色主题 ====================
@@ -33,11 +33,12 @@ class AppColors {
   static const Color channelTagBackground = Color(0xFFE3EFFB);
   static const Color channelTagText = Color(0xFF0088CC);
   
-  /// 聊天背景
-  static const Color lightChatBackground = Color(0xFFDFE7EB);
-  
-  /// 消息气泡
-  static const Color lightBubbleOutgoing = Color(0xFFEFFEDD);
+  /// 聊天背景 —— 微信风格灰
+  static const Color lightChatBackground = Color(0xFFEDEDED);
+
+  /// 消息气泡（微信简约风：发送/接收均为白色，靠位置区分；
+  /// 差异用轻描边营造层次感）
+  static const Color lightBubbleOutgoing = Color(0xFFFFFFFF);
   static const Color lightBubbleIncoming = Color(0xFFFFFFFF);
   
   /// 文字
