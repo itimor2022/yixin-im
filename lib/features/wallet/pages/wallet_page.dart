@@ -208,19 +208,27 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
                     const SizedBox(height: 28),
 
-                    // 操作按钮（Web 端隐藏充值/提现，只保留账单）
+                    // ===== 修改部分：只显示提现和账单按钮 =====
                     Row(
                       children: [
-                        if (!kIsWeb) ...[
-                          Expanded(
-                            child: _buildActionButton(
-                              icon: Icons.arrow_upward,
-                              label: '提现',
-                              onTap: () => _navigateToWithdraw(context),
-                            ),
+                        // 充值按钮
+                        // Expanded(
+                        //   child: _buildActionButton(
+                        //     icon: Icons.arrow_downward,
+                        //     label: '充值',
+                        //     onTap: () => _navigateToRecharge(context),
+                        //   ),
+                        // ),
+                        // 提现按钮
+                        Expanded(
+                          child: _buildActionButton(
+                            icon: Icons.arrow_upward,
+                            label: '提现',
+                            onTap: () => _navigateToWithdraw(context),
                           ),
-                          const SizedBox(width: 12),
-                        ],
+                        ),
+                        const SizedBox(width: 12),
+                        // 账单按钮
                         Expanded(
                           child: _buildActionButton(
                             icon: Icons.receipt_long,
@@ -230,6 +238,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                         ),
                       ],
                     ),
+                    // ===== 修改结束 =====
                   ],
                 ),
               ),
@@ -274,158 +283,163 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ],
 
               // 充值/提现进度（Web 端隐藏）
-              if (!kIsWeb) ..._rechargeOrders
-                  .where((o) {
-                    final s = o['status'] as String? ?? '';
-                    return s == 'pending' || s == 'approved' || s == 'rejected';
-                  })
-                  .take(3)
-                  .map((o) {
-                    final status = o['status'] as String? ?? '';
-                    final amount = (o['amount'] as num?)?.toDouble() ?? 0;
-                    final method = o['method_name'] as String? ?? '充值';
-                    final remark = o['remark'] as String? ?? '';
-                    final createdAt = o['created_at']?.toString() ?? '';
+              if (!kIsWeb)
+                ..._rechargeOrders
+                    .where((o) {
+                      final s = o['status'] as String? ?? '';
+                      return s == 'pending' ||
+                          s == 'approved' ||
+                          s == 'rejected';
+                    })
+                    .take(3)
+                    .map((o) {
+                      final status = o['status'] as String? ?? '';
+                      final amount = (o['amount'] as num?)?.toDouble() ?? 0;
+                      final method = o['method_name'] as String? ?? '充值';
+                      final remark = o['remark'] as String? ?? '';
+                      final createdAt = o['created_at']?.toString() ?? '';
 
-                    Color statusColor;
-                    IconData statusIcon;
-                    String statusText;
-                    String subtitle;
+                      Color statusColor;
+                      IconData statusIcon;
+                      String statusText;
+                      String subtitle;
 
-                    if (status == 'pending') {
-                      statusColor = const Color(0xFFE6A23C);
-                      statusIcon = Icons.schedule;
-                      statusText = '审核中';
-                      subtitle = '等待管理员审核';
-                    } else if (status == 'approved') {
-                      statusColor = const Color(0xFF67C23A);
-                      statusIcon = Icons.check_circle;
-                      statusText = '已到账';
-                      subtitle = '充值成功';
-                    } else {
-                      statusColor = const Color(0xFFF56C6C);
-                      statusIcon = Icons.cancel;
-                      statusText = '已拒绝';
-                      subtitle = remark.isNotEmpty ? remark : '充值被拒绝';
-                    }
+                      if (status == 'pending') {
+                        statusColor = const Color(0xFFE6A23C);
+                        statusIcon = Icons.schedule;
+                        statusText = '审核中';
+                        subtitle = '等待管理员审核';
+                      } else if (status == 'approved') {
+                        statusColor = const Color(0xFF67C23A);
+                        statusIcon = Icons.check_circle;
+                        statusText = '已到账';
+                        subtitle = '充值成功';
+                      } else {
+                        statusColor = const Color(0xFFF56C6C);
+                        statusIcon = Icons.cancel;
+                        statusText = '已拒绝';
+                        subtitle = remark.isNotEmpty ? remark : '充值被拒绝';
+                      }
 
-                    final orderId = _getOrderId(o);
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                      child: Dismissible(
-                        key: ValueKey('order_$orderId'),
-                        direction: DismissDirection.endToStart,
-                        movementDuration: const Duration(milliseconds: 200),
-                        resizeDuration: const Duration(milliseconds: 250),
-                        dismissThresholds: const {
-                          DismissDirection.endToStart: 0.3,
-                        },
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 24),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                      final orderId = _getOrderId(o);
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                        child: Dismissible(
+                          key: ValueKey('order_$orderId'),
+                          direction: DismissDirection.endToStart,
+                          movementDuration: const Duration(milliseconds: 200),
+                          resizeDuration: const Duration(milliseconds: 250),
+                          dismissThresholds: const {
+                            DismissDirection.endToStart: 0.3,
+                          },
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 24),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.delete_outline,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                '删除',
-                                style: TextStyle(
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
                                   color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        onDismissed: (_) => _dismissOrder(orderId),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color:
-                                isDark ? const Color(0xFF2C2C2E) : Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  statusIcon,
-                                  color: statusColor,
                                   size: 20,
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '$method · ¥${amount.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      subtitle,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark
-                                            ? Colors.white38
-                                            : Colors.grey,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  statusText,
+                                SizedBox(width: 4),
+                                Text(
+                                  '删除',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: statusColor,
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          ),
+                          onDismissed: (_) => _dismissOrder(orderId),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    statusIcon,
+                                    color: statusColor,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '$method · ¥${amount.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        subtitle,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isDark
+                                              ? Colors.white38
+                                              : Colors.grey,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }),
+                      );
+                    }),
 
               const SizedBox(height: 20),
 

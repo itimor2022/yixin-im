@@ -258,7 +258,7 @@ class MePage extends ConsumerWidget {
       _MeMenuData(
         icon: Icons.account_balance_wallet_outlined,
         iconColor: const Color(0xFF10B981),
-        title: '我的钱包',
+        title: '钱包',
         onTap: () => _push(context, const WalletPage()),
         visibleSelector: (s) => s?.walletEnabled == true,
       ),

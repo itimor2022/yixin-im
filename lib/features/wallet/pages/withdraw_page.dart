@@ -127,7 +127,8 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 );
               }).toList();
             } catch (e) {
-              if (kDebugMode) debugPrint('[Withdraw] Parse form fields error: $e');
+              if (kDebugMode)
+                debugPrint('[Withdraw] Parse form fields error: $e');
             }
 
             return WithdrawMethodConfig(
@@ -158,12 +159,18 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
 
   FormFieldType _parseFieldType(String type) {
     switch (type) {
-      case 'phone': return FormFieldType.phone;
-      case 'number': return FormFieldType.number;
-      case 'bankCard': return FormFieldType.bankCard;
-      case 'idCard': return FormFieldType.idCard;
-      case 'select': return FormFieldType.select;
-      default: return FormFieldType.text;
+      case 'phone':
+        return FormFieldType.phone;
+      case 'number':
+        return FormFieldType.number;
+      case 'bankCard':
+        return FormFieldType.bankCard;
+      case 'idCard':
+        return FormFieldType.idCard;
+      case 'select':
+        return FormFieldType.select;
+      default:
+        return FormFieldType.text;
     }
   }
 
@@ -252,12 +259,13 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
 
     try {
       // 调用提现API
-      final success = await ref.read(walletProvider.notifier).createWithdrawRequest(
-        methodId: int.tryParse(_selectedMethod!.id) ?? 0,
-        amount: _amount,
-        formData: jsonEncode(formData),
-        payPassword: password,
-      );
+      final success =
+          await ref.read(walletProvider.notifier).createWithdrawRequest(
+                methodId: int.tryParse(_selectedMethod!.id) ?? 0,
+                amount: _amount,
+                formData: jsonEncode(formData),
+                payPassword: password,
+              );
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -581,13 +589,25 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 提现方式下拉选择
-                      Text(
-                        '提现方式',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                        ),
+                      // 提现方式下拉选择 - 标题行
+                      Row(
+                        children: [
+                          Text(
+                            '提现方式',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? Colors.white54 : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '(先在后台添加提现类型)',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: AppColors.primary.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       _buildMethodDropdown(isDark),
@@ -833,7 +853,8 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
-                                    color: isDark ? Colors.white : Colors.black87,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
                                   ),
                                 ),
                                 if (method.tips != null) ...[
@@ -935,9 +956,8 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withOpacity(0.05)
-                    : Colors.grey[50],
+                color:
+                    isDark ? Colors.white.withOpacity(0.05) : Colors.grey[50],
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isDark ? Colors.white12 : Colors.grey[200]!,
@@ -1082,7 +1102,10 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
   List<TextInputFormatter> _getInputFormatters(FormFieldType type) {
     switch (type) {
       case FormFieldType.phone:
-        return [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(11)];
+        return [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(11)
+        ];
       case FormFieldType.number:
         return [FilteringTextInputFormatter.digitsOnly];
       case FormFieldType.bankCard:
