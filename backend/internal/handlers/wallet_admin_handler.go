@@ -262,7 +262,7 @@ func (h *WalletAdminHandler) GetWithdrawStats(c *gin.Context) {
 // ListWithdrawMethods 获取提现方式列表（管理端）
 func (h *WalletAdminHandler) ListWithdrawMethods(c *gin.Context) {
 	var methods []models.WithdrawMethod
-	h.db.Unscoped().Order("sort ASC").Find(&methods)
+	h.db.Order("sort ASC").Find(&methods)
 	response.Success(c, methods)
 }
 

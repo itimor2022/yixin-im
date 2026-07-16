@@ -1107,7 +1107,7 @@ class _QuickActionsRow extends ConsumerWidget {
       ),
       _QuickActionItem(
         icon: Icons.account_balance_wallet_outlined,
-        label: '我的钱包',
+        label: '钱包',
         gradient: const [Color(0xFF10B981), Color(0xFF059669)],
         onTap: () {
           HapticFeedback.selectionClick();
