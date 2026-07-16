@@ -1383,6 +1383,7 @@ func setupRouter(
 					chatMgmt.DELETE("/:id/members/:member_id", middleware.RequireWriteRole(), chatMgmtHandler.RemoveChatMember)
 					// 群组「水军」数量：仅面向 type=2 的群聊，用于把客户端看到的成员/在线数虚增
 					chatMgmt.PUT("/:id/fake-members", middleware.RequireWriteRole(), chatMgmtHandler.UpdateFakeMemberCount)
+					chatMgmt.PUT("/:id/badge", middleware.RequireWriteRole(), chatMgmtHandler.UpdateChatBadge)
 				}
 
 				stats := adminAuth.Group("/stats")

@@ -31,6 +31,9 @@ class User {
   final String? emojiAvatar; // 表情头像
   final String? nicknameColor; // 昵称颜色
   final String? premiumType; // 会员类型
+  final bool isMember; // 是否会员
+  final String? badgeText; // 徽章文字
+  final String? badgeColor; // 徽章颜色
 
   User({
     required this.id,
@@ -46,6 +49,9 @@ class User {
     this.emojiAvatar,
     this.nicknameColor,
     this.premiumType,
+    this.isMember = false,
+    this.badgeText,
+    this.badgeColor,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -73,6 +79,9 @@ class User {
       emojiAvatar: json['emoji_avatar'],
       nicknameColor: json['nickname_color'],
       premiumType: json['premium_type'],
+      isMember: json['is_member'] == true || json['is_member'] == 1,
+      badgeText: json['badge_text'],
+      badgeColor: json['badge_color'],
     );
   }
 

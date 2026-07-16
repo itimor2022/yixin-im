@@ -1660,3 +1660,27 @@ export function deleteEmojiStorePack(id: number) {
   })
 }
 
+
+// ── 群组虚拟人数 ──────────────────────────────────────────────
+export function updateFakeMemberCount(chatId: number, memberCount: number, onlineCount: number) {
+  return request.put({
+    url: `/admin/chats/${chatId}/fake-members`,
+    data: { member_count: memberCount, online_count: onlineCount }
+  })
+}
+
+// ── 用户建群权限 ──────────────────────────────────────────────
+export function updateUserCreateGroupPermission(userId: number, canCreateGroup: boolean) {
+  return request({
+    url: `/admin/users/${userId}`,
+    method: 'PUT',
+    data: { can_create_group: canCreateGroup }
+  })
+}
+
+export function updateChatBadge(chatId: number, badgeText: string, badgeColor: string) {
+  return request.put({
+    url: `/admin/chats/${chatId}/badge`,
+    data: { badge_text: badgeText, badge_color: badgeColor }
+  })
+}

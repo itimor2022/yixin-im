@@ -475,8 +475,8 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"is_muted":    userChat.IsMuted,
 			"is_archived": userChat.IsArchived,
 			"is_member":   false,
-			"badge_text":  "",
-			"badge_color": "",
+			"badge_text":  chat.BadgeText,
+			"badge_color": chat.BadgeColor,
 		}
 
 		if chat.Type == 1 {
@@ -679,6 +679,14 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 				response.Error(c, http.StatusForbidden, msg)
 				return
 			}
+		}
+	}
+
+	// 用户级建群权限校验（后台对每个用户单独控制）
+	if req.Type == 2 {
+		if !currentUser.CanCreateGroup {
+			response.Error(c, http.StatusForbidden, "您暂无建群权限，请联系管理员开通")
+			return
 		}
 	}
 
@@ -1197,6 +1205,10 @@ type ChatMemberItem struct {
 	MuteEndTime   *time.Time `json:"mute_end_time,omitempty"`
 	NicknameColor string     `json:"nickname_color,omitempty"` // 昵称颜色
 	EmojiAvatar   string     `json:"emoji_avatar,omitempty"`   // 动态表情
+	PremiumType   string     `json:"premium_type,omitempty"`   // 会员类型
+	IsMember      bool       `json:"is_member"`                // 是否会员
+	BadgeText     string     `json:"badge_text,omitempty"`     // 徽章文字
+	BadgeColor    string     `json:"badge_color,omitempty"`    // 徽章颜色
 }
 
 // GetMembers 获取群成员列表
@@ -1279,6 +1291,10 @@ func (h *ChatHandler) GetMembers(c *gin.Context) {
 			MuteEndTime:   m.MuteEndTime,
 			NicknameColor: user.NicknameColor,
 			EmojiAvatar:   user.EmojiAvatar,
+   PremiumType:   user.PremiumType,
+   IsMember:      user.IsMember,
+   BadgeText:     user.BadgeText,
+   BadgeColor:    user.BadgeColor,
 		})
 	}
 

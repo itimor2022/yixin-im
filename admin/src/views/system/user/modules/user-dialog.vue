@@ -29,6 +29,12 @@
             <ElSwitch v-model="formData.enableWhitelist" />
           </ElFormItem>
 
+          <!-- ── 建群权限 ── -->
+          <ElFormItem label="建群权限">
+            <ElSwitch v-model="formData.canCreateGroup" />
+            <span class="ml-2 text-xs text-gray-400">开启后该用户可创建群组</span>
+          </ElFormItem>
+
           <!-- ── 新增功能：白名单 IP 输入框（开启时显示） ── -->
           <ElFormItem v-if="formData.enableWhitelist" label="白名单IP" prop="whitelistIps">
             <ElInput
@@ -187,8 +193,9 @@
     phone: '',
     bio: '',
     status: 1,
-    enableWhitelist: false, 
-    whitelistIps: ''       
+    enableWhitelist: false,
+    whitelistIps: '',
+    canCreateGroup: false
   })
 
   const memberData = reactive({
@@ -227,7 +234,8 @@
       status: parseInt(row.status || '1'),
       // 回显白名单数据（兼容后端返回的 0/1 或 true/false）
       enableWhitelist: row.enableWhitelist === 1 || row.enableWhitelist === true,
-      whitelistIps: row.whitelistIps || ''
+      whitelistIps: row.whitelistIps || '',
+      canCreateGroup: (row as any).canCreateGroup === true || (row as any).can_create_group === true
     })
     Object.assign(memberData, {
       isMember: !!row.isMember,
@@ -307,8 +315,9 @@
           phone: formData.phone || undefined,
           bio: formData.bio || undefined,
           status: formData.status,
-          enable_whitelist: formData.enableWhitelist, 
-          whitelist_ips: formData.whitelistIps
+          enable_whitelist: formData.enableWhitelist,
+          whitelist_ips: formData.whitelistIps,
+          can_create_group: formData.canCreateGroup
         } as any)
       } catch (e) {
         console.error('基本信息保存失败:', e)

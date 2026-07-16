@@ -680,3 +680,34 @@ func (h *ChatMgmtHandler) GetChatStats(c *gin.Context) {
 		"hot_channels":        hotChannels,
 	})
 }
+
+// UpdateChatBadge 后台设置群组标识文字和颜色
+func (h *ChatMgmtHandler) UpdateChatBadge(c *gin.Context) {
+	idStr := c.Param("id")
+	chatID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		response.BadRequest(c, "无效的群组 ID")
+		return
+	}
+	var req struct {
+		BadgeText  string `json:"badge_text"`
+		BadgeColor string `json:"badge_color"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	var chat models.Chat
+	if err := h.db.First(&chat, chatID).Error; err != nil {
+		response.NotFound(c, "群组不存在")
+		return
+	}
+	if err := h.db.Model(&chat).Updates(map[string]interface{}{
+		"badge_text":  req.BadgeText,
+		"badge_color": req.BadgeColor,
+	}).Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, gin.H{"badge_text": req.BadgeText, "badge_color": req.BadgeColor})
+}

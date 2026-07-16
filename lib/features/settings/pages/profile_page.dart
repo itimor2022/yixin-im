@@ -584,27 +584,24 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.35),
-                    width: 0.6,
+              if (user?.isMember == true && user?.badgeText != null && user!.badgeText!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _parseBadgeColorProfile(user.badgeColor) ?? const Color(0xFF3390EC),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    user.badgeText!,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-                child: const Text(
-                  '个人昵称',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 6),
@@ -3512,4 +3509,12 @@ class _AnimatedQRBorderPainter extends CustomPainter {
   bool shouldRepaint(covariant _AnimatedQRBorderPainter oldDelegate) {
     return oldDelegate.progress != progress;
   }
+}
+
+Color? _parseBadgeColorProfile(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  final h = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (h.length == 6) { final v = int.tryParse('FF\$h', radix: 16); return v != null ? Color(v) : null; }
+  if (h.length == 8) { final v = int.tryParse(h, radix: 16); return v != null ? Color(v) : null; }
+  return null;
 }

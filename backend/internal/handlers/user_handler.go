@@ -1706,8 +1706,11 @@ func (h *UserHandler) CheckBlockStatus(c *gin.Context) {
 
 	var targetUser models.User
 	if err := h.db.Where("uuid = ?", targetID).First(&targetUser).Error; err != nil {
-		response.NotFound(c, "目标用户不存在")
-		return
+		// 尝试数字 ID
+		if err2 := h.db.First(&targetUser, targetID).Error; err2 != nil {
+			response.NotFound(c, "目标用户不存在")
+			return
+		}
 	}
 
 	var count int64
