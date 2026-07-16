@@ -208,7 +208,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: _DoneChipButton(onTap: _saveProfile, label: l10n.done),
               ),
             ),
@@ -238,8 +239,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // ==========================================================================
 
     final topPad = MediaQuery.of(context).padding.top;
-    final double headerSpacerHeight =
-        topPad + _kProfileHeaderContentHeight;
+    final double headerSpacerHeight = topPad + _kProfileHeaderContentHeight;
     final double gradientOpaqueHeight =
         headerSpacerHeight + _kProfileHeroBodyHeight;
     final double gradientTotalHeight =
@@ -291,144 +291,137 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         if (user?.premiumType != null &&
                             (user!.premiumType as String).isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16),
-                            child: _buildPremiumCard(isDark, user),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            // child: _buildPremiumCard(isDark, user),
                           ),
                         // 极简可编辑信息行（无卡片）
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                              24, 12, 24, 0),
+                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
                           child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildFlatEditRow(
-                          isDark: isDark,
-                          label: l10n.name,
-                          controller: _nameController,
-                          readOnly: true,
-                          hintText: l10n.name,
-                        ),
-                        _buildFlatDivider(isDark),
-                        _buildFlatEditRow(
-                          isDark: isDark,
-                          label: l10n.username,
-                          controller: _usernameController,
-                          readOnly: true,
-                          hintText: l10n.username,
-                          prefixText: '@',
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (_usernameController.text.trim() !=
-                                  _originalUsername) ...[
-                                _buildUsernameStatusIcon(),
-                                const SizedBox(width: 6),
-                              ],
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  Clipboard.setData(
-                                    ClipboardData(
-                                        text:
-                                            '@${_usernameController.text}'),
-                                  );
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(
-                                    SnackBar(
-                                      content:
-                                          Text(l10n.usernameCopied),
-                                      behavior:
-                                          SnackBarBehavior.floating,
-                                      duration:
-                                          const Duration(seconds: 1),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10),
+                              _buildFlatEditRow(
+                                isDark: isDark,
+                                label: l10n.name,
+                                controller: _nameController,
+                                readOnly: true,
+                                hintText: l10n.name,
+                              ),
+                              _buildFlatDivider(isDark),
+                              _buildFlatEditRow(
+                                isDark: isDark,
+                                label: l10n.username,
+                                controller: _usernameController,
+                                readOnly: true,
+                                hintText: l10n.username,
+                                prefixText: '@',
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_usernameController.text.trim() !=
+                                        _originalUsername) ...[
+                                      _buildUsernameStatusIcon(),
+                                      const SizedBox(width: 6),
+                                    ],
+                                    GestureDetector(
+                                      onTap: () {
+                                        HapticFeedback.lightImpact();
+                                        Clipboard.setData(
+                                          ClipboardData(
+                                              text:
+                                                  '@${_usernameController.text}'),
+                                        );
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(l10n.usernameCopied),
+                                            behavior: SnackBarBehavior.floating,
+                                            duration:
+                                                const Duration(seconds: 1),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
+                                        child: Icon(
+                                          Icons.copy_rounded,
+                                          size: 18,
+                                          color: isDark
+                                              ? Colors.white38
+                                              : _kProfileHintText,
+                                        ),
                                       ),
                                     ),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(
-                                    Icons.copy_rounded,
-                                    size: 18,
+                                  ],
+                                ),
+                              ),
+                              _buildFlatDivider(isDark),
+                              _buildFlatEditRow(
+                                isDark: isDark,
+                                label: l10n.bio,
+                                controller: _bioController,
+                                hintText: l10n.bio,
+                                maxLines: 3,
+                                alignTop: true,
+                              ),
+                              // 个性签名提示
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 6, bottom: 4),
+                                child: Text(
+                                  l10n.bioHint,
+                                  style: TextStyle(
+                                    fontSize: 12,
                                     color: isDark
                                         ? Colors.white38
                                         : _kProfileHintText,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                              _buildFlatDivider(isDark),
+                              _buildFlatReadRow(
+                                isDark: isDark,
+                                label: l10n.phoneNumber,
+                                valueText: phoneDisplay,
+                                trailing: TextButton(
+                                  onPressed: _changePhone,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    backgroundColor:
+                                        _kProfilePrimary.withOpacity(0.10),
+                                    foregroundColor: _kProfilePrimary,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    user?.phone != null &&
+                                            user!.phone!.isNotEmpty
+                                        ? l10n.change
+                                        : l10n.bind,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        _buildFlatDivider(isDark),
-                        _buildFlatEditRow(
-                          isDark: isDark,
-                          label: l10n.bio,
-                          controller: _bioController,
-                          hintText: l10n.bio,
-                          maxLines: 3,
-                          alignTop: true,
-                        ),
-                        // 个性签名提示
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(top: 6, bottom: 4),
-                          child: Text(
-                            l10n.bioHint,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? Colors.white38
-                                  : _kProfileHintText,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                        _buildFlatDivider(isDark),
-                        _buildFlatReadRow(
-                          isDark: isDark,
-                          label: l10n.phoneNumber,
-                          valueText: phoneDisplay,
-                          trailing: TextButton(
-                            onPressed: _changePhone,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              backgroundColor:
-                                  _kProfilePrimary.withOpacity(0.10),
-                              foregroundColor: _kProfilePrimary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(999),
-                              ),
-                            ),
-                            child: Text(
-                              user?.phone != null &&
-                                      user!.phone!.isNotEmpty
-                                  ? l10n.change
-                                  : l10n.bind,
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                         // 快捷操作（pill 风格无卡片）
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                              20, 26, 20, 0),
-                          child:
-                              _buildProfileActionPills(isDark, l10n),
+                          padding: const EdgeInsets.fromLTRB(20, 26, 20, 0),
+                          child: _buildProfileActionPills(isDark, l10n),
                         ),
                         const SizedBox(height: 40),
                       ],
@@ -478,8 +471,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 4),
                           minimumSize: Size.zero,
-                          tapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Text(
                           l10n.done,
@@ -584,36 +576,53 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (user?.isMember == true && user?.badgeText != null && user!.badgeText!.isNotEmpty) ...[
+              if (user?.isMember == true &&
+                  user?.badgeText != null &&
+                  user!.badgeText!.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _parseBadgeColorProfile(user.badgeColor) ?? const Color(0xFF3390EC),
+                    color: _parseBadgeColorProfile(user.badgeColor) ??
+                        const Color(0xFF3390EC),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(
-                    user.badgeText!,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '✨',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        user.badgeText!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ]
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            idValue.isEmpty ? '' : 'ID: $idValue',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Colors.white.withOpacity(0.85),
-              letterSpacing: 0.2,
-            ),
-          ),
+          const SizedBox(height: 4),
+          // Text(
+          //   idValue.isEmpty ? '' : 'ID: $idValue',
+          //   style: TextStyle(
+          //     fontSize: 13,
+          //     fontWeight: FontWeight.w500,
+          //     color: Colors.white.withOpacity(0.85),
+          //     letterSpacing: 0.2,
+          //   ),
+          // ),
         ],
       ),
     );
@@ -659,9 +668,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               controller: controller,
               readOnly: readOnly,
               maxLines: maxLines,
-              keyboardType: maxLines > 1
-                  ? TextInputType.multiline
-                  : TextInputType.text,
+              keyboardType:
+                  maxLines > 1 ? TextInputType.multiline : TextInputType.text,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -748,8 +756,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Widget _buildFlatDivider(bool isDark) {
     return Container(
       height: 0.6,
-      color:
-          isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFEEF0F3),
+      color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFEEF0F3),
     );
   }
 
@@ -783,73 +790,73 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   /// Premium 装饰卡（沿用旧逻辑，包在 [PremiumCard] 中）
-  Widget _buildPremiumCard(bool isDark, dynamic user) {
-    return PremiumCard(
-      isDark: isDark,
-      premiumType: user.premiumType,
-      padding: const EdgeInsets.all(18),
-      borderRadius: BorderRadius.circular(20),
-      colors: PremiumThemeTokens.isYearly(user.premiumType)
-          ? const [
-              Color(0xFF111827),
-              Color(0xFF7C2D12),
-              Color(0xFFF59E0B),
-            ]
-          : user.premiumType == 'quarterly'
-              ? const [
-                  Color(0xFF1E1B4B),
-                  Color(0xFF4338CA),
-                  Color(0xFF06B6D4),
-                ]
-              : const [
-                  Color(0xFF0F172A),
-                  Color(0xFF312E81),
-                  Color(0xFF7C3AED),
-                ],
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Premium Identity',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '你的头像、昵称与聊天消息已启用高级会员视觉效果。',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
-                    fontSize: 12.5,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildPremiumCard(bool isDark, dynamic user) {
+  //   return PremiumCard(
+  //     isDark: isDark,
+  //     premiumType: user.premiumType,
+  //     padding: const EdgeInsets.all(18),
+  //     borderRadius: BorderRadius.circular(20),
+  //     colors: PremiumThemeTokens.isYearly(user.premiumType)
+  //         ? const [
+  //             Color(0xFF111827),
+  //             Color(0xFF7C2D12),
+  //             Color(0xFFF59E0B),
+  //           ]
+  //         : user.premiumType == 'quarterly'
+  //             ? const [
+  //                 Color(0xFF1E1B4B),
+  //                 Color(0xFF4338CA),
+  //                 Color(0xFF06B6D4),
+  //               ]
+  //             : const [
+  //                 Color(0xFF0F172A),
+  //                 Color(0xFF312E81),
+  //                 Color(0xFF7C3AED),
+  //               ],
+  //     child: Row(
+  //       children: [
+  //         Container(
+  //           width: 40,
+  //           height: 40,
+  //           decoration: BoxDecoration(
+  //             color: Colors.white.withOpacity(0.16),
+  //             borderRadius: BorderRadius.circular(12),
+  //           ),
+  //           child: const Icon(
+  //             Icons.auto_awesome_rounded,
+  //             color: Colors.white,
+  //             size: 22,
+  //           ),
+  //         ),
+  //         const SizedBox(width: 12),
+  //         Expanded(
+  //           child: Column(
+  //             crossAxisAlignment: CrossAxisAlignment.start,
+  //             children: [
+  //               const Text(
+  //                 'Premium Identity',
+  //                 style: TextStyle(
+  //                   color: Colors.white,
+  //                   fontSize: 17,
+  //                   fontWeight: FontWeight.w700,
+  //                 ),
+  //               ),
+  //               const SizedBox(height: 4),
+  //               Text(
+  //                 '你的头像、昵称与聊天消息已启用高级会员视觉效果。',
+  //                 style: TextStyle(
+  //                   color: Colors.white.withOpacity(0.82),
+  //                   fontSize: 12.5,
+  //                   height: 1.4,
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildBody(
     BuildContext context,
@@ -861,8 +868,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     String phoneDisplay,
     AppLocalizations l10n,
   ) {
-    final Color primaryTextColor =
-        isDark ? Colors.white : _kProfileTitleText;
+    final Color primaryTextColor = isDark ? Colors.white : _kProfileTitleText;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -1020,8 +1026,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         hintText: l10n.username,
                         hintStyle: TextStyle(
                           fontSize: 15,
-                          color:
-                              isDark ? Colors.white30 : _kProfileHintText,
+                          color: isDark ? Colors.white30 : _kProfileHintText,
                         ),
                         isDense: true,
                         border: InputBorder.none,
@@ -1056,9 +1061,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       child: Icon(
                         Icons.copy_rounded,
                         size: 18,
-                        color: isDark
-                            ? Colors.white38
-                            : _kProfileHintText,
+                        color: isDark ? Colors.white38 : _kProfileHintText,
                       ),
                     ),
                   ),
@@ -1113,8 +1116,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 onTap: _changePhone,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _kProfilePrimary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(999),
@@ -1165,13 +1168,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ? '@${user.username}'
             : '未设置用户名';
 
-    final Color titleColor =
-        isDark ? Colors.white : _kProfileTitleText;
-    final Color subTextColor =
-        isDark ? Colors.white70 : _kProfileSubText;
-    final Color dividerColor = isDark
-        ? Colors.white.withOpacity(0.06)
-        : _kProfileDivider;
+    final Color titleColor = isDark ? Colors.white : _kProfileTitleText;
+    final Color subTextColor = isDark ? Colors.white70 : _kProfileSubText;
+    final Color dividerColor =
+        isDark ? Colors.white.withOpacity(0.06) : _kProfileDivider;
 
     return Container(
       decoration: BoxDecoration(
@@ -1931,7 +1931,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       ),
     );
   }
-
 }
 
 // ==================== 新版编辑资料 pill 风格快捷操作（无卡片） ====================
@@ -2073,9 +2072,7 @@ class _CircleBackButton extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withOpacity(0.06)
-                : Colors.white,
+            color: isDark ? Colors.white.withOpacity(0.06) : Colors.white,
             shape: BoxShape.circle,
             boxShadow: isDark
                 ? null
@@ -3514,7 +3511,13 @@ class _AnimatedQRBorderPainter extends CustomPainter {
 Color? _parseBadgeColorProfile(String? hex) {
   if (hex == null || hex.isEmpty) return null;
   final h = hex.startsWith('#') ? hex.substring(1) : hex;
-  if (h.length == 6) { final v = int.tryParse('FF\$h', radix: 16); return v != null ? Color(v) : null; }
-  if (h.length == 8) { final v = int.tryParse(h, radix: 16); return v != null ? Color(v) : null; }
+  if (h.length == 6) {
+    final v = int.tryParse('FF\$h', radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  if (h.length == 8) {
+    final v = int.tryParse(h, radix: 16);
+    return v != null ? Color(v) : null;
+  }
   return null;
 }

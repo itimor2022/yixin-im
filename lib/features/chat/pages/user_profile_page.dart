@@ -37,7 +37,7 @@ import 'chat_detail_page.dart' show ChatType;
 // ==================== 新版 UI 设计令牌（Profile Family） ====================
 const Color _kUpPrimary = Color(0xFFFF6B6B);
 const Color _kUpPrimarySoft = Color(0xFFFF9E9E);
-const Color _kUpBg = Color(0xFFF7F8FA);
+const Color _kUpBg = Color(0xFFF8FAFD);
 const Color _kUpCard = Colors.white;
 const Color _kUpTitleText = Color(0xFF111827);
 const Color _kUpSubText = Color(0xFF6B7280);
@@ -548,7 +548,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     // 顶部大字：优先显示昵称本身，让 pill 标签保持"个人昵称"语义；
     // 如果同时有备注，则显示备注（用户当前视角下的显示名）。
     final String heroName = hasRemark ? remarkValue : nicknameValue;
-    final String heroPillLabel = hasRemark ? '备注' : '个人昵称';
 
     Widget content = Scaffold(
       backgroundColor: bgColor,
@@ -591,7 +590,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                     context: context,
                     isDark: isDark,
                     heroName: heroName,
-                    heroPillLabel: heroPillLabel,
                     idValue: idValue,
                   ),
                 ),
@@ -777,7 +775,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     required BuildContext context,
     required bool isDark,
     required String heroName,
-    required String heroPillLabel,
     required String idValue,
   }) {
     return Padding(
@@ -829,27 +826,39 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.35),
-                    width: 0.6,
+              if (_isMember && _badgeText != null && _badgeText!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _parseBadgeColorProfile(_badgeColor) ??
+                        const Color(0xFF3390EC),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '✨',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        _badgeText!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Text(
-                  heroPillLabel,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              ],
               if (_emojiAvatar != null && _emojiAvatar!.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 EmojiStatusWidget(emoji: _emojiAvatar!, size: 18),
@@ -876,15 +885,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                'ID: $idValue',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withOpacity(0.85),
-                  letterSpacing: 0.2,
-                ),
-              ),
+              // Text(
+              //   'ID: $idValue',
+              //   style: TextStyle(
+              //     fontSize: 13,
+              //     fontWeight: FontWeight.w500,
+              //     color: Colors.white.withOpacity(0.85),
+              //     letterSpacing: 0.2,
+              //   ),
+              // ),
               if (!_isCurrentUser) ...[
                 const SizedBox(width: 10),
                 Container(
@@ -2872,8 +2881,8 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+        backgroundColor:
+          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD),
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         elevation: 0,
@@ -3445,7 +3454,7 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD);
     final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
 
     return Scaffold(
@@ -3476,7 +3485,7 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
             child: Container(
               decoration: BoxDecoration(
                 color:
-                    isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF2F2F7),
+                  isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF8FAFD),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: TextField(
@@ -3580,8 +3589,8 @@ class _CommonGroupsPage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+        backgroundColor:
+          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD),
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         elevation: 0,
@@ -3764,7 +3773,7 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD);
     final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
     final separatorColor =
         isDark ? const Color(0xFF38383A) : const Color(0xFFC6C6C8);
@@ -4503,4 +4512,18 @@ class _RemarkEditDialogState extends State<_RemarkEditDialog> {
       ],
     );
   }
+}
+
+Color? _parseBadgeColorProfile(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  final h = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (h.length == 6) {
+    final v = int.tryParse('FF$h', radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  if (h.length == 8) {
+    final v = int.tryParse(h, radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  return null;
 }
