@@ -2330,17 +2330,50 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: titleColor,
-                        letterSpacing: 0.1,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: titleColor,
+                              letterSpacing: 0.1,
+                            ),
+                          ),
+                        ),
+                        // 群组/用户自定义标识 badge
+                        if (detailChat?.badgeText != null &&
+                            detailChat!.badgeText!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 5),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: _parseBadgeColorTop(
+                                        detailChat.badgeColor) ??
+                                    const Color(0xFF3390EC),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                detailChat.badgeText!,
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Align(
@@ -8612,4 +8645,19 @@ class _ParticlePainter extends CustomPainter {
   bool shouldRepaint(covariant _ParticlePainter oldDelegate) {
     return oldDelegate.progress != progress;
   }
+}
+
+/// 解析后端返回的 "#RRGGBB" 为 Color，失败返回 null
+Color? _parseBadgeColorTop(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  final h = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (h.length == 6) {
+    final v = int.tryParse('FF$h', radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  if (h.length == 8) {
+    final v = int.tryParse(h, radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  return null;
 }

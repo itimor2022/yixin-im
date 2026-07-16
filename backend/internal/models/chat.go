@@ -46,6 +46,9 @@ type Chat struct {
 	PinnedMessageAt    *time.Time `gorm:"type:datetime" json:"pinned_message_at"` // 置顶时间
 	// 加入审批设置
 	JoinApproval bool           `gorm:"default:false" json:"join_approval"` // 是否需要审批加入
+	// 群组标识（badge）：管理员在后台为群组设置的文字标识和颜色，展示在聊天列表、群资料页等处
+	BadgeText  string `gorm:"type:varchar(50);default:''" json:"badge_text"`
+	BadgeColor string `gorm:"type:varchar(20);default:''" json:"badge_color"`
 	CreatedAt    time.Time      `gorm:"type:datetime;not null" json:"created_at"`
 	UpdatedAt    time.Time      `gorm:"type:datetime;not null" json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`

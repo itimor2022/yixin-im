@@ -95,6 +95,95 @@
         </ElDescriptions>
       </div>
 
+      <!-- 群组标识设置（仅群组/频道显示） -->
+      <div v-if="!isPrivateChat" class="mt-4">
+        <h4 class="text-base font-medium mb-2">群组标识设置</h4>
+        <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">标识文字</span>
+            <ElInput
+              v-model="badgeForm.text"
+              placeholder="如：官方、认证"
+              style="width: 140px"
+              maxlength="10"
+              show-word-limit
+            />
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">标识颜色</span>
+            <div class="flex items-center gap-2">
+              <input
+                type="color"
+                v-model="badgeForm.color"
+                style="width:40px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:2px"
+              />
+              <ElInput v-model="badgeForm.color" placeholder="#3390EC" style="width:110px" />
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">预览</span>
+            <span
+              v-if="badgeForm.text"
+              :style="{
+                background: badgeForm.color || '#3390EC',
+                color: '#fff',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '12px',
+                fontWeight: 500
+              }"
+            >{{ badgeForm.text }}</span>
+            <span v-else class="text-gray-400 text-xs">无标识</span>
+          </div>
+          <div class="flex flex-col justify-end" style="padding-top:22px">
+            <ElButton type="primary" :loading="badgeForm.saving" @click="handleSaveBadge">保存</ElButton>
+          </div>
+          <div class="flex flex-col justify-end" style="padding-top:22px">
+            <ElButton @click="handleClearBadge" :disabled="!chat?.badge_text && !badgeForm.text">清除</ElButton>
+          </div>
+        </div>
+      </div>
+
+      <!-- 虚拟人数设置（仅群组显示） -->
+      <div v-if="!isPrivateChat" class="mt-4">
+        <h4 class="text-base font-medium mb-2">虚拟人数设置</h4>
+        <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">虚拟成员数</span>
+            <ElInputNumber
+              v-model="fakeForm.memberCount"
+              :min="0"
+              :max="1000000"
+              controls-position="right"
+              style="width: 160px"
+            />
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">虚拟在线数</span>
+            <ElInputNumber
+              v-model="fakeForm.onlineCount"
+              :min="0"
+              :max="fakeForm.memberCount"
+              controls-position="right"
+              style="width: 160px"
+            />
+          </div>
+          <div class="flex flex-col justify-end" style="padding-top: 22px">
+            <ElButton
+              type="primary"
+              :loading="fakeForm.saving"
+              @click="handleSaveFakeCount"
+            >
+              保存
+            </ElButton>
+          </div>
+          <div class="text-xs text-gray-400 flex-1">
+            <p>实际显示人数 = 真实成员数 + 虚拟成员数</p>
+            <p>虚拟在线数不能超过虚拟成员数</p>
+          </div>
+        </div>
+      </div>
+
       <!-- 群主信息（仅群组/频道显示） -->
       <div v-if="owner && !isPrivateChat" class="mt-4">
         <h4 class="text-base font-medium mb-2">{{ chat?.type === 3 ? '频道主' : '群主' }}信息</h4>
@@ -198,9 +287,12 @@
     banChat,
     unbanChat,
     dissolveChat,
+    updateFakeMemberCount,
+    updateChatBadge,
     ChatListItem,
     ChatMemberItem
   } from '@/api/admin'
+  import { ref, reactive, computed, watch } from 'vue'
   import { ElMessage, ElMessageBox, ElImage, ElText } from 'element-plus'
   import { getAvatarUrl } from '@/utils/url'
 
@@ -225,6 +317,71 @@
   const members = ref<ChatMemberItem[]>([])
   const memberTotal = ref(0)
   const memberPage = ref(1)
+
+  // 群组标识表单
+  const badgeForm = reactive({
+    text: '',
+    color: '#3390EC',
+    saving: false
+  })
+
+  const handleSaveBadge = async () => {
+    if (!props.chatId) return
+    badgeForm.saving = true
+    try {
+      await updateChatBadge(props.chatId, badgeForm.text, badgeForm.color)
+      ElMessage.success('标识已更新')
+      if (chat.value) {
+        ;(chat.value as any).badge_text = badgeForm.text
+        ;(chat.value as any).badge_color = badgeForm.color
+      }
+    } catch (e) {
+      console.error('badge保存错误:', e)
+      ElMessage.error('保存失败')
+    } finally {
+      badgeForm.saving = false
+    }
+  }
+
+  const handleClearBadge = async () => {
+    if (!props.chatId) return
+    badgeForm.saving = true
+    try {
+      await updateChatBadge(props.chatId, '', '')
+      badgeForm.text = ''
+      badgeForm.color = '#3390EC'
+      ElMessage.success('标识已清除')
+      if (chat.value) {
+        ;(chat.value as any).badge_text = ''
+        ;(chat.value as any).badge_color = ''
+      }
+    } catch {
+      ElMessage.error('清除失败')
+    } finally {
+      badgeForm.saving = false
+    }
+  }
+
+  // 虚拟人数表单
+  const fakeForm = reactive({
+    memberCount: 0,
+    onlineCount: 0,
+    saving: false
+  })
+
+  const handleSaveFakeCount = async () => {
+    if (!props.chatId) return
+    fakeForm.saving = true
+    try {
+      await updateFakeMemberCount(props.chatId, fakeForm.memberCount, fakeForm.onlineCount)
+      ElMessage.success('虚拟人数已更新')
+    } catch (e) {
+      console.error('fake保存错误:', e)
+      ElMessage.error('保存失败')
+    } finally {
+      fakeForm.saving = false
+    }
+  }
 
   const dialogTitle = computed(() => {
     if (!chat.value) return '会话详情'
@@ -285,6 +442,10 @@
       owner.value = res.owner
       members.value = res.members || []
       memberTotal.value = chat.value?.member_count || 0
+      badgeForm.text = res.chat?.badge_text || ''
+      badgeForm.color = res.chat?.badge_color || '#3390EC'
+      fakeForm.memberCount = res.chat?.fake_member_count || 0
+      fakeForm.onlineCount = res.chat?.fake_online_count || 0
     } catch (error) {
       console.error('加载会话详情失败:', error)
       ElMessage.error('加载详情失败')

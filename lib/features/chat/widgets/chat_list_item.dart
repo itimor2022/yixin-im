@@ -1,3 +1,4 @@
+import '../../../shared/widgets/member_badge_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
@@ -478,16 +479,31 @@ class _ChatListItemState extends State<ChatListItem>
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Expanded(
-                    child: Text(
-                      widget.chat.name,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: titleColor,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.chat.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: titleColor,
+                              letterSpacing: 0.1,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.badgeText != null && widget.badgeText!.isNotEmpty)
+                          MemberBadgeWidget(
+                            isMember: true,
+                            badgeText: widget.badgeText,
+                            badgeColor: widget.badgeColor,
+                            fontSize: 9,
+                            margin: const EdgeInsets.only(left: 4),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),

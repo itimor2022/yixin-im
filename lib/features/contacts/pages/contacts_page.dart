@@ -14,6 +14,7 @@ import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../../chat/widgets/create_sheets.dart';
 import '../../chat/providers/chat_provider.dart';
@@ -861,17 +862,29 @@ class _ContactListItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    contact.name,
-                    style: TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? AppColors.darkTextPrimary
-                          : const Color(0xFF111827),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          contact.name,
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : const Color(0xFF111827),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (contact.isMember && contact.badgeText != null && contact.badgeText!.isNotEmpty)
+                        MemberBadgeWidget(
+                          isMember: contact.isMember,
+                          badgeText: contact.badgeText,
+                          badgeColor: contact.badgeColor,
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(

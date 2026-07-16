@@ -22,6 +22,7 @@ import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
+import '../../../shared/widgets/member_badge_widget.dart';
 import '../../../shared/widgets/page_transitions.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
@@ -227,6 +228,8 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                     memberCount: memberCountVal,
                     onlineCount: onlineCountVal,
                     isLoading: chatDetailAsync.isLoading && chatDetail == null,
+                    badgeText: chatDetail?.badgeText,
+                    badgeColor: chatDetail?.badgeColor,
                   ),
                 ),
 
@@ -625,6 +628,8 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     required int memberCount,
     required int onlineCount,
     required bool isLoading,
+    String? badgeText,
+    String? badgeColor,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 12),
@@ -698,6 +703,27 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                   );
                 },
               ),
+              // 群组自定义标识（后台设置的 badge_text / badge_color）
+              if (badgeText != null && badgeText.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _parseBadgeColor(badgeColor) ?? const Color(0xFF3390EC),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 6),
@@ -2362,6 +2388,13 @@ class _MemberCell extends StatelessWidget {
                           fontSize: 17,
                         ),
                       ),
+                      if (member.isMember && member.badgeText != null && member.badgeText!.isNotEmpty)
+                        MemberBadgeWidget(
+                          isMember: member.isMember,
+                          badgeText: member.badgeText,
+                          badgeColor: member.badgeColor,
+                          fontSize: 9,
+                        ),
                       if (member.emojiAvatar != null &&
                           member.emojiAvatar!.isNotEmpty) ...[
                         const SizedBox(width: 4),
@@ -5250,4 +5283,19 @@ class _GroupAnnouncementsPageState
       ),
     );
   }
+}
+
+/// 解析后端返回的 "#RRGGBB" 为 Color，失败返回 null
+Color? _parseBadgeColor(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  final h = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (h.length == 6) {
+    final v = int.tryParse('FF$h', radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  if (h.length == 8) {
+    final v = int.tryParse(h, radix: 16);
+    return v != null ? Color(v) : null;
+  }
+  return null;
 }
