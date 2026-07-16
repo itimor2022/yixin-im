@@ -385,47 +385,47 @@ class _AvatarWidgetState extends State<AvatarWidget>
                     ),
                   ),
                 ),
-              if (isPremium)
-                Positioned(
-                  right: -2,
-                  bottom: -2 + badgeOffset,
-                  child: Transform.scale(
-                    scale: PremiumThemeTokens.isYearly(normalizedPremiumType)
-                        ? 1 + (pulse * 0.06)
-                        : 1 + (pulse * 0.04),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: PremiumThemeTokens.accent(
-                              normalizedPremiumType,
-                            ).withValues(alpha: 0.28 + (pulse * 0.12)),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: const Text(
-                        'PRO',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // if (isPremium)
+              //   Positioned(
+              //     right: -2,
+              //     bottom: -2 + badgeOffset,
+              //     child: Transform.scale(
+              //       scale: PremiumThemeTokens.isYearly(normalizedPremiumType)
+              //           ? 1 + (pulse * 0.06)
+              //           : 1 + (pulse * 0.04),
+              //       child: Container(
+              //         padding: const EdgeInsets.symmetric(
+              //           horizontal: 5,
+              //           vertical: 3,
+              //         ),
+              //         decoration: BoxDecoration(
+              //           color: const Color(0xFF111827),
+              //           borderRadius: BorderRadius.circular(999),
+              //           border: Border.all(
+              //             color: Colors.white.withValues(alpha: 0.9),
+              //             width: 1,
+              //           ),
+              //           boxShadow: [
+              //             BoxShadow(
+              //               color: PremiumThemeTokens.accent(
+              //                 normalizedPremiumType,
+              //               ).withValues(alpha: 0.28 + (pulse * 0.12)),
+              //               blurRadius: 10,
+              //             ),
+              //           ],
+              //         ),
+              //         child: const Text(
+              //           'PRO',
+              //           style: TextStyle(
+              //             color: Colors.white,
+              //             fontSize: 9,
+              //             fontWeight: FontWeight.w800,
+              //             letterSpacing: 0.3,
+              //           ),
+              //         ),
+              //       ),
+              //     ),
+              //   ),
             ],
           ),
         );

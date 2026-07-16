@@ -127,22 +127,22 @@ class ColoredNameWidget extends StatelessWidget {
         );
       }
     }
+    return nameWidget;
+    // if (!PremiumThemeTokens.isPremium(normalizedPremiumType)) {
+    //   return nameWidget;
+    // }
 
-    if (!PremiumThemeTokens.isPremium(normalizedPremiumType)) {
-      return nameWidget;
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(child: nameWidget),
-        const SizedBox(width: 4),
-        PremiumChip(
-          label: 'PRO',
-          premiumType: normalizedPremiumType,
-          fontSize: 10,
-        ),
-      ],
-    );
+    // return Row(
+    //   mainAxisSize: MainAxisSize.min,
+    //   children: [
+    //     Flexible(child: nameWidget),
+    //     const SizedBox(width: 4),
+    //     PremiumChip(
+    //       label: 'PRO',
+    //       premiumType: normalizedPremiumType,
+    //       fontSize: 10,
+    //     ),
+    //   ],
+    // );
   }
 }
