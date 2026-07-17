@@ -11,7 +11,7 @@ echo ">>> 正在打包 Web 端（版本: $TIMESTAMP）..."
 
 # 清理并构建
 rm -rf build/web
-flutter build web --release
+flutter build web
 
 # 复制到桌面（带时间戳）
 OUTPUT_DIR="$HOME/data/web/"

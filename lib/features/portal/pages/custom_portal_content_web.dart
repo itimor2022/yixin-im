@@ -57,16 +57,29 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
   String _registerIframe(String url) {
     final viewType = 'custom-portal-iframe-${_viewCounter++}';
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
+      final container = web.HTMLDivElement()
+        ..style.width = '100%'
+        ..style.height = '100%'
+        ..style.display = 'block'
+        ..style.overflow = 'auto'
+        ..style.pointerEvents = 'auto'
+        ..style.touchAction = 'auto';
+
       final iframe = web.HTMLIFrameElement()
         ..src = url
         ..style.border = '0'
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.display = 'block'
+        ..style.pointerEvents = 'auto'
+        ..style.touchAction = 'auto'
+        ..setAttribute('scrolling', 'yes')
         ..allow =
             'autoplay; camera; clipboard-read; clipboard-write; fullscreen; geolocation; microphone; payment'
         ..referrerPolicy = 'strict-origin-when-cross-origin';
-      return iframe;
+
+      container.append(iframe);
+      return container;
     });
     return viewType;
   }
@@ -89,33 +102,9 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
     return SafeArea(
       top: false,
       bottom: false,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: HtmlElementView(
-              key: ValueKey(_viewType),
-              viewType: _viewType,
-            ),
-          ),
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: Tooltip(
-              message: '如果页面未正常显示，可在新窗口打开',
-              child: FilledButton.tonal(
-                onPressed: _openInNewTab,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(42, 42),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
-                child: const Icon(Icons.open_in_new_rounded, size: 18),
-              ),
-            ),
-          ),
-        ],
+      child: HtmlElementView(
+        key: ValueKey(_viewType),
+        viewType: _viewType,
       ),
     );
   }
