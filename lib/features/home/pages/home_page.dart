@@ -40,9 +40,9 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    // if (PlatformUtils.isDesktop) {
-    //   return const HomeDesktopPage();
-    // }
+    if (PlatformUtils.isDesktop) {
+      return const HomeDesktopPage();
+    }
 
     ref.read(webSocketServiceProvider);
 
@@ -150,9 +150,8 @@ class _BottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color dividerColor = isDark
-        ? Colors.white.withOpacity(0.06)
-        : const Color(0xFFECEEF1);
+    final Color dividerColor =
+        isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFECEEF1);
 
     return Container(
       decoration: BoxDecoration(

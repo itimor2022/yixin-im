@@ -36,9 +36,7 @@ class ServerDiscovery {
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
   static const List<String> _dnsDomains = [
-    'cfg.65572.top',
-    'cfg.65258.top',
-    'cfg.m72s.icu',
+    //'cfg.qa853.com',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -51,13 +49,24 @@ class ServerDiscovery {
 
   /// 多个 OSS/CDN 加密配置文件地址（源码内硬编码 fallback）
   ///
-  /// 冷启动服务发现固定从这里读取 api.txt 地址。
-  /// 保持这里非空是为了首装即可引导起来。
+  /// 上线运行时的真实 api.txt 地址是从后台数据库 `system_settings.api_txt_url`
+  /// 拿到的（首次连上服务端后由 SystemSettingsService 缓存到 SharedPreferences
+  /// key = `svc_disc_api_txt_url`），冷启动时 `_effectiveOssUrls()` 会优先读
+  /// 该缓存并把这里的常量当作最后的兜底。
+  ///
+  /// 保持这里非空是为了：
+  ///   1. 全新安装、SharedPreferences 还是空的场景仍能引导起来；
+  ///   2. 缓存值失效（返回 4xx/超时）时可以自动回落。
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    // 'https://admin.aopwx.icu/api.txt',
+    'https://admin.aopwx.icu/api.txt',
   ];
+
+  /// 与 `SystemSettingsService.kApiTxtUrlPrefsKey` 保持一致。
+  /// 单独复制一份常量是为了避免 ServerDiscovery 反向 import ApiClient/Riverpod 相关
+  /// 依赖（ServerDiscovery 在应用最早期启动，必须保持零业务依赖）。
+  static const String _apiTxtUrlPrefsKey = 'svc_disc_api_txt_url';
 
   /// AES-256-CBC 密钥（32字节 UTF-8，与加密端一致）
   static const String _aesKey = 'YiXin2024Secure!AppNodeKey@Qa853';
@@ -187,6 +196,8 @@ class ServerDiscovery {
   // ── 发现主流程 ──────────────────────────────────────────
 
   Future<String> _discover() async {
+    // api.txt 拉取已禁用，直接使用硬编码 fallback
+    return '';
     final t0 = DateTime.now();
     if (kDebugMode) debugPrint('[Discovery] ═══ Starting discovery at $t0 ═══');
     final nodes = await _fetchNodeList();
@@ -261,7 +272,21 @@ class ServerDiscovery {
   Future<List<String>> _fetchNodeList() async {
     final List<String> resultNodes = [];
 
-    // 1. 优先从 DNS TXT 获取节点
+    // 1. 尝试从 OSS (api.txt) 获取
+    try {
+      if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
+      final ossNodes = await _fetchFromOss();
+      if (ossNodes != null && ossNodes.isNotEmpty) {
+        resultNodes.addAll(ossNodes);
+        if (kDebugMode)
+          debugPrint('[Discovery] OSS Track success: $resultNodes');
+        return resultNodes.toSet().toList(); // 去重返回
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
+    }
+
+    // 2. 如果 OSS 失败了，尝试从 DNS 获取
     try {
       if (kDebugMode) debugPrint('[Discovery] Fetching from DNS...');
       final dnsNodes = await _fetchFromDns();
@@ -269,31 +294,10 @@ class ServerDiscovery {
         resultNodes.addAll(dnsNodes);
         if (kDebugMode)
           debugPrint('[Discovery] DNS Track success: $resultNodes');
-        return resultNodes.toSet().toList(); // 去重返回
+        return resultNodes.toSet().toList();
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
-    }
-
-    // 2. DNS 失败后，仅在 _ossUrls 非空时才尝试 OSS (api.txt)
-    final ossUrls = _ossUrls.where((e) => e.trim().isNotEmpty).toList();
-    if (ossUrls.isNotEmpty) {
-      try {
-        if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
-        final ossNodes = await _fetchFromOss();
-        if (ossNodes != null && ossNodes.isNotEmpty) {
-          resultNodes.addAll(ossNodes);
-          if (kDebugMode)
-            debugPrint('[Discovery] OSS Track success: $resultNodes');
-          return resultNodes.toSet().toList();
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
-      }
-    } else {
-      if (kDebugMode) {
-        debugPrint('[Discovery] _ossUrls is empty, skip OSS track.');
-      }
     }
 
     // ⚠️ 兜底策略：两条轨道都失败时，只把「当前节点」（如果有）当作候选，
@@ -383,9 +387,23 @@ class ServerDiscovery {
 
   // ── 轨道2: 多OSS全并行 ──────────────────────────────────
 
-  /// 仅使用源码内固定的 api.txt 地址列表。
+  /// 合并"数据库下发的 api.txt 地址（SharedPreferences 缓存）"和"源码硬编码 fallback"，
+  /// 数据库地址排在最前面确保优先命中，同时去重。
   Future<List<String>> _effectiveOssUrls() async {
-    return _ossUrls.toSet().toList();
+    final result = <String>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_apiTxtUrlPrefsKey)?.trim();
+      if (cached != null && cached.isNotEmpty && cached.startsWith('http')) {
+        result.add(cached);
+        if (kDebugMode)
+          debugPrint('[Discovery] OSS use DB-cached url: $cached');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] OSS read prefs error: $e');
+    }
+    result.addAll(_ossUrls);
+    return result.toList();
   }
 
   Future<List<String>?> _fetchFromOss() async {
