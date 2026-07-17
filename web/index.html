@@ -27,6 +27,16 @@
   <meta property="og:image" content="icons/Icon-512.png">
 
   <title>易信</title>
+
+  <style>
+    /* Ensure embedded platform views (HtmlElementView / iframe) stay interactive. */
+    flt-platform-view,
+    flt-platform-view-slot,
+    flt-platform-view iframe {
+      pointer-events: auto !important;
+      touch-action: auto !important;
+    }
+  </style>
 </head>
 <body>
   <script>
