@@ -957,7 +957,7 @@ func setupRouter(
 
 	// 根路径：访问 / 时提示后端已启动
 	router.GET("/", func(c *gin.Context) {
-		c.String(200, "壹信IM后端启动成功")
+		c.String(200, "锦绣汇IM后端启动成功")
 	})
 	router.GET("/favicon.ico", func(c *gin.Context) { c.Status(204) })
 	router.GET("/robots.txt", func(c *gin.Context) {

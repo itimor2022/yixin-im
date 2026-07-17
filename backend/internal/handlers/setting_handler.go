@@ -1769,7 +1769,7 @@ func (h *SettingHandler) GetPrivacyPolicy(c *gin.Context) {
 func getDefaultUserAgreement() string {
 	return `# 用户协议
 
-欢迎使用壹信IM！
+欢迎使用锦绣汇IM！
 
 ## 一、服务条款的接受
 

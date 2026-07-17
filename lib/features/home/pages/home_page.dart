@@ -100,16 +100,16 @@ class HomePage extends ConsumerWidget {
                     }
                   },
                 ),
-                _BottomNavItem(
-                  icon: Icons.headset_mic_outlined,
-                  activeIcon: Icons.headset_mic_rounded,
-                  label: '客服',
-                  isSelected: currentIndex == 2,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    navigationShell.goBranch(2);
-                  },
-                ),
+                // _BottomNavItem(
+                //   icon: Icons.headset_mic_outlined,
+                //   activeIcon: Icons.headset_mic_rounded,
+                //   label: '客服',
+                //   isSelected: currentIndex == 2,
+                //   onTap: () {
+                //     HapticFeedback.selectionClick();
+                //     navigationShell.goBranch(2);
+                //   },
+                // ),
                 _BottomNavItem(
                   icon: Icons.explore_outlined,
                   activeIcon: Icons.explore_rounded,

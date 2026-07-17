@@ -19,8 +19,8 @@ cp -r build/web "$OUTPUT_DIR"
 
 # 创建压缩包
 cd "$OUTPUT_DIR"
-zip -r "壹信IM_Web_${TIMESTAMP}.zip" "web"
+zip -r "锦绣汇IM_Web_${TIMESTAMP}.zip" "web"
 rm -rf "$OUTPUT_DIR/web"
 
 echo "✅ 打包完成！"
-echo "📦 文件: $OUTPUT_DIR/壹信IM_Web_${TIMESTAMP}.zip"
+echo "📦 文件: $OUTPUT_DIR/锦绣汇IM_Web_${TIMESTAMP}.zip"

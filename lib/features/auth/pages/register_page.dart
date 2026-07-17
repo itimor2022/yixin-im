@@ -259,7 +259,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     final settings = ref.watch(systemSettingsProvider).valueOrNull;
     final title = (settings?.systemName ?? '').trim().isNotEmpty
         ? settings!.systemName.trim()
-        : (_appName.isNotEmpty ? _appName : '易信');
+        : (_appName.isNotEmpty ? _appName : '锦绣汇');
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

@@ -14,7 +14,7 @@ import {
 } from './system'
 
 /**
- * 壹信后台管理路由
+ * 锦绣汇后台管理路由
  */
 export const routeModules: AppRouteRecord[] = [
   dashboardRoutes,
