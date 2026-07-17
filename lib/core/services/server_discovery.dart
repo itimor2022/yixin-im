@@ -36,7 +36,7 @@ class ServerDiscovery {
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
   static const List<String> _dnsDomains = [
-    //'cfg.qa853.com',
+    'cfg.qa853.com',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -54,7 +54,7 @@ class ServerDiscovery {
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    'https://admin.aopwx.icu/api.txt',
+    // 'https://admin.aopwx.icu/api.txt',
   ];
 
   /// AES-256-CBC 密钥（32字节 UTF-8，与加密端一致）
@@ -259,21 +259,7 @@ class ServerDiscovery {
   Future<List<String>> _fetchNodeList() async {
     final List<String> resultNodes = [];
 
-    // 1. 尝试从 OSS (api.txt) 获取
-    try {
-      if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
-      final ossNodes = await _fetchFromOss();
-      if (ossNodes != null && ossNodes.isNotEmpty) {
-        resultNodes.addAll(ossNodes);
-        if (kDebugMode)
-          debugPrint('[Discovery] OSS Track success: $resultNodes');
-        return resultNodes.toSet().toList(); // 去重返回
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
-    }
-
-    // 2. 如果 OSS 失败了，尝试从 DNS 获取
+    // 1. 优先从 DNS TXT 获取节点
     try {
       if (kDebugMode) debugPrint('[Discovery] Fetching from DNS...');
       final dnsNodes = await _fetchFromDns();
@@ -281,10 +267,31 @@ class ServerDiscovery {
         resultNodes.addAll(dnsNodes);
         if (kDebugMode)
           debugPrint('[Discovery] DNS Track success: $resultNodes');
-        return resultNodes.toSet().toList();
+        return resultNodes.toSet().toList(); // 去重返回
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
+    }
+
+    // 2. DNS 失败后，仅在 _ossUrls 非空时才尝试 OSS (api.txt)
+    final ossUrls = _ossUrls.where((e) => e.trim().isNotEmpty).toList();
+    if (ossUrls.isNotEmpty) {
+      try {
+        if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
+        final ossNodes = await _fetchFromOss();
+        if (ossNodes != null && ossNodes.isNotEmpty) {
+          resultNodes.addAll(ossNodes);
+          if (kDebugMode)
+            debugPrint('[Discovery] OSS Track success: $resultNodes');
+          return resultNodes.toSet().toList();
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
+      }
+    } else {
+      if (kDebugMode) {
+        debugPrint('[Discovery] _ossUrls is empty, skip OSS track.');
+      }
     }
 
     // ⚠️ 兜底策略：两条轨道都失败时，只把「当前节点」（如果有）当作候选，
