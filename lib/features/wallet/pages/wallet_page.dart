@@ -666,7 +666,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                '易信钱包',
+                '锦绣汇钱包',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,

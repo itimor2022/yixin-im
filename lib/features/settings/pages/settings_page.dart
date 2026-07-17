@@ -410,7 +410,7 @@ class SettingsPage extends ConsumerWidget {
                     final configuredName = settings.systemName.trim();
                     final configuredVersion = settings.systemVersion.trim();
                     final appName =
-                        configuredName.isNotEmpty ? configuredName : '易信';
+                        configuredName.isNotEmpty ? configuredName : '锦绣汇';
                     final versionText = configuredVersion.isNotEmpty
                         ? configuredVersion
                         : packageInfo.version;
@@ -560,7 +560,7 @@ class SettingsPage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        '易信',
+                        '锦绣汇',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,

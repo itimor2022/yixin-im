@@ -14,7 +14,7 @@ let profile: ServiceAdminProfile = {
   status: 'enabled'
 }
 
-let welcomeMessage = '您好，欢迎来到壹信。我是您的专属官方客服，后续有任何问题都可以直接联系我。'
+let welcomeMessage = '您好，欢迎来到锦绣汇。我是您的专属官方客服，后续有任何问题都可以直接联系我。'
 
 const invitees: ServiceAdminInvitee[] = [
   { id: 1, name: '小夏', uuid: '7f0f-32aa-91d1', registeredAt: '2026-04-12 11:08', active: true },

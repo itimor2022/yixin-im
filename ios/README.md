@@ -1,6 +1,6 @@
 # iOS 平台层
 
-> IM 客户端在 iOS 端的原生宿主工程，承载 Flutter 引擎与「壹信」应用在 iPhone / iPad 上的运行，负责推送、权限、后台模式、CallKit/Intent 等平台能力。
+> IM 客户端在 iOS 端的原生宿主工程，承载 Flutter 引擎与「锦绣汇」应用在 iPhone / iPad 上的运行，负责推送、权限、后台模式、CallKit/Intent 等平台能力。
 
 ---
 
@@ -9,7 +9,7 @@
 `ios` 在整个 IM 系统中的定位是 **iOS 平台宿主**，与项目根目录下的 Flutter 代码（`lib/`、`pubspec.yaml`）共同构成完整的 iOS 客户端。主要作用包括：
 
 - **Flutter 引擎承载**：通过 Xcode 工程与 CocoaPods 将 Flutter 应用打包为 iOS/iPadOS 应用，提供 Flutter 运行环境。
-- **应用入口与配置**：`AppDelegate`、`Runner/Info.plist`、Bundle ID（`com.yixinim.app`）、应用名「壹信」、版本与权限文案等。
+- **应用入口与配置**：`AppDelegate`、`Runner/Info.plist`、Bundle ID（`com.yixinim.app`）、应用名「锦绣汇」、版本与权限文案等。
 - **推送与通知**：APNs 注册、Device Token 通过 Method Channel（`com.gaoranim/push`）回传 Flutter；前台/后台远程通知、点击通知回调 Flutter。
 - **权限与能力**：相册/相机/麦克风/蓝牙、后台模式（audio、voip、fetch、remote-notification）、Intent（发消息、音视频通话）等，为 IM 聊天与音视频通话提供支撑。
 - **依赖管理**：CocoaPods 集成 Flutter 插件及原生库（如 Agora、权限等）。
@@ -133,7 +133,7 @@ ios/
 | **权限与后台**     | `Runner/Info.plist`：相册/相机/麦克风/蓝牙/本地网络等 NS*UsageDescription；UIBackgroundModes（audio、voip、fetch、remote-notification）；NSUserActivityTypes（消息与通话 Intent）。 |
 | **CocoaPods**      | `Podfile`：iOS 15、post_install 中权限宏与部署目标；`pod install` 后 Pods 集成 Flutter 插件与 Agora 等。 |
 | **Flutter 集成**   | `Flutter/Generated.xcconfig` 由 Flutter 写入；Xcode 使用 Runner.xcworkspace 加载 Runner + Pods。 |
-| **Bundle ID / 应用名** | Xcode 中 PRODUCT_BUNDLE_IDENTIFIER（如 com.yixinim.app）；Info.plist 中 CFBundleName/CFBundleDisplayName「壹信」。 |
+| **Bundle ID / 应用名** | Xcode 中 PRODUCT_BUNDLE_IDENTIFIER（如 com.yixinim.app）；Info.plist 中 CFBundleName/CFBundleDisplayName「锦绣汇」。 |
 | **实际 IM 逻辑**   | 消息、连接、存储、UI 等均在项目根目录的 Flutter 代码（`lib/`）及 `pubspec.yaml` 依赖中；本目录仅提供 iOS 运行环境与推送/权限等平台能力。 |
 
 ---

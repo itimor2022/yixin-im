@@ -28,10 +28,8 @@ Future<void> bootstrapApp() async {
   // 之前这里是「跳过服务发现，直接用 ApiConfig._defaultServerUrl 硬编码」的写法，
   // 导致运维在 admin 后台改数据库 api_txt_url 后 Web 版毫无响应，只能重新打包才能生效。
   // 现在改成主动去拉 [ServerDiscovery]，行为与 APK 一致：
-  //   1. 首次冷启动 → 拉 `_ossUrls` 里的 api.txt（源码硬编码 fallback）；
-  //   2. 后续启动 → 优先读 SharedPreferences 里 `svc_disc_api_txt_url`（由
-  //      SystemSettingsService 在 /app/settings 响应里落盘的动态地址）；
-  //   3. 拉到节点列表后依次 ping /api/v1/ping，挑最优活节点写入 ApiConfig。
+  //   1. 冷启动从 `_ossUrls` 拉 api.txt（固定源码地址）；
+  //   2. 拉到节点列表后依次 ping /api/v1/ping，挑最优活节点写入 ApiConfig。
   //
   // 前置条件（部署侧必须已经就绪，代码这边只负责发起请求）：
   //   - api.txt 所在域名（如 admin.aopwx.icu）的 Nginx 必须为 Web 站点的 origin
