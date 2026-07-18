@@ -307,58 +307,58 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                 readOnly: true,
                                 hintText: l10n.name,
                               ),
-                              _buildFlatDivider(isDark),
-                              _buildFlatEditRow(
-                                isDark: isDark,
-                                label: l10n.username,
-                                controller: _usernameController,
-                                readOnly: true,
-                                hintText: l10n.username,
-                                prefixText: '@',
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (_usernameController.text.trim() !=
-                                        _originalUsername) ...[
-                                      _buildUsernameStatusIcon(),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    GestureDetector(
-                                      onTap: () {
-                                        HapticFeedback.lightImpact();
-                                        Clipboard.setData(
-                                          ClipboardData(
-                                              text:
-                                                  '@${_usernameController.text}'),
-                                        );
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(l10n.usernameCopied),
-                                            behavior: SnackBarBehavior.floating,
-                                            duration:
-                                                const Duration(seconds: 1),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4),
-                                        child: Icon(
-                                          Icons.copy_rounded,
-                                          size: 18,
-                                          color: isDark
-                                              ? Colors.white38
-                                              : _kProfileHintText,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              // _buildFlatDivider(isDark),
+                              // _buildFlatEditRow(
+                              //   isDark: isDark,
+                              //   label: l10n.username,
+                              //   controller: _usernameController,
+                              //   readOnly: true,
+                              //   hintText: l10n.username,
+                              //   prefixText: '@',
+                              //   trailing: Row(
+                              //     mainAxisSize: MainAxisSize.min,
+                              //     children: [
+                              //       if (_usernameController.text.trim() !=
+                              //           _originalUsername) ...[
+                              //         _buildUsernameStatusIcon(),
+                              //         const SizedBox(width: 6),
+                              //       ],
+                              //       GestureDetector(
+                              //         onTap: () {
+                              //           HapticFeedback.lightImpact();
+                              //           Clipboard.setData(
+                              //             ClipboardData(
+                              //                 text:
+                              //                     '@${_usernameController.text}'),
+                              //           );
+                              //           ScaffoldMessenger.of(context)
+                              //               .showSnackBar(
+                              //             SnackBar(
+                              //               content: Text(l10n.usernameCopied),
+                              //               behavior: SnackBarBehavior.floating,
+                              //               duration:
+                              //                   const Duration(seconds: 1),
+                              //               shape: RoundedRectangleBorder(
+                              //                 borderRadius:
+                              //                     BorderRadius.circular(10),
+                              //               ),
+                              //             ),
+                              //           );
+                              //         },
+                              //         child: Padding(
+                              //           padding: const EdgeInsets.all(4),
+                              //           child: Icon(
+                              //             Icons.copy_rounded,
+                              //             size: 18,
+                              //             color: isDark
+                              //                 ? Colors.white38
+                              //                 : _kProfileHintText,
+                              //           ),
+                              //         ),
+                              //       ),
+                              //     ],
+                              //   ),
+                              // ),
                               _buildFlatDivider(isDark),
                               _buildFlatEditRow(
                                 isDark: isDark,

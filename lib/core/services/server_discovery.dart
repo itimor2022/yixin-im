@@ -59,12 +59,6 @@ class ServerDiscovery {
     // 'https://admin.aopwx.icu/api.txt',
   ];
 
-  /// AES-256-CBC 密钥（32字节 UTF-8，与加密端一致）
-  static const String _aesKey = 'YiXin2024Secure!AppNodeKey@Qa853';
-
-  /// AES IV（16字节 UTF-8，与加密端一致）
-  static const String _aesIv = 'YiXinIV@2024Qa85';
-
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [];
 
@@ -76,8 +70,10 @@ class ServerDiscovery {
   static const Duration _cacheValid = Duration(hours: 6);
   static const String _cacheNodeKey = 'svc_disc_node';
   static const String _cacheTimeKey = 'svc_disc_time';
+  static const String _cacheManualKey = 'svc_disc_manual';
 
   String? _currentNode;
+  bool _currentNodePinnedByUser = false;
   String? get currentNode => _currentNode;
 
   /// 最近一次发现的候选节点列表（OSS/DNS 解析结果）
@@ -123,12 +119,17 @@ class ServerDiscovery {
   Future<String> initialize() async {
     final cached = await _loadCache();
     if (cached != null) {
+      _currentNodePinnedByUser = await _loadManualSelectionFlag();
       if (kDebugMode) debugPrint('[Discovery] Cache hit: $cached');
       _applyNode(cached);
-      // ⭐ Bug fix：缓存命中时也要在后台拉一次 api.txt，把候选池填上，
-      //   否则「网络线路」页首次进入 allKnownNodes 只有 1 条（缓存那条），
-      //   用户必须点"重新发现"才能看到全部线路。
-      unawaited(_refreshCandidatesInBackground());
+      // 缓存命中后也要补一次后台发现：
+      // 1. 用户手动选线：只刷新候选池，不抢用户选择。
+      // 2. 系统自动选线：后台重新测速，必要时切到最新最快节点。
+      unawaited(
+        _currentNodePinnedByUser
+            ? _refreshCandidatesInBackground()
+            : _refreshBestNodeInBackground(),
+      );
       return cached;
     }
     return _discover();
@@ -136,7 +137,8 @@ class ServerDiscovery {
 
   /// 手动指定节点并缓存（来自用户手动选择）
   Future<void> clearCacheAndSet(String node) async {
-    await _saveCache(node);
+    _currentNodePinnedByUser = true;
+    await _saveCache(node, isManual: true);
     _applyNode(node);
   }
 
@@ -184,6 +186,37 @@ class ServerDiscovery {
     }
   }
 
+  /// 自动模式下：缓存命中后后台重新测速，若发现更优节点则静默切换。
+  Future<void> _refreshBestNodeInBackground() async {
+    try {
+      final nodes = await _fetchNodeList();
+      if (nodes.isEmpty) return;
+
+      final validNodes = await _probeValidNodes(nodes);
+      _lastCandidates =
+          List<String>.from(validNodes.isNotEmpty ? validNodes : nodes);
+
+      if (_currentNodePinnedByUser || _lastCandidates.isEmpty) return;
+
+      final bestNode = _lastCandidates.first;
+      if (_currentNode == bestNode) {
+        if (kDebugMode) {
+          debugPrint(
+              '[Discovery] BG best-node refresh: current is already best');
+        }
+        return;
+      }
+
+      if (kDebugMode) {
+        debugPrint('[Discovery] BG switching to best node: $bestNode');
+      }
+      _applyNode(bestNode);
+      await _saveCache(bestNode, isManual: false);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] BG best-node refresh error: $e');
+    }
+  }
+
   // ── 发现主流程 ──────────────────────────────────────────
 
   Future<String> _discover() async {
@@ -212,26 +245,26 @@ class ServerDiscovery {
       _lastCandidates = List<String>.from(nodes);
     }
 
-    // ⭐ Bug fix：不再无脑挑 _lastCandidates.first。
-    //   如果用户之前手动切到了 IP（_currentNode = ip 并且仍在新拉到的列表里），
-    //   保留这个选择，不要因为"域名 ping 得更快"就把它顶回去。
-    //   只有当 _currentNode 为空 / 或者用户选的节点已经从 api.txt 里被删除时，
-    //   才走默认策略（第一条）。
+    // 默认永远选测速后排第一的最佳节点。
+    // 只有在用户明确手动选过线路、且该线路仍在新候选池里时，才保留用户选择。
     final String selected;
-    if (_currentNode != null && _lastCandidates.contains(_currentNode)) {
+    if (_currentNodePinnedByUser &&
+        _currentNode != null &&
+        _lastCandidates.contains(_currentNode)) {
       selected = _currentNode!;
       if (kDebugMode) {
         debugPrint('[Discovery] Preserving user selection: $selected');
       }
     } else {
       selected = _lastCandidates.first;
+      _currentNodePinnedByUser = false;
     }
 
     if (kDebugMode)
       debugPrint(
           '[Discovery] Selected: $selected, All Valid Nodes For UI: $_lastCandidates');
     _applyNode(selected);
-    await _saveCache(selected);
+    await _saveCache(selected, isManual: _currentNodePinnedByUser);
     return selected;
   }
 
@@ -372,16 +405,49 @@ class ServerDiscovery {
         debugPrint('[Discovery] DoH answers count: ${answers.length}');
       for (final ans in answers) {
         final raw = (ans as Map<String, dynamic>)['data']?.toString() ?? '';
-        final cipher = raw.replaceAll('"', '').trim();
-        if (cipher.isEmpty) continue;
-        final nodes = _decryptNodes(cipher);
+        // 去掉引号
+        final txtValue = raw.replaceAll('"', '').trim();
+        if (txtValue.isEmpty) continue;
+
+        // ✅ Base64 解码
+        String decoded;
+        try {
+          decoded = utf8.decode(base64.decode(txtValue));
+          if (kDebugMode) debugPrint('[Discovery] Base64 decoded: $decoded');
+        } catch (_) {
+          // 如果不是 Base64，直接当明文处理
+          decoded = txtValue;
+        }
+
+        // ✅ 解析节点列表（逗号分隔）
+        final nodes = _parseCommaSeparatedNodes(decoded);
         if (nodes != null && nodes.isNotEmpty) return nodes;
       }
     } catch (_) {}
     return null;
   }
 
-  // ── 轨道2: 多OSS全并行 ──────────────────────────────────
+  /// 解析逗号分隔的节点列表
+  /// 输入: "https://x1.yxts2.shop,https://x1.yxts1.shop,https://x1.yxts.shop,https://66.212.59.214:443"
+  /// 输出: ["https://x1.yxts2.shop", "https://x1.yxts1.shop", "https://x1.yxts.shop", "https://66.212.59.214:443"]
+  List<String>? _parseCommaSeparatedNodes(String rawText) {
+    try {
+      if (kDebugMode) debugPrint('[Discovery] Parsing: $rawText');
+
+      final nodes = rawText
+          .split(',') // 按逗号分割
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .where((e) => e.startsWith('http')) // 只保留 http/https 开头的
+          .toList();
+
+      if (kDebugMode) debugPrint('[Discovery] Parsed nodes: $nodes');
+      return nodes.isNotEmpty ? nodes : null;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Discovery] Parse error: $e');
+      return null;
+    }
+  }
 
   /// 仅使用源码内固定的 api.txt 地址列表。
   Future<List<String>> _effectiveOssUrls() async {
@@ -474,60 +540,35 @@ class ServerDiscovery {
       return null;
     }
   }
-
-  // ── AES-256-CBC 解密 ────────────────────────────────────
-
-  List<String>? _decryptNodes(String base64Cipher) {
-    if (base64Cipher.startsWith('http')) {
-      return _parseLineByLineNodes(base64Cipher);
-    }
-
-    try {
-      final key = enc.Key.fromUtf8(_aesKey);
-      final iv = enc.IV.fromUtf8(_aesIv);
-      final encrypter = enc.Encrypter(
-        enc.AES(key, mode: enc.AESMode.cbc),
-      );
-      final plain = encrypter.decrypt64(base64Cipher, iv: iv);
-      final json = jsonDecode(plain) as Map<String, dynamic>;
-      final nodes = (json['nodes'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .where((e) => e.startsWith('http'))
-          .toList();
-      return (nodes?.isNotEmpty == true) ? nodes : null;
-    } catch (e) {
-      return _parseLineByLineNodes(base64Cipher);
-    }
-  }
-
   // ── 并发探测最快节点 ────────────────────────────────────
 
   Future<List<String>> _probeValidNodes(List<String> nodes) async {
     if (nodes.isEmpty) return [];
 
-    final List<String> activeNodes = [];
-    final List<Future<void>> futures = [];
-
-    for (final node in nodes) {
+    final futures = nodes.map((node) {
       if (kDebugMode) debugPrint('[Discovery] Probing: $node');
-      final future = _probeNode(node).then((ok) {
-        if (ok) {
-          activeNodes.add(node); // 💡 谁通畅谁就进列表，不争抢第一
-        }
-      });
-      futures.add(future);
-    }
+      return _probeNode(node);
+    }).toList(growable: false);
 
-    // 💡 等待所有人探测完毕（或者整体超时）
-    await Future.wait(futures).timeout(
+    final results = await Future.wait(futures).timeout(
       _probeTimeout + const Duration(seconds: 1),
-      onTimeout: () => [],
+      onTimeout: () => <_ProbeResult?>[],
     );
 
-    return activeNodes;
+    final validResults = results.whereType<_ProbeResult>().toList()
+      ..sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
+
+    if (kDebugMode && validResults.isNotEmpty) {
+      debugPrint(
+        '[Discovery] Probe ranking: ${validResults.map((e) => '${e.node}(${e.latencyMs}ms)').join(', ')}',
+      );
+    }
+
+    return validResults.map((e) => e.node).toList(growable: false);
   }
 
-  Future<bool> _probeNode(String node) async {
+  Future<_ProbeResult?> _probeNode(String node) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final dio = Dio(BaseOptions(
         connectTimeout: _probeTimeout,
@@ -558,15 +599,17 @@ class ServerDiscovery {
           sendTimeout: _probeTimeout,
         ),
       );
+      stopwatch.stop();
       final ok = (resp.statusCode ?? 0) == 200;
       if (kDebugMode)
         debugPrint(
-            '[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode})');
-      return ok;
+            '[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode}, ${stopwatch.elapsedMilliseconds}ms)');
+      return ok ? _ProbeResult(node, stopwatch.elapsedMilliseconds) : null;
     } catch (e) {
+      stopwatch.stop();
       if (kDebugMode)
         debugPrint('[Discovery] Probe $node FAILED: ${e.runtimeType} → $e');
-      return false;
+      return null;
     }
   }
 
@@ -586,12 +629,22 @@ class ServerDiscovery {
     }
   }
 
-  Future<void> _saveCache(String node) async {
+  Future<void> _saveCache(String node, {required bool isManual}) async {
     try {
       final p = await SharedPreferences.getInstance();
       await p.setString(_cacheNodeKey, node);
       await p.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+      await p.setBool(_cacheManualKey, isManual);
     } catch (_) {}
+  }
+
+  Future<bool> _loadManualSelectionFlag() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getBool(_cacheManualKey) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _clearCache() async {
@@ -599,6 +652,14 @@ class ServerDiscovery {
       final p = await SharedPreferences.getInstance();
       await p.remove(_cacheNodeKey);
       await p.remove(_cacheTimeKey);
+      await p.remove(_cacheManualKey);
     } catch (_) {}
   }
+}
+
+class _ProbeResult {
+  final String node;
+  final int latencyMs;
+
+  const _ProbeResult(this.node, this.latencyMs);
 }

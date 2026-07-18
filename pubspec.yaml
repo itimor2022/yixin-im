@@ -1,7 +1,7 @@
 name: gao_ran_im
 description: A Telegram-style instant messaging app built with Flutter.
 publish_to: 'none'
-version: 4.0.3+14
+version: 1.0.1+1
 
 environment:
   sdk: '>=3.5.4 <4.0.0'
