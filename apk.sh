@@ -6,13 +6,9 @@ cd "$(dirname "$0")"
 
 echo ">>> 正在打包 Android APK（arm64，混淆+剥离符号，仅新系统 minSdk 30）..."
 echo ">>> 使用精简模式：LEGACY_COMPAT=false（仅保留 arm64-v8a）"
+
 # ✅ 关键：添加 --release
-# LEGACY_COMPAT=false flutter build apk \
-#   --release \
-#   --target-platform=android-arm64 \
-#   --obfuscate \
-#   --split-debug-info=build/app/outputs/symbols
-flutter build apk \
+LEGACY_COMPAT=false flutter build apk \
   --release \
   --target-platform=android-arm64 \
   --obfuscate \

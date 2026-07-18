@@ -232,7 +232,7 @@ android {
     packaging {
         jniLibs {
             // Compress native .so inside APK to reduce file size of distributed package.
-            useLegacyPackaging = false
+            useLegacyPackaging = true
             // x86 / x86_64 一律排除（模拟器才用得到，实体设备极其罕见）。
             // armeabi-v7a 只在"精简包"模式下排除；兼容包模式要保留它。
             val jniExcludes = mutableListOf("lib/x86/**", "lib/x86_64/**")
