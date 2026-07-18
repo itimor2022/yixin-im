@@ -1554,18 +1554,18 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
                                 defaultColor:
                                     isDark ? Colors.white : Colors.black87,
                               ),
-                              if (username.isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  '@$username',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: isDark
-                                        ? Colors.white60
-                                        : Colors.black54,
-                                  ),
-                                ),
-                              ],
+                              // if (username.isNotEmpty) ...[
+                              //   const SizedBox(height: 2),
+                              //   Text(
+                              //     '@$username',
+                              //     style: TextStyle(
+                              //       fontSize: 14,
+                              //       color: isDark
+                              //           ? Colors.white60
+                              //           : Colors.black54,
+                              //     ),
+                              //   ),
+                              // ],
                             ],
                           ),
                         ),
