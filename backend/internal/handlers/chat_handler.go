@@ -684,10 +684,10 @@ func (h *ChatHandler) CreateChat(c *gin.Context) {
 
 	// 用户级建群权限校验（后台对每个用户单独控制）
 	if req.Type == 2 {
-		if !currentUser.CanCreateGroup {
-			response.Error(c, http.StatusForbidden, "您暂无建群权限，请联系管理员开通")
-			return
-		}
+// 		if !currentUser.CanCreateGroup {
+// 			response.Error(c, http.StatusForbidden, "您暂无建群权限，请联系管理员开通")
+// 			return
+// 		}
 	}
 
 	// 群聊/频道创建数量限制
