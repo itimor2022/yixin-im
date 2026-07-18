@@ -575,6 +575,7 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
       ),
     );
   }
+
   /// Web 端降级：不支持摄像头扫码，提供图片上传识别
   Widget _buildWebFallback(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -749,17 +750,17 @@ class _ScannedUserSheet extends StatelessWidget {
                   color: isDark ? Colors.white : Colors.black,
                 ),
               ),
-              if (user.username != null && user.username!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '@${user.username}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+              // if (user.username != null && user.username!.isNotEmpty) ...[
+              //   const SizedBox(height: 6),
+              //   Text(
+              //     '@${user.username}',
+              //     style: const TextStyle(
+              //       fontSize: 14,
+              //       color: AppColors.primary,
+              //       fontWeight: FontWeight.w500,
+              //     ),
+              //   ),
+              // ],
               if (user.bio != null && user.bio!.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
@@ -814,7 +815,6 @@ class _ScannedUserSheet extends StatelessWidget {
     );
   }
 }
-
 
 class _ScannerOverlayPainter extends CustomPainter {
   final Color overlayColor;
