@@ -336,7 +336,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
   }
 
-
   void _checkIsContact() {
     final contacts = ref.read(contactListProvider);
     ContactItem? matchedContact;
@@ -386,7 +385,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           _realAvatar = avatarUrl;
           _nicknameColor = response.data['nickname_color'];
           _premiumType = response.data['premium_type'];
-          _isMember = response.data['is_member'] == true || response.data['is_member'] == 1;
+          _isMember = response.data['is_member'] == true ||
+              response.data['is_member'] == 1;
           _badgeText = response.data['badge_text'];
           _badgeColor = response.data['badge_color'];
           _emojiAvatar = response.data['emoji_avatar'];
@@ -491,9 +491,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final nextPremiumType = matchedContact.premiumType;
       final nextEmojiAvatar = matchedContact.emojiAvatar;
       final nextRemark = matchedContact.remark;
-      final nextNickname = nextRemark?.trim().isNotEmpty == true
-          ? _realNickname
-          : nextName;
+      final nextNickname =
+          nextRemark?.trim().isNotEmpty == true ? _realNickname : nextName;
 
       if (_realNickname == nextNickname &&
           _realAvatar == nextAvatar &&
@@ -539,9 +538,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     final String nicknameValue = _realNickname?.trim().isNotEmpty == true
         ? _realNickname!.trim()
         : (widget.name ?? '');
-    final String bioValue = _realBio?.trim().isNotEmpty == true
-        ? _realBio!.trim()
-        : '';
+    final String bioValue =
+        _realBio?.trim().isNotEmpty == true ? _realBio!.trim() : '';
     final String idValue = _realUsername?.trim().isNotEmpty == true
         ? _realUsername!.trim()
         : widget.userId;
@@ -603,8 +601,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                       children: [
                         // 极简信息行（无卡片）：备注名 / 昵称 / 个性签名 / @用户名
                         Padding(
-                          padding:
-                              const EdgeInsets.fromLTRB(24, 6, 24, 0),
+                          padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -612,8 +609,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                                 _buildFlatRow(
                                   isDark: isDark,
                                   label: '备注名',
-                                  valueText:
-                                      hasRemark ? remarkValue : '',
+                                  valueText: hasRemark ? remarkValue : '',
                                   editable: _isContact,
                                   onEdit: _isContact
                                       ? () {
@@ -629,33 +625,30 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                               _buildFlatRow(
                                 isDark: isDark,
                                 label: '个性签名',
-                                valueText:
-                                    bioValue.isEmpty ? '无' : bioValue,
+                                valueText: bioValue.isEmpty ? '无' : bioValue,
                                 isPlaceholder: bioValue.isEmpty,
                               ),
-                              if (_realUsername != null &&
-                                  _realUsername!.isNotEmpty)
-                                _buildFlatRow(
-                                  isDark: isDark,
-                                  label: '用户名',
-                                  valueText: '@$_realUsername',
-                                  onTap: () => _copyToClipboard(
-                                      '@$_realUsername'),
-                                ),
+                              // if (_realUsername != null &&
+                              //     _realUsername!.isNotEmpty)
+                              //   _buildFlatRow(
+                              //     isDark: isDark,
+                              //     label: '用户名',
+                              //     valueText: '@$_realUsername',
+                              //     onTap: () => _copyToClipboard(
+                              //         '@$_realUsername'),
+                              //   ),
                             ],
                           ),
                         ),
                         // 快捷操作（不用卡片、直接一行 pill 按钮）
                         if (!_isCurrentUser)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                20, 26, 20, 0),
+                            padding: const EdgeInsets.fromLTRB(20, 26, 20, 0),
                             child: _buildActionPills(l10n),
                           ),
                         // 共同群组：作为纯文本链接放到底部
                         Padding(
-                          padding:
-                              const EdgeInsets.fromLTRB(24, 28, 24, 0),
+                          padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
                           child: _buildCommonGroupsLink(isDark, l10n),
                         ),
                         const SizedBox(height: 40),
@@ -689,9 +682,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                         ),
                         onPressed: () {
                           if (widget.isDesktopPanel) {
-                            ref
-                                .read(desktopProfileProvider.notifier)
-                                .state = DesktopProfileInfo.none;
+                            ref.read(desktopProfileProvider.notifier).state =
+                                DesktopProfileInfo.none;
                           } else {
                             context.pop();
                           }
@@ -709,15 +701,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                       const Spacer(),
                       if (_isCurrentUser)
                         TextButton(
-                          onPressed: () =>
-                              context.push('/settings/profile'),
+                          onPressed: () => context.push('/settings/profile'),
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 4),
                             minimumSize: Size.zero,
-                            tapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           child: const Text(
                             '编辑',
@@ -826,7 +816,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                   ),
                 ),
               ),
-              if (_isMember && _badgeText != null && _badgeText!.isNotEmpty) ...[
+              if (_isMember &&
+                  _badgeText != null &&
+                  _badgeText!.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding:
@@ -865,12 +857,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
               ],
               Consumer(
                 builder: (context, ref, _) {
-                  final officialUsersAsync =
-                      ref.watch(officialUsersProvider);
-                  final officialUsers =
-                      officialUsersAsync.valueOrNull ?? {};
-                  final isOfficial = officialUsers
-                      .contains(_userUuid ?? widget.userId);
+                  final officialUsersAsync = ref.watch(officialUsersProvider);
+                  final officialUsers = officialUsersAsync.valueOrNull ?? {};
+                  final isOfficial =
+                      officialUsers.contains(_userUuid ?? widget.userId);
                   if (!isOfficial) return const SizedBox.shrink();
                   return const Padding(
                     padding: EdgeInsets.only(left: 6),
@@ -1379,10 +1369,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       setState(() => _contactRemark = remark);
       final fallbackName = _realNickname?.trim().isNotEmpty == true
           ? _realNickname!.trim()
-          : (widget.name?.trim().isNotEmpty == true ? widget.name!.trim() : '用户');
-      final nextDisplayName = remark.trim().isNotEmpty
-          ? remark.trim()
-          : fallbackName;
+          : (widget.name?.trim().isNotEmpty == true
+              ? widget.name!.trim()
+              : '用户');
+      final nextDisplayName =
+          remark.trim().isNotEmpty ? remark.trim() : fallbackName;
       ref.read(chatListProvider.notifier).updatePrivateChatDisplayName(
             userId: userUuid,
             name: nextDisplayName,
@@ -1442,7 +1433,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         }
         // 直接返回到上一页，不在资料页停留
         if (mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/');
+          Navigator.of(context)
+              .popUntil((route) => route.isFirst || route.settings.name == '/');
         }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1477,7 +1469,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.message?.isNotEmpty == true ? result.message! : '添加失败，请重试'),
+            content: Text(result.message?.isNotEmpty == true
+                ? result.message!
+                : '添加失败，请重试'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -2272,9 +2266,7 @@ class _TGInfoCell extends StatelessWidget {
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 22,
-                  color: isDark
-                      ? Colors.white24
-                      : const Color(0xFFBDBDBD),
+                  color: isDark ? Colors.white24 : const Color(0xFFBDBDBD),
                 ),
             ],
           ),
@@ -2338,9 +2330,7 @@ class _TGCell extends StatelessWidget {
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                             color: titleColor ??
-                                (isDark
-                                    ? Colors.white54
-                                    : _kUpSubText),
+                                (isDark ? Colors.white54 : _kUpSubText),
                           ),
                         ),
                       TextSpan(
@@ -2430,10 +2420,8 @@ class _UpGridButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color labelColor =
-        isDark ? Colors.white70 : const Color(0xFF6B7280);
-    final Color countColor =
-        isDark ? Colors.white : const Color(0xFF111827);
+    final Color labelColor = isDark ? Colors.white70 : const Color(0xFF6B7280);
+    final Color countColor = isDark ? Colors.white : const Color(0xFF111827);
 
     return Material(
       color: Colors.transparent,
@@ -2442,8 +2430,7 @@ class _UpGridButton extends StatelessWidget {
         splashColor: iconColor.withOpacity(0.08),
         highlightColor: iconColor.withOpacity(0.04),
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2457,8 +2444,7 @@ class _UpGridButton extends StatelessWidget {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation(iconColor),
+                            valueColor: AlwaysStoppedAnimation(iconColor),
                           ),
                         ),
                       )
@@ -2517,9 +2503,7 @@ class _UpGlassCircleButton extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withOpacity(0.08)
-                : Colors.white,
+            color: isDark ? Colors.white.withOpacity(0.08) : Colors.white,
             shape: BoxShape.circle,
             boxShadow: isDark
                 ? null
@@ -2881,7 +2865,7 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-        backgroundColor:
+      backgroundColor:
           isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD),
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -3485,7 +3469,7 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
             child: Container(
               decoration: BoxDecoration(
                 color:
-                  isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF8FAFD),
+                    isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF8FAFD),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: TextField(
@@ -3589,7 +3573,7 @@ class _CommonGroupsPage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-        backgroundColor:
+      backgroundColor:
           isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8FAFD),
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -4505,8 +4489,7 @@ class _RemarkEditDialogState extends State<_RemarkEditDialog> {
           child: const Text('取消'),
         ),
         TextButton(
-          onPressed: () =>
-              Navigator.pop(context, _controller.text.trim()),
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
           child: const Text('保存'),
         ),
       ],
