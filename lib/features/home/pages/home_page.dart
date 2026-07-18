@@ -40,9 +40,9 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    if (PlatformUtils.isDesktop) {
-      return const HomeDesktopPage();
-    }
+    // if (PlatformUtils.isDesktop) {
+    //   return const HomeDesktopPage();
+    // }
 
     ref.read(webSocketServiceProvider);
 
