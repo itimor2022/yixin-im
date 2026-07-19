@@ -4120,15 +4120,15 @@ class _FriendSelectorSheet extends ConsumerWidget {
                             color: isDark ? Colors.white : Colors.black,
                           ),
                         ),
-                        subtitle: friend.username != null
-                            ? Text(
-                                '@${friend.username}',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 13,
-                                ),
-                              )
-                            : null,
+                        // subtitle: friend.username != null
+                        //     ? Text(
+                        //         '@${friend.username}',
+                        //         style: TextStyle(
+                        //           color: Colors.grey,
+                        //           fontSize: 13,
+                        //         ),
+                        //       )
+                        //     : null,
                         onTap: () => onSelect(friend.id, friend.name),
                       );
                     },
