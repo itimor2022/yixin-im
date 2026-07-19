@@ -1285,23 +1285,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       },
     );
   }
+
   Widget _buildVersionText() {
     return FutureBuilder<PackageInfo>(
       future: PackageInfo.fromPlatform(),
       builder: (context, snapshot) {
-        final version = snapshot.hasData
-            ? 'v\${snapshot.data!.version}'
-            : '';
+        final version = snapshot.hasData ? 'v${snapshot.data!.version}' : '';
         return Text(
           version,
           textAlign: TextAlign.center,
           style: const TextStyle(
             fontSize: 12,
-            color: Color(0xFFAAAAAA),
+            color: Color(0xFFFF6B6B),
           ),
         );
       },
     );
   }
-
 }
