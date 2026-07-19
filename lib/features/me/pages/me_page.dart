@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,6 +89,9 @@ class MePage extends ConsumerWidget {
                   _buildMenuCard(context, ref, l10n),
                   const SizedBox(height: 20),
                   _buildLogoutCard(context, ref),
+          const SizedBox(height: 16),
+          _buildVersionText(),
+          const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -539,6 +543,29 @@ class MePage extends ConsumerWidget {
   }
 }
 
+
+  Widget _buildVersionText() {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final version = snapshot.hasData
+            ? 'v\${snapshot.data!.version}'
+            : '';
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            version,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFFAAAAAA),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
 /// 单项菜单描述（用于列表数据驱动生成）
 class _MeMenuData {
   final IconData icon;
@@ -631,4 +658,5 @@ class _MeMenuItem extends StatelessWidget {
       ),
     );
   }
+
 }

@@ -6719,12 +6719,11 @@ await FileSaver.instance.saveFile(
     }
 
     try {
-      for (final targetChatId in targetChatIds) {
-        if (!mounted) break;
+      // 第一步：并发预检所有目标会话的禁言状态
+      final validChatIds = <String>[];
+      final checkFutures = targetChatIds.map((targetChatId) async {
         final chatEntry = chatById[targetChatId];
         final chatName = chatEntry?.name ?? '会话';
-
-        // 群/频道再核对一次禁言状态，避免弹窗期间对面管理员改了权限
         final chatType = chatEntry?.type;
         if (chatType == ChatItemType.group ||
             chatType == ChatItemType.channel) {
@@ -6734,47 +6733,51 @@ await FileSaver.instance.saveFile(
             if (chatDetail != null) {
               if (chatType == ChatItemType.channel &&
                   chatDetail.myRole < 2) {
-                failedChatNames.add('$chatName（仅管理员可发言）');
-                totalFail += messages.length;
-                // 整个会话跳过：一次性推完这一批的进度
-                progressNotifier.value += messages.length;
-                continue;
+                return (id: targetChatId, ok: false, reason: '$chatName（仅管理员可发言）');
               }
               if (chatType == ChatItemType.group &&
                   !chatDetail.canSendMessage &&
                   chatDetail.myRole < 2) {
-                failedChatNames.add('$chatName（已全员禁言）');
-                totalFail += messages.length;
-                progressNotifier.value += messages.length;
-                continue;
+                return (id: targetChatId, ok: false, reason: '$chatName（已全员禁言）');
               }
             }
-          } catch (_) {
-            // 拉不到详情就放行到实际发送阶段，让 backend 拒绝
-          }
+          } catch (_) {}
         }
+        return (id: targetChatId, ok: true, reason: '');
+      }).toList();
 
-        for (final msg in messages) {
-          if (!mounted) break;
-          try {
-            final ok = await notifier.forwardMessage(msg.id, targetChatId);
-            if (ok) {
-              totalSuccess++;
-            } else {
-              totalFail++;
-            }
-          } catch (e) {
-            totalFail++;
-            if (kDebugMode) {
-              debugPrint('[Forward] failed msg=${msg.id} target=$targetChatId: $e');
-            }
-          }
-          // 每处理完一条（不论成功失败）推进 1 步进度条
-          progressNotifier.value += 1;
-          // 微小间隔：让 backend 完成 seq INCR / Redis 写入 / WS 广播
-          // 避免同一毫秒批量灌入时排序错乱或个别掉包
-          await Future<void>.delayed(const Duration(milliseconds: 30));
+      final checkResults = await Future.wait(checkFutures);
+      for (final r in checkResults) {
+        if (r.ok) {
+          validChatIds.add(r.id);
+        } else {
+          failedChatNames.add(r.reason);
+          totalFail += messages.length;
+          progressNotifier.value += messages.length;
         }
+      }
+
+      // 第二步：一次请求，所有消息 × 所有有效目标群，后端并发处理
+      if (validChatIds.isNotEmpty && mounted) {
+        try {
+          final msgIds = messages.map((m) => m.id).toList();
+          final batchOk = await notifier.forwardMessageBatchMulti(
+            sourceChatId: widget.chatId,
+            sourceMsgIds: msgIds,
+            targetChatIds: validChatIds,
+          );
+          if (batchOk) {
+            totalSuccess += messages.length * validChatIds.length;
+          } else {
+            totalFail += messages.length * validChatIds.length;
+          }
+        } catch (e) {
+          totalFail += messages.length * validChatIds.length;
+          if (kDebugMode) {
+            debugPrint('[ForwardBatch] failed: $e');
+          }
+        }
+        progressNotifier.value = totalWork;
       }
     } finally {
       // 关掉进度条 & 释放 ValueNotifier，无论正常结束还是 mounted 变 false 都要走

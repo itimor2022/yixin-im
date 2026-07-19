@@ -1714,3 +1714,157 @@ func (h *MessageHandler) EditMessage(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "消息已编辑"})
 }
+
+
+// ForwardBatchRequest 批量转发请求
+type ForwardBatchRequest struct {
+	SourceChatID  string   `json:"source_chat_id" binding:"required"`
+	SourceMsgIDs  []string `json:"source_msg_ids" binding:"required,min=1,max=100"`
+	TargetChatIDs []string `json:"target_chat_ids" binding:"required,min=1,max=20"`
+}
+
+// ForwardBatchResult 单条转发结果
+type ForwardBatchResult struct {
+	MsgID        string `json:"msg_id"`
+	TargetChatID string `json:"target_chat_id"`
+	OK           bool   `json:"ok"`
+	Error        string `json:"error,omitempty"`
+}
+
+// ForwardMessageBatch 批量转发消息（多条消息 × 多个目标会话）
+func (h *MessageHandler) ForwardMessageBatch(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req ForwardBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	// 获取发送者信息
+	var sender models.User
+	if err := h.db.Where("uuid = ?", userID).First(&sender).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+	if sender.Status == models.UserStatusBanned {
+		response.Forbidden(c, "您的账号已被封禁")
+		return
+	}
+	if sender.Status == models.UserStatusDisabled {
+		response.Forbidden(c, "您的账号已被禁用")
+		return
+	}
+
+	// 验证源会话权限（一次性）
+	var sourceChat models.Chat
+	if err := h.db.Where("uuid = ?", req.SourceChatID).First(&sourceChat).Error; err != nil {
+		response.NotFound(c, "源会话不存在")
+		return
+	}
+	var srcMemberCount int64
+	h.db.Model(&models.ChatMember{}).
+		Where("chat_id = ? AND user_id = ?", sourceChat.ID, sender.ID).
+		Count(&srcMemberCount)
+	if srcMemberCount == 0 {
+		response.Forbidden(c, "无权转发该会话消息")
+		return
+	}
+
+	type targetInfo struct {
+		chat   models.Chat
+		member models.ChatMember
+		uuids  []string
+	}
+
+	// 预加载所有目标会话信息
+	targetMap := make(map[string]*targetInfo)
+	for _, tid := range req.TargetChatIDs {
+		var tc models.Chat
+		if err := h.db.Where("uuid = ?", tid).First(&tc).Error; err != nil {
+			continue
+		}
+		var tm models.ChatMember
+		if err := h.db.Where("chat_id = ? AND user_id = ?", tc.ID, sender.ID).First(&tm).Error; err != nil {
+			continue
+		}
+		var memberIDs []uint64
+		h.db.Model(&models.ChatMember{}).Where("chat_id = ? AND user_id != ?", tc.ID, sender.ID).Pluck("user_id", &memberIDs)
+		var uuids []string
+		if len(memberIDs) > 0 {
+			h.db.Model(&models.User{}).Where("id IN ?", memberIDs).Pluck("uuid", &uuids)
+		}
+		targetMap[tid] = &targetInfo{chat: tc, member: tm, uuids: uuids}
+	}
+
+	// 过滤有效目标会话 + 构建 userIDsMap
+	validChatIDs := make([]string, 0, len(req.TargetChatIDs))
+	targetUserIDsMap := make(map[string][]string, len(req.TargetChatIDs))
+	skippedResults := make([]ForwardBatchResult, 0)
+
+	for _, chatID := range req.TargetChatIDs {
+		info, ok := targetMap[chatID]
+		if !ok {
+			for _, msgID := range req.SourceMsgIDs {
+				skippedResults = append(skippedResults, ForwardBatchResult{
+					MsgID: msgID, TargetChatID: chatID,
+					Error: "目标会话不存在或无权限",
+				})
+			}
+			continue
+		}
+		tc := info.chat
+		tm := info.member
+		var skipReason string
+		switch {
+		case tc.Status == models.ChatStatusBanned:
+			skipReason = "目标群组已被封禁"
+		case tc.Status == models.ChatStatusDissolved:
+			skipReason = "目标群组已解散"
+		case tc.Type == 3 && tm.Role < 1:
+			skipReason = "频道仅管理员可发布"
+		case tc.Type == 2 && !tc.CanSendMessage && tm.Role < 1:
+			skipReason = "群组已全员禁言"
+		case tm.IsMuted:
+			skipReason = "您已被禁言"
+		}
+		if skipReason != "" {
+			for _, msgID := range req.SourceMsgIDs {
+				skippedResults = append(skippedResults, ForwardBatchResult{
+					MsgID: msgID, TargetChatID: chatID, Error: skipReason,
+				})
+			}
+			continue
+		}
+		validChatIDs = append(validChatIDs, chatID)
+		targetUserIDsMap[chatID] = info.uuids
+	}
+
+	// 调用服务层批量转发（一次查所有源消息 + 并发写入）
+	successCount, failCount, _ := h.msgService.ForwardMessagesBatch(
+		c.Request.Context(),
+		req.SourceChatID,
+		req.SourceMsgIDs,
+		validChatIDs,
+		userID, sender.Nickname, sender.Avatar,
+		sender.NicknameColor, sender.PremiumType, sender.EmojiAvatar,
+		targetUserIDsMap,
+	)
+
+	// 批量更新 UserChat 最后消息
+	if successCount > 0 {
+		h.db.Model(&models.UserChat{}).
+			Where("chat_id IN ?", validChatIDs).
+			Updates(map[string]interface{}{
+				"last_msg_text": "[转发消息]",
+				"last_msg_time": time.Now(),
+			})
+	}
+
+	totalFailed := failCount + len(skippedResults)
+	response.Success(c, gin.H{
+		"total":   len(req.SourceMsgIDs) * len(req.TargetChatIDs),
+		"success": successCount,
+		"failed":  totalFailed,
+	})
+}
