@@ -1,6 +1,8 @@
 package services
 
 import (
+	"sync"
+	"sync/atomic"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1279,6 +1281,124 @@ func (s *MessageService) broadcastReaction(chatID, msgID, userID, userName, emoj
 }
 
 // ForwardMessage 转发消息
+// ForwardMessagesBatch 批量转发：先一次查所有源消息，再并发写入所有目标
+func (s *MessageService) ForwardMessagesBatch(ctx context.Context, sourceChatID string, sourceMsgIDs []string, targetChatIDs []string, senderID, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar string, targetUserIDsMap map[string][]string) (int, int, error) {
+	// ── 第一步：一次性批量查所有源消息（按月分表，最多查6个月）──
+	now := time.Now()
+	sourceMsgMap := make(map[string]*models.Message, len(sourceMsgIDs))
+
+	for i := 0; i < 6; i++ {
+		if len(sourceMsgMap) == len(sourceMsgIDs) {
+			break // 全找到了，提前退出
+		}
+		t := now.AddDate(0, -i, 0)
+		collection := s.mongoDB.Collection(models.GetMessageCollection(sourceChatID, t))
+
+		// 还没找到的 ID
+		remaining := make([]string, 0, len(sourceMsgIDs))
+		for _, id := range sourceMsgIDs {
+			if _, found := sourceMsgMap[id]; !found {
+				remaining = append(remaining, id)
+			}
+		}
+
+		cursor, err := collection.Find(ctx, bson.M{
+			"chat_id": sourceChatID,
+			"msg_id":  bson.M{"$in": remaining},
+		})
+		if err != nil {
+			continue
+		}
+		var msgs []models.Message
+		if err := cursor.All(ctx, &msgs); err != nil {
+			cursor.Close(ctx)
+			continue
+		}
+		cursor.Close(ctx)
+		for i := range msgs {
+			sourceMsgMap[msgs[i].MsgID] = &msgs[i]
+		}
+	}
+
+	// ── 第二步：并发写入所有 (消息 × 目标会话) 组合 ──
+	type task struct {
+		sourceMsg    *models.Message
+		targetChatID string
+	}
+	var tasks []task
+	for _, msgID := range sourceMsgIDs {
+		msg, ok := sourceMsgMap[msgID]
+		if !ok || msg.BurnAfterRead || hasEncryptedPayload(msg.E2EE) {
+			continue
+		}
+		for _, chatID := range targetChatIDs {
+			tasks = append(tasks, task{msg, chatID})
+		}
+	}
+
+	var (
+		successCount int64
+		failCount    int64
+		wg           sync.WaitGroup
+		sem          = make(chan struct{}, 8) // 最多8并发
+	)
+
+	targetCollection := s.mongoDB.Collection(models.GetMessageCollection("", time.Now()))
+	_ = targetCollection
+
+	for _, tk := range tasks {
+		wg.Add(1)
+		go func(t task) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// 获取目标会话序号
+			seq, err := s.cache.GetNextMsgSeq(ctx, t.targetChatID)
+			if err != nil {
+				atomic.AddInt64(&failCount, 1)
+				return
+			}
+			seq = s.repairNextMsgSeqIfNeeded(ctx, t.targetChatID, seq)
+
+			newMsg := &models.Message{
+				MsgID:               uuid.New().String(),
+				ChatID:              t.targetChatID,
+				Seq:                 seq,
+				SenderID:            senderID,
+				SenderName:          senderName,
+				SenderAvatar:        senderAvatar,
+				SenderNicknameColor: senderNicknameColor,
+				SenderPremiumType:   senderPremiumType,
+				SenderEmojiAvatar:   senderEmojiAvatar,
+				Type:                t.sourceMsg.Type,
+				Content:             t.sourceMsg.Content,
+				Status:              models.MsgStatusSent,
+				CreatedAt:           time.Now(),
+				UpdatedAt:           time.Now(),
+			}
+
+			col := s.mongoDB.Collection(models.GetMessageCollection(t.targetChatID, time.Now()))
+			_, err = col.InsertOne(ctx, newMsg)
+			if err != nil {
+				atomic.AddInt64(&failCount, 1)
+				return
+			}
+
+			// 推送
+			pushIDs := append(append([]string{}, targetUserIDsMap[t.targetChatID]...), senderID)
+			s.hub.SendToUsersCluster(pushIDs, map[string]interface{}{
+				"type":    "new_message",
+				"message": newMsg,
+			})
+			atomic.AddInt64(&successCount, 1)
+		}(tk)
+	}
+	wg.Wait()
+
+	return int(successCount), int(failCount), nil
+}
+
 func (s *MessageService) ForwardMessage(ctx context.Context, sourceChatID, sourceMsgID, targetChatID, senderID, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar string, targetUserIDs []string) (*models.Message, error) {
 	// 获取源消息
 	now := time.Now()

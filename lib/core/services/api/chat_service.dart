@@ -1377,6 +1377,23 @@ class ChatService {
       fromJson: (data) => Message.fromJson(data),
     );
   }
+  /// 批量转发消息（多条×多目标，后端并发处理）
+  Future<ApiResponse<Map<String, dynamic>>> forwardMessageBatch({
+    required String sourceChatId,
+    required List<String> sourceMsgIds,
+    required List<String> targetChatIds,
+  }) async {
+    return _api.post<Map<String, dynamic>>(
+      '/message/forward-batch',
+      data: {
+        'source_chat_id': sourceChatId,
+        'source_msg_ids': sourceMsgIds,
+        'target_chat_ids': targetChatIds,
+      },
+      fromJson: (json) => Map<String, dynamic>.from(json as Map),
+    );
+  }
+
 
   /// 编辑消息
   Future<ApiResponse> editMessage(

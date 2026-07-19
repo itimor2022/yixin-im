@@ -3265,6 +3265,100 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
     return response.isSuccess;
   }
 
+
+  /// 批量转发：一次请求传所有消息ID，后端并发处理
+  Future<bool> forwardMessageBatch({
+    required String sourceChatId,
+    required List<String> sourceMsgIds,
+    required String targetChatId,
+  }) async {
+    // 过滤掉阅后即焚消息
+    final validIds = sourceMsgIds.where((id) {
+      final msg = state.cast<MessageItem?>().firstWhere(
+        (item) => item?.id == id,
+        orElse: () => null,
+      );
+      return msg?.burnAfterRead != true;
+    }).toList();
+
+    if (validIds.isEmpty) return false;
+
+    // 本地消息直接用 sendMessage 发送（有 content 可直接构建）
+    // 非本地消息走批量转发接口
+    final localSendFutures = <Future<bool>>[];
+    final remoteIds = <String>[];
+
+    for (final id in validIds) {
+      final msg = state.cast<MessageItem?>().firstWhere(
+        (item) => item?.id == id,
+        orElse: () => null,
+      );
+      if (msg != null) {
+        final content = _buildForwardContent(msg);
+        final type = _buildForwardType(msg);
+        if (content != null && type != null) {
+          localSendFutures.add(
+            _chatService.sendMessage(
+              chatId: targetChatId,
+              type: type,
+              content: content,
+            ).then((r) => r.isSuccess),
+          );
+          continue;
+        }
+      }
+      remoteIds.add(id);
+    }
+
+    // 并发执行本地发送 + 批量远程转发
+    final futures = <Future<bool>>[...localSendFutures];
+    if (remoteIds.isNotEmpty) {
+      futures.add(
+        _chatService.forwardMessageBatch(
+          sourceChatId: sourceChatId,
+          sourceMsgIds: remoteIds,
+          targetChatIds: [targetChatId],
+        ).then((r) {
+          if (!r.isSuccess) return false;
+          final success = r.data?['success'] as int? ?? 0;
+          return success > 0;
+        }),
+      );
+    }
+
+    final results = await Future.wait(futures);
+    return results.any((ok) => ok);
+  }
+
+
+  /// 真正的全量批量转发：多条消息 × 多个目标群，一次请求
+  Future<bool> forwardMessageBatchMulti({
+    required String sourceChatId,
+    required List<String> sourceMsgIds,
+    required List<String> targetChatIds,
+  }) async {
+    // 过滤阅后即焚
+    final validIds = sourceMsgIds.where((id) {
+      final msg = state.cast<MessageItem?>().firstWhere(
+        (item) => item?.id == id,
+        orElse: () => null,
+      );
+      return msg?.burnAfterRead != true;
+    }).toList();
+
+    if (validIds.isEmpty) return false;
+
+    final response = await _chatService.forwardMessageBatch(
+      sourceChatId: sourceChatId,
+      sourceMsgIds: validIds,
+      targetChatIds: targetChatIds,
+    );
+
+    if (!response.isSuccess) return false;
+    final success = response.data?['success'] as int? ?? 0;
+    return success > 0;
+  }
+
   int? _buildForwardType(MessageItem message) {
     switch (message.type) {
       case MessageItemType.text:

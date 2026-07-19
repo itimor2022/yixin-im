@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -155,6 +156,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         const SizedBox(height: 44),
                         _buildLoginFormMobile(isDark, l10n),
                         const SizedBox(height: 24),
+                        _buildVersionText(),
                       ],
                     ),
                   ),
@@ -1283,4 +1285,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       },
     );
   }
+  Widget _buildVersionText() {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final version = snapshot.hasData
+            ? 'v\${snapshot.data!.version}'
+            : '';
+        return Text(
+          version,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFAAAAAA),
+          ),
+        );
+      },
+    );
+  }
+
 }

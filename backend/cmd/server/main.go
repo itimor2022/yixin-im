@@ -1127,6 +1127,7 @@ func setupRouter(
 				message.POST("/reaction/add", msgHandler.AddReaction)
 				message.POST("/reaction/remove", msgHandler.RemoveReaction)
 				message.POST("/forward", msgHandler.ForwardMessage)
+				message.POST("/forward-batch", msgHandler.ForwardMessageBatch)
 				message.POST("/edit", msgHandler.EditMessage)
 				message.GET("/media", msgHandler.GetChatMedia)
 				message.GET("/media/count", msgHandler.GetChatMediaCount)
