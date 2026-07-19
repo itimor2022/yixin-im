@@ -57,9 +57,8 @@ class MePage extends ConsumerWidget {
     final displayName = user?.nickname.isNotEmpty == true
         ? user!.nickname
         : (user?.username ?? '未登录');
-    final bio = (user?.bio ?? '').trim().isNotEmpty
-        ? user!.bio!.trim()
-        : '个性签名';
+    final bio =
+        (user?.bio ?? '').trim().isNotEmpty ? user!.bio!.trim() : '个性签名';
     final avatar = user?.avatar;
 
     final double topPad = MediaQuery.of(context).padding.top;
@@ -89,9 +88,9 @@ class MePage extends ConsumerWidget {
                   _buildMenuCard(context, ref, l10n),
                   const SizedBox(height: 20),
                   _buildLogoutCard(context, ref),
-          const SizedBox(height: 16),
-          _buildVersionText(),
-          const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  _buildVersionText(),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -102,8 +101,10 @@ class MePage extends ConsumerWidget {
             top: 0,
             left: 0,
             right: 0,
-            height: topPad + _kMeHeaderContentHeight +
-                _kMeGradientBufferHeight + _kMeGradientFadeTail,
+            height: topPad +
+                _kMeHeaderContentHeight +
+                _kMeGradientBufferHeight +
+                _kMeGradientFadeTail,
             child: const IgnorePointer(
               child: TopGradientBackdrop(),
             ),
@@ -171,8 +172,7 @@ class MePage extends ConsumerWidget {
             );
           },
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
             child: Row(
               children: [
                 AvatarWidget(
@@ -220,8 +220,7 @@ class MePage extends ConsumerWidget {
                       HapticFeedback.selectionClick();
                       Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(
-                          builder: (_) =>
-                              ProfilePage(autoShowQrCode: true),
+                          builder: (_) => ProfilePage(autoShowQrCode: true),
                         ),
                       );
                     },
@@ -351,8 +350,7 @@ class MePage extends ConsumerWidget {
             borderRadius: BorderRadius.circular(12),
             onTap: () => _confirmLogout(context, ref),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   SizedBox(
@@ -543,28 +541,25 @@ class MePage extends ConsumerWidget {
   }
 }
 
-
-  Widget _buildVersionText() {
-    return FutureBuilder<PackageInfo>(
-      future: PackageInfo.fromPlatform(),
-      builder: (context, snapshot) {
-        final version = snapshot.hasData
-            ? 'v\${snapshot.data!.version}'
-            : '';
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Text(
-            version,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFFAAAAAA),
-            ),
+Widget _buildVersionText() {
+  return FutureBuilder<PackageInfo>(
+    future: PackageInfo.fromPlatform(),
+    builder: (context, snapshot) {
+      final version = snapshot.hasData ? 'v${snapshot.data!.version}' : '';
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Text(
+          version,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFFF6B6B),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
 /// 单项菜单描述（用于列表数据驱动生成）
 class _MeMenuData {
@@ -627,8 +622,7 @@ class _MeMenuItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               SizedBox(
@@ -658,5 +652,4 @@ class _MeMenuItem extends StatelessWidget {
       ),
     );
   }
-
 }
