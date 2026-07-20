@@ -28,9 +28,10 @@ import '../core/utils/platform_utils.dart';
 
 @pragma('vm:entry-point')
 Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
-  if (kDebugMode) debugPrint(
-    '[FCM] Background message: ${message.messageId}, type: ${message.data['type']}',
-  );
+  if (kDebugMode)
+    debugPrint(
+      '[FCM] Background message: ${message.messageId}, type: ${message.data['type']}',
+    );
 }
 
 Isar? _isar;
@@ -98,7 +99,9 @@ Future<void> bootstrapApp() async {
     );
     IsarService.instance.setIsar(_isar!);
   } catch (e) {
-    if (kDebugMode) debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
+    if (kDebugMode)
+      debugPrint(
+          '[Main] Isar initialization failed: $e, attempting cleanup...');
     try {
       final dir = await getApplicationDocumentsDirectory();
       await _deleteIsarFiles(dir.path);
@@ -149,20 +152,28 @@ Future<void> bootstrapApp() async {
   try {
     await ServerDiscovery.instance.initialize();
   } catch (e) {
-    if (kDebugMode) debugPrint('[Bootstrap] ServerDiscovery failed, using default: \$e');
+    if (kDebugMode)
+      debugPrint('[Bootstrap] ServerDiscovery failed, using default: \$e');
   }
 
   final container = ProviderContainer();
   GlobalHaptics.init(container);
 
-  runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const GaoRanIMApp(),
-    ),
-  );
-
-  
+  try {
+    runApp(
+      UncontrolledProviderScope(
+        container: container,
+        child: const GaoRanIMApp(),
+      ),
+    );
+  } catch (e, st) {
+    if (kDebugMode) {
+      debugPrint('[Bootstrap] runApp failed: $e');
+      FlutterError.dumpErrorToConsole(
+        FlutterErrorDetails(exception: e, stack: st),
+      );
+    }
+  }
 
   Future<void>.delayed(const Duration(milliseconds: 500), () {
     OfflineMessageQueue().initialize();

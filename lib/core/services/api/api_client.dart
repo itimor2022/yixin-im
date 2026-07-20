@@ -860,7 +860,6 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return client;
 });
 
-
 class AppCleanException implements Exception {
   final String message;
   AppCleanException(this.message);
@@ -869,53 +868,95 @@ class AppCleanException implements Exception {
   String toString() => message;
 }
 
-
 /// Token 安全存储（使用 flutter_secure_storage 加密存储敏感数据）
 class TokenStorage {
   static const String _tokenKey = 'auth_token';
   static const String _userIdKey = 'user_id';
   static const String _userDataKey = 'auth_user_data';
 
-  // 使用安全存储来保存 token（加密）
-  static const _secureStorage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock_this_device,
-    ),
-  );
+  static FlutterSecureStorage? _secureStorage;
 
-  static Future<void> saveToken(String token) async {
+  static Future<FlutterSecureStorage> _getSecureStorage() async {
+    if (_secureStorage != null) return _secureStorage!;
+    try {
+      _secureStorage = const FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+        iOptions: IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock_this_device,
+        ),
+      );
+      return _secureStorage!;
+    } catch (e) {
+      if (kDebugMode)
+        debugPrint('[TokenStorage] secure storage init failed: $e');
+      _secureStorage = const FlutterSecureStorage();
+      return _secureStorage!;
+    }
+  }
+
+  static Future<void> _writeSecureValue(String key, String? value) async {
     if (PlatformUtils.isWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, token);
+      if (value == null) {
+        await prefs.remove(key);
+      } else {
+        await prefs.setString(key, value);
+      }
       return;
     }
-    await _secureStorage.write(key: _tokenKey, value: token);
+
+    try {
+      final secureStorage = await _getSecureStorage();
+      if (value == null) {
+        await secureStorage.delete(key: key);
+      } else {
+        await secureStorage.write(key: key, value: value);
+      }
+    } catch (e) {
+      if (kDebugMode)
+        debugPrint(
+            '[TokenStorage] secure write failed, falling back to prefs: $e');
+      final prefs = await SharedPreferences.getInstance();
+      if (value == null) {
+        await prefs.remove(key);
+      } else {
+        await prefs.setString(key, value);
+      }
+    }
+  }
+
+  static Future<String?> _readSecureValue(String key) async {
+    if (PlatformUtils.isWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(key);
+    }
+
+    try {
+      final secureStorage = await _getSecureStorage();
+      return secureStorage.read(key: key);
+    } catch (e) {
+      if (kDebugMode)
+        debugPrint(
+            '[TokenStorage] secure read failed, falling back to prefs: $e');
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(key);
+    }
+  }
+
+  static Future<void> saveToken(String token) async {
+    await _writeSecureValue(_tokenKey, token);
   }
 
   static Future<String?> getToken() async {
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_tokenKey);
-    }
-    return _secureStorage.read(key: _tokenKey);
+    return _readSecureValue(_tokenKey);
   }
 
   static Future<void> saveUserId(String userId) async {
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_userIdKey, userId);
-      return;
-    }
-    await _secureStorage.write(key: _userIdKey, value: userId);
+    await _writeSecureValue(_userIdKey, userId);
   }
 
   static Future<String?> getUserId() async {
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_userIdKey);
-    }
-    return _secureStorage.read(key: _userIdKey);
+    return _readSecureValue(_userIdKey);
   }
 
   static Future<void> saveUserData(Map<String, dynamic> userData) async {
@@ -925,7 +966,8 @@ class TokenStorage {
       await prefs.setString(_userDataKey, value);
       return;
     }
-    await _secureStorage.write(key: _userDataKey, value: value);
+    final secureStorage = await _getSecureStorage();
+    await secureStorage.write(key: _userDataKey, value: value);
   }
 
   static Future<Map<String, dynamic>?> getUserData() async {
@@ -934,7 +976,8 @@ class TokenStorage {
       final prefs = await SharedPreferences.getInstance();
       value = prefs.getString(_userDataKey);
     } else {
-      value = await _secureStorage.read(key: _userDataKey);
+      final secureStorage = await _getSecureStorage();
+      value = await secureStorage.read(key: _userDataKey);
     }
     if (value == null || value.isEmpty) return null;
 
@@ -949,10 +992,11 @@ class TokenStorage {
   /// 清除所有存储的凭证（使用 Future.wait 并行执行）
   static Future<void> clear() async {
     // 并行清除安全存储（非 Web 平台）
+    final secureStorage = await _getSecureStorage();
     await Future.wait([
-      _secureStorage.delete(key: _tokenKey),
-      _secureStorage.delete(key: _userIdKey),
-      _secureStorage.delete(key: _userDataKey),
+      secureStorage.delete(key: _tokenKey),
+      secureStorage.delete(key: _userIdKey),
+      secureStorage.delete(key: _userDataKey),
     ]);
 
     // 并行清除 SharedPreferences（Web 平台 token/userId 也存于此）
@@ -988,9 +1032,10 @@ class TokenStorage {
     final oldValue = prefs.getString(key);
     if (oldValue == null || oldValue.isEmpty) return;
 
-    final secureValue = await _secureStorage.read(key: key);
+    final secureStorage = await _getSecureStorage();
+    final secureValue = await secureStorage.read(key: key);
     if (secureValue == null || secureValue.isEmpty) {
-      await _secureStorage.write(key: key, value: oldValue);
+      await secureStorage.write(key: key, value: oldValue);
       await prefs.remove(key);
     }
   }

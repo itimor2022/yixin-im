@@ -582,12 +582,20 @@ class ServerDiscovery {
           debugPrint(
               '[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.');
       } else {
-        // Android / iOS 等原生平台保留原有证书跳过逻辑
-        (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-            (client) {
-          client.badCertificateCallback = (cert, host, port) => true;
-          return client;
-        };
+        // Android / iOS 等原生平台保留原有证书跳过逻辑。
+        // 某些运行时或插件组合下，dio 的 adapter 可能不是 IOHttpClientAdapter，
+        // 这时直接强转会抛异常并把启动链路打断；这里改为安全检查。
+        final adapter = dio.httpClientAdapter;
+        if (adapter is IOHttpClientAdapter) {
+          adapter.onHttpClientCreate = (client) {
+            client.badCertificateCallback = (cert, host, port) => true;
+            return client;
+          };
+        } else if (kDebugMode) {
+          debugPrint(
+            '[Discovery] Adapter is ${adapter.runtimeType}; skipping custom cert bypass.',
+          );
+        }
       }
 
       final url = '$node$_pingPath';
