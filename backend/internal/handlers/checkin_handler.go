@@ -217,34 +217,55 @@ func (h *CheckinHandler) AdminListCheckins(c *gin.Context) {
 		pageSize = 20
 	}
 
-	q := h.db.Table("user_checkins AS uc").
-		Select("uc.id, uc.user_id, uc.checkin_date, uc.created_at, u.uuid, u.username, u.nickname, u.avatar").
-		Joins("LEFT JOIN users u ON u.id = uc.user_id")
+	baseQuery := h.db.Table("user_checkins").
+		Joins("LEFT JOIN users u ON u.id = user_checkins.user_id AND u.deleted_at IS NULL")
 
 	if kw := c.Query("keyword"); kw != "" {
 		like := "%" + kw + "%"
-		q = q.Where("u.username LIKE ? OR u.nickname LIKE ?", like, like)
+		baseQuery = baseQuery.Where("u.username LIKE ? OR u.nickname LIKE ?", like, like)
 	}
 	if d := c.Query("date"); d != "" {
-		q = q.Where("uc.checkin_date = ?", d)
+		baseQuery = baseQuery.Where("user_checkins.checkin_date = ?", d)
 	}
 
 	var total int64
-	q.Count(&total)
-
-	type Row struct {
-		ID          uint64    `json:"id"`
-		UserID      uint64    `json:"user_id"`
-		CheckinDate time.Time `json:"checkin_date"`
-		CreatedAt   time.Time `json:"created_at"`
-		UUID        string    `json:"uuid"`
-		Username    string    `json:"username"`
-		Nickname    string    `json:"nickname"`
-		Avatar      string    `json:"avatar"`
+	if err := baseQuery.Count(&total).Error; err != nil {
+		response.ServerError(c, "查询签到记录失败")
+		return
 	}
-	var rows []Row
-	q.Order("uc.created_at DESC").
-		Offset((page - 1) * pageSize).Limit(pageSize).Scan(&rows)
+
+	type adminCheckinRow struct {
+		ID          uint64    `json:"id" gorm:"column:id"`
+		UserID      uint64    `json:"user_id" gorm:"column:user_id"`
+		CheckinDate string    `json:"checkin_date" gorm:"column:checkin_date"`
+		CreatedAt   time.Time `json:"created_at" gorm:"column:created_at"`
+		UUID        string    `json:"uuid" gorm:"column:uuid"`
+		Username    string    `json:"username" gorm:"column:username"`
+		Nickname    string    `json:"nickname" gorm:"column:nickname"`
+		Avatar      string    `json:"avatar" gorm:"column:avatar"`
+	}
+
+	var rows []adminCheckinRow
+	if total > 0 {
+		if err := baseQuery.
+			Select(`
+				user_checkins.id,
+				user_checkins.user_id,
+				DATE_FORMAT(user_checkins.checkin_date, '%Y-%m-%d') AS checkin_date,
+				user_checkins.created_at,
+				u.uuid,
+				u.username,
+				u.nickname,
+				u.avatar
+			`).
+			Order("user_checkins.created_at DESC").
+			Offset((page - 1) * pageSize).
+			Limit(pageSize).
+			Scan(&rows).Error; err != nil {
+			response.ServerError(c, "查询签到记录失败")
+			return
+		}
+	}
 
 	response.SuccessWithPage(c, rows, total, page, pageSize)
 }
