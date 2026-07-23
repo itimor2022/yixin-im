@@ -520,7 +520,7 @@ const Map<String, Map<String, String>> _translations = {
 };
 
 const Map<String, String> _zhCN = {
-  'app_name': '锦绣汇',
+  'app_name': '潮商会',
 
   // 通用
   'confirm': '确认',
@@ -951,7 +951,7 @@ const Map<String, String> _zhCN = {
 
   // 关于页
   'about_title': '关于',
-  'copyright': '© 锦绣汇',
+  'copyright': '© 潮商会',
 
   // 空状态
   'select_chat_to_start': '选择一个聊天开始消息',
@@ -1092,7 +1092,7 @@ const Map<String, String> _zhCN = {
 };
 
 const Map<String, String> _zhTW = {
-  'app_name': '锦绣汇',
+  'app_name': '潮商会',
 
   // 通用
   'confirm': '確認',
@@ -1478,7 +1478,7 @@ const Map<String, String> _zhTW = {
   'contact_support': '聯絡客服',
   'support_description': '線上客服，我們將盡快為您解答',
   'online_support': '線上客服',
-  'online_support_hint': '點擊開啟锦绣汇客服系統，線上溝通',
+  'online_support_hint': '點擊開啟潮商会客服系統，線上溝通',
   'qq_support': 'QQ 客服',
   'questions_count': '個問題',
   'thank_you_feedback': '感謝您的回饋！',
@@ -1524,7 +1524,7 @@ const Map<String, String> _zhTW = {
 
   // 關於頁
   'about_title': '關於',
-  'copyright': '© 2024 锦绣汇網路',
+  'copyright': '© 2024 潮商会網路',
 
   // 空狀態
   'select_chat_to_start': '選擇一個聊天開始訊息',

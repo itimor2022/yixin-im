@@ -22,7 +22,7 @@ class DesktopDynamicAboutPanel extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final aboutInfoAsync = ref.watch(desktopDynamicAboutInfoProvider);
     final fallbackName =
-        ref.watch(systemSettingsProvider).valueOrNull?.displayName ?? '锦绣汇';
+        ref.watch(systemSettingsProvider).valueOrNull?.displayName ?? '潮商会';
 
     return Scaffold(
       backgroundColor:
@@ -124,7 +124,7 @@ class _AboutBody extends StatelessWidget {
         ),
         const SizedBox(height: 32),
         Text(
-          '© 锦绣汇',
+          '© 潮商会',
           style: TextStyle(
             fontSize: 12,
             color: isDark ? Colors.white38 : Colors.black38,

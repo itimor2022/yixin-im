@@ -1,5 +1,5 @@
 #ifndef MyAppName
-  #define MyAppName "锦绣汇IM"
+  #define MyAppName "潮商会IM"
 #endif
 
 #ifndef MyAppVersion
@@ -7,7 +7,7 @@
 #endif
 
 #ifndef MyAppPublisher
-  #define MyAppPublisher "锦绣汇科技"
+  #define MyAppPublisher "潮商会科技"
 #endif
 
 #ifndef MyAppExeName

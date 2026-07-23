@@ -1243,7 +1243,7 @@ class DesktopAboutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              '锦绣汇',
+              '潮商会',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1260,7 +1260,7 @@ class DesktopAboutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
             Text(
-              '© 锦绣汇',
+              '© 潮商会',
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.white38 : Colors.black38,

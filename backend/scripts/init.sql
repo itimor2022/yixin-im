@@ -1,7 +1,7 @@
--- 锦绣汇数据库初始化脚本
+-- 潮商会数据库初始化脚本
 -- MySQL 8.0+
 
-CREATE DATABASE IF NOT EXISTS 锦绣汇DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS 潮商会DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE grimimim;
 
