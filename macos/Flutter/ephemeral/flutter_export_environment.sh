@@ -1,10 +1,10 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/Users/ma/data/flutter3.51"
-export "FLUTTER_APPLICATION_PATH=/Users/ma/data/code/yixin-im"
+export "FLUTTER_ROOT=/Users/ma/data/flutter3.41.9"
+export "FLUTTER_APPLICATION_PATH=/Users/ma/data/code/yixin/yixin-im"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_BUILD_DIR=build"
-export "FLUTTER_BUILD_NAME=1.0.3"
+export "FLUTTER_BUILD_NAME=1.0.4"
 export "FLUTTER_BUILD_NUMBER=1"
 export "DART_OBFUSCATION=false"
 export "TRACK_WIDGET_CREATION=true"
