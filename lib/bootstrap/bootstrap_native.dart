@@ -59,6 +59,14 @@ Future<void> _deleteIsarFiles(String dirPath) async {
 Future<void> bootstrapApp() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 先显示一个简单的启动加载界面，防止白屏
+  runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: _BootstrapLoadingPage(),
+    ),
+  );
+
   // ⚠️ 必须在 ServerDiscovery / Firebase / 任何 HTTP-WebSocket 客户端构造之前设置。
   //   HttpOverrides.global 是通过拦截 `HttpClient()` 构造函数生效的，
   //   一旦下游 (Dio 的 IOHttpClientAdapter、WebSocket.connect) 已经拿到 client
@@ -160,6 +168,7 @@ Future<void> bootstrapApp() async {
   GlobalHaptics.init(container);
 
   try {
+    // 初始化完成后，替换为实际应用
     runApp(
       UncontrolledProviderScope(
         container: container,
@@ -183,5 +192,48 @@ Future<void> bootstrapApp() async {
     Future<void>.delayed(const Duration(milliseconds: 1000), () {
       BackgroundService.instance.initialize();
     });
+  }
+}
+
+class _BootstrapLoadingPage extends StatelessWidget {
+  const _BootstrapLoadingPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.chat_bubble_outline,
+              size: 80,
+              color: Colors.blue,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '潮商会',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Colors.blue.shade400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
