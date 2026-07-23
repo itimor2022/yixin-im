@@ -2438,7 +2438,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final typingStyle = const TextStyle(
       fontSize: 12,
       fontWeight: FontWeight.w500,
-      color: Color(0xFFFF6B6B),
+      color: Color(0xFF1A3A6B),
       fontStyle: FontStyle.italic,
     );
 

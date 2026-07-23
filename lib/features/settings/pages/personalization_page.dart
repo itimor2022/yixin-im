@@ -27,7 +27,7 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
     [const Color(0xFF5B9EE1), const Color(0xFF2575BC)], // 蓝色
     [const Color(0xFF43C6AC), const Color(0xFF1D976C)], // 绿色
     [const Color(0xFFFFB347), const Color(0xFFFF8008)], // 橙色
-    [const Color(0xFFFF6B6B), const Color(0xFFEE0979)], // 红色
+    [const Color(0xFF1A3A6B), const Color(0xFF0F2347)], // 红色
     [const Color(0xFFA18CD1), const Color(0xFF6A3093)], // 紫色
     [const Color(0xFF4ECDC4), const Color(0xFF009688)], // 青色
     [const Color(0xFFFF9A9E), const Color(0xFFFECFEF)], // 粉色

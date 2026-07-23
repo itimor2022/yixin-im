@@ -34,7 +34,7 @@ import '../providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 
 // ==================== 新版 UI 设计令牌（Profile Family） ====================
-const Color _kGpPrimary = Color(0xFFFF6B6B);
+const Color _kGpPrimary = Color(0xFF1A3A6B);
 // ignore: unused_element
 const Color _kGpPrimarySoft = Color(0xFFFF9E9E);
 const Color _kGpBg = Color(0xFFF7F8FA);
@@ -2700,7 +2700,7 @@ class _TGActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 三个操作按钮在渐变头部区域内使用浅色玻璃感样式
-    final activeColor = isActive ? const Color(0xFFFF6B6B) : Colors.white;
+    final activeColor = isActive ? const Color(0xFF1A3A6B) : Colors.white;
     final bgColor = Colors.white.withOpacity(isActive ? 0.14 : 0.18);
 
     return GestureDetector(

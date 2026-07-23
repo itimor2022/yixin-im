@@ -200,7 +200,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             fontSize: 26,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
-            color: isDark ? Colors.white : kAuthTextPrimary,
+            color: Colors.white,
           ),
         ),
       ],
@@ -1296,7 +1296,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           textAlign: TextAlign.center,
           style: const TextStyle(
             fontSize: 12,
-            color: Color(0xFFFF6B6B),
+            color: Color(0xFFC9A84C),
           ),
         );
       },

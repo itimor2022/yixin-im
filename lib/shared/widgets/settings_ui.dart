@@ -50,7 +50,7 @@ const Color _kSectionLight = Color(0xFF9CA3AF);
 const Color _kSectionDark = Color(0x7AFFFFFF); // white48
 
 /// 主色（Switch active、chevron 等）
-const Color _kPrimary = Color(0xFFFF6B6B);
+const Color _kPrimary = Color(0xFF1A3A6B);
 
 /// 顶部渐变区结构（与 MePage 同频）
 const double _kHeaderContentHeight = 60;

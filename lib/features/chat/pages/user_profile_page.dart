@@ -35,7 +35,7 @@ import '../providers/message_provider.dart';
 import 'chat_detail_page.dart' show ChatType;
 
 // ==================== 新版 UI 设计令牌（Profile Family） ====================
-const Color _kUpPrimary = Color(0xFFFF6B6B);
+const Color _kUpPrimary = Color(0xFF1A3A6B);
 const Color _kUpPrimarySoft = Color(0xFFFF9E9E);
 const Color _kUpBg = Color(0xFFF8FAFD);
 const Color _kUpCard = Colors.white;

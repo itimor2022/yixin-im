@@ -238,7 +238,7 @@ final networkSettingsProvider =
 );
 
 // ── 视觉 Token（对齐"我的"页风格）─────────────────────────
-const Color _kPrimary = Color(0xFFFF6B6B);
+const Color _kPrimary = Color(0xFF1A3A6B);
 const Color _kBg = Color(0xFFF7F8FA);
 const Color _kCardBg = Colors.white;
 const Color _kTitleText = Color(0xFF111827);
@@ -435,7 +435,7 @@ class _CurrentRouteHero extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFFFF6B6B),
+              Color(0xFF1A3A6B),
               Color(0xFFFF9E9E),
               Color(0xFF7CD5FF),
             ],

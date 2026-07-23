@@ -9,7 +9,8 @@ enum AppThemeMode {
   system,
   light,
   dark,
-  chineseRed;
+  chineseRed,
+  cshBlue;
 
   /// 映射到 Flutter 原生 ThemeMode
   ThemeMode get flutterThemeMode {
@@ -22,6 +23,8 @@ enum AppThemeMode {
         return ThemeMode.dark;
       case AppThemeMode.chineseRed:
         return ThemeMode.light;
+      case AppThemeMode.cshBlue:
+        return ThemeMode.light;
     }
   }
 }
@@ -32,7 +35,7 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, AppThemeMode>
 });
 
 class ThemeModeNotifier extends StateNotifier<AppThemeMode> {
-  ThemeModeNotifier() : super(AppThemeMode.system) {
+  ThemeModeNotifier() : super(AppThemeMode.cshBlue) {
     _loadTheme();
   }
 

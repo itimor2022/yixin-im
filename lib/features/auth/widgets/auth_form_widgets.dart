@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 ///
 /// 登录 / 注册页共用的配色与视觉样式。
 /// 主色跟全站 [AppColors.primary] 一致 (#009CFF)。
-const Color kAuthPrimary = Color(0xFFFF6B6B);
-const Color kAuthGradStart = Color(0xFFFF6B6B);
+const Color kAuthPrimary = Color(0xFFC9A84C);
+const Color kAuthGradStart = Color(0xFF1A3A6B);
 const Color kAuthGradEnd = Color(0xFFFF9E9E);
 const Color kAuthCardLight = Color(0xFFF3F5F8);
 const Color kAuthTextPrimary = Color(0xFF111827);
@@ -369,11 +369,7 @@ class AuthHeroHeader extends StatelessWidget {
         right: padding.right,
       ),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [kAuthGradStart, kAuthGradEnd],
-        ),
+        color: const Color(0xFFC9A84C),
       ),
       child: Stack(
         children: [

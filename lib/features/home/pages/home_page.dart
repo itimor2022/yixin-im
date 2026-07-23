@@ -14,7 +14,7 @@ import '../../../core/utils/platform_utils.dart';
 import 'home_desktop_page.dart';
 
 /// 主色（海洋蓝，与全局 AppColors.primary 保持一致）
-const Color _kNavPrimary = Color(0xFFFF6B6B);
+const Color _kNavPrimary = Color(0xFFC9A84C);
 
 /// 未选中图标/文字颜色
 const Color _kNavInactive = Color(0xFF9AA0A6);

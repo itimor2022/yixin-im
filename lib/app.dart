@@ -1030,10 +1030,14 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       debugShowCheckedModeBanner: false,
       theme: appThemeMode == AppThemeMode.chineseRed
           ? AppTheme.chineseRed
-          : AppTheme.light,
+          : appThemeMode == AppThemeMode.cshBlue
+              ? AppTheme.cshBlue
+              : AppTheme.light,
       darkTheme: appThemeMode == AppThemeMode.chineseRed
           ? AppTheme.chineseRed
-          : AppTheme.dark,
+          : appThemeMode == AppThemeMode.cshBlue
+              ? AppTheme.cshBlue
+              : AppTheme.dark,
       themeMode: appThemeMode.flutterThemeMode,
       locale: language.locale,
       supportedLocales: AppLanguage.values.map((l) => l.locale).toList(),

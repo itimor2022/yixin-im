@@ -162,7 +162,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final Color inputBg =
         isDark ? const Color(0xFF1B1E27) : const Color(0xFFF3F6FB);
     final Color inputBorderColor = widget.focusNode.hasFocus
-        ? AppColors.primary.withOpacity(0.55)
+        ? AppColors.cshGold.withOpacity(0.55)
         : (isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFE1E6EF));
     final Color hintColor =
         isDark ? Colors.white38 : const Color(0xFF9AA3B2);
@@ -220,7 +220,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     boxShadow: widget.focusNode.hasFocus
                         ? [
                             BoxShadow(
-                              color: AppColors.primary.withOpacity(0.12),
+                              color: AppColors.cshGold.withOpacity(0.12),
                               blurRadius: 10,
                               offset: const Offset(0, 2),
                             ),
@@ -239,7 +239,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           minLines: 1,
                           textInputAction: TextInputAction.newline,
                           textCapitalization: TextCapitalization.sentences,
-                          cursorColor: AppColors.primary,
+                          cursorColor: AppColors.cshGold,
                           cursorRadius: const Radius.circular(2),
                           style: TextStyle(
                             fontSize: 15.5,
@@ -293,7 +293,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                               key: ValueKey(widget.showEmojiPicker),
                               size: 24,
                               color: widget.showEmojiPicker
-                                  ? AppColors.primary
+                                  ? AppColors.cshGold
                                   : subtleIcon,
                             ),
                           ),
@@ -527,18 +527,11 @@ class _PrimaryRoundButtonState extends State<_PrimaryRoundButton> {
             : Matrix4.identity(),
         transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.primary,
-              const Color(0xFFFF9E9E),
-            ],
-          ),
+          color: AppColors.cshGold,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(_pressed ? 0.15 : 0.32),
+              color: AppColors.cshGold.withOpacity(_pressed ? 0.15 : 0.32),
               blurRadius: _pressed ? 8 : 14,
               offset: Offset(0, _pressed ? 2 : 5),
             ),

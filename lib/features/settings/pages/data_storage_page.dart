@@ -10,7 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../shared/widgets/settings_ui.dart';
 
-const Color _kDataPrimary = Color(0xFFFF6B6B);
+const Color _kDataPrimary = Color(0xFF1A3A6B);
 
 /// 数据存储设置服务
 class DataStorageService extends StateNotifier<DataStorageSettings> {

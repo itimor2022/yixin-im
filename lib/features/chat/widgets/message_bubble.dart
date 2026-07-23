@@ -4768,7 +4768,7 @@ class _RedPacketDetailSheetState extends State<_RedPacketDetailSheet> {
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFFF6B6B), Color(0xFFEE5A5A)],
+          colors: [Color(0xFF1A3A6B), Color(0xFF1A3A6B)],
         ),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),

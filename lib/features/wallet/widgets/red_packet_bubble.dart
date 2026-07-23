@@ -26,8 +26,8 @@ class RedPacketBubble extends StatelessWidget {
     final isActive = !isExpired && !isFinished;
 
     // 红包颜色 — 始终保持红色，只通过文字区分状态
-    final primaryColor = isExpired ? const Color(0xFFBEBEBE) : const Color(0xFFE84C3D);
-    final secondaryColor = isExpired ? const Color(0xFF9E9E9E) : const Color(0xFFC0392B);
+    final primaryColor = isExpired ? const Color(0xFFBEBEBE) : const Color(0xFF2554A0);
+    final secondaryColor = isExpired ? const Color(0xFF9E9E9E) : const Color(0xFF1A3A6B);
 
     return GestureDetector(
       onTap: () {
@@ -266,7 +266,7 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
           gradient: const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFE84C3D), Color(0xFFC0392B)],
+            colors: [Color(0xFF2554A0), Color(0xFF1A3A6B)],
           ),
           borderRadius: BorderRadius.circular(12),
         ),
@@ -432,7 +432,7 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                                                 strokeWidth: 2.5,
                                                 valueColor:
                                                     AlwaysStoppedAnimation(
-                                                  Color(0xFFC0392B),
+                                                  Color(0xFF1A3A6B),
                                                 ),
                                               ),
                                             )
@@ -441,7 +441,7 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                                               style: TextStyle(
                                                 fontSize: 32,
                                                 fontWeight: FontWeight.bold,
-                                                color: Color(0xFFC0392B),
+                                                color: Color(0xFF1A3A6B),
                                               ),
                                             ),
                                     ),
