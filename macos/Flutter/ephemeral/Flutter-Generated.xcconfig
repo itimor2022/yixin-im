@@ -1,9 +1,9 @@
 // This is a generated file; do not edit or check into version control.
-FLUTTER_ROOT=/Users/ma/data/flutter3.51
-FLUTTER_APPLICATION_PATH=/Users/ma/data/code/yixin-im
+FLUTTER_ROOT=/Users/ma/data/flutter3.41.9
+FLUTTER_APPLICATION_PATH=/Users/ma/data/code/yixin/yixin-im
 COCOAPODS_PARALLEL_CODE_SIGN=true
 FLUTTER_BUILD_DIR=build
-FLUTTER_BUILD_NAME=1.0.3
+FLUTTER_BUILD_NAME=1.0.0
 FLUTTER_BUILD_NUMBER=1
 DART_OBFUSCATION=false
 TRACK_WIDGET_CREATION=true

@@ -9,7 +9,7 @@
 `macOS` 在整个 IM 系统中的定位是 **macOS 平台宿主**，与项目根目录下的 Flutter 代码（`lib/`、`pubspec.yaml`）共同构成完整的 macOS 桌面客户端。主要作用包括：
 
 - **Flutter 引擎承载**：通过 Xcode 工程将 Flutter 应用构建为 macOS App（.app bundle），提供 Flutter 运行环境。
-- **应用入口与配置**：`AppDelegate.swift`、`MainFlutterWindow.swift`、`Info.plist`、Bundle ID（`com.yixinim.app`）、应用名「潮商会」、最低系统版本（macOS 11.0）等。
+- **应用入口与配置**：`AppDelegate.swift`、`MainFlutterWindow.swift`、`Info.plist`、Bundle ID（`com.cshim.app`）、应用名「潮商会」、最低系统版本（macOS 11.0）等。
 - **沙盒与权限**：entitlements 中配置 App Sandbox、网络客户端/服务端、相机与麦克风、JIT、钥匙串访问组（如 com.gaoran.gaoRanIm），满足上架与 IM 联网、音视频需求。
 - **窗口**：MainFlutterWindow 将 FlutterViewController 设为 contentViewController，并注册插件。
 
@@ -30,7 +30,7 @@
 
 - **沙盒与能力**：`Runner/DebugProfile.entitlements`、`Runner/Release.entitlements` 中开启 App Sandbox、网络客户端/服务端、相机、麦克风、JIT（Debug 需要）；keychain-access-groups 用于安全存储（如 Flutter 侧 flutter_secure_storage）。
 - **窗口**：`Runner/MainFlutterWindow.swift` 使用 FlutterViewController 并注册插件；`AppDelegate` 配置关闭最后窗口时退出、支持可恢复状态。
-- **应用标识**：`Runner/Configs/AppInfo.xcconfig` 中 PRODUCT_BUNDLE_IDENTIFIER = com.yixinim.app；Info.plist 中 CFBundleName/CFBundleDisplayName「潮商会」。
+- **应用标识**：`Runner/Configs/AppInfo.xcconfig` 中 PRODUCT_BUNDLE_IDENTIFIER = com.cshim.app；Info.plist 中 CFBundleName/CFBundleDisplayName「潮商会」。
 
 Flutter 侧 IM 能力（WebSocket、Dio、Isar、窗口/托盘等）由根目录 `pubspec.yaml` 管理；本目录不直接依赖这些库的源码。
 
@@ -83,7 +83,7 @@ open macos/Runner.xcodeproj
 | 文件/配置           | 说明 |
 |---------------------|------|
 | **Runner/Info.plist** | 应用名「潮商会」、版本（FLUTTER_BUILD_NAME/NUMBER）、LSMinimumSystemVersion（MACOSX_DEPLOYMENT_TARGET）。 |
-| **Runner/Configs/AppInfo.xcconfig** | PRODUCT_BUNDLE_IDENTIFIER = com.yixinim.app。 |
+| **Runner/Configs/AppInfo.xcconfig** | PRODUCT_BUNDLE_IDENTIFIER = com.cshim.app。 |
 | **Runner/DebugProfile.entitlements** | 开发/Profile：沙盒、网络、相机、麦克风、JIT、钥匙串。 |
 | **Runner/Release.entitlements** | 发布：沙盒、网络、相机、麦克风、钥匙串（无 JIT）。 |
 | **Signing**         | 在 Xcode 中为 Runner target 配置 Team 与 Signing Certificate。 |

@@ -9,5 +9,5 @@
     <exclude domain="sharedpref" path="flutter_secure_storage_keychain.xml"/>
     
     <!-- 排除临时文件 -->
-    <exclude domain="external" path="Android/data/com.yixinim.app.v2/cache"/>
+    <exclude domain="external" path="Android/data/com.cshim.app.v2/cache"/>
 </full-backup-content>

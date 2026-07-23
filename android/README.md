@@ -9,7 +9,7 @@
 `android` 在整个 IM 系统中的定位是 **Android 平台宿主**，与项目根目录下的 Flutter 代码（`lib/`、`pubspec.yaml`）共同构成完整的 Android 客户端。主要作用包括：
 
 - **Flutter 引擎承载**：通过 Flutter Gradle 插件将 Flutter 应用打包为 Android APK，提供 Flutter 运行环境。
-- **应用入口与配置**：`MainActivity`、`AndroidManifest`、应用 ID（`com.yixinim.app`）、应用名「潮商会」、版本与 ABI 配置等。
+- **应用入口与配置**：`MainActivity`、`AndroidManifest`、应用 ID（`com.cshim.app`）、应用名「潮商会」、版本与 ABI 配置等。
 - **平台能力**：通知渠道（含后台服务通知）、高刷新率与刘海屏适配、前台服务与开机自启（消息保活）、网络与媒体权限等，为 IM 的聊天、音视频通话、推送与后台连接提供支撑。
 - **构建与优化**：仅保留 arm64-v8a 与中英文资源以控制包体、Release 混淆与压缩、Java 17 / Kotlin 等工具链配置。
 
@@ -148,7 +148,7 @@ android/
 | **Flutter 集成**   | `app/build.gradle.kts` 中 `id("dev.flutter.flutter-gradle-plugin")` 与 `flutter { source = "../.." }`；版本号由 Flutter 提供。 |
 | **后台保活**       | Manifest 中 `flutter_background_service` 的 Service（foregroundServiceType="dataSync"）与 BootReceiver；通知渠道在 `MainActivity.createNotificationChannel()`。 |
 | **混淆与加固**     | `app/proguard-rules.pro`：保留 Flutter、Agora、Gson、后台服务、通知等，避免 IM 与音视频相关类被误删。 |
-| **包名与资源**     | `applicationId` / `namespace`：`com.yixinim.app`；应用名「潮商会」在 Manifest 的 `android:label`。 |
+| **包名与资源**     | `applicationId` / `namespace`：`com.cshim.app`；应用名「潮商会」在 Manifest 的 `android:label`。 |
 | **实际 IM 逻辑**   | 消息、连接、存储、UI 等均在项目根目录的 Flutter 代码（`lib/`）及 `pubspec.yaml` 依赖中，本目录仅提供 Android 运行环境与平台能力。 |
 
 ---

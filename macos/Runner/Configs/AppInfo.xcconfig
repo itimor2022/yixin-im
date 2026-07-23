@@ -8,7 +8,7 @@
 PRODUCT_NAME = 潮商会
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.yixinim.app
+PRODUCT_BUNDLE_IDENTIFIER = com.cshim.app
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 潮商会科技. All rights reserved.
