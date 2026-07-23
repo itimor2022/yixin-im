@@ -257,7 +257,7 @@
         workbook.Props = {
           Title: filename,
           Subject: '数据导出',
-          Author: props.workbookOptions.creator || '锦绣汇即时通讯管理后台',
+          Author: props.workbookOptions.creator || '潮商会即时通讯管理后台',
           Manager: props.workbookOptions.lastModifiedBy || '',
           Company: '系统导出',
           Category: '数据',

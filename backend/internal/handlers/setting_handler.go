@@ -670,8 +670,8 @@ func isAllowedSystemSettingKey(key string) bool {
 		models.SettingGroupInviteRequireFriend,
 		models.SettingMemberOnlyCreateGroup,
 		models.SettingCheckinEnabled,
-			models.SettingRedPacketEnabled,
-			models.SettingWalletEnabled,
+		models.SettingRedPacketEnabled,
+		models.SettingWalletEnabled,
 		models.SettingAllowStrangerMessage,
 		models.SettingCustomPortalEnabled,
 		models.SettingCustomPortalTitle,
@@ -1486,8 +1486,8 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"group_invite_require_friend": isSystemSettingTrue(settingMap[models.SettingGroupInviteRequireFriend]),
 		"member_only_create_group":    isSystemSettingTrue(settingMap[models.SettingMemberOnlyCreateGroup]),
 		"checkin_enabled":             isSystemSettingTrue(settingMap[models.SettingCheckinEnabled]),
-			"red_packet_enabled":          isSystemSettingTrue(settingMap[models.SettingRedPacketEnabled]),
-			"wallet_enabled":              isSystemSettingTrue(settingMap[models.SettingWalletEnabled]),
+		"red_packet_enabled":          isSystemSettingTrue(settingMap[models.SettingRedPacketEnabled]),
+		"wallet_enabled":              isSystemSettingTrue(settingMap[models.SettingWalletEnabled]),
 		"allow_stranger_message":      isSystemSettingTrue(settingMap[models.SettingAllowStrangerMessage]),
 		"custom_portal_enabled":       isSystemSettingTrue(settingMap[models.SettingCustomPortalEnabled]),
 		"custom_portal_title":         settingMap[models.SettingCustomPortalTitle],
@@ -1495,11 +1495,11 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"custom_portal_icon_url":      settingMap[models.SettingCustomPortalIconURL],
 		"customer_service_url":        settingMap[models.SettingCustomerServiceURL],
 		// 服务发现 api.txt 地址：仅通过数据库维护（管理后台只读），客户端拿到后缓存本地覆盖 ServerDiscovery 硬编码
-		"api_txt_url":                 settingMap[models.SettingApiTxtURL],
-		"logo_image_url":              settingMap[models.SettingLogoImageUrl],
-		"discover_top_image_url":      settingMap[models.SettingDiscoverTopImageUrl],
-		"burn_after_read_enabled":     !isSystemSettingFalse(settingMap[models.SettingBurnAfterReadEnabled]),
-		"message_crypto_mode":         normalizeMessageCryptoMode(settingMap[models.SettingMessageCryptoMode]),
+		"api_txt_url":             settingMap[models.SettingApiTxtURL],
+		"logo_image_url":          settingMap[models.SettingLogoImageUrl],
+		"discover_top_image_url":  settingMap[models.SettingDiscoverTopImageUrl],
+		"burn_after_read_enabled": !isSystemSettingFalse(settingMap[models.SettingBurnAfterReadEnabled]),
+		"message_crypto_mode":     normalizeMessageCryptoMode(settingMap[models.SettingMessageCryptoMode]),
 		// 官方用户/群组/频道
 		"official_users":    officialUserUUIDs,
 		"official_groups":   officialGroupUUIDs,
@@ -1769,7 +1769,7 @@ func (h *SettingHandler) GetPrivacyPolicy(c *gin.Context) {
 func getDefaultUserAgreement() string {
 	return `# 用户协议
 
-欢迎使用锦绣汇IM！
+欢迎使用潮商会IM！
 
 ## 一、服务条款的接受
 

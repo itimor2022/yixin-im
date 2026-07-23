@@ -46,6 +46,6 @@ export const festivalConfigList: FestivalConfig[] = [
   //   date: '2024-12-25',
   //   image: sd,
   //   count: 3 // 可选，不设置则使用默认值 3 次
-  //   scrollText: 'Merry Christmas！锦绣汇即时通讯管理后台祝您圣诞快乐，愿节日的欢乐与祝福如雪花般纷至沓来！',
+  //   scrollText: 'Merry Christmas！潮商会即时通讯管理后台祝您圣诞快乐，愿节日的欢乐与祝福如雪花般纷至沓来！',
   // }
 ]

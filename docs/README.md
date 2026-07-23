@@ -1,4 +1,4 @@
-# 锦绣汇 IM 后端
+# 潮商会 IM 后端
 
 > IM 服务端，提供用户、好友、会话、消息、通话、动态、举报、钱包等 REST API 与 WebSocket，使用 MySQL + MongoDB + Redis，支持宝塔与 Docker 部署。
 

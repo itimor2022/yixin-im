@@ -23,7 +23,7 @@ mkdir -p "$DESKTOP"
 
 # 生成时间戳（格式：年月日_时分秒）
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_NAME="锦绣汇IM_${TIMESTAMP}.apk"
+OUTPUT_NAME="潮商会IM_${TIMESTAMP}.apk"
 
 APK_SOURCE="$APK_DIR/app-release.apk"
 

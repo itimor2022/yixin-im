@@ -1026,7 +1026,7 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
     final language = ref.watch(languageProvider);
 
     return MaterialApp.router(
-      title: '锦绣汇',
+      title: '潮商会',
       debugShowCheckedModeBanner: false,
       theme: appThemeMode == AppThemeMode.chineseRed
           ? AppTheme.chineseRed

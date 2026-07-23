@@ -182,7 +182,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final logoUrl = settings?.logoImageUrl;
     final title = (settings?.systemName ?? '').trim().isNotEmpty
         ? settings!.systemName.trim()
-        : (_appName.isNotEmpty ? _appName : '锦绣汇');
+        : (_appName.isNotEmpty ? _appName : '潮商会');
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

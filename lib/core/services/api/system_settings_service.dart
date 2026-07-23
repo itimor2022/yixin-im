@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 
-const String kDefaultAppDisplayName = '锦绣汇';
+const String kDefaultAppDisplayName = '潮商会';
 const String kSystemSettingsCacheKey = 'system_settings_cache';
 
 enum MessageCryptoMode {
