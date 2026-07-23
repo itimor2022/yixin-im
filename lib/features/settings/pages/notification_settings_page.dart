@@ -14,7 +14,7 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/settings_ui.dart';
 
-const Color _kNotifPrimary = Color(0xFFFF6B6B);
+const Color _kNotifPrimary = Color(0xFF1A3A6B);
 
 /// 通知和声音设置页面
 class NotificationSettingsPage extends ConsumerStatefulWidget {

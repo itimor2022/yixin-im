@@ -26,7 +26,8 @@ import '../../settings/pages/network_settings_page.dart';
 import '../../settings/pages/stickers_page.dart';
 
 /// 主色调（海洋蓝，与 AppColors.primary / 底部导航保持一致）
-const Color _kPrimary = Color(0xFFFF6B6B);
+const Color _kPrimary = Color(0xFF1A3A6B);
+const Color _kGold = Color(0xFFC9A84C);
 
 /// 顶部渐变区结构尺寸（与"聊天"页保持一致的视觉节奏）：
 ///   · header 视觉高度 = 10 (top pad) + 44 (content) + 6 (bottom pad) = 60
@@ -553,7 +554,7 @@ Widget _buildVersionText() {
           textAlign: TextAlign.center,
           style: const TextStyle(
             fontSize: 12,
-            color: Color(0xFFFF6B6B),
+            color: Color(0xFF1A3A6B),
           ),
         ),
       );

@@ -12,7 +12,7 @@ import '../../../shared/widgets/top_gradient_backdrop.dart';
 import '../../home/pages/home_desktop_page.dart';
 
 /// 主色 —— 与"我的"页 / 底部导航保持统一
-const Color _kPrimary = Color(0xFFFF6B6B);
+const Color _kPrimary = Color(0xFF1A3A6B);
 const Color _kBg = Color(0xFFF7F8FA);
 
 /// 顶部渐变节奏（与"我的" / "联系人" 页保持一致的视觉节奏）：
@@ -85,7 +85,7 @@ class DiscoverEntry {
 
 /// 每个入口从这里挑一个色调（用于图标背景）
 const _accentColors = <Color>[
-  Color(0xFFFF6B6B), // sky
+  Color(0xFF1A3A6B), // sky
   Color(0xFF34C759), // green
   Color(0xFFFF9500), // orange
   Color(0xFF7C3AED), // purple

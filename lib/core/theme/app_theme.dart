@@ -550,7 +550,220 @@ class AppTheme {
     ),
   );
 
-    static TextTheme _textTheme(Color primaryColor, Color secondaryColor) {
+  
+  // ==================== 潮商会主题（深蓝·皇金） ====================
+
+  static ThemeData get cshBlue => ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
+
+    colorScheme: const ColorScheme.light(
+      primary:            AppColors.cshBluePrimary,
+      primaryContainer:   AppColors.cshBluePrimaryLight,
+      secondary:          AppColors.cshGold,
+      secondaryContainer: AppColors.cshGoldLight,
+      surface:            AppColors.cshSurface,
+      error:              AppColors.error,
+      onPrimary:          Colors.white,
+      onSecondary:        Colors.white,
+      onSurface:          AppColors.cshTextPrimary,
+      onError:            Colors.white,
+      outline:            AppColors.cshDivider,
+    ),
+
+    scaffoldBackgroundColor: AppColors.cshBackground,
+
+    appBarTheme: const AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      backgroundColor: AppColors.cshAppBar,
+      foregroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Color(0x400F2347),
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+        letterSpacing: 1.5,
+      ),
+      iconTheme: IconThemeData(color: AppColors.cshGold, size: 24),
+    ),
+
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: AppColors.cshNavBar,
+      selectedItemColor: AppColors.cshGold,
+      unselectedItemColor: AppColors.cshTextSecondary,
+      type: BottomNavigationBarType.fixed,
+      elevation: 8,
+      selectedLabelStyle:   TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      unselectedLabelStyle: TextStyle(fontSize: 12),
+    ),
+
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      minLeadingWidth: 0,
+      horizontalTitleGap: 12,
+      tileColor: Colors.transparent,
+    ),
+
+    dividerTheme: const DividerThemeData(
+      color: AppColors.cshDivider,
+      thickness: 0.5,
+      space: 0,
+    ),
+
+    cardTheme: CardThemeData(
+      color: AppColors.cshCard,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.cshDivider, width: 0.5),
+      ),
+      margin: EdgeInsets.zero,
+      shadowColor: const Color(0x201A3A6B),
+    ),
+
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.cshInputBackground,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.cshDivider, width: 0.8),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.cshDivider, width: 0.8),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.cshGold, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      hintStyle: AppTextStyles.inputHint.copyWith(
+        color: AppColors.cshTextTertiary,
+      ),
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.cshBluePrimary,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        shadowColor: const Color(0x401A3A6B),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.0,
+        ),
+      ),
+    ),
+
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.cshBluePrimary,
+        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+    ),
+
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected)
+              ? AppColors.cshBluePrimary
+              : AppColors.cshTextTertiary),
+      trackColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected)
+              ? AppColors.cshGoldLight.withOpacity(0.5)
+              : AppColors.cshDivider),
+    ),
+
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected)
+              ? AppColors.cshBluePrimary
+              : Colors.transparent),
+      checkColor: WidgetStateProperty.all(Colors.white),
+      side: const BorderSide(color: AppColors.cshDivider, width: 1.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+    ),
+
+    chipTheme: ChipThemeData(
+      backgroundColor: AppColors.cshCard,
+      selectedColor: AppColors.cshBluePrimary.withOpacity(0.15),
+      side: const BorderSide(color: AppColors.cshDivider),
+      labelStyle: const TextStyle(color: AppColors.cshTextPrimary),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    ),
+
+    snackBarTheme: buildAppSnackBarTheme(),
+
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.cshCard,
+      elevation: 8,
+      shadowColor: const Color(0x401A3A6B),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.cshDivider, width: 0.5),
+      ),
+      titleTextStyle: const TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        color: AppColors.cshTextPrimary,
+        letterSpacing: 0.5,
+      ),
+    ),
+
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.cshCard,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+    ),
+
+    tabBarTheme: const TabBarThemeData(
+      labelColor: AppColors.cshBluePrimary,
+      unselectedLabelColor: AppColors.cshTextSecondary,
+      indicatorColor: AppColors.cshGold,
+      indicatorSize: TabBarIndicatorSize.label,
+      dividerColor: AppColors.cshDivider,
+    ),
+
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: AppColors.cshBluePrimary,
+    ),
+
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: AppColors.cshBluePrimary,
+      foregroundColor: Colors.white,
+      elevation: 4,
+      shape: CircleBorder(),
+    ),
+
+    textTheme: _textTheme(
+      AppColors.cshTextPrimary,
+      AppColors.cshTextSecondary,
+    ),
+
+    iconTheme: const IconThemeData(
+      color: AppColors.cshBluePrimary,
+      size: 24,
+    ),
+
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: AppColors.cshBluePrimary,
+      selectionColor: Color(0x401A3A6B),
+      selectionHandleColor: AppColors.cshBluePrimary,
+    ),
+  );
+
+  static TextTheme _textTheme(Color primaryColor, Color secondaryColor) {
     return TextTheme(
       displayLarge: AppTextStyles.headline1.copyWith(color: primaryColor),
       displayMedium: AppTextStyles.headline2.copyWith(color: primaryColor),

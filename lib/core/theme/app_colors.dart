@@ -181,4 +181,57 @@ class AppColors {
       colors: [Color(0xFFDFE7EB), Color(0xFFC5D6DC)],
     ),
   ];
+
+  // ==================== 蓝金色主题（潮商会·深蓝·皇金） ====================
+
+  /// 深海蓝——主色，取自潮商会徽章底色
+  static const Color cshBluePrimary      = Color(0xFF1A3A6B);
+  static const Color cshBluePrimaryLight = Color(0xFF2554A0);
+  static const Color cshBluePrimaryDark  = Color(0xFF0F2347);
+
+  /// 皇金色——点缀色，取自徽章金边与文字
+  static const Color cshGold             = Color(0xFFC9A84C);
+  static const Color cshGoldLight        = Color(0xFFE2C47A);
+  static const Color cshGoldDark         = Color(0xFF9B7D2E);
+
+  /// 主题渐变：深蓝 → 海军蓝
+  static const LinearGradient cshBlueGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF1A3A6B), Color(0xFF0F2347)],
+  );
+
+  /// 金色渐变：用于按钮、徽章等高亮区域
+  static const LinearGradient cshGoldGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFE2C47A), Color(0xFFC9A84C)],
+  );
+
+  /// 背景：极浅象牙白
+  static const Color cshBackground      = Color(0xFFF5F3EE);
+  static const Color cshSurface         = Color(0xFFEFECE4);
+  static const Color cshCard            = Color(0xFFFAF9F5);
+
+  /// AppBar——深蓝主色
+  static const Color cshAppBar          = Color(0xFF1A3A6B);
+  /// 底部导航栏——象牙白
+  static const Color cshNavBar          = Color(0xFFFAF9F5);
+
+  /// 文字色
+  static const Color cshTextPrimary     = Color(0xFF0D1B2A);
+  static const Color cshTextSecondary   = Color(0xFF4A5568);
+  static const Color cshTextTertiary    = Color(0xFF8A95A3);
+
+  /// 分割线——浅金灰
+  static const Color cshDivider         = Color(0xFFDDD8C8);
+  /// 输入框底色
+  static const Color cshInputBackground = Color(0xFFEFECE4);
+  /// 输入框聚焦边框——皇金色
+  static const Color cshInputBorder     = Color(0xFFC9A84C);
+
+  /// 消息气泡：发出——浅金色；收到——近白
+  static const Color cshBubbleOutgoing  = Color(0xFFE8D9A8);
+  static const Color cshBubbleIncoming  = Color(0xFFFAF9F5);
+
 }

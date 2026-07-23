@@ -18,7 +18,7 @@ import 'blocked_users_page.dart';
 import 'devices_page.dart';
 import 'settings_page.dart' show deviceCountProvider;
 
-const Color _kPrivacyPrimary = Color(0xFFFF6B6B);
+const Color _kPrivacyPrimary = Color(0xFF1A3A6B);
 
 /// 隐私设置服务
 class PrivacySettingsService extends StateNotifier<PrivacySettings> {

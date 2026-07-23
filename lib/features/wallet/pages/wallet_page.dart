@@ -337,7 +337,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                             padding: const EdgeInsets.only(right: 24),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                                colors: [Color(0xFF1A3A6B), Color(0xFF1A3A6B)],
                               ),
                               borderRadius: BorderRadius.circular(12),
                             ),

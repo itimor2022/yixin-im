@@ -28,7 +28,7 @@ import '../../home/pages/home_desktop_page.dart';
 import 'bind_phone_page.dart';
 
 // ==================== 新版 UI 设计令牌（Profile Family 统一） ====================
-const Color _kProfilePrimary = Color(0xFFFF6B6B);
+const Color _kProfilePrimary = Color(0xFF1A3A6B);
 const Color _kProfileBg = Color(0xFFF7F8FA);
 const Color _kProfileCard = Colors.white;
 const Color _kProfileTitleText = Color(0xFF111827);

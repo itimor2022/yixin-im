@@ -6,7 +6,7 @@ import '../../../core/services/api/checkin_service.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 
 // ===== 设计 tokens（与"我的"页保持一致的极简调）=====
-const Color _kPrimary = Color(0xFFFF6B6B);
+const Color _kPrimary = Color(0xFF1A3A6B);
 const Color _kPrimaryDeep = Color(0xFFE64545);
 const Color _kBgLight = Color(0xFFF7F8FA);
 const Color _kBgDark = Color(0xFF0D1117);

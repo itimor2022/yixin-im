@@ -36,7 +36,7 @@ import 'chat_detail_page.dart' show ChatType;
 ///
 /// 主色跟 [AppColors.primary] 保持一致的海洋蓝 (#009CFF)。
 /// 单独抽出常量让本文件的按钮/胶囊/徽章配色一目了然。
-const Color _kChatPrimary = Color(0xFFFF6B6B);
+const Color _kChatPrimary = Color(0xFF1A3A6B);
 const Color _kChatDivider = Color(0xFFEDEFF2);
 const Color _kChatSubText = Color(0xFF9CA3AF);
 const Color _kChatTitleText = Color(0xFF111827);
