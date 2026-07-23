@@ -218,6 +218,12 @@ func (h *SettingHandler) GetAllSettings(c *gin.Context) {
 	if _, exists := result[models.SettingBurnAfterReadEnabled]; !exists {
 		result[models.SettingBurnAfterReadEnabled] = true
 	}
+	if _, exists := result[models.SettingUserLevels]; !exists {
+		result[models.SettingUserLevels] = ""
+	}
+	if _, exists := result[models.SettingGroupLevels]; !exists {
+		result[models.SettingGroupLevels] = ""
+	}
 
 	response.Success(c, result)
 }
@@ -712,6 +718,8 @@ func isAllowedSystemSettingKey(key string) bool {
 		models.SettingOppoPushEnabled,
 		models.SettingOppoAppKey,
 		models.SettingOppoAppSecret,
+		models.SettingUserLevels,
+		models.SettingGroupLevels,
 		models.SettingUserAgreement,
 		models.SettingPrivacyPolicy,
 		models.SettingRevokeMessageMinutes,
@@ -1473,6 +1481,9 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"app_force_update":    isSystemSettingTrue(settingMap[models.SettingAppForceUpdate]),
 		"app_update_url":      settingMap[models.SettingAppUpdateURL],
 		"app_update_message":  settingMap[models.SettingAppUpdateMessage],
+		// 等级字段
+		"user_levels":  settingMap[models.SettingUserLevels],
+		"group_levels": settingMap[models.SettingGroupLevels],
 		// 功能开关
 		"allow_register":              !isSystemSettingFalse(settingMap[models.SettingAllowRegister]), // 默认允许
 		"require_invite_code":         isSystemSettingTrue(settingMap[models.SettingRequireInviteCode]),
@@ -1769,7 +1780,7 @@ func (h *SettingHandler) GetPrivacyPolicy(c *gin.Context) {
 func getDefaultUserAgreement() string {
 	return `# 用户协议
 
-欢迎使用潮商会IM！
+欢迎使用锦绣汇IM！
 
 ## 一、服务条款的接受
 
@@ -1806,9 +1817,7 @@ func getDefaultUserAgreement() string {
 ## 七、联系我们
 
 如有任何问题，请通过应用内的反馈功能联系我们。
-
----
-最后更新日期：2024年1月`
+`
 }
 
 // 默认隐私政策
@@ -1884,7 +1893,5 @@ func getDefaultPrivacyPolicy() string {
 ## 九、联系我们
 
 如对本隐私政策有任何疑问，请通过应用内的反馈功能联系我们。
-
----
-最后更新日期：2024年1月`
+`
 }

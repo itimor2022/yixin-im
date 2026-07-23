@@ -40,10 +40,10 @@ const (
 	SettingAllowRegister            = "allow_register"              // 是否允许注册
 	SettingRequireInviteCode        = "require_invite_code"         // 注册是否必须填写邀请码
 	SettingRequirePhoneBind         = "require_phone_bind"          // 是否强制绑定手机号
-	SettingMemberOnlyCreateGroup    = "member_only_create_group"     // 仅会员可建群
+	SettingMemberOnlyCreateGroup    = "member_only_create_group"    // 仅会员可建群
 	SettingCheckinEnabled           = "checkin_enabled"             // 是否开启签到功能
 	SettingRedPacketEnabled         = "red_packet_enabled"          // 是否开启红包功能
-	SettingWalletEnabled            = "wallet_enabled"             // 是否开启钱包功能
+	SettingWalletEnabled            = "wallet_enabled"              // 是否开启钱包功能
 	SettingEnableMomentPost         = "enable_moment_post"          // 是否允许发布动态（关闭后用户只能浏览）
 	SettingMomentPostReviewEnabled  = "moment_post_review_enabled"  // 动态发布是否启用审核
 	SettingNewUserFollowOfficial    = "new_user_follow_official"    // 新用户是否强制关注官方用户
@@ -68,7 +68,7 @@ const (
 	// 下次冷启动 ServerDiscovery 会优先读取该缓存值代替源码内硬编码的 _ossUrls。
 	SettingApiTxtURL = "api_txt_url"
 
-	SettingLogoImageUrl       = "logo_image_url"
+	SettingLogoImageUrl = "logo_image_url"
 
 	SettingDiscoverTopImageUrl = "discover_top_image_url"
 
@@ -119,15 +119,19 @@ const (
 	SettingOppoAppSecret         = "oppo_app_secret"          // OPPO 推送 App Secret
 
 	// 协议文档
+	SettingUserLevels  = "user_levels"  // 用户等级
+	SettingGroupLevels = "group_levels" // 群组等级
+
+	// 协议文档
 	SettingUserAgreement = "user_agreement" // 用户协议（HTML或Markdown）
 	SettingPrivacyPolicy = "privacy_policy" // 隐私政策（HTML或Markdown）
 
 	// 消息设置
-	SettingRevokeMessageMinutes = "revoke_message_minutes" // 消息撤回时限（分钟），默认2分钟
+	SettingRevokeMessageMinutes = "revoke_message_minutes"  // 消息撤回时限（分钟），默认2分钟
 	SettingBurnAfterReadEnabled = "burn_after_read_enabled" // 是否启用阅后即焚，默认开启
-	SettingMessageCryptoMode    = "message_crypto_mode"    // 消息加密模式：plain / compatible / strict
-	SettingIPRateLimit          = "ip_rate_limit"          // IP发送消息频率限制（条/分钟，同一IP），0表示不限制，默认60
-	SettingUserRateLimit        = "user_rate_limit"        // 用户发消息频率限制（条/分钟，单个用户），0表示不限制，默认30
+	SettingMessageCryptoMode    = "message_crypto_mode"     // 消息加密模式：plain / compatible / strict
+	SettingIPRateLimit          = "ip_rate_limit"           // IP发送消息频率限制（条/分钟，同一IP），0表示不限制，默认60
+	SettingUserRateLimit        = "user_rate_limit"         // 用户发消息频率限制（条/分钟，单个用户），0表示不限制，默认30
 
 	// 在线支付（微信/支付宝）完整 JSON 配置，管理后台维护；见 config.PaymentConfig 结构
 	SettingPaymentGateway = "payment_gateway"
