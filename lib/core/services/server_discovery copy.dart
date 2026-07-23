@@ -36,7 +36,8 @@ class ServerDiscovery {
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
   static const List<String> _dnsDomains = [
-    //'cfg.qa853.com',
+    'cft.jnsk.shop',
+    'cft.xh1t.cyou',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -45,6 +46,7 @@ class ServerDiscovery {
     'https://dns.alidns.com/resolve', // 阿里云DoH
     'https://doh.360.cn/resolve', // 360 DoH
     'https://cloudflare-dns.com/dns-query', // 海外兜底
+    'https://googleapis.com/dns-query', // 海外兜底
   ];
 
   /// 多个 OSS/CDN 加密配置文件地址（源码内硬编码 fallback）

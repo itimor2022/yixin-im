@@ -34,7 +34,7 @@
 -dontwarn com.google.android.play.core.tasks.Task
 
 # App entry
--keep class com.yixinim.app.MainActivity { *; }
+-keep class com.cshim.app.MainActivity { *; }
 -keep class * extends android.app.Application {
     <init>();
 }

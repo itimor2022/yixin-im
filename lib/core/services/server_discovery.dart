@@ -35,11 +35,7 @@ class ServerDiscovery {
   /// 多个 DNS TXT 查询域名
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
-  static const List<String> _dnsDomains = [
-    'cfg.65572.top',
-    'cfg.65258.top',
-    'cfg.m72s.icu',
-  ];
+  static const List<String> _dnsDomains = ['cft.jnsk.shop', 'cft.xh1t.cyou'];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
   static const List<String> _dohProviders = [
@@ -47,6 +43,7 @@ class ServerDiscovery {
     'https://dns.alidns.com/resolve', // 阿里云DoH
     'https://doh.360.cn/resolve', // 360 DoH
     'https://cloudflare-dns.com/dns-query', // 海外兜底
+    'https://googleapis.com/dns-query', // 海外兜底
   ];
 
   /// 多个 OSS/CDN 加密配置文件地址（源码内硬编码 fallback）
@@ -55,9 +52,7 @@ class ServerDiscovery {
   /// 保持这里非空是为了首装即可引导起来。
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
-  static const List<String> _ossUrls = [
-    // 'https://admin.aopwx.icu/api.txt',
-  ];
+  static const List<String> _ossUrls = ['https://admin.shjiw.top/api.txt'];
 
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [];
@@ -179,7 +174,8 @@ class ServerDiscovery {
       _lastCandidates = List<String>.from(nodes);
       if (kDebugMode) {
         debugPrint(
-            '[Discovery] Background candidate refresh → $_lastCandidates');
+          '[Discovery] Background candidate refresh → $_lastCandidates',
+        );
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[Discovery] BG candidate refresh error: $e');
@@ -193,8 +189,9 @@ class ServerDiscovery {
       if (nodes.isEmpty) return;
 
       final validNodes = await _probeValidNodes(nodes);
-      _lastCandidates =
-          List<String>.from(validNodes.isNotEmpty ? validNodes : nodes);
+      _lastCandidates = List<String>.from(
+        validNodes.isNotEmpty ? validNodes : nodes,
+      );
 
       if (_currentNodePinnedByUser || _lastCandidates.isEmpty) return;
 
@@ -202,7 +199,8 @@ class ServerDiscovery {
       if (_currentNode == bestNode) {
         if (kDebugMode) {
           debugPrint(
-              '[Discovery] BG best-node refresh: current is already best');
+            '[Discovery] BG best-node refresh: current is already best',
+          );
         }
         return;
       }
@@ -262,7 +260,8 @@ class ServerDiscovery {
 
     if (kDebugMode)
       debugPrint(
-          '[Discovery] Selected: $selected, All Valid Nodes For UI: $_lastCandidates');
+        '[Discovery] Selected: $selected, All Valid Nodes For UI: $_lastCandidates',
+      );
     _applyNode(selected);
     await _saveCache(selected, isManual: _currentNodePinnedByUser);
     return selected;
@@ -290,54 +289,43 @@ class ServerDiscovery {
   }
 
   // ── 双轨并行获取节点列表 ────────────────────────────────
-
   Future<List<String>> _fetchNodeList() async {
-    final List<String> resultNodes = [];
+    final List<Future<List<String>?>> tracks = [];
 
-    // 1. 优先从 DNS TXT 获取节点
-    try {
-      if (kDebugMode) debugPrint('[Discovery] Fetching from DNS...');
-      final dnsNodes = await _fetchFromDns();
-      if (dnsNodes != null && dnsNodes.isNotEmpty) {
-        resultNodes.addAll(dnsNodes);
-        if (kDebugMode)
-          debugPrint('[Discovery] DNS Track success: $resultNodes');
-        return resultNodes.toSet().toList(); // 去重返回
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
+    // 轨道1: DNS
+    if (_dnsDomains.isNotEmpty && _dohProviders.isNotEmpty) {
+      tracks.add(_fetchFromDns());
     }
 
-    // 2. DNS 失败后，仅在 _ossUrls 非空时才尝试 OSS (api.txt)
+    // 轨道2: OSS
     final ossUrls = _ossUrls.where((e) => e.trim().isNotEmpty).toList();
     if (ossUrls.isNotEmpty) {
-      try {
-        if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
-        final ossNodes = await _fetchFromOss();
-        if (ossNodes != null && ossNodes.isNotEmpty) {
-          resultNodes.addAll(ossNodes);
-          if (kDebugMode)
-            debugPrint('[Discovery] OSS Track success: $resultNodes');
-          return resultNodes.toSet().toList();
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
-      }
-    } else {
-      if (kDebugMode) {
-        debugPrint('[Discovery] _ossUrls is empty, skip OSS track.');
-      }
+      tracks.add(_fetchFromOss());
     }
 
-    // ⚠️ 兜底策略：两条轨道都失败时，只把「当前节点」（如果有）当作候选，
-    //   不再硬编码测试服 URL。硬编码 fallback 会掩盖服务发现失败，让线上问题
-    //   看起来"网络还好"，实际上 api.txt 已经拉不到了。
-    //   完全没有当前节点时（首次冷启动 + 双轨全跪）就返回空，让 _discover 抛
-    //   "No reachable server node"，客户端会显性报错。
-    if (kDebugMode) {
-      debugPrint('[Discovery] Both tracks failed. '
-          'Falling back to current node (if any).');
+    // 如果没有可用轨道，返回当前节点
+    if (tracks.isEmpty) {
+      return _currentNode != null ? [_currentNode!] : <String>[];
     }
+
+    // ✅ 全并行：任何一个轨道成功即返回
+    final result = await Future.any(
+      tracks.map(
+        (f) => f.then((nodes) {
+          if (nodes != null && nodes.isNotEmpty) {
+            return nodes;
+          }
+          // 返回空列表表示失败，但 Future.any 会继续等下一个
+          return <String>[];
+        }),
+      ),
+    ).timeout(_fetchTimeout, onTimeout: () => <String>[]);
+
+    if (result.isNotEmpty) {
+      return result.toSet().toList();
+    }
+
+    // 所有轨道都失败，返回当前节点
     return _currentNode != null ? [_currentNode!] : <String>[];
   }
 
@@ -354,38 +342,40 @@ class ServerDiscovery {
 
     for (final domain in _dnsDomains) {
       for (final doh in _dohProviders) {
-        _queryDohTxt(doh, domain).then((nodes) {
-          if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
-            if (kDebugMode) debugPrint('[Discovery] DNS hit: $doh → $domain');
-            completer.complete(nodes);
-          } else {
-            failed++;
-            if (failed >= total && !completer.isCompleted) {
-              completer.complete(null);
-            }
-          }
-        }).catchError((_) {
-          failed++;
-          if (failed >= total && !completer.isCompleted) {
-            completer.complete(null);
-          }
-        });
+        _queryDohTxt(doh, domain)
+            .then((nodes) {
+              if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+                if (kDebugMode)
+                  debugPrint('[Discovery] DNS hit: $doh → $domain');
+                completer.complete(nodes);
+              } else {
+                failed++;
+                if (failed >= total && !completer.isCompleted) {
+                  completer.complete(null);
+                }
+              }
+            })
+            .catchError((_) {
+              failed++;
+              if (failed >= total && !completer.isCompleted) {
+                completer.complete(null);
+              }
+            });
       }
     }
 
-    return completer.future.timeout(
-      _fetchTimeout,
-      onTimeout: () => null,
-    );
+    return completer.future.timeout(_fetchTimeout, onTimeout: () => null);
   }
 
   Future<List<String>?> _queryDohTxt(String dohUrl, String domain) async {
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: _fetchTimeout,
-        receiveTimeout: _fetchTimeout,
-        headers: {'Accept': 'application/dns-json'},
-      ));
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: _fetchTimeout,
+          receiveTimeout: _fetchTimeout,
+          headers: {'Accept': 'application/dns-json'},
+        ),
+      );
       if (kDebugMode) debugPrint('[Discovery] DoH→ $dohUrl ?name=$domain');
       final resp = await dio.get<Map<String, dynamic>>(
         dohUrl,
@@ -462,36 +452,37 @@ class ServerDiscovery {
     int failed = 0;
 
     for (final url in ossUrls) {
-      _fetchOssUrl(url).then((nodes) {
-        if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
-          if (kDebugMode) debugPrint('[Discovery] OSS hit: $url');
-          completer.complete(nodes);
-        } else {
-          failed++;
-          if (failed >= ossUrls.length && !completer.isCompleted) {
-            completer.complete(null);
-          }
-        }
-      }).catchError((_) {
-        failed++;
-        if (failed >= ossUrls.length && !completer.isCompleted) {
-          completer.complete(null);
-        }
-      });
+      _fetchOssUrl(url)
+          .then((nodes) {
+            if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+              if (kDebugMode) debugPrint('[Discovery] OSS hit: $url');
+              completer.complete(nodes);
+            } else {
+              failed++;
+              if (failed >= ossUrls.length && !completer.isCompleted) {
+                completer.complete(null);
+              }
+            }
+          })
+          .catchError((_) {
+            failed++;
+            if (failed >= ossUrls.length && !completer.isCompleted) {
+              completer.complete(null);
+            }
+          });
     }
 
-    return completer.future.timeout(
-      _fetchTimeout,
-      onTimeout: () => null,
-    );
+    return completer.future.timeout(_fetchTimeout, onTimeout: () => null);
   }
 
   Future<List<String>?> _fetchOssUrl(String url) async {
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: _fetchTimeout,
-        receiveTimeout: _fetchTimeout,
-      ));
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: _fetchTimeout,
+          receiveTimeout: _fetchTimeout,
+        ),
+      );
       if (kDebugMode) debugPrint('[Discovery] OSS→ $url');
       final resp = await dio.get<String>(url);
       if (kDebugMode) debugPrint('[Discovery] OSS← status=${resp.statusCode}');
@@ -545,10 +536,12 @@ class ServerDiscovery {
   Future<List<String>> _probeValidNodes(List<String> nodes) async {
     if (nodes.isEmpty) return [];
 
-    final futures = nodes.map((node) {
-      if (kDebugMode) debugPrint('[Discovery] Probing: $node');
-      return _probeNode(node);
-    }).toList(growable: false);
+    final futures = nodes
+        .map((node) {
+          if (kDebugMode) debugPrint('[Discovery] Probing: $node');
+          return _probeNode(node);
+        })
+        .toList(growable: false);
 
     final results = await Future.wait(futures).timeout(
       _probeTimeout + const Duration(seconds: 1),
@@ -570,17 +563,20 @@ class ServerDiscovery {
   Future<_ProbeResult?> _probeNode(String node) async {
     final stopwatch = Stopwatch()..start();
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: _probeTimeout,
-        receiveTimeout: _probeTimeout,
-      ));
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: _probeTimeout,
+          receiveTimeout: _probeTimeout,
+        ),
+      );
 
       // 🚀 核心修复：如果是 Web 环境，绝对不能强转 IOHttpClientAdapter
       if (kIsWeb) {
         // Web 端由浏览器沙箱直接接管 HTTPS 证书校验，无需也不允许手动忽略证书
         if (kDebugMode)
           debugPrint(
-              '[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.');
+            '[Discovery] Running on Web, skipping IOHttpClientAdapter adjustment.',
+          );
       } else {
         // Android / iOS 等原生平台保留原有证书跳过逻辑。
         // 某些运行时或插件组合下，dio 的 adapter 可能不是 IOHttpClientAdapter，
@@ -611,7 +607,8 @@ class ServerDiscovery {
       final ok = (resp.statusCode ?? 0) == 200;
       if (kDebugMode)
         debugPrint(
-            '[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode}, ${stopwatch.elapsedMilliseconds}ms)');
+          '[Discovery] Probe $node: ${ok ? "✓" : "✗"} (${resp.statusCode}, ${stopwatch.elapsedMilliseconds}ms)',
+        );
       return ok ? _ProbeResult(node, stopwatch.elapsedMilliseconds) : null;
     } catch (e) {
       stopwatch.stop();
@@ -629,8 +626,9 @@ class ServerDiscovery {
       final node = p.getString(_cacheNodeKey);
       final ms = p.getInt(_cacheTimeKey);
       if (node == null || ms == null) return null;
-      final age =
-          DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ms));
+      final age = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(ms),
+      );
       return age < _cacheValid ? node : null;
     } catch (_) {
       return null;

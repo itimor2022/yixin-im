@@ -1,4 +1,4 @@
-package com.yixinim.app
+package com.cshim.app
 
 import android.Manifest
 import android.app.NotificationChannel
