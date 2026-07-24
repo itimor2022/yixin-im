@@ -6,6 +6,7 @@ import UserNotifications
 @objc class AppDelegate: FlutterAppDelegate {
   private var pushTokenChannel: FlutterMethodChannel?
   private var hotUpdateChannel: FlutterMethodChannel?
+  private var pendingAPNsToken: Data?
   
   override func application(
     _ application: UIApplication,
@@ -13,45 +14,62 @@ import UserNotifications
   ) -> Bool {
     print("[Push] ========== App launching ==========")
     
+    // 1. 先调用 super，保持现有 Flutter 启动流程
+    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    
     GeneratedPluginRegistrant.register(with: self)
     
-    // 设置 Flutter Method Channel
-    print("[Push] Setting up Method Channel...")
-    print("[Push] window is nil: \(window == nil)")
-    print("[Push] rootViewController type: \(String(describing: window?.rootViewController))")
+    // 2. 通过 Flutter registrar 创建 Method Channel，避免依赖启动期 rootViewController/window
+    setupMethodChannels()
     
-    if let controller = window?.rootViewController as? FlutterViewController {
-      print("[Push] Got FlutterViewController, creating channel...")
-      pushTokenChannel = FlutterMethodChannel(
-        name: "com.gaoranim/push",
-        binaryMessenger: controller.binaryMessenger
-      )
-      hotUpdateChannel = FlutterMethodChannel(
-        name: "com.gaoranim/hot_update",
-        binaryMessenger: controller.binaryMessenger
-      )
-      
-      pushTokenChannel?.setMethodCallHandler { [weak self] call, result in
-        print("[Push] Received method call: \(call.method)")
-        if call.method == "registerForPush" {
-          self?.registerForPushNotifications()
-          result(nil)
-        } else {
-          result(FlutterMethodNotImplemented)
-        }
-      }
-      hotUpdateChannel?.setMethodCallHandler { [weak self] call, result in
-        self?.handleHotUpdateMethod(call: call, result: result)
-      }
-      print("[Push] Method Channel setup complete")
-    } else {
-      print("[Push] ERROR: Could not get FlutterViewController!")
-    }
-    
-    // 设置通知代理
+    // 3. 设置通知代理
     UNUserNotificationCenter.current().delegate = self
     
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // 4. 如果有等待发送的 APNs token，现在发送
+    if let token = pendingAPNsToken {
+      print("[Push] Sending pending APNs token...")
+      handleAPNsToken(token)
+      pendingAPNsToken = nil
+    }
+    
+    return result
+  }
+  
+  private func setupMethodChannels() {
+    print("[Push] Setting up Method Channel...")
+    
+    guard let registrar = self.registrar(forPlugin: "RunnerChannels") else {
+      print("[Push] ERROR: Could not get Flutter registrar!")
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        self?.setupMethodChannels()
+      }
+      return
+    }
+    
+    let messenger = registrar.messenger()
+    print("[Push] Got Flutter registrar, creating channel...")
+    pushTokenChannel = FlutterMethodChannel(
+      name: "com.gaoranim/push",
+      binaryMessenger: messenger
+    )
+    hotUpdateChannel = FlutterMethodChannel(
+      name: "com.gaoranim/hot_update",
+      binaryMessenger: messenger
+    )
+    
+    pushTokenChannel?.setMethodCallHandler { [weak self] call, result in
+      print("[Push] Received method call: \(call.method)")
+      if call.method == "registerForPush" {
+        self?.registerForPushNotifications()
+        result(nil)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    hotUpdateChannel?.setMethodCallHandler { [weak self] call, result in
+      self?.handleHotUpdateMethod(call: call, result: result)
+    }
+    print("[Push] Method Channel setup complete")
   }
 
   private func handleHotUpdateMethod(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -170,8 +188,20 @@ import UserNotifications
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
-    let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
     print("[Push] ========== Got APNs token ==========")
+    
+    if pushTokenChannel != nil {
+      handleAPNsToken(deviceToken)
+    } else {
+      print("[Push] Channel not ready yet, saving token for later...")
+      pendingAPNsToken = deviceToken
+    }
+    
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+  
+  private func handleAPNsToken(_ deviceToken: Data) {
+    let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
     print("[Push] Token length: \(token.count)")
     print("[Push] Token prefix: \(String(token.prefix(20)))...")
     print("[Push] pushTokenChannel is nil: \(pushTokenChannel == nil)")
@@ -190,22 +220,13 @@ import UserNotifications
       }
     } else {
       print("[Push] ERROR: pushTokenChannel is nil, cannot send token to Flutter!")
-      print("[Push] Will retry setting up channel...")
-      // 尝试重新设置 channel
-      if let controller = window?.rootViewController as? FlutterViewController {
-        print("[Push] Got FlutterViewController, recreating channel...")
-        pushTokenChannel = FlutterMethodChannel(
-          name: "com.gaoranim/push",
-          binaryMessenger: controller.binaryMessenger
-        )
-        // 重新发送 token
-        pushTokenChannel?.invokeMethod("onToken", arguments: token) { result in
-          print("[Push] Retry Flutter callback result: \(String(describing: result))")
-        }
+      // 保存 token 以便稍后发送
+      pendingAPNsToken = deviceToken
+      // 延迟重试设置 channel
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        self?.setupMethodChannels()
       }
     }
-    
-    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
   }
   
   // 注册失败

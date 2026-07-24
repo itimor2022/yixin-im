@@ -62,7 +62,7 @@ class ServerDiscovery {
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    'https://admin.aopwx.icu/api.txt',
+    'https://admin.shjiw.top/api.txt',
   ];
 
   /// 与 `SystemSettingsService.kApiTxtUrlPrefsKey` 保持一致。
