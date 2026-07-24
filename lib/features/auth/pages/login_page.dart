@@ -38,10 +38,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  // 协议默认视为已同意；移动端页面已不再展示勾选控件，
-  // 桌面端扫码登录逻辑仍会读写该字段，因此保留为可变状态。
-  bool _agreedToTerms = true;
-  String? _errorMessage; // 错误提示信息
+  bool _agreedToTerms = false;  // 默认未勾选
+  String? _errorMessage;
   Timer? _qrLoginPollTimer;
   bool _isQrLoginLoading = false;
   bool _isQrLoginSigningIn = false;
@@ -56,17 +54,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _captchaId;
   String? _captchaB64;
 
-  /// 登录页顶部 Logo 图片用来「穿透 CDN 缓存」的时间戳查询参数。
-  ///
-  /// 之前直接在 build 里用 `DateTime.now().microsecondsSinceEpoch`，
-  /// 每次输入账号密码触发的 setState / ref.watch 都会重新计算 URL，
-  /// `Image.network` 认为 provider key 变了就丢掉解码好的 raster、
-  /// 重新走一遍 HTTP → 解码，肉眼看就是"输入时 Logo 一直闪烁"。
-  ///
-  /// 这里只在 initState + `ref.invalidate(systemSettingsProvider)` 之后
-  /// 采样一次；同一次进入页面里的所有 rebuild 都拿到同一个 URL，
-  /// `PaintingBinding.instance.imageCache` 命中即可，不再重发请求。
-  /// 用户重新打开登录页时 initState 会再跑一次，自然又拿到最新图。
   late final int _logoCacheBust = DateTime.now().microsecondsSinceEpoch;
 
   @override
@@ -104,21 +91,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    // 桌面端或宽屏使用桌面布局（保留原有实现）
     if (PlatformUtils.isDesktop || screenWidth >= 600) {
       return AuthDesktopLayout(
         child: _buildLoginContent(isDark),
       );
     }
 
-    // 移动端使用全新的 "Hero + 圆角浮卡片" 布局
     return _buildMobileLayout(context, isDark, l10n);
   }
 
-  // ==================== 移动端全新布局（极简风格） ====================
-  //
-  // 视觉参考："我的"页 —— 白底 / 无渐变 / 内容居中 / 大号 logo + app 名称。
-  // 移除：蓝色渐变 hero、切换线路、找回密码、协议勾选、悬浮客服按钮。
+  // ==================== 移动端布局 ====================
 
   Widget _buildMobileLayout(
     BuildContext context,
@@ -130,7 +112,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Scaffold(
       backgroundColor: bg,
       resizeToAvoidBottomInset: true,
-      // 用 Stack 把「在线客服」入口固定到右上角，不随内容滚动。
       body: SafeArea(
         child: Stack(
           children: [
@@ -163,7 +144,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 );
               },
             ),
-            // 右上角悬浮客服图标（恢复旧版功能）
             Positioned(
               top: 4,
               right: 4,
@@ -175,7 +155,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  /// Logo + app 名称（极简，居中）
   Widget _buildBrand(bool isDark) {
     final settingsAsync = ref.watch(systemSettingsProvider);
     final settings = settingsAsync.valueOrNull;
@@ -200,7 +179,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             fontSize: 26,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
-            color: Colors.white,
+            color: isDark ? Colors.white : Colors.black,
           ),
         ),
       ],
@@ -281,8 +260,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 child: _captchaB64 != null
                     ? Image.memory(
                         Uri.parse(_captchaB64!).data!.contentAsBytes(),
-                        // 使用 contain 保持源图纵横比，避免非均匀拉伸导致
-                        // 数字看起来大小不一
                         fit: BoxFit.contain,
                       )
                     : const Center(
@@ -340,26 +317,78 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  /// 左右一行的登录/注册按钮组合。
-  ///   - 左：注册（次要，OutlineButton）
-  ///   - 右：登录（主色，PrimaryButton）
+  /// 左右一行的登录/注册按钮组合 + 协议勾选
   Widget _buildLoginRegisterRow(AppLocalizations l10n) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: AuthOutlineButton(
-            text: '注册',
-            onPressed: () => context.goNamed('register'),
-          ),
+        // ✅ 协议勾选框（手动实现）
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: _agreedToTerms,
+                onChanged: (value) => setState(() => _agreedToTerms = value ?? false),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: '我已阅读并同意 ',
+                  style: const TextStyle(fontSize: 13),
+                  children: [
+                    TextSpan(
+                      text: '用户协议',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () => _openAgreement(AgreementType.userAgreement),
+                    ),
+                    const TextSpan(text: ' 和 '),
+                    TextSpan(
+                      text: '隐私政策',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () => _openAgreement(AgreementType.privacyPolicy),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: AuthPrimaryButton(
-            text: l10n.login,
-            loading: _isLoading,
-            onPressed: () => _login(l10n),
-          ),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: AuthOutlineButton(
+                text: '注册',
+                onPressed: () => context.goNamed('register'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AuthPrimaryButton(
+                text: l10n.login,
+                loading: _isLoading,
+                onPressed: _agreedToTerms ? () => _login(l10n) : null,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -405,7 +434,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (!(PlatformUtils.isDesktop && _showDesktopQrLogin)) ...[
           Builder(builder: (context) {
             final settingsState = ref.watch(systemSettingsProvider);
-            // loading 时显示占位，不要直接返回空（否则加载完也不会重建）
             if (settingsState.isLoading) {
               return const SizedBox(height: 180 + 32);
             }
@@ -435,13 +463,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             );
           }),
         ],
-        // 登录表单
         if (PlatformUtils.isDesktop && _showDesktopQrLogin)
           _buildDesktopQrLoginSection(isDark, l10n)
         else
           _buildLoginForm(isDark, l10n),
 
-        // 桌面端扫码登录状态下保留一段留白；其他情况下按钮已在表单末尾并排
         if (PlatformUtils.isDesktop && _showDesktopQrLogin) ...[
           const SizedBox(height: 12),
           _buildBottom(isDark, l10n),
@@ -480,18 +506,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Column(
       children: [
-        // 用户名输入（完全禁用中文输入法）
         _buildUsernameField(isDark, l10n),
 
         const SizedBox(height: 16),
 
-        // 密码输入
         _buildPasswordField(isDark, l10n),
 
-        const SizedBox(height: 16), // 保持完美的 16 高度空隙
+        const SizedBox(height: 16),
 
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center, // 垂直居中
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: _buildInputField(
@@ -524,7 +548,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 child: _captchaB64 != null
                     ? Image.memory(
                         Uri.parse(_captchaB64!).data!.contentAsBytes(),
-                        // contain：保持源图纵横比，防止拉伸让数字看起来大小不一
                         fit: BoxFit.contain,
                       )
                     : const Center(
@@ -569,7 +592,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           ),
         ],
 
-        // 错误提示 - TG 风格
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
@@ -605,23 +627,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  /// "线路选择"文字链接（无图标）—— **居左**排列，字号偏大。
+  /// "线路选择" 蓝色下划线
   Widget _buildForgotPasswordEntry(bool isDark) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: TextButton(
-        onPressed: _openNetworkSettings,
-        style: TextButton.styleFrom(
-          foregroundColor: isDark ? Colors.white70 : kAuthTextSecondary,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          minimumSize: const Size(0, 36),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: const TextStyle(
+      child: GestureDetector(
+        onTap: _openNetworkSettings,
+        child: Text(
+          '线路选择',
+          style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w600,
+            color: AppColors.primary,
+            decoration: TextDecoration.underline,
+            decorationColor: AppColors.primary,
+            decorationThickness: 1.5,
           ),
         ),
-        child: const Text('线路选择'),
       ),
     );
   }
@@ -681,7 +703,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
   }
 
-  /// 手机号输入框（桌面端仍在 _buildLoginContent 中调用）
   Widget _buildUsernameField(bool isDark, AppLocalizations l10n) {
     return AuthInput(
       controller: _phoneController,
@@ -1087,7 +1108,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    // 手机号必须是 11 位纯数字
     if (!RegExp(r'^\d{11}$').hasMatch(phone)) {
       _showError('请输入11位手机号');
       return;
@@ -1111,7 +1131,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     HapticFeedback.mediumImpact();
     setState(() => _isLoading = true);
 
-    // 获取持久化设备信息
     final deviceType = DeviceService.getDeviceType();
     final deviceResults = await Future.wait<String>([
       DeviceService.getDeviceId(),
@@ -1120,7 +1139,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final deviceId = deviceResults[0];
     final deviceName = deviceResults[1];
 
-    // 调用后端 API 登录
     final authService = ref.read(authServiceProvider.notifier);
     final response = await authService.login(
       phone: phone,
@@ -1261,7 +1279,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   void _showError(String message) {
     setState(() => _errorMessage = message);
-    // 同时震动反馈
     HapticFeedback.heavyImpact();
   }
 
