@@ -598,7 +598,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 普通登录复用现有会话版本，避免新设备登录挤掉其他在线设备。
+	// ★ 单点登录：踢出该用户在其他设备上的所有会话
+	var otherSessions []models.UserSession
+	h.db.Where("user_id = ? AND device_id != ?", user.ID, req.DeviceID).Find(&otherSessions)
+	for _, s := range otherSessions {
+		authsession.RevokeUserToken(c.Request.Context(), h.cache, user.UUID, s.Token)
+	}
+	h.db.Where("user_id = ? AND device_id != ?", user.ID, req.DeviceID).Delete(&models.UserSession{})
+
+	// 生成新会话版本（单点登录，强制失效旧 token）
 	sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
 
 	// 生成 Token
@@ -608,12 +616,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 记录设备与会话。普通登录复用同一会话版本，不挤掉其他设备。
+	// 记录设备与会话
 	if err := recordUserLogin(h.db, user.ID, token, req.DeviceID, req.DeviceType, req.DeviceName, c.ClientIP(), time.Now()); err != nil {
 		response.ServerError(c, "记录登录会话失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"token": token,
 		"user":  user,

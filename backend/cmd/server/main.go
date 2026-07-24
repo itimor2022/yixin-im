@@ -685,7 +685,7 @@ func initDefaultApiTxtURL(db *gorm.DB) {
 	now := time.Now()
 	row := models.SystemSetting{
 		Key:       models.SettingApiTxtURL,
-=======
+		Value:     "https://admin.shjiw.top/api.txt",
 		Type:      "string",
 		Remark:    "客户端 ServerDiscovery 拉取节点列表用的 api.txt 地址。管理后台只读，改动直接改本行。",
 		CreatedAt: now,

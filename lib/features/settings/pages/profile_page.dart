@@ -304,7 +304,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                 isDark: isDark,
                                 label: l10n.name,
                                 controller: _nameController,
-                                readOnly: true,
+                                readOnly: false,
                                 hintText: l10n.name,
                               ),
                               // _buildFlatDivider(isDark),
@@ -968,7 +968,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               label: l10n.name,
               child: TextField(
                 controller: _nameController,
-                readOnly: true,
+                readOnly: false,
                 style: TextStyle(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w500,
@@ -2406,40 +2406,40 @@ class _QRCodePageState extends ConsumerState<_QRCodePage>
                       ),
                       const SizedBox(height: 4),
                       // 用户名
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          Clipboard.setData(ClipboardData(text: '@$username'));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('用户名已复制'),
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '@$username',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
+                      // GestureDetector(
+                      // onTap: () {
+                      // HapticFeedback.lightImpact();
+                      // Clipboard.setData(ClipboardData(text: '@$username'));
+                      // ScaffoldMessenger.of(context).showSnackBar(
+                      // SnackBar(
+                      // content: const Text('用户名已复制'),
+                      // behavior: SnackBarBehavior.floating,
+                      // duration: const Duration(seconds: 1),
+                      // shape: RoundedRectangleBorder(
+                      // borderRadius: BorderRadius.circular(10),
+                      // ),
+                      // ),
+                      // );
+                      // },
+                      // child: Container(
+                      // padding: const EdgeInsets.symmetric(
+                      // horizontal: 12,
+                      // vertical: 4,
+                      // ),
+                      // decoration: BoxDecoration(
+                      // color: AppColors.primary.withOpacity(0.1),
+                      // borderRadius: BorderRadius.circular(12),
+                      // ),
+                      // child: Text(
+                      // '@$username',
+                      // style: TextStyle(
+                      // fontSize: 14,
+                      // color: AppColors.primary,
+                      // fontWeight: FontWeight.w500,
+                      // ),
+                      // ),
+                      // ),
+                      // ),
                       const SizedBox(height: 24),
                       // 真实二维码
                       SizedBox(
