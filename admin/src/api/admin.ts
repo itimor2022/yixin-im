@@ -308,7 +308,7 @@ export function getAdminMe() {
 export function updateAdminPassword(params: { old_password: string; new_password: string }) {
   return request.put({
     url: '/admin/password',
-    params
+    data: params
   })
 }
 export function getUserList(params: UserSearchParams) {
