@@ -887,12 +887,9 @@ class _ContactListItem extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
+                  // 修改：只显示在线状态，不显示具体时间
                   Text(
-                    contact.isOnline
-                        ? '在线'
-                        : (contact.lastSeen != null
-                            ? '最近在线 ${_formatLastSeen(contact.lastSeen!)}'
-                            : (contact.bio ?? '')),
+                    _buildStatusText(),
                     style: TextStyle(
                       fontSize: 13,
                       color: contact.isOnline
@@ -913,16 +910,17 @@ class _ContactListItem extends StatelessWidget {
     );
   }
 
-  String _formatLastSeen(DateTime lastSeen) {
-    final now = DateTime.now();
-    final diff = now.difference(lastSeen);
-
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-    return '很久以前';
+  /// 构建状态文本 - 只显示"在线"或"离线"，不显示具体时间
+  String _buildStatusText() {
+    if (contact.isOnline) {
+      return '在线';
+    }
+    // 如果有简介则显示简介，否则显示"离线"
+    return contact.bio?.isNotEmpty == true ? contact.bio! : '离线';
   }
+
+  // _formatLastSeen 方法不再需要，但可以保留用于其他地方
+  // 如果其他地方用不到可以删除
 }
 
 /// 侧边字母索引栏
