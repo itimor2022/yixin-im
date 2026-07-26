@@ -61,7 +61,7 @@ class ServerDiscovery {
 
   static const String _pingPath = '/api/v1/ping';
   static const Duration _probeTimeout = Duration(seconds: 10);
-  static const Duration _fetchTimeout = Duration(seconds: 5);
+  static const Duration _fetchTimeout = Duration(seconds: 3);
   static const Duration _cacheValid = Duration(hours: 6);
   static const String _cacheNodeKey = 'svc_disc_node';
   static const String _cacheTimeKey = 'svc_disc_time';
@@ -290,43 +290,56 @@ class ServerDiscovery {
 
   // ── 双轨并行获取节点列表 ────────────────────────────────
   Future<List<String>> _fetchNodeList() async {
-    final List<Future<List<String>?>> tracks = [];
+    if (kDebugMode) debugPrint('[Discovery] DNS + OSS 同时并发获取节点...');
+
+    final completer = Completer<List<String>>();
+    int tracksDone = 0;
 
     // 轨道1: DNS
-    if (_dnsDomains.isNotEmpty && _dohProviders.isNotEmpty) {
-      tracks.add(_fetchFromDns());
-    }
-
+    final hasDns = _dnsDomains.isNotEmpty && _dohProviders.isNotEmpty;
     // 轨道2: OSS
     final ossUrls = _ossUrls.where((e) => e.trim().isNotEmpty).toList();
-    if (ossUrls.isNotEmpty) {
-      tracks.add(_fetchFromOss());
-    }
+    final hasOss = ossUrls.isNotEmpty;
 
-    // 如果没有可用轨道，返回当前节点
-    if (tracks.isEmpty) {
+    final int totalTracks = (hasDns ? 1 : 0) + (hasOss ? 1 : 0);
+
+    if (totalTracks == 0) {
       return _currentNode != null ? [_currentNode!] : <String>[];
     }
 
-    // ✅ 全并行：任何一个轨道成功即返回
-    final result = await Future.any(
-      tracks.map(
-        (f) => f.then((nodes) {
-          if (nodes != null && nodes.isNotEmpty) {
-            return nodes;
-          }
-          // 返回空列表表示失败，但 Future.any 会继续等下一个
-          return <String>[];
-        }),
-      ),
-    ).timeout(_fetchTimeout, onTimeout: () => <String>[]);
-
-    if (result.isNotEmpty) {
-      return result.toSet().toList();
+    void onResult(List<String>? nodes, String name) {
+      if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+        if (kDebugMode) debugPrint('[Discovery] $name 率先命中: $nodes');
+        completer.complete(nodes.toSet().toList());
+        return;
+      }
+      tracksDone++;
+      if (kDebugMode) debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
+      if (tracksDone >= totalTracks && !completer.isCompleted) {
+        if (kDebugMode) debugPrint('[Discovery] 双轨均无结果，兜底当前节点');
+        completer.complete(_currentNode != null ? [_currentNode!] : <String>[]);
+      }
     }
 
-    // 所有轨道都失败，返回当前节点
-    return _currentNode != null ? [_currentNode!] : <String>[];
+    if (hasDns) {
+      _fetchFromDns()
+          .then((n) => onResult(n, 'DNS'))
+          .catchError((e) {
+        if (kDebugMode) debugPrint('[Discovery] DNS error: $e');
+        onResult(null, 'DNS');
+      });
+    }
+
+    if (hasOss) {
+      _fetchFromOss()
+          .then((n) => onResult(n, 'OSS'))
+          .catchError((e) {
+        if (kDebugMode) debugPrint('[Discovery] OSS error: $e');
+        onResult(null, 'OSS');
+      });
+    }
+
+    return completer.future;
   }
 
   // ── 轨道1: 多域名 × 多DoH 全并行 ───────────────────────
