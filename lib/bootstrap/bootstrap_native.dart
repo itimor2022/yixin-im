@@ -156,19 +156,11 @@ Future<void> bootstrapApp() async {
     ]);
   }
 
-  // 服务发现：选出最快可用节点，写入 ApiConfig
-  try {
-    await ServerDiscovery.instance.initialize();
-  } catch (e) {
-    if (kDebugMode)
-      debugPrint('[Bootstrap] ServerDiscovery failed, using default: \$e');
-  }
-
   final container = ProviderContainer();
   GlobalHaptics.init(container);
 
   try {
-    // 初始化完成后，替换为实际应用
+    // ★ 先启动 App 显示登录页，服务发现在后台异步执行
     runApp(
       UncontrolledProviderScope(
         container: container,

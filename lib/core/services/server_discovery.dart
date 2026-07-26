@@ -36,9 +36,8 @@ class ServerDiscovery {
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
   static const List<String> _dnsDomains = [
-    'cfg.65572.top',
-    'cfg.65258.top',
-    'cfg.m72s.icu',
+    'cfg.677281.top',
+    'cfg.831232a.top',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -56,7 +55,7 @@ class ServerDiscovery {
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
   static const List<String> _ossUrls = [
-    // 'https://admin.aopwx.icu/api.txt',
+    'https://dl.huzhutian.cn/pkgs/jxh.txt',
   ];
 
   /// 内置保底节点（所有轨道失败时的最后防线）
