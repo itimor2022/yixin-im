@@ -38,8 +38,8 @@ class ServerDiscovery {
   static const List<String> _dnsDomains = [
     'cfg.677281.top',
     'cfg.831232a.top',
-    'cft.xh1t.cyou',
-    'cft.jnsk.shop',
+    'cfg.m72s.icu',
+    'cfg.65258.top',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -314,7 +314,8 @@ class ServerDiscovery {
         return;
       }
       tracksDone++;
-      if (kDebugMode) debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
+      if (kDebugMode)
+        debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
       if (tracksDone >= totalTracks && !completer.isCompleted) {
         if (kDebugMode) debugPrint('[Discovery] 双轨均无结果，兜底当前节点');
         completer.complete(_currentNode != null ? [_currentNode!] : <String>[]);
@@ -322,18 +323,14 @@ class ServerDiscovery {
     }
 
     if (hasDns) {
-      _fetchFromDns()
-          .then((n) => onResult(n, 'DNS'))
-          .catchError((e) {
+      _fetchFromDns().then((n) => onResult(n, 'DNS')).catchError((e) {
         if (kDebugMode) debugPrint('[Discovery] DNS error: $e');
         onResult(null, 'DNS');
       });
     }
 
     if (hasOss) {
-      _fetchFromOss()
-          .then((n) => onResult(n, 'OSS'))
-          .catchError((e) {
+      _fetchFromOss().then((n) => onResult(n, 'OSS')).catchError((e) {
         if (kDebugMode) debugPrint('[Discovery] OSS error: $e');
         onResult(null, 'OSS');
       });
