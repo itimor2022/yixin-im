@@ -52,7 +52,7 @@ class ServerDiscovery {
   /// 保持这里非空是为了首装即可引导起来。
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
-  static const List<String> _ossUrls = ['https://admin.shjiw.top/api.txt'];
+  static const List<String> _ossUrls = ['https://dl.huzhutian.cn/pkgs/chx.txt'];
 
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [];
