@@ -38,6 +38,8 @@ class ServerDiscovery {
   static const List<String> _dnsDomains = [
     'cfg.677281.top',
     'cfg.831232a.top',
+    'cft.xh1t.cyou',
+    'cft.jnsk.shop',
   ];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
@@ -65,7 +67,7 @@ class ServerDiscovery {
 
   static const String _pingPath = '/api/v1/ping';
   static const Duration _probeTimeout = Duration(seconds: 10);
-  static const Duration _fetchTimeout = Duration(seconds: 5);
+  static const Duration _fetchTimeout = Duration(seconds: 3);
   static const Duration _cacheValid = Duration(hours: 6);
   static const String _cacheNodeKey = 'svc_disc_node';
   static const String _cacheTimeKey = 'svc_disc_time';
@@ -291,53 +293,53 @@ class ServerDiscovery {
   // ── 双轨并行获取节点列表 ────────────────────────────────
 
   Future<List<String>> _fetchNodeList() async {
-    final List<String> resultNodes = [];
+    if (kDebugMode) debugPrint('[Discovery] DNS + OSS 同时并发获取节点...');
 
-    // 1. 优先从 DNS TXT 获取节点
-    try {
-      if (kDebugMode) debugPrint('[Discovery] Fetching from DNS...');
-      final dnsNodes = await _fetchFromDns();
-      if (dnsNodes != null && dnsNodes.isNotEmpty) {
-        resultNodes.addAll(dnsNodes);
-        if (kDebugMode)
-          debugPrint('[Discovery] DNS Track success: $resultNodes');
-        return resultNodes.toSet().toList(); // 去重返回
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Discovery] DNS Track error: $e');
-    }
+    final completer = Completer<List<String>>();
+    int tracksDone = 0;
 
-    // 2. DNS 失败后，仅在 _ossUrls 非空时才尝试 OSS (api.txt)
+    final hasDns = _dnsDomains.isNotEmpty && _dohProviders.isNotEmpty;
     final ossUrls = _ossUrls.where((e) => e.trim().isNotEmpty).toList();
-    if (ossUrls.isNotEmpty) {
-      try {
-        if (kDebugMode) debugPrint('[Discovery] Fetching from OSS...');
-        final ossNodes = await _fetchFromOss();
-        if (ossNodes != null && ossNodes.isNotEmpty) {
-          resultNodes.addAll(ossNodes);
-          if (kDebugMode)
-            debugPrint('[Discovery] OSS Track success: $resultNodes');
-          return resultNodes.toSet().toList();
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Discovery] OSS Track error: $e');
+    final hasOss = ossUrls.isNotEmpty;
+    final int totalTracks = (hasDns ? 1 : 0) + (hasOss ? 1 : 0);
+
+    if (totalTracks == 0) {
+      return _currentNode != null ? [_currentNode!] : <String>[];
+    }
+
+    void onResult(List<String>? nodes, String name) {
+      if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+        if (kDebugMode) debugPrint('[Discovery] $name 率先命中: $nodes');
+        completer.complete(nodes.toSet().toList());
+        return;
       }
-    } else {
-      if (kDebugMode) {
-        debugPrint('[Discovery] _ossUrls is empty, skip OSS track.');
+      tracksDone++;
+      if (kDebugMode) debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
+      if (tracksDone >= totalTracks && !completer.isCompleted) {
+        if (kDebugMode) debugPrint('[Discovery] 双轨均无结果，兜底当前节点');
+        completer.complete(_currentNode != null ? [_currentNode!] : <String>[]);
       }
     }
 
-    // ⚠️ 兜底策略：两条轨道都失败时，只把「当前节点」（如果有）当作候选，
-    //   不再硬编码测试服 URL。硬编码 fallback 会掩盖服务发现失败，让线上问题
-    //   看起来"网络还好"，实际上 api.txt 已经拉不到了。
-    //   完全没有当前节点时（首次冷启动 + 双轨全跪）就返回空，让 _discover 抛
-    //   "No reachable server node"，客户端会显性报错。
-    if (kDebugMode) {
-      debugPrint('[Discovery] Both tracks failed. '
-          'Falling back to current node (if any).');
+    if (hasDns) {
+      _fetchFromDns()
+          .then((n) => onResult(n, 'DNS'))
+          .catchError((e) {
+        if (kDebugMode) debugPrint('[Discovery] DNS error: $e');
+        onResult(null, 'DNS');
+      });
     }
-    return _currentNode != null ? [_currentNode!] : <String>[];
+
+    if (hasOss) {
+      _fetchFromOss()
+          .then((n) => onResult(n, 'OSS'))
+          .catchError((e) {
+        if (kDebugMode) debugPrint('[Discovery] OSS error: $e');
+        onResult(null, 'OSS');
+      });
+    }
+
+    return completer.future;
   }
 
   // ── 轨道1: 多域名 × 多DoH 全并行 ───────────────────────
