@@ -38,13 +38,19 @@ class ApiConfig {
 
   /// 当前生效的 wsUrl（自动跟随 serverUrl）
   static String get wsUrl {
+    if (_serverUrl.isEmpty) return 'ws://localhost/api/v1/ws';
     final base = _serverUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
-    return '$base/api/v1/ws';
+    return '\$base/api/v1/ws';
   }
 
-  static String get baseUrl => '$_serverUrl/api/v1';
+  /// baseUrl 为空时返回占位符，避免 Dio 初始化崩溃
+  /// ServerDiscovery 完成后会通过 updateServer 更新真实地址
+  static String get baseUrl {
+    if (_serverUrl.isEmpty) return 'http://localhost/api/v1';
+    return '\$_serverUrl/api/v1';
+  }
 
   /// 由 ServerDiscovery 调用，切换节点
   /// 同时通知已创建的 ApiClient 实例更新 baseUrl

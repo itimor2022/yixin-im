@@ -59,7 +59,7 @@ Future<void> _deleteIsarFiles(String dirPath) async {
 Future<void> bootstrapApp() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 先显示一个简单的启动加载界面，防止白屏
+  // ★ 立即 runApp，不做任何 await，确保第一帧马上渲染
   runApp(
     const MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -67,6 +67,13 @@ Future<void> bootstrapApp() async {
     ),
   );
 
+  // ★ 所有初始化放到下一个事件循环，不阻塞渲染
+  Future<void>.microtask(() async {
+    await _initializeApp();
+  });
+}
+
+Future<void> _initializeApp() async {
   // ⚠️ 必须在 ServerDiscovery / Firebase / 任何 HTTP-WebSocket 客户端构造之前设置。
   //   HttpOverrides.global 是通过拦截 `HttpClient()` 构造函数生效的，
   //   一旦下游 (Dio 的 IOHttpClientAdapter、WebSocket.connect) 已经拿到 client
@@ -84,64 +91,6 @@ Future<void> bootstrapApp() async {
     return true;
   };
 
-  if (Platform.isAndroid) {
-    try {
-      await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
-    }
-  }
-
-  try {
-    final dir = await getApplicationDocumentsDirectory();
-    await _cleanStaleIsarLock(dir.path);
-    _isar = await Isar.open(
-      [MessageModelSchema, ChatModelSchema, UserModelSchema],
-      directory: dir.path,
-    ).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        throw TimeoutException('Isar open timed out after 10s');
-      },
-    );
-    IsarService.instance.setIsar(_isar!);
-  } catch (e) {
-    if (kDebugMode)
-      debugPrint(
-          '[Main] Isar initialization failed: $e, attempting cleanup...');
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      await _deleteIsarFiles(dir.path);
-      _isar = await Isar.open(
-        [MessageModelSchema, ChatModelSchema, UserModelSchema],
-        directory: dir.path,
-      );
-      IsarService.instance.setIsar(_isar!);
-      if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
-    } catch (retryError) {
-      if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
-    }
-  }
-
-  if (PlatformUtils.isPhysicalDesktop) {
-    try {
-      await WindowService.instance.initialize();
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] WindowService init error: $e');
-    }
-    try {
-      await DesktopNotificationService().initialize();
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] DesktopNotification init error: $e');
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await TrayService.instance.initialize();
-      await HotkeyService.instance.initialize();
-    });
-  }
-
   if (PlatformUtils.isMobile) {
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -156,11 +105,11 @@ Future<void> bootstrapApp() async {
     ]);
   }
 
+  // ★ 立即启动 GaoRanIMApp，用户马上看到登录页
   final container = ProviderContainer();
   GlobalHaptics.init(container);
 
   try {
-    // ★ 先启动 App 显示登录页，服务发现在后台异步执行
     runApp(
       UncontrolledProviderScope(
         container: container,
@@ -176,15 +125,78 @@ Future<void> bootstrapApp() async {
     }
   }
 
-  Future<void>.delayed(const Duration(milliseconds: 500), () {
-    OfflineMessageQueue().initialize();
-  });
+  // ★ Firebase / Isar / 后台服务全部异步初始化，不阻塞登录页渲染
+  Future<void>.microtask(() async {
+    if (Platform.isAndroid) {
+      try {
+        await Firebase.initializeApp().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw TimeoutException('Firebase init timed out'),
+        );
+        FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
+      }
+    }
 
-  if (PlatformUtils.supportsBackgroundService) {
-    Future<void>.delayed(const Duration(milliseconds: 1000), () {
-      BackgroundService.instance.initialize();
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      await _cleanStaleIsarLock(dir.path);
+      _isar = await Isar.open(
+        [MessageModelSchema, ChatModelSchema, UserModelSchema],
+        directory: dir.path,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('Isar open timed out after 10s');
+        },
+      );
+      IsarService.instance.setIsar(_isar!);
+    } catch (e) {
+      if (kDebugMode)
+        debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        await _deleteIsarFiles(dir.path);
+        _isar = await Isar.open(
+          [MessageModelSchema, ChatModelSchema, UserModelSchema],
+          directory: dir.path,
+        );
+        IsarService.instance.setIsar(_isar!);
+        if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
+      } catch (retryError) {
+        if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
+      }
+    }
+
+    if (PlatformUtils.isPhysicalDesktop) {
+      try {
+        await WindowService.instance.initialize();
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] WindowService init error: $e');
+      }
+      try {
+        await DesktopNotificationService().initialize();
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] DesktopNotification init error: $e');
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await TrayService.instance.initialize();
+        await HotkeyService.instance.initialize();
+      });
+    }
+
+    Future<void>.delayed(const Duration(milliseconds: 500), () {
+      OfflineMessageQueue().initialize();
     });
-  }
+
+    if (PlatformUtils.supportsBackgroundService) {
+      Future<void>.delayed(const Duration(milliseconds: 1000), () {
+        BackgroundService.instance.initialize();
+      });
+    }
+  });
 }
 
 class _BootstrapLoadingPage extends StatelessWidget {

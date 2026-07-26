@@ -52,7 +52,7 @@ class ServerDiscovery {
   /// 保持这里非空是为了首装即可引导起来。
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
-  static const List<String> _ossUrls = ['https://dl.huzhutian.cn/pkgs/chx.txt'];
+  static const List<String> _ossUrls = ['https://dl.huzhutian.cn/pkgs/csh.txt'];
 
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [];
@@ -342,25 +342,22 @@ class ServerDiscovery {
 
     for (final domain in _dnsDomains) {
       for (final doh in _dohProviders) {
-        _queryDohTxt(doh, domain)
-            .then((nodes) {
-              if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
-                if (kDebugMode)
-                  debugPrint('[Discovery] DNS hit: $doh → $domain');
-                completer.complete(nodes);
-              } else {
-                failed++;
-                if (failed >= total && !completer.isCompleted) {
-                  completer.complete(null);
-                }
-              }
-            })
-            .catchError((_) {
-              failed++;
-              if (failed >= total && !completer.isCompleted) {
-                completer.complete(null);
-              }
-            });
+        _queryDohTxt(doh, domain).then((nodes) {
+          if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+            if (kDebugMode) debugPrint('[Discovery] DNS hit: $doh → $domain');
+            completer.complete(nodes);
+          } else {
+            failed++;
+            if (failed >= total && !completer.isCompleted) {
+              completer.complete(null);
+            }
+          }
+        }).catchError((_) {
+          failed++;
+          if (failed >= total && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        });
       }
     }
 
@@ -452,24 +449,22 @@ class ServerDiscovery {
     int failed = 0;
 
     for (final url in ossUrls) {
-      _fetchOssUrl(url)
-          .then((nodes) {
-            if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
-              if (kDebugMode) debugPrint('[Discovery] OSS hit: $url');
-              completer.complete(nodes);
-            } else {
-              failed++;
-              if (failed >= ossUrls.length && !completer.isCompleted) {
-                completer.complete(null);
-              }
-            }
-          })
-          .catchError((_) {
-            failed++;
-            if (failed >= ossUrls.length && !completer.isCompleted) {
-              completer.complete(null);
-            }
-          });
+      _fetchOssUrl(url).then((nodes) {
+        if (nodes != null && nodes.isNotEmpty && !completer.isCompleted) {
+          if (kDebugMode) debugPrint('[Discovery] OSS hit: $url');
+          completer.complete(nodes);
+        } else {
+          failed++;
+          if (failed >= ossUrls.length && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        }
+      }).catchError((_) {
+        failed++;
+        if (failed >= ossUrls.length && !completer.isCompleted) {
+          completer.complete(null);
+        }
+      });
     }
 
     return completer.future.timeout(_fetchTimeout, onTimeout: () => null);
@@ -536,12 +531,10 @@ class ServerDiscovery {
   Future<List<String>> _probeValidNodes(List<String> nodes) async {
     if (nodes.isEmpty) return [];
 
-    final futures = nodes
-        .map((node) {
-          if (kDebugMode) debugPrint('[Discovery] Probing: $node');
-          return _probeNode(node);
-        })
-        .toList(growable: false);
+    final futures = nodes.map((node) {
+      if (kDebugMode) debugPrint('[Discovery] Probing: $node');
+      return _probeNode(node);
+    }).toList(growable: false);
 
     final results = await Future.wait(futures).timeout(
       _probeTimeout + const Duration(seconds: 1),

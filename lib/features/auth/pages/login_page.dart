@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../core/services/server_discovery.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter/gestures.dart';
@@ -395,6 +396,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _fetchCaptcha() async {
+    // ★ 等待 ServerDiscovery 完成，确保 baseUrl 已就绪
+    if (ServerDiscovery.instance.currentNode == null) {
+      try {
+        await ServerDiscovery.instance.initialize().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {
+            if (kDebugMode) debugPrint('[Login] ServerDiscovery timeout waiting for captcha');
+            return '';
+          },
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Login] ServerDiscovery error: $e');
+      }
+    }
+    if (!mounted) return;
     try {
       final api = ref.read(apiClientProvider);
       final response = await api.post('/auth/captcha');
@@ -1130,6 +1146,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     HapticFeedback.mediumImpact();
     setState(() => _isLoading = true);
+
+    // ★ 等待 ServerDiscovery 完成（最多 5 秒），确保 baseUrl 已就绪
+    if (ServerDiscovery.instance.currentNode == null) {
+      try {
+        await ServerDiscovery.instance.initialize().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            if (kDebugMode) debugPrint('[Login] ServerDiscovery timeout');
+            return '';
+          },
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Login] ServerDiscovery error: $e');
+      }
+    }
+
+    if (!mounted) return;
 
     final deviceType = DeviceService.getDeviceType();
     final deviceResults = await Future.wait<String>([
