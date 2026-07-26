@@ -87,7 +87,15 @@ class NetworkSettingsNotifier extends StateNotifier<List<NodeInfo>> {
   /// 避免曾经出现过的"离开页面还在 ping"的死循环。
   Future<void> _hydrateCandidates() async {
     try {
-      await ServerDiscovery.instance.refreshCandidatesOnly();
+      // ★ 确保 ServerDiscovery 已完成初始化
+      if (ServerDiscovery.instance.currentNode == null) {
+        await ServerDiscovery.instance.initialize().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => '',
+        );
+      } else {
+        await ServerDiscovery.instance.refreshCandidatesOnly();
+      }
     } catch (_) {}
     if (!mounted) return;
 

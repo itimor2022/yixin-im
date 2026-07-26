@@ -84,64 +84,6 @@ Future<void> bootstrapApp() async {
     return true;
   };
 
-  if (Platform.isAndroid) {
-    try {
-      await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
-    }
-  }
-
-  try {
-    final dir = await getApplicationDocumentsDirectory();
-    await _cleanStaleIsarLock(dir.path);
-    _isar = await Isar.open(
-      [MessageModelSchema, ChatModelSchema, UserModelSchema],
-      directory: dir.path,
-    ).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        throw TimeoutException('Isar open timed out after 10s');
-      },
-    );
-    IsarService.instance.setIsar(_isar!);
-  } catch (e) {
-    if (kDebugMode)
-      debugPrint(
-          '[Main] Isar initialization failed: $e, attempting cleanup...');
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      await _deleteIsarFiles(dir.path);
-      _isar = await Isar.open(
-        [MessageModelSchema, ChatModelSchema, UserModelSchema],
-        directory: dir.path,
-      );
-      IsarService.instance.setIsar(_isar!);
-      if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
-    } catch (retryError) {
-      if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
-    }
-  }
-
-  if (PlatformUtils.isPhysicalDesktop) {
-    try {
-      await WindowService.instance.initialize();
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] WindowService init error: $e');
-    }
-    try {
-      await DesktopNotificationService().initialize();
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Main] DesktopNotification init error: $e');
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await TrayService.instance.initialize();
-      await HotkeyService.instance.initialize();
-    });
-  }
-
   if (PlatformUtils.isMobile) {
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -156,11 +98,11 @@ Future<void> bootstrapApp() async {
     ]);
   }
 
+  // ★ 立即启动 GaoRanIMApp，用户马上看到登录页
   final container = ProviderContainer();
   GlobalHaptics.init(container);
 
   try {
-    // ★ 先启动 App 显示登录页，服务发现在后台异步执行
     runApp(
       UncontrolledProviderScope(
         container: container,
@@ -175,6 +117,69 @@ Future<void> bootstrapApp() async {
       );
     }
   }
+
+  // ★ Firebase / Isar / 后台服务全部异步初始化，不阻塞登录页渲染
+  Future<void>.microtask(() async {
+    if (Platform.isAndroid) {
+      try {
+        await Firebase.initializeApp().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw TimeoutException('Firebase init timed out'),
+        );
+        FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
+      }
+    }
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      await _cleanStaleIsarLock(dir.path);
+      _isar = await Isar.open(
+        [MessageModelSchema, ChatModelSchema, UserModelSchema],
+        directory: dir.path,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('Isar open timed out after 10s');
+        },
+      );
+      IsarService.instance.setIsar(_isar!);
+    } catch (e) {
+      if (kDebugMode)
+        debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        await _deleteIsarFiles(dir.path);
+        _isar = await Isar.open(
+          [MessageModelSchema, ChatModelSchema, UserModelSchema],
+          directory: dir.path,
+        );
+        IsarService.instance.setIsar(_isar!);
+        if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
+      } catch (retryError) {
+        if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
+      }
+    }
+
+    if (PlatformUtils.isPhysicalDesktop) {
+      try {
+        await WindowService.instance.initialize();
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] WindowService init error: $e');
+      }
+      try {
+        await DesktopNotificationService().initialize();
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Main] DesktopNotification init error: $e');
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await TrayService.instance.initialize();
+        await HotkeyService.instance.initialize();
+      });
+    }
+  });
 
   Future<void>.delayed(const Duration(milliseconds: 500), () {
     OfflineMessageQueue().initialize();
