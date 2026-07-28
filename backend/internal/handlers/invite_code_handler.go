@@ -7,6 +7,7 @@ import (
 	"gaoranim/internal/models"
 	"gaoranim/internal/services"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,59 +37,61 @@ type InviteWelcomeInfo struct {
 }
 
 // ValidateInviteCode 校验邀请码是否可用（注册前预校验）
+// 邀请码现在使用用户ID（数字ID或UUID）
 func ValidateInviteCode(db *gorm.DB, inviteCode string) *InviteCodeResult {
 	if inviteCode == "" {
 		return nil
 	}
 
-	var code models.InviteCode
-	if err := db.Where("code = ? AND status = 1", inviteCode).First(&code).Error; err != nil {
+	// 尝试通过用户ID查找邀请码对应的官方客服
+	var serviceUser models.User
+	var err error
+
+	// 先尝试按数字ID查找
+	if id, parseErr := parseUint64(inviteCode); parseErr == nil {
+		err = db.Where("id = ? AND status = 1", id).First(&serviceUser).Error
+	}
+
+	// 如果不是数字，尝试按UUID查找
+	if err != nil {
+		err = db.Where("uuid = ? AND status = 1", inviteCode).First(&serviceUser).Error
+	}
+
+	if err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码无效"}
 	}
 
-	if code.ExpiresAt != nil && code.ExpiresAt.Before(time.Now()) {
-		return &InviteCodeResult{Valid: false, Message: "邀请码已过期"}
-	}
-
-	if code.MaxUses > 0 && code.UsedCount >= code.MaxUses {
-		return &InviteCodeResult{Valid: false, Message: "邀请码已达使用上限"}
-	}
-
+	// 检查该用户是否是已启用的官方客服
 	var official models.OfficialUser
-	if err := db.Where("user_id = ? AND is_service_enabled = ?", code.ServiceUserID, true).First(&official).Error; err != nil {
+	if err := db.Where("user_id = ? AND is_service_enabled = ?", serviceUser.ID, true).First(&official).Error; err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码对应官方客服未启用"}
 	}
 
-	return &InviteCodeResult{Valid: true, ServiceUserID: code.ServiceUserID}
+	return &InviteCodeResult{Valid: true, ServiceUserID: serviceUser.ID}
+}
+
+// parseUint64 尝试将字符串解析为uint64
+func parseUint64(s string) (uint64, error) {
+	return strconv.ParseUint(s, 10, 64)
 }
 
 // ProcessInviteCode 注册时处理邀请码（内部调用）
-// 返回处理结果，invalid 不再静默失败
+// 邀请码现在使用用户ID（数字ID或UUID），无需单独的邀请码表
 func ProcessInviteCode(db *gorm.DB, inviteCode string, newUserID uint64) *InviteCodeResult {
 	if inviteCode == "" {
 		return nil
 	}
 
-	var code models.InviteCode
-	if err := db.Where("code = ? AND status = 1", inviteCode).First(&code).Error; err != nil {
+	// 先通过 ValidateInviteCode 获取官方客服ID
+	validateResult := ValidateInviteCode(db, inviteCode)
+	if validateResult != nil && !validateResult.Valid {
+		return validateResult
+	}
+	if validateResult == nil || validateResult.ServiceUserID == 0 {
 		return &InviteCodeResult{Valid: false, Message: "邀请码无效"}
 	}
 
-	alreadyBound := false
-	var existedUsage models.InviteCodeUsage
-	if err := db.Where("user_id = ? AND invite_code_id = ?", newUserID, code.ID).
-		Order("id DESC").
-		First(&existedUsage).Error; err == nil {
-		alreadyBound = true
-	} else if err != gorm.ErrRecordNotFound {
-		return &InviteCodeResult{Valid: false, Message: "邀请码处理失败"}
-	}
-	if !alreadyBound {
-		validateResult := ValidateInviteCode(db, inviteCode)
-		if validateResult != nil && !validateResult.Valid {
-			return validateResult
-		}
-	}
+	serviceUserID := validateResult.ServiceUserID
 
 	var newUser models.User
 	if err := db.First(&newUser, newUserID).Error; err != nil {
@@ -96,40 +99,22 @@ func ProcessInviteCode(db *gorm.DB, inviteCode string, newUserID uint64) *Invite
 	}
 
 	var serviceUser models.User
-	if err := db.First(&serviceUser, code.ServiceUserID).Error; err != nil {
+	if err := db.First(&serviceUser, serviceUserID).Error; err != nil {
 		return &InviteCodeResult{Valid: false, Message: "官方客服不存在"}
 	}
 
 	var official models.OfficialUser
-	if err := db.Where("user_id = ? AND is_service_enabled = ?", code.ServiceUserID, true).First(&official).Error; err != nil {
+	if err := db.Where("user_id = ? AND is_service_enabled = ?", serviceUserID, true).First(&official).Error; err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码对应官方客服未启用"}
 	}
 
 	now := time.Now()
-	if !alreadyBound {
-		updateResult := db.Model(&models.InviteCode{}).
-			Where("id = ? AND status = 1 AND (max_uses = 0 OR used_count < max_uses)", code.ID).
-			Update("used_count", gorm.Expr("used_count + 1"))
-		if updateResult.Error != nil {
-			return &InviteCodeResult{Valid: false, Message: "邀请码处理失败"}
-		}
-		if updateResult.RowsAffected == 0 {
-			return &InviteCodeResult{Valid: false, Message: "邀请码已达使用上限"}
-		}
-
-		if err := db.Create(&models.InviteCodeUsage{
-			InviteCodeID: code.ID,
-			UserID:       newUserID,
-		}).Error; err != nil {
-			return &InviteCodeResult{Valid: false, Message: "邀请码处理失败"}
-		}
-	}
 
 	// 创建（或修复）双向联系人关系
-	if _, err := ensureContactRelation(db, newUserID, code.ServiceUserID, now); err != nil {
+	if _, err := ensureContactRelation(db, newUserID, serviceUserID, now); err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码处理失败"}
 	}
-	if _, err := ensureContactRelation(db, code.ServiceUserID, newUserID, now); err != nil {
+	if _, err := ensureContactRelation(db, serviceUserID, newUserID, now); err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码处理失败"}
 	}
 
@@ -145,7 +130,7 @@ func ProcessInviteCode(db *gorm.DB, inviteCode string, newUserID uint64) *Invite
 
 	return &InviteCodeResult{
 		Valid:         true,
-		ServiceUserID: code.ServiceUserID,
+		ServiceUserID: serviceUserID,
 		WelcomeInfo: &InviteWelcomeInfo{
 			ChatID:        chat.ID,
 			ServiceUserID: serviceUser.ID,

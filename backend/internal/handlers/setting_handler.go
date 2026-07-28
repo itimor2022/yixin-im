@@ -805,18 +805,13 @@ func (h *SettingHandler) GetOfficialUsers(c *gin.Context) {
 	for _, o := range officials {
 		var user models.User
 		if h.db.First(&user, o.UserID).Error == nil {
-			var invite models.InviteCode
-			inviteCode := ""
-			// 只读查询，不在列表接口做任何写操作，避免误改邀请码状态
-			if err := h.db.Where("service_user_id = ?", o.UserID).Order("id ASC").First(&invite).Error; err == nil {
-				inviteCode = invite.Code
-			}
+			// 使用用户UUID作为邀请码
 			result = append(result, OfficialUserDetail{
 				OfficialUser: o,
 				Username:     user.Username,
 				Nickname:     user.Nickname,
 				Avatar:       user.Avatar,
-				InviteCode:   inviteCode,
+				InviteCode:   user.UUID,
 			})
 		}
 	}
@@ -1140,37 +1135,30 @@ func (h *SettingHandler) GetOfficialUserInvitees(c *gin.Context) {
 	}
 
 	type InviteeItem struct {
-		UsageID      uint64    `json:"usage_id"`
 		UserID       uint64    `json:"user_id"`
 		UserUUID     string    `json:"user_uuid"`
 		Username     string    `json:"username"`
 		Nickname     string    `json:"nickname"`
 		Avatar       string    `json:"avatar"`
-		InviteCode   string    `json:"invite_code"`
+		InviteCode   string    `json:"invite_code"` // 邀请码（用户UUID）
 		RegisteredAt time.Time `json:"registered_at"`
 	}
 
-	latestUsageSubQuery := h.db.Table("invite_code_usages").
-		Select("MAX(id)").
-		Group("user_id")
-
 	var list []InviteeItem
-	if err := h.db.Table("invite_code_usages AS icu").
+	// 通过联系人关系查询被邀请的用户
+	if err := h.db.Table("contacts AS c").
 		Select(`
-			icu.id AS usage_id,
-			icu.user_id AS user_id,
+			u.id AS user_id,
 			u.uuid AS user_uuid,
 			u.username AS username,
 			u.nickname AS nickname,
 			u.avatar AS avatar,
-			ic.code AS invite_code,
-			icu.created_at AS registered_at
-		`).
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Joins("JOIN users u ON u.id = icu.user_id AND u.deleted_at IS NULL").
-		Where("icu.id IN (?)", latestUsageSubQuery).
-		Where("ic.service_user_id = ?", official.UserID).
-		Order("icu.created_at DESC").
+			? AS invite_code,
+			c.created_at AS registered_at
+		`, official.UserUUID).
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.status = 1", official.UserID).
+		Order("c.created_at DESC").
 		Scan(&list).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "获取失败")
 		return

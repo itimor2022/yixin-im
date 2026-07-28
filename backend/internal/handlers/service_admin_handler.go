@@ -130,11 +130,8 @@ func (h *ServiceAdminHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	var invite models.InviteCode
-	inviteCode := ""
-	if err := h.db.Where("service_user_id = ?", user.ID).Order("id ASC").First(&invite).Error; err == nil {
-		inviteCode = invite.Code
-	}
+	// 使用用户UUID作为邀请码
+	inviteCode := user.UUID
 
 	phone := ""
 	if user.Phone != nil {
@@ -170,20 +167,15 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		return
 	}
 
-	var invite models.InviteCode
-	inviteCode := ""
-	usedCount := 0
-	registerURL := ""
-	if err := h.db.Where("service_user_id = ?", user.ID).Order("id ASC").First(&invite).Error; err == nil {
-		inviteCode = invite.Code
-		usedCount = invite.UsedCount
-		registerURL = h.serviceAdminRegisterURL(invite.Code)
-	}
+	// 使用用户UUID作为邀请码
+	inviteCode := user.UUID
+	registerURL := h.serviceAdminRegisterURL(inviteCode)
 
+	// 统计通过该邀请码注册的用户数（通过联系人关系推断）
 	var inviteeCount int64
-	h.db.Table("invite_code_usages AS icu").
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Where("ic.service_user_id = ?", user.ID).
+	h.db.Table("contacts AS c").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.status = 1", user.ID).
 		Count(&inviteeCount)
 
 	now := time.Now()
@@ -192,15 +184,15 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 	weekStart := todayStart.AddDate(0, 0, -6)
 
 	var inviteeToday int64
-	h.db.Table("invite_code_usages AS icu").
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Where("ic.service_user_id = ? AND icu.created_at >= ?", user.ID, todayStart).
+	h.db.Table("contacts AS c").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.created_at >= ?", user.ID, todayStart).
 		Count(&inviteeToday)
 
 	var weeklyConversion int64
-	h.db.Table("invite_code_usages AS icu").
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Where("ic.service_user_id = ? AND icu.created_at >= ?", user.ID, weekStart).
+	h.db.Table("contacts AS c").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.created_at >= ?", user.ID, weekStart).
 		Count(&weeklyConversion)
 
 	type trendItem struct {
@@ -213,11 +205,11 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		RegisteredAt string `json:"registeredAt"`
 	}
 	var trend []trendItem
-	if err := h.db.Table("invite_code_usages AS icu").
-		Select("DATE_FORMAT(icu.created_at, '%Y-%m-%d') AS date, COUNT(*) AS count").
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Where("ic.service_user_id = ? AND icu.created_at >= ?", user.ID, weekStart).
-		Group("DATE_FORMAT(icu.created_at, '%Y-%m-%d')").
+	if err := h.db.Table("contacts AS c").
+		Select("DATE_FORMAT(c.created_at, '%Y-%m-%d') AS date, COUNT(*) AS count").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.created_at >= ?", user.ID, weekStart).
+		Group("DATE_FORMAT(c.created_at, '%Y-%m-%d')").
 		Order("date ASC").
 		Scan(&trend).Error; err != nil {
 		trend = []trendItem{}
@@ -239,12 +231,11 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 	}
 
 	var recentInvitees []recentInviteeItem
-	if err := h.db.Table("invite_code_usages AS icu").
-		Select("u.nickname AS name, u.uuid AS uuid, DATE_FORMAT(icu.created_at, '%Y-%m-%d %H:%i') AS registered_at").
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Joins("JOIN users u ON u.id = icu.user_id AND u.deleted_at IS NULL").
-		Where("ic.service_user_id = ?", user.ID).
-		Order("icu.created_at DESC").
+	if err := h.db.Table("contacts AS c").
+		Select("u.nickname AS name, u.uuid AS uuid, DATE_FORMAT(c.created_at, '%Y-%m-%d %H:%i') AS registered_at").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ?", user.ID).
+		Order("c.created_at DESC").
 		Limit(5).
 		Scan(&recentInvitees).Error; err != nil {
 		recentInvitees = []recentInviteeItem{}
@@ -256,7 +247,7 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		"inviteeToday":      inviteeToday,
 		"serviceStatusText": "启用",
 		"weeklyConversion":  weeklyConversion,
-		"usedCount":         usedCount,
+		"usedCount":         0,
 		"registerUrl":       registerURL,
 		"recentTrend":       series,
 		"recentInvitees":    recentInvitees,
@@ -270,18 +261,15 @@ func (h *ServiceAdminHandler) GetInviteCode(c *gin.Context) {
 		return
 	}
 
-	var invite models.InviteCode
-	if err := h.db.Where("service_user_id = ?", user.ID).Order("id ASC").First(&invite).Error; err != nil {
-		response.NotFound(c, "邀请码不存在")
-		return
-	}
+	// 使用用户UUID作为邀请码
+	inviteCode := user.UUID
 
 	response.Success(c, gin.H{
-		"code":             invite.Code,
-		"updatedAt":        invite.UpdatedAt.Format("2006-01-02 15:04"),
-		"statusText":       map[bool]string{true: "可用", false: "停用"}[invite.Status == 1],
-		"registerUrl":      h.serviceAdminRegisterURL(invite.Code),
-		"usedCount":        invite.UsedCount,
+		"code":             inviteCode,
+		"updatedAt":        user.UpdatedAt.Format("2006-01-02 15:04"),
+		"statusText":       "可用",
+		"registerUrl":      h.serviceAdminRegisterURL(inviteCode),
+		"usedCount":        0,
 		"weeklyConversion": 0,
 	})
 }
@@ -301,24 +289,19 @@ func (h *ServiceAdminHandler) GetInvitees(c *gin.Context) {
 		Active       bool      `json:"active"`
 	}
 
-	latestUsageSubQuery := h.db.Table("invite_code_usages").
-		Select("MAX(id)").
-		Group("user_id")
-
 	var list []inviteeItem
-	if err := h.db.Table("invite_code_usages AS icu").
+	// 通过联系人关系查询被邀请的用户
+	if err := h.db.Table("contacts AS c").
 		Select(`
 			u.id AS id,
 			u.nickname AS name,
 			u.uuid AS uuid,
-			icu.created_at AS registered_at,
+			c.created_at AS registered_at,
 			CASE WHEN u.status = 1 THEN true ELSE false END AS active
 		`).
-		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-		Joins("JOIN users u ON u.id = icu.user_id AND u.deleted_at IS NULL").
-		Where("icu.id IN (?)", latestUsageSubQuery).
-		Where("ic.service_user_id = ?", user.ID).
-		Order("icu.created_at DESC").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.status = 1", user.ID).
+		Order("c.created_at DESC").
 		Scan(&list).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "获取失败")
 		return
