@@ -805,13 +805,17 @@ func (h *SettingHandler) GetOfficialUsers(c *gin.Context) {
 	for _, o := range officials {
 		var user models.User
 		if h.db.First(&user, o.UserID).Error == nil {
-			// 使用用户UUID作为邀请码
+			// 使用用户手机号作为邀请码
+			inviteCode := ""
+			if user.Phone != nil {
+				inviteCode = *user.Phone
+			}
 			result = append(result, OfficialUserDetail{
 				OfficialUser: o,
 				Username:     user.Username,
 				Nickname:     user.Nickname,
 				Avatar:       user.Avatar,
-				InviteCode:   user.UUID,
+				InviteCode:   inviteCode,
 			})
 		}
 	}
@@ -1134,13 +1138,24 @@ func (h *SettingHandler) GetOfficialUserInvitees(c *gin.Context) {
 		return
 	}
 
+	// 获取官方客服的手机号
+	var serviceUser models.User
+	if err := h.db.Select("id", "phone").Where("id = ?", official.UserID).First(&serviceUser).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "官方用户不存在")
+		return
+	}
+	servicePhone := ""
+	if serviceUser.Phone != nil {
+		servicePhone = *serviceUser.Phone
+	}
+
 	type InviteeItem struct {
 		UserID       uint64    `json:"user_id"`
 		UserUUID     string    `json:"user_uuid"`
 		Username     string    `json:"username"`
 		Nickname     string    `json:"nickname"`
 		Avatar       string    `json:"avatar"`
-		InviteCode   string    `json:"invite_code"` // 邀请码（用户UUID）
+		InviteCode   string    `json:"invite_code"` // 邀请码（用户手机号）
 		RegisteredAt time.Time `json:"registered_at"`
 	}
 
@@ -1155,7 +1170,7 @@ func (h *SettingHandler) GetOfficialUserInvitees(c *gin.Context) {
 			u.avatar AS avatar,
 			? AS invite_code,
 			c.created_at AS registered_at
-		`, official.UserUUID).
+		`, servicePhone).
 		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
 		Where("c.user_id = ? AND c.status = 1", official.UserID).
 		Order("c.created_at DESC").

@@ -38,34 +38,32 @@ func NewUserMgmtHandler(db *gorm.DB, hub UserMgmtHub, c *cache.Cache, pushServic
 
 // UserListItem 用户列表项（包含设备和在线信息）
 type UserListItem struct {
-	ID                uint64  `json:"id"`
-	UUID              string  `json:"uuid"`
-	Username          string  `json:"username"`
-	Nickname          string  `json:"nickname"`
-	Phone             *string `json:"phone"`
-	Avatar            *string `json:"avatar"`
-	Bio               *string `json:"bio"`
-	Status            int8    `json:"status"`
-	BanReason         *string `json:"ban_reason"`
-	BannedAt          *string `json:"banned_at"`
-	IsMember         bool    `json:"is_member"`
-	BadgeText        string  `json:"badge_text"`
-	BadgeColor       string  `json:"badge_color"`
-	IsOnline          bool    `json:"is_online"`
-	LastSeen          *string `json:"last_seen"`
-	CreatedAt         string  `json:"created_at"`
-	DeviceType        *string `json:"device_type"`
-	DeviceName        *string `json:"device_name"`
-	DeviceIP          *string `json:"device_ip"`
-	PushChannel       *string `json:"push_channel"`
-	PushTokenBound    *bool   `json:"push_token_bound"`
-	PushTokenLength   *int    `json:"push_token_length"`
-	ServiceUserID     *uint64 `json:"service_user_id"`
-	ServiceUsername   *string `json:"service_username"`
-	ServiceNickname   *string `json:"service_nickname"`
-	ServiceInviteCode *string `json:"service_invite_code"`
-	EnableWhitelist bool   `json:"enable_whitelist"` 
-    WhitelistIps    string `json:"whitelist_ips"`
+	ID              uint64  `json:"id"`
+	UUID            string  `json:"uuid"`
+	Username        string  `json:"username"`
+	Nickname        string  `json:"nickname"`
+	Phone           *string `json:"phone"`
+	Avatar          *string `json:"avatar"`
+	Bio             *string `json:"bio"`
+	Status          int8    `json:"status"`
+	BanReason       *string `json:"ban_reason"`
+	BannedAt        *string `json:"banned_at"`
+	IsMember        bool    `json:"is_member"`
+	BadgeText       string  `json:"badge_text"`
+	BadgeColor      string  `json:"badge_color"`
+	IsOnline        bool    `json:"is_online"`
+	LastSeen        *string `json:"last_seen"`
+	CreatedAt       string  `json:"created_at"`
+	DeviceType      *string `json:"device_type"`
+	DeviceName      *string `json:"device_name"`
+	DeviceIP        *string `json:"device_ip"`
+	PushChannel     *string `json:"push_channel"`
+	PushTokenBound  *bool   `json:"push_token_bound"`
+	PushTokenLength *int    `json:"push_token_length"`
+	InviterPhone    *string `json:"inviter_phone"`    // 上级手机号（邀请码）
+	InviterNickname *string `json:"inviter_nickname"` // 上级昵称
+	EnableWhitelist bool    `json:"enable_whitelist"`
+	WhitelistIps    string  `json:"whitelist_ips"`
 }
 
 func uint64Ptr(v uint64) *uint64 {
@@ -160,39 +158,34 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 		}
 	}
 
-	// 获取用户邀请码归属信息（通过邀请码注册绑定的客服）
+	// 获取用户邀请码归属信息（通过邀请码注册绑定的上级）
+	// 现在邀请码是手机号，直接通过contacts表查找上级
 	type userInviteBinding struct {
 		UserID          uint64 `gorm:"column:user_id"`
-		ServiceUserID   uint64 `gorm:"column:service_user_id"`
-		ServiceUsername string `gorm:"column:service_username"`
-		ServiceNickname string `gorm:"column:service_nickname"`
-		InviteCode      string `gorm:"column:invite_code"`
+		InviterID       uint64 `gorm:"column:inviter_id"`
+		InviterPhone    string `gorm:"column:inviter_phone"`
+		InviterNickname string `gorm:"column:inviter_nickname"`
 	}
 	inviteBindingMap := make(map[uint64]userInviteBinding)
 	if len(userIDs) > 0 {
-		latestUsageSubQuery := h.db.Table("invite_code_usages").
-			Select("MAX(id)").
-			Where("user_id IN ?", userIDs).
-			Group("user_id")
-
+		// 通过contacts表查找每个用户的上级（第一个添加他为好友的官方客服）
 		var bindings []userInviteBinding
-		if err := h.db.Table("invite_code_usages AS icu").
+		if err := h.db.Table("contacts AS c").
 			Select(`
-				icu.user_id AS user_id,
-				ic.service_user_id AS service_user_id,
-				su.username AS service_username,
-				su.nickname AS service_nickname,
-				ic.code AS invite_code
+				c.target_id AS user_id,
+				c.user_id AS inviter_id,
+				su.phone AS inviter_phone,
+				su.nickname AS inviter_nickname
 			`).
-			Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
-			Joins("LEFT JOIN users su ON su.id = ic.service_user_id AND su.deleted_at IS NULL").
-			Where("icu.id IN (?)", latestUsageSubQuery).
-			Scan(&bindings).Error; err != nil {
-			response.Error(c, http.StatusInternalServerError, "查询失败")
-			return
-		}
-		for _, b := range bindings {
-			inviteBindingMap[b.UserID] = b
+			Joins("JOIN users su ON su.id = c.user_id AND su.deleted_at IS NULL").
+			Where("c.target_id IN ? AND c.status = 1", userIDs).
+			Scan(&bindings).Error; err == nil {
+			for _, b := range bindings {
+				// 只取第一个绑定（最新的）
+				if _, exists := inviteBindingMap[b.UserID]; !exists {
+					inviteBindingMap[b.UserID] = b
+				}
+			}
 		}
 	}
 
@@ -212,15 +205,15 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	result := make([]UserListItem, 0, len(users))
 	for _, u := range users {
 		item := UserListItem{
-			ID:        u.ID,
-			UUID:      u.UUID,
-			Username:  u.Username,
-			Nickname:  u.Nickname,
-			Status:    u.Status,
-			IsOnline:  false,
-			CreatedAt: u.CreatedAt.Format("2006-01-02 15:04:05"),
+			ID:              u.ID,
+			UUID:            u.UUID,
+			Username:        u.Username,
+			Nickname:        u.Nickname,
+			Status:          u.Status,
+			IsOnline:        false,
+			CreatedAt:       u.CreatedAt.Format("2006-01-02 15:04:05"),
 			EnableWhitelist: u.EnableWhitelist,
-            WhitelistIps:    u.WhitelistIps,
+			WhitelistIps:    u.WhitelistIps,
 		}
 
 		// 设置可选字段
@@ -245,10 +238,10 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			bannedAt := u.BannedAt.Format("2006-01-02 15:04:05")
 			item.BannedAt = &bannedAt
 		}
-			// 会员信息
-			item.IsMember = u.IsMember
-			item.BadgeText = u.BadgeText
-			item.BadgeColor = u.BadgeColor
+		// 会员信息
+		item.IsMember = u.IsMember
+		item.BadgeText = u.BadgeText
+		item.BadgeColor = u.BadgeColor
 
 		// 通过 WebSocket Hub 判断实时在线状态
 		if h.hub != nil && h.hub.IsUserOnline(u.UUID) {
@@ -274,17 +267,13 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			item.LastSeen = &lastActive
 		}
 
-		// 添加邀请码归属信息
+		// 添加上级信息（邀请码绑定）
 		if bind, ok := inviteBindingMap[u.ID]; ok {
-			item.ServiceUserID = uint64Ptr(bind.ServiceUserID)
-			if bind.ServiceUsername != "" {
-				item.ServiceUsername = stringPtr(bind.ServiceUsername)
+			if bind.InviterPhone != "" {
+				item.InviterPhone = stringPtr(bind.InviterPhone)
 			}
-			if bind.ServiceNickname != "" {
-				item.ServiceNickname = stringPtr(bind.ServiceNickname)
-			}
-			if bind.InviteCode != "" {
-				item.ServiceInviteCode = stringPtr(bind.InviteCode)
+			if bind.InviterNickname != "" {
+				item.InviterNickname = stringPtr(bind.InviterNickname)
 			}
 		}
 
@@ -320,119 +309,118 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 
 // UpdateUser 更新用户信息
 func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
-    userID := c.Param("id")
+	userID := c.Param("id")
 
-    var req struct {
-        Nickname        *string `json:"nickname"`
-        Username        *string `json:"username"`
-        Phone           *string `json:"phone"`
-        Bio             *string `json:"bio"`
-        Status          *int8   `json:"status"`
-        EnableWhitelist *bool   `json:"enable_whitelist"` 
-        WhitelistIps    *string `json:"whitelist_ips"`
-    }
-    if err := c.ShouldBindJSON(&req); err != nil {
-        response.Error(c, http.StatusBadRequest, "参数错误")
-        return
-    }
+	var req struct {
+		Nickname        *string `json:"nickname"`
+		Username        *string `json:"username"`
+		Phone           *string `json:"phone"`
+		Bio             *string `json:"bio"`
+		Status          *int8   `json:"status"`
+		EnableWhitelist *bool   `json:"enable_whitelist"`
+		WhitelistIps    *string `json:"whitelist_ips"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
 
-    var user models.User
-    if err := h.db.First(&user, userID).Error; err != nil {
-        response.Error(c, http.StatusNotFound, "用户不存在")
-        return
-    }
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "用户不存在")
+		return
+	}
 
-    // 更新字段
-    updates := make(map[string]interface{})
-    if req.Nickname != nil {
-        updates["nickname"] = *req.Nickname
-    }
-    if req.Username != nil {
-        // 检查用户名是否已存在
-        var existUser models.User
-        if err := h.db.Where("username = ? AND id != ?", *req.Username, user.ID).First(&existUser).Error; err == nil {
-            response.Error(c, http.StatusBadRequest, "用户名已存在")
-            return
-        }
-        updates["username"] = *req.Username
-    }
-    if req.Phone != nil {
-        updates["phone"] = *req.Phone
-    }
-    if req.Bio != nil {
-        updates["bio"] = *req.Bio
-    }
-    if req.Status != nil {
-        updates["status"] = *req.Status
-    }
-    if req.EnableWhitelist != nil {
-        updates["enable_whitelist"] = *req.EnableWhitelist
-    }
-    if req.WhitelistIps != nil {
-        updates["whitelist_ips"] = *req.WhitelistIps
-    }
+	// 更新字段
+	updates := make(map[string]interface{})
+	if req.Nickname != nil {
+		updates["nickname"] = *req.Nickname
+	}
+	if req.Username != nil {
+		// 检查用户名是否已存在
+		var existUser models.User
+		if err := h.db.Where("username = ? AND id != ?", *req.Username, user.ID).First(&existUser).Error; err == nil {
+			response.Error(c, http.StatusBadRequest, "用户名已存在")
+			return
+		}
+		updates["username"] = *req.Username
+	}
+	if req.Phone != nil {
+		updates["phone"] = *req.Phone
+	}
+	if req.Bio != nil {
+		updates["bio"] = *req.Bio
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	if req.EnableWhitelist != nil {
+		updates["enable_whitelist"] = *req.EnableWhitelist
+	}
+	if req.WhitelistIps != nil {
+		updates["whitelist_ips"] = *req.WhitelistIps
+	}
 
-    if len(updates) > 0 {
-        if err := h.db.Model(&user).Updates(updates).Error; err != nil {
-            response.Error(c, http.StatusInternalServerError, "更新失败")
-            return
-        }
-    }
-    if h.cache != nil {
-        userIDStr := strconv.FormatUint(user.ID, 10)
-        redisKey := "user:whitelist:" + user.UUID
-        
-        if req.EnableWhitelist != nil && *req.EnableWhitelist {
-            ips := ""
-            if req.WhitelistIps != nil {
-                ips = *req.WhitelistIps
-            }
-            h.cache.Set(context.Background(), redisKey, ips, 365*24*time.Hour)
+	if len(updates) > 0 {
+		if err := h.db.Model(&user).Updates(updates).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "更新失败")
+			return
+		}
+	}
+	if h.cache != nil {
+		userIDStr := strconv.FormatUint(user.ID, 10)
+		redisKey := "user:whitelist:" + user.UUID
 
-            type UserSession struct {
-                Token string `gorm:"column:token"`
-                IP    string `gorm:"column:ip"`
-            }
-            var sessions []UserSession
-            
-            if err := h.db.Table("user_sessions").Where("user_id = ?", user.ID).Find(&sessions).Error; err == nil {
-                needDisconnect := false
-                for _, sess := range sessions {
-                    if !CheckIPInWhitelist(sess.IP, ips) {
-                        needDisconnect = true
-                        h.db.Table("user_sessions").Where("token = ?", sess.Token).Delete(nil)
-                    }
-                }
-                
-                if needDisconnect || len(sessions) == 0 {
-                    h.hub.DisconnectUser(user.UUID)
-                    h.hub.DisconnectUser(userIDStr) 
-                }
-            }
-        } else if req.EnableWhitelist != nil && !*req.EnableWhitelist {
-            h.cache.Delete(context.Background(), redisKey)
-        }
-    }
+		if req.EnableWhitelist != nil && *req.EnableWhitelist {
+			ips := ""
+			if req.WhitelistIps != nil {
+				ips = *req.WhitelistIps
+			}
+			h.cache.Set(context.Background(), redisKey, ips, 365*24*time.Hour)
 
-    // 重新查询用户并返回
-    h.db.First(&user, userID)
-    response.Success(c, user)
+			type UserSession struct {
+				Token string `gorm:"column:token"`
+				IP    string `gorm:"column:ip"`
+			}
+			var sessions []UserSession
+
+			if err := h.db.Table("user_sessions").Where("user_id = ?", user.ID).Find(&sessions).Error; err == nil {
+				needDisconnect := false
+				for _, sess := range sessions {
+					if !CheckIPInWhitelist(sess.IP, ips) {
+						needDisconnect = true
+						h.db.Table("user_sessions").Where("token = ?", sess.Token).Delete(nil)
+					}
+				}
+
+				if needDisconnect || len(sessions) == 0 {
+					h.hub.DisconnectUser(user.UUID)
+					h.hub.DisconnectUser(userIDStr)
+				}
+			}
+		} else if req.EnableWhitelist != nil && !*req.EnableWhitelist {
+			h.cache.Delete(context.Background(), redisKey)
+		}
+	}
+
+	// 重新查询用户并返回
+	h.db.First(&user, userID)
+	response.Success(c, user)
 }
 
-
 func CheckIPInWhitelist(clientIP string, whitelistStr string) bool {
-    if whitelistStr == "" {
-        return false
-    }
-    ips := strings.FieldsFunc(whitelistStr, func(r rune) bool {
-        return r == '\n' || r == '\r' || r == ',' || r == ' '
-    })
-    for _, ip := range ips {
-        if strings.TrimSpace(ip) == clientIP {
-            return true
-        }
-    }
-    return false
+	if whitelistStr == "" {
+		return false
+	}
+	ips := strings.FieldsFunc(whitelistStr, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' '
+	})
+	for _, ip := range ips {
+		if strings.TrimSpace(ip) == clientIP {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateUserStatus 更新用户状态
@@ -724,4 +712,148 @@ func (h *UserMgmtHandler) SetMembership(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success"})
+}
+
+// GetSubordinates 获取用户的下级列表（通过该用户手机号作为邀请码注册的用户）
+func (h *UserMgmtHandler) GetSubordinates(c *gin.Context) {
+	userID := c.Param("id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+
+	// 如果用户没有手机号，返回空列表
+	if user.Phone == nil || *user.Phone == "" {
+		response.Success(c, gin.H{"list": []interface{}{}, "total": 0})
+		return
+	}
+
+	offset := (page - 1) * pageSize
+
+	// 通过contacts表查找下级（被该用户邀请注册的用户）
+	type SubordinateItem struct {
+		ID         uint64  `json:"id"`
+		UUID       string  `json:"uuid"`
+		Username   string  `json:"username"`
+		Nickname   string  `json:"nickname"`
+		Phone      *string `json:"phone"`
+		Avatar     *string `json:"avatar"`
+		Status     int8    `json:"status"`
+		IsMember   bool    `json:"is_member"`
+		BadgeText  string  `json:"badge_text"`
+		BadgeColor string  `json:"badge_color"`
+		IsOnline   bool    `json:"is_online"`
+		LastSeen   *string `json:"last_seen"`
+		CreatedAt  string  `json:"created_at"`
+	}
+
+	var total int64
+	if err := h.db.Table("contacts AS c").
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.status = 1", user.ID).
+		Count(&total).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+
+	var subordinates []SubordinateItem
+	if err := h.db.Table("contacts AS c").
+		Select(`
+			u.id AS id,
+			u.uuid AS uuid,
+			u.username AS username,
+			u.nickname AS nickname,
+			u.phone AS phone,
+			u.avatar AS avatar,
+			u.status AS status,
+			u.is_member AS is_member,
+			u.badge_text AS badge_text,
+			u.badge_color AS badge_color,
+			u.last_seen AS last_seen,
+			u.created_at AS created_at
+		`).
+		Joins("JOIN users u ON u.id = c.target_id AND u.deleted_at IS NULL").
+		Where("c.user_id = ? AND c.status = 1", user.ID).
+		Order("c.created_at DESC").
+		Offset(offset).Limit(pageSize).
+		Scan(&subordinates).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+
+	// 格式化时间并查询在线状态
+	now := time.Now()
+	onlineThreshold := now.Add(-5 * time.Minute)
+
+	// 获取下级用户ID列表
+	subordinateIDs := make([]uint64, len(subordinates))
+	for i, s := range subordinates {
+		subordinateIDs[i] = s.ID
+	}
+
+	// 获取设备信息
+	var devices []models.UserDevice
+	if len(subordinateIDs) > 0 {
+		if err := h.db.Where("user_id IN ?", subordinateIDs).
+			Order("last_active DESC").
+			Find(&devices).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
+	}
+
+	deviceMap := make(map[uint64]models.UserDevice)
+	for _, d := range devices {
+		if _, exists := deviceMap[d.UserID]; !exists {
+			deviceMap[d.UserID] = d
+		}
+	}
+
+	// 格式化返回数据
+	result := make([]gin.H, 0, len(subordinates))
+	for _, s := range subordinates {
+		item := gin.H{
+			"id":          s.ID,
+			"uuid":        s.UUID,
+			"username":    s.Username,
+			"nickname":    s.Nickname,
+			"phone":       s.Phone,
+			"avatar":      s.Avatar,
+			"status":      s.Status,
+			"is_member":   s.IsMember,
+			"badge_text":  s.BadgeText,
+			"badge_color": s.BadgeColor,
+			"is_online":   false,
+			"last_seen":   s.LastSeen,
+			"created_at":  s.CreatedAt,
+		}
+
+		// 检查在线状态
+		if h.hub != nil && h.hub.IsUserOnline(s.UUID) {
+			item["is_online"] = true
+		} else if device, ok := deviceMap[s.ID]; ok && device.LastActive.After(onlineThreshold) {
+			item["is_online"] = true
+			lastActive := device.LastActive.Format("2006-01-02 15:04:05")
+			item["last_seen"] = lastActive
+		}
+
+		result = append(result, item)
+	}
+
+	response.Success(c, gin.H{
+		"list":      result,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }

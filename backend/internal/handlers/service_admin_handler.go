@@ -130,13 +130,13 @@ func (h *ServiceAdminHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	// 使用用户UUID作为邀请码
-	inviteCode := user.UUID
-
-	phone := ""
+	// 使用用户手机号作为邀请码
+	inviteCode := ""
 	if user.Phone != nil {
-		phone = *user.Phone
+		inviteCode = *user.Phone
 	}
+
+	phone := inviteCode
 
 	response.Success(c, gin.H{
 		"nickname":   user.Nickname,
@@ -167,8 +167,11 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		return
 	}
 
-	// 使用用户UUID作为邀请码
-	inviteCode := user.UUID
+	// 使用用户手机号作为邀请码
+	inviteCode := ""
+	if user.Phone != nil {
+		inviteCode = *user.Phone
+	}
 	registerURL := h.serviceAdminRegisterURL(inviteCode)
 
 	// 统计通过该邀请码注册的用户数（通过联系人关系推断）
@@ -261,8 +264,11 @@ func (h *ServiceAdminHandler) GetInviteCode(c *gin.Context) {
 		return
 	}
 
-	// 使用用户UUID作为邀请码
-	inviteCode := user.UUID
+	// 使用用户手机号作为邀请码
+	inviteCode := ""
+	if user.Phone != nil {
+		inviteCode = *user.Phone
+	}
 
 	response.Success(c, gin.H{
 		"code":             inviteCode,

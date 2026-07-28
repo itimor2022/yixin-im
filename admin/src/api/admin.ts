@@ -1684,3 +1684,39 @@ export function updateChatBadge(chatId: number, badgeText: string, badgeColor: s
     data: { badge_text: badgeText, badge_color: badgeColor }
   })
 }
+
+// ==================== 下级用户管理 ====================
+
+export interface SubordinateItem {
+  id: number
+  uuid: string
+  username: string
+  nickname: string
+  phone: string | null
+  avatar: string | null
+  status: number
+  is_member: boolean
+  badge_text: string
+  badge_color: string
+  is_online: boolean
+  last_seen: string | null
+  created_at: string
+}
+
+export interface SubordinateListResponse {
+  list: SubordinateItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 获取用户的下级列表 */
+export function getSubordinates(
+  userId: number,
+  params?: { page?: number; page_size?: number }
+) {
+  return request.get<SubordinateListResponse>({
+    url: `/admin/users/${userId}/subordinates`,
+    params
+  })
+}

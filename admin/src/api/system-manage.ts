@@ -71,6 +71,7 @@ export interface UserTableListItem {
   serviceUsername?: string
   serviceNickname?: string
   serviceInviteCode?: string
+  inviterPhone?: string // 上级手机号（邀请码）
   // 会员信息
   isMember: boolean
   badgeText: string
@@ -118,14 +119,12 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     serviceUserId: item.service_user_id,
     serviceUsername: item.service_username || '',
     serviceNickname: item.service_nickname || '',
-    isMember: !!item.is_member,
-    badgeText: item.badge_text || '',
-    badgeColor: item.badge_color || '',
     serviceInviteCode: item.service_invite_code || '',
+    inviterPhone: item.inviter_phone || '', // 上级手机号
     isMember: !!item.is_member,
     badgeText: item.badge_text || '',
     badgeColor: item.badge_color || '#3390EC',
-    enableWhitelist: item.enable_whitelist, 
+    enableWhitelist: item.enable_whitelist,
     whitelistIps: item.whitelist_ips || ''
   }))
 

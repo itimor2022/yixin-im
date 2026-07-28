@@ -7,7 +7,6 @@ import (
 	"gaoranim/internal/models"
 	"gaoranim/internal/services"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,25 +36,15 @@ type InviteWelcomeInfo struct {
 }
 
 // ValidateInviteCode 校验邀请码是否可用（注册前预校验）
-// 邀请码现在使用用户ID（数字ID或UUID）
+// 邀请码现在使用用户手机号
 func ValidateInviteCode(db *gorm.DB, inviteCode string) *InviteCodeResult {
 	if inviteCode == "" {
 		return nil
 	}
 
-	// 尝试通过用户ID查找邀请码对应的官方客服
+	// 通过手机号查找邀请码对应的官方客服
 	var serviceUser models.User
-	var err error
-
-	// 先尝试按数字ID查找
-	if id, parseErr := parseUint64(inviteCode); parseErr == nil {
-		err = db.Where("id = ? AND status = 1", id).First(&serviceUser).Error
-	}
-
-	// 如果不是数字，尝试按UUID查找
-	if err != nil {
-		err = db.Where("uuid = ? AND status = 1", inviteCode).First(&serviceUser).Error
-	}
+	err := db.Where("phone = ? AND status = 1", inviteCode).First(&serviceUser).Error
 
 	if err != nil {
 		return &InviteCodeResult{Valid: false, Message: "邀请码无效"}
@@ -70,13 +59,8 @@ func ValidateInviteCode(db *gorm.DB, inviteCode string) *InviteCodeResult {
 	return &InviteCodeResult{Valid: true, ServiceUserID: serviceUser.ID}
 }
 
-// parseUint64 尝试将字符串解析为uint64
-func parseUint64(s string) (uint64, error) {
-	return strconv.ParseUint(s, 10, 64)
-}
-
 // ProcessInviteCode 注册时处理邀请码（内部调用）
-// 邀请码现在使用用户ID（数字ID或UUID），无需单独的邀请码表
+// 邀请码现在使用用户手机号
 func ProcessInviteCode(db *gorm.DB, inviteCode string, newUserID uint64) *InviteCodeResult {
 	if inviteCode == "" {
 		return nil

@@ -22,6 +22,18 @@ export const userRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'user-subordinates',
+      name: 'UserSubordinates',
+      component: '/system/user/modules/user-subordinates',
+      meta: {
+        title: '下级用户',
+        icon: 'ri:user-follow-line',
+        keepAlive: false,
+        isHide: true,
+        isHideTab: true
+      }
+    },
+    {
       path: 'checkin',
       name: 'CheckinList',
       component: '/system/checkin',

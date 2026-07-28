@@ -202,7 +202,8 @@
     resetUserPassword,
     getUserDiagnostics,
     sendUserTestPush,
-    UserDiagnosticResponse
+    UserDiagnosticResponse,
+    getSubordinates
   } from '@/api/admin'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
@@ -480,21 +481,15 @@
         },
         {
           prop: 'serviceBind',
-          label: '归属客服 / 邀请码',
-          minWidth: 210,
+          label: '我的上级',
+          minWidth: 180,
           formatter: (row) => {
-            if (!row.serviceUsername && !row.serviceInviteCode) {
+            // 显示上级的手机号（即邀请码）
+            const superiorPhone = row.inviterPhone || row.serviceInviteCode
+            if (!superiorPhone) {
               return h('span', { class: 'text-g-300' }, '—')
             }
-            const serviceName = row.serviceNickname || row.serviceUsername || '未知客服'
-            return h('div', { class: 'py-1' }, [
-              h('div', { class: 'text-sm text-g-700 font-medium' }, serviceName),
-              h(
-                'div',
-                { class: 'text-xs text-g-400 mt-1 font-mono' },
-                `邀请码: ${row.serviceInviteCode || '-'}`
-              )
-            ])
+            return h('div', { class: 'text-sm text-g-700 font-mono' }, superiorPhone)
           }
         },
         {
@@ -544,6 +539,13 @@
                   icon: 'ri:key-2-line',
                   iconClass: 'bg-purple-100 text-purple-500',
                   onClick: () => handleResetPassword(row)
+                }),
+                // 查看下级按钮
+                h(ArtButtonTable, {
+                  icon: 'ri:user-follow-line',
+                  iconClass: 'bg-green-100 text-green-500',
+                  text: '查看下级',
+                  onClick: () => handleViewSubordinates(row)
                 }),
                 // 封禁/解封按钮 - 使用自定义图标和颜色
                 Number(row.status) !== 3
@@ -800,6 +802,26 @@
     dialogVisible.value = false
     currentUserData.value = {}
     refreshData()
+  }
+
+  // 查看下级
+  const handleViewSubordinates = async (row: UserTableListItem) => {
+    // 先检查该用户是否有下级
+    try {
+      const result = await getSubordinates(row.id, { page: 1, page_size: 1 })
+      if (result.total === 0) {
+        ElMessage.info('该用户没有下级')
+        return
+      }
+      // 跳转到下级页面
+      router.push({
+        path: '/system/user-subordinates',
+        query: { userId: row.id, userName: row.userName, phone: row.phone }
+      })
+    } catch (error) {
+      console.error('查询下级失败:', error)
+      ElMessage.error('查询下级失败')
+    }
   }
 
   // 自动刷新（每30秒刷新一次在线状态）
