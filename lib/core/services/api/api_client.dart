@@ -42,12 +42,12 @@ class ApiConfig {
     final base = _serverUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
-    return '\$base/api/v1/ws';
+    return '$base/api/v1/ws';
   }
 
   static String get baseUrl {
     if (_serverUrl.isEmpty) return 'http://localhost/api/v1';
-    return '\$_serverUrl/api/v1';
+    return '$_serverUrl/api/v1';
   }
 
   /// 由 ServerDiscovery 调用，切换节点
@@ -58,7 +58,7 @@ class ApiConfig {
         : newServerUrl;
     if (url == _serverUrl) return;
     if (kDebugMode)
-      debugPrint('[ApiConfig] Server switched: \$_serverUrl → \$url');
+      debugPrint('[ApiConfig] Server switched: $_serverUrl → $url');
     _serverUrl = url;
     // 通知所有已注册的 ApiClient 实例更新
     for (final client in _registeredClients) {
