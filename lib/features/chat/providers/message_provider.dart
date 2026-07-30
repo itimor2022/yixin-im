@@ -1521,22 +1521,6 @@ class MessageListNotifier extends StateNotifier<List<MessageItem>> {
   Future<void> _loadFromLocal() async {
     if (PlatformUtils.isWeb) return;
 
-    // ★ 等待 Isar 初始化完成（最多 8 秒）
-    if (!IsarService.instance.isAvailable) {
-      if (kDebugMode) debugPrint('[Message] Isar 未就绪，等待最多 8s...');
-      const maxWait = Duration(seconds: 8);
-      const interval = Duration(milliseconds: 200);
-      final deadline = DateTime.now().add(maxWait);
-      while (!IsarService.instance.isAvailable) {
-        if (DateTime.now().isAfter(deadline)) {
-          if (kDebugMode) debugPrint('[Message] Isar 等待超时，跳过缓存加载');
-          return;
-        }
-        await Future<void>.delayed(interval);
-      }
-      if (kDebugMode) debugPrint('[Message] Isar 已就绪，继续加载缓存');
-    }
-
     try {
       await _getBurnStateMap();
       final list = await IsarService.instance.isar.messageModels
