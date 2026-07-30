@@ -1426,6 +1426,22 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   Future<void> _loadChatListFromCache() async {
     if (PlatformUtils.isWeb) return;
 
+    // ★ 等待 Isar 初始化完成（最多 8 秒），避免异步启动时数据库未就绪
+    if (!IsarService.instance.isAvailable) {
+      if (kDebugMode) debugPrint('[Chat] Isar 未就绪，等待最多 8s...');
+      const maxWait = Duration(seconds: 8);
+      const interval = Duration(milliseconds: 200);
+      final deadline = DateTime.now().add(maxWait);
+      while (!IsarService.instance.isAvailable) {
+        if (DateTime.now().isAfter(deadline)) {
+          if (kDebugMode) debugPrint('[Chat] Isar 等待超时，跳过缓存加载');
+          return;
+        }
+        await Future<void>.delayed(interval);
+      }
+      if (kDebugMode) debugPrint('[Chat] Isar 已就绪，继续加载缓存');
+    }
+
     try {
       // 限制查询数量，避免大量数据导致性能问题
       final list = await IsarService.instance.isar.chatModels
