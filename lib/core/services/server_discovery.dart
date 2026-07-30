@@ -412,10 +412,18 @@ class ServerDiscovery {
         // ✅ Base64 解码
         String decoded;
         try {
-          decoded = utf8.decode(base64.decode(txtValue));
+          // 清理并补全 Base64 padding
+          // 只保留合法 Base64 字符，过滤所有非法字符
+          var cleanB64 = txtValue.replaceAll(RegExp(r'[^A-Za-z0-9+/=]'), '');
+          // 补全 padding 到 4 的倍数
+          cleanB64 = cleanB64.replaceAll('=', '');
+          final pad = cleanB64.length % 4;
+          if (pad == 2) cleanB64 += '==';
+          else if (pad == 3) cleanB64 += '=';
+          decoded = utf8.decode(base64.decode(cleanB64));
           if (kDebugMode) debugPrint('[Discovery] Base64 decoded: $decoded');
-        } catch (_) {
-          // 如果不是 Base64，直接当明文处理
+        } catch (e) {
+          if (kDebugMode) debugPrint('[Discovery] Base64 decode error: $e, raw: $txtValue');
           decoded = txtValue;
         }
 

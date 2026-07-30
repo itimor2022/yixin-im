@@ -38,22 +38,26 @@ Isar? _isar;
 
 Future<void> _cleanStaleIsarLock(String dirPath) async {
   try {
-    final lockFile = File('$dirPath/default.isar.lock');
-    if (await lockFile.exists()) {
-      await lockFile.delete();
+    final dir = Directory(dirPath);
+    final files = dir.listSync();
+    for (final f in files) {
+      if (f is File && f.path.contains('.lock')) {
+        try { await f.delete(); } catch (_) {}
+      }
     }
   } catch (_) {}
 }
 
 Future<void> _deleteIsarFiles(String dirPath) async {
-  for (final name in ['default.isar', 'default.isar.lock']) {
-    try {
-      final file = File('$dirPath/$name');
-      if (await file.exists()) {
-        await file.delete();
+  try {
+    final dir = Directory(dirPath);
+    final files = dir.listSync();
+    for (final f in files) {
+      if (f is File && f.path.contains('isar')) {
+        try { await f.delete(); } catch (_) {}
       }
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
 }
 
 Future<void> bootstrapApp() async {
@@ -105,7 +109,51 @@ Future<void> _initializeApp() async {
     ]);
   }
 
-  // ★ 立即启动 GaoRanIMApp，用户马上看到登录页
+  // ★ Isar 本地数据库优先初始化
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    // 先尝试关闭已有实例
+    try {
+      final existing = Isar.getInstance();
+      if (existing != null) await existing.close();
+    } catch (_) {}
+    await _cleanStaleIsarLock(dir.path);
+    _isar = await Isar.open(
+      [MessageModelSchema, ChatModelSchema, UserModelSchema],
+      directory: dir.path,
+      inspector: false,
+    ).timeout(const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('Isar timed out'));
+    IsarService.instance.setIsar(_isar!);
+    if (kDebugMode) debugPrint('[Main] Isar ready');
+  } catch (e) {
+    if (kDebugMode) debugPrint('[Main] Isar failed: $e, cleanup...');
+    try {
+      // 强制关闭并删除所有 isar 文件
+      try {
+        final existing = Isar.getInstance();
+        if (existing != null) await existing.close(deleteFromDisk: true);
+      } catch (_) {}
+      final dir = await getApplicationDocumentsDirectory();
+      await _deleteIsarFiles(dir.path);
+      _isar = await Isar.open(
+        [MessageModelSchema, ChatModelSchema, UserModelSchema],
+        directory: dir.path,
+        inspector: false,
+      );
+      IsarService.instance.setIsar(_isar!);
+      if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
+    } catch (retryError) {
+      if (kDebugMode) debugPrint('[Main] Isar retry failed: $retryError');
+    }
+  }
+
+  // ★ ServerDiscovery 后台异步跑，不阻塞 UI
+  ServerDiscovery.instance.initialize().catchError((e) {
+    if (kDebugMode) debugPrint('[Main] ServerDiscovery error: $e');
+  });
+
+  // ★ Isar 就绪后启动 GaoRanIMApp，立刻读缓存渲染列表
   final container = ProviderContainer();
   GlobalHaptics.init(container);
 
@@ -125,7 +173,7 @@ Future<void> _initializeApp() async {
     }
   }
 
-  // ★ Firebase / Isar / 后台服务全部异步初始化，不阻塞登录页渲染
+  // ★ Firebase 和其他后台服务继续异步，不阻塞 UI
   Future<void>.microtask(() async {
     if (Platform.isAndroid) {
       try {
@@ -136,36 +184,6 @@ Future<void> _initializeApp() async {
         FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
       } catch (e) {
         if (kDebugMode) debugPrint('[Main] Firebase init error: $e');
-      }
-    }
-
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      await _cleanStaleIsarLock(dir.path);
-      _isar = await Isar.open(
-        [MessageModelSchema, ChatModelSchema, UserModelSchema],
-        directory: dir.path,
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw TimeoutException('Isar open timed out after 10s');
-        },
-      );
-      IsarService.instance.setIsar(_isar!);
-    } catch (e) {
-      if (kDebugMode)
-        debugPrint('[Main] Isar initialization failed: $e, attempting cleanup...');
-      try {
-        final dir = await getApplicationDocumentsDirectory();
-        await _deleteIsarFiles(dir.path);
-        _isar = await Isar.open(
-          [MessageModelSchema, ChatModelSchema, UserModelSchema],
-          directory: dir.path,
-        );
-        IsarService.instance.setIsar(_isar!);
-        if (kDebugMode) debugPrint('[Main] Isar reopened after cleanup');
-      } catch (retryError) {
-        if (kDebugMode) debugPrint('[Main] Isar retry also failed: $retryError');
       }
     }
 

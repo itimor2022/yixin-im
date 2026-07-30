@@ -42,14 +42,14 @@ class ApiConfig {
     final base = _serverUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
-    return '\$base/api/v1/ws';
+    return '$base/api/v1/ws';
   }
 
   /// baseUrl 为空时返回占位符，避免 Dio 初始化崩溃
   /// ServerDiscovery 完成后会通过 updateServer 更新真实地址
   static String get baseUrl {
     if (_serverUrl.isEmpty) return 'http://localhost/api/v1';
-    return '\$_serverUrl/api/v1';
+    return '$_serverUrl/api/v1';
   }
 
   /// 由 ServerDiscovery 调用，切换节点

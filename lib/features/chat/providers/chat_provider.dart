@@ -1612,8 +1612,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     if (_isDisposed) return;
     state = state.copyWith(isLoading: true, error: null);
 
-    // 仅在首次加载时读取本地缓存，已初始化后不再用缓存覆盖当前状态
-    if (!state.isInitialized && !PlatformUtils.isWeb) {
+    // 数据为空时读取本地缓存（解决重开App后provider未销毁但数据为空的问题）
+    final isEmpty = state.pinnedChats.isEmpty && state.regularChats.isEmpty;
+    if (kDebugMode) debugPrint('[Chat] loadFromServer: isEmpty=$isEmpty isInitialized=${state.isInitialized}');
+    if (isEmpty && !PlatformUtils.isWeb) {
       await _loadChatListFromCache();
     }
 
