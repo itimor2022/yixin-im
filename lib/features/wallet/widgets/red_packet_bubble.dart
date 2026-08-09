@@ -1,21 +1,43 @@
+// 文件用途：提供 RedPacketBubble 可复用界面组件，服务于钱包与支付。
+// 核心逻辑：根据输入模型和状态渲染 RedPacketBubble，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart' show ApiConfig;
 import '../services/wallet_service.dart';
 
+String _redPacketText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：red packet bubble 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 红包消息气泡 - 仿微信简洁风格
 class RedPacketBubble extends StatelessWidget {
   final RedPacketInfo redPacket;
   final bool isOutgoing;
   final VoidCallback? onTap;
+  final String currency;
 
   const RedPacketBubble({
     super.key,
     required this.redPacket,
     required this.isOutgoing,
     this.onTap,
+    this.currency = '¥',
   });
 
   @override
@@ -26,8 +48,10 @@ class RedPacketBubble extends StatelessWidget {
     final isActive = !isExpired && !isFinished;
 
     // 红包颜色 — 始终保持红色，只通过文字区分状态
-    final primaryColor = isExpired ? const Color(0xFFBEBEBE) : const Color(0xFFE84C3D);
-    final secondaryColor = isExpired ? const Color(0xFF9E9E9E) : const Color(0xFFC0392B);
+    final primaryColor =
+        isExpired ? const Color(0xFFBEBEBE) : const Color(0xFFE84C3D);
+    final secondaryColor =
+        isExpired ? const Color(0xFF9E9E9E) : const Color(0xFFC0392B);
 
     return GestureDetector(
       onTap: () {
@@ -101,7 +125,7 @@ class RedPacketBubble extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _getStatusText(),
+                          _getStatusText(context),
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.white.withOpacity(0.75),
@@ -118,14 +142,19 @@ class RedPacketBubble extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: isActive 
+                color: isActive
                     ? const Color(0xFFD4433E)
                     : const Color(0xFF8E8E8E),
               ),
               child: Row(
                 children: [
                   Text(
-                    '红包',
+                    _redPacketText(
+                      context,
+                      zhCN: '红包',
+                      zhTW: '紅包',
+                      en: 'Red packet',
+                    ),
                     style: TextStyle(
                       fontSize: 10,
                       color: Colors.white.withOpacity(0.8),
@@ -134,7 +163,7 @@ class RedPacketBubble extends StatelessWidget {
                   const Spacer(),
                   if (isClaimed && redPacket.claimedAmount != null)
                     Text(
-                      '¥${redPacket.claimedAmount!.toStringAsFixed(2)}',
+                      '$currency${redPacket.claimedAmount!.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 10,
                         color: Colors.white.withOpacity(0.8),
@@ -150,17 +179,37 @@ class RedPacketBubble extends StatelessWidget {
     );
   }
 
-  String _getStatusText() {
+  String _getStatusText(BuildContext context) {
     if (redPacket.isClaimed) {
-      return '已领取';
+      return _redPacketText(
+        context,
+        zhCN: '已领取',
+        zhTW: '已領取',
+        en: 'Claimed',
+      );
     }
     switch (redPacket.status) {
       case RedPacketStatus.active:
-        return '领取红包';
+        return _redPacketText(
+          context,
+          zhCN: '领取红包',
+          zhTW: '領取紅包',
+          en: 'Claim red packet',
+        );
       case RedPacketStatus.expired:
-        return '已过期';
+        return _redPacketText(
+          context,
+          zhCN: '已过期',
+          zhTW: '已過期',
+          en: 'Expired',
+        );
       case RedPacketStatus.finished:
-        return '已领完';
+        return _redPacketText(
+          context,
+          zhCN: '已领完',
+          zhTW: '已領完',
+          en: 'Fully claimed',
+        );
     }
   }
 }
@@ -171,6 +220,7 @@ class OpenRedPacketDialog extends StatefulWidget {
   final String senderName;
   final String? senderAvatar;
   final Future<double?> Function() onOpen;
+  final String currency;
 
   const OpenRedPacketDialog({
     super.key,
@@ -178,6 +228,7 @@ class OpenRedPacketDialog extends StatefulWidget {
     required this.senderName,
     this.senderAvatar,
     required this.onOpen,
+    this.currency = '¥',
   });
 
   @override
@@ -195,6 +246,7 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
   late Animation<double> _openScaleAnimation;
   late Animation<double> _amountScaleAnimation;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -303,7 +355,8 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                 radius: 28,
                 backgroundColor: Colors.white24,
                 backgroundImage: widget.senderAvatar?.isNotEmpty == true
-                    ? CachedNetworkImageProvider(ApiConfig.getMediaUrl(widget.senderAvatar!))
+                    ? CachedNetworkImageProvider(
+                        ApiConfig.getMediaUrl(widget.senderAvatar!))
                     : null,
                 child: widget.senderAvatar?.isNotEmpty != true
                     ? Text(
@@ -324,7 +377,12 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
 
             // 发送者名称
             Text(
-              '${widget.senderName}的红包',
+              _redPacketText(
+                context,
+                zhCN: '${widget.senderName}的红包',
+                zhTW: '${widget.senderName}的紅包',
+                en: '${widget.senderName}\'s red packet',
+              ),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -369,7 +427,7 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '¥${(_amount ?? 0).toStringAsFixed(2)}',
+                                '${widget.currency}${(_amount ?? 0).toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontSize: 42,
                                   fontWeight: FontWeight.bold,
@@ -378,7 +436,12 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '已存入余额',
+                                _redPacketText(
+                                  context,
+                                  zhCN: '已存入余额',
+                                  zhTW: '已存入餘額',
+                                  en: 'Added to balance',
+                                ),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.white.withOpacity(0.7),
@@ -403,9 +466,8 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                             animation: _pulseAnimation,
                             builder: (context, child) {
                               return Transform.scale(
-                                scale: _isOpening
-                                    ? 0.95
-                                    : _pulseAnimation.value,
+                                scale:
+                                    _isOpening ? 0.95 : _pulseAnimation.value,
                                 child: GestureDetector(
                                   onTap: _openRedPacket,
                                   child: Container(
@@ -436,9 +498,14 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
                                                 ),
                                               ),
                                             )
-                                          : const Text(
-                                              '開',
-                                              style: TextStyle(
+                                          : Text(
+                                              _redPacketText(
+                                                context,
+                                                zhCN: '开',
+                                                zhTW: '開',
+                                                en: 'Open',
+                                              ),
+                                              style: const TextStyle(
                                                 fontSize: 32,
                                                 fontWeight: FontWeight.bold,
                                                 color: Color(0xFFC0392B),
@@ -472,7 +539,12 @@ class _OpenRedPacketDialogState extends State<OpenRedPacketDialog>
               ),
               child: Center(
                 child: Text(
-                  '红包',
+                  _redPacketText(
+                    context,
+                    zhCN: '红包',
+                    zhTW: '紅包',
+                    en: 'Red packet',
+                  ),
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withOpacity(0.5),
@@ -494,6 +566,7 @@ Future<double?> showOpenRedPacketDialog(
   required String senderName,
   String? senderAvatar,
   required Future<double?> Function() onOpen,
+  String currency = '¥',
 }) {
   return showDialog<double?>(
     context: context,
@@ -504,6 +577,7 @@ Future<double?> showOpenRedPacketDialog(
       senderName: senderName,
       senderAvatar: senderAvatar,
       onOpen: onOpen,
+      currency: currency,
     ),
   );
 }

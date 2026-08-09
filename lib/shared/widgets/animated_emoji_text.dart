@@ -1,8 +1,12 @@
+// 文件用途：提供 AnimatedEmojiText 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 AnimatedEmojiText，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import 'web_safe_lottie.dart';
 
 import '../../core/constants/emoji_animations.dart';
 
+// 关键声明：animated emoji text 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 支持动态表情的文本组件
 class AnimatedEmojiText extends StatelessWidget {
   final String text;
@@ -63,7 +67,8 @@ class AnimatedEmojiText extends StatelessWidget {
     int lastEnd = 0;
     for (final match in _emojiPattern.allMatches(text)) {
       if (match.start > lastEnd) {
-        result.add(TextSpan(text: text.substring(lastEnd, match.start), style: style));
+        result.add(
+            TextSpan(text: text.substring(lastEnd, match.start), style: style));
       }
       final emoji = match.group(0)!;
       final lottieFile = emojiMap[emoji];
@@ -73,16 +78,18 @@ class AnimatedEmojiText extends StatelessWidget {
           child: SizedBox(
             width: emojiSize,
             height: emojiSize,
-            child: Lottie.asset(
+            child: WebSafeLottie.asset(
               'assets/emoji/lottie/$lottieFile',
               fit: BoxFit.contain,
               repeat: true,
-              errorBuilder: (_, __, ___) => Text(emoji, style: style?.copyWith(fontSize: emojiSize * 0.8)),
+              errorBuilder: (_, __, ___) => Text(emoji,
+                  style: style?.copyWith(fontSize: emojiSize * 0.8)),
             ),
           ),
         ));
       } else {
-        result.add(TextSpan(text: emoji, style: style?.copyWith(fontSize: emojiSize * 0.8)));
+        result.add(TextSpan(
+            text: emoji, style: style?.copyWith(fontSize: emojiSize * 0.8)));
       }
       lastEnd = match.end;
     }
@@ -109,18 +116,20 @@ class AnimatedEmojiText extends StatelessWidget {
           SizedBox(
             width: emojiSize,
             height: emojiSize,
-            child: Lottie.asset(
+            child: WebSafeLottie.asset(
               'assets/emoji/lottie/$lottieFile',
               fit: BoxFit.contain,
               repeat: true,
               errorBuilder: (context, error, stackTrace) {
-                return Text(emoji, style: style?.copyWith(fontSize: emojiSize * 0.8));
+                return Text(emoji,
+                    style: style?.copyWith(fontSize: emojiSize * 0.8));
               },
             ),
           ),
         );
       } else {
-        result.add(Text(emoji, style: style?.copyWith(fontSize: emojiSize * 0.8)));
+        result.add(
+            Text(emoji, style: style?.copyWith(fontSize: emojiSize * 0.8)));
       }
       lastEnd = match.end;
     }
@@ -161,10 +170,12 @@ class AnimatedEmojiInputField extends StatefulWidget {
   });
 
   @override
-  State<AnimatedEmojiInputField> createState() => _AnimatedEmojiInputFieldState();
+  State<AnimatedEmojiInputField> createState() =>
+      _AnimatedEmojiInputFieldState();
 }
 
 class _AnimatedEmojiInputFieldState extends State<AnimatedEmojiInputField> {
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -190,30 +201,33 @@ class _AnimatedEmojiInputFieldState extends State<AnimatedEmojiInputField> {
         TextField(
           controller: widget.controller,
           focusNode: widget.focusNode,
-          style: widget.style?.copyWith(color: Colors.transparent) ?? 
-                 const TextStyle(color: Colors.transparent),
+          style: widget.style?.copyWith(color: Colors.transparent) ??
+              const TextStyle(color: Colors.transparent),
           cursorColor: widget.style?.color ?? Colors.black,
           decoration: widget.decoration?.copyWith(
-            hintText: widget.controller.text.isEmpty ? widget.hintText : null,
-            hintStyle: widget.hintStyle,
-          ) ?? InputDecoration(
-            hintText: widget.controller.text.isEmpty ? widget.hintText : null,
-            hintStyle: widget.hintStyle,
-            border: InputBorder.none,
-          ),
+                hintText:
+                    widget.controller.text.isEmpty ? widget.hintText : null,
+                hintStyle: widget.hintStyle,
+              ) ??
+              InputDecoration(
+                hintText:
+                    widget.controller.text.isEmpty ? widget.hintText : null,
+                hintStyle: widget.hintStyle,
+                border: InputBorder.none,
+              ),
           onChanged: widget.onChanged,
           onTap: widget.onTap,
           enabled: widget.enabled,
           maxLines: widget.maxLines,
         ),
-        
+
         // 上层显示动态表情
         if (widget.controller.text.isNotEmpty)
           Positioned.fill(
             child: IgnorePointer(
               child: Container(
-                padding: widget.decoration?.contentPadding ?? 
-                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: widget.decoration?.contentPadding ??
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 alignment: Alignment.centerLeft,
                 child: AnimatedEmojiText(
                   text: widget.controller.text,
@@ -244,12 +258,12 @@ class AnimatedEmoji extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lottieFile = EmojiAnimations.emojiToFile[emoji];
-    
+
     if (lottieFile != null && animate) {
       return SizedBox(
         width: size,
         height: size,
-        child: Lottie.asset(
+        child: WebSafeLottie.asset(
           'assets/emoji/lottie/$lottieFile',
           fit: BoxFit.contain,
           repeat: true,
@@ -259,7 +273,7 @@ class AnimatedEmoji extends StatelessWidget {
         ),
       );
     }
-    
+
     return Text(emoji, style: TextStyle(fontSize: size * 0.8));
   }
 }

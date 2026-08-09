@@ -27,7 +27,7 @@
       </ElCard>
       <ElCard shadow="never" class="stat-card">
         <div class="flex items-center gap-3">
-          <div class="stat-icon bg-purple-100 text-purple-500">
+          <div class="stat-icon bg-gray-100 text-gray-600">
             <i class="ri-time-line text-xl"></i>
           </div>
           <div>
@@ -191,6 +191,13 @@
             </ElTag>
           </template>
         </ElTableColumn>
+        <ElTableColumn label="接口" width="100" align="center">
+          <template #default="{ row }">
+            <ElTag :type="getProviderType(row)" size="small">
+              {{ getProviderText(row) }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
         <ElTableColumn label="状态" width="100" align="center">
           <template #default="{ row }">
             <ElTag :type="getStatusType(row.status)" size="small">
@@ -209,8 +216,17 @@
             {{ formatTime(row.created_at) }}
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="100" fixed="right" align="center">
+        <ElTableColumn label="操作" width="170" fixed="right" align="center">
           <template #default="{ row }">
+            <ElButton
+              v-if="isActiveCall(row.status)"
+              size="small"
+              type="warning"
+              link
+              @click="handleForceEnd(row)"
+            >
+              <i class="ri-stop-circle-line mr-1"></i>强制结束
+            </ElButton>
             <ElButton size="small" type="danger" link @click="handleDelete(row)">
               <i class="ri-delete-bin-line mr-1"></i>删除
             </ElButton>
@@ -255,6 +271,7 @@
     getCallList,
     getCallStats,
     deleteCall,
+    forceEndCall,
     batchDeleteCalls,
     CallRecord,
     CallStats
@@ -319,6 +336,18 @@
     }
   }
 
+  const isActiveCall = (status: string) => status === 'calling' || status === 'connected'
+
+  // 兼容历史 rtc_provider 和当前 provider 字段，未知值按默认 Agora 展示。
+  const getCallProvider = (row: CallRecord) =>
+    row.rtc_provider === 'livekit' || row.provider === 'livekit' ? 'livekit' : 'agora'
+
+  const getProviderType = (row: CallRecord) =>
+    getCallProvider(row) === 'livekit' ? 'success' : 'primary'
+
+  const getProviderText = (row: CallRecord) =>
+    getCallProvider(row) === 'livekit' ? 'LiveKit' : 'Agora'
+
   const formatTime = (time: string) => {
     if (!time) return '-'
     return new Date(time).toLocaleString('zh-CN')
@@ -360,6 +389,7 @@
         page_size: pagination.page_size,
         ...searchParams
       }
+      // 日期组件返回区间端点，转换成后端列表接口约定的 start_date/end_date。
       if (dateRange.value) {
         params.start_date = dateRange.value[0]
         params.end_date = dateRange.value[1]
@@ -408,6 +438,25 @@
     } catch (e: any) {
       if (e !== 'cancel') {
         ElMessage.error(e.message || '删除失败')
+      }
+    }
+  }
+
+  const handleForceEnd = async (row: CallRecord) => {
+    try {
+      await ElMessageBox.confirm(
+        '确定要强制结束该通话吗？双方客户端会同步退出当前通话。',
+        '强制结束通话',
+        { type: 'warning' }
+      )
+      await forceEndCall(row.id)
+      // 强制结束会改变记录状态和聚合统计，两份数据都需要重新向服务端读取。
+      ElMessage.success('已强制结束')
+      fetchData()
+      fetchStats()
+    } catch (e: any) {
+      if (e !== 'cancel') {
+        ElMessage.error(e.message || '强制结束失败')
       }
     }
   }

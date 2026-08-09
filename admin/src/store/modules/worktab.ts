@@ -180,7 +180,7 @@ export const useWorktabStore = defineStore(
       const normalizedTab = normalizeTab(tab)
       let existingIndex = findTabIndex(normalizedTab.tabId)
 
-      if (existingIndex === -1 && normalizedTab.path) {
+      if (existingIndex === -1 && !normalizedTab.name && normalizedTab.path) {
         existingIndex = findTabIndexByPath(normalizedTab.path)
       }
 
@@ -199,8 +199,7 @@ export const useWorktabStore = defineStore(
 
         opened.value[existingIndex] = {
           ...existingTab,
-          ...normalizedTab,
-          tabId: existingTab.tabId || normalizedTab.tabId
+          ...normalizedTab
         }
 
         current.value = opened.value[existingIndex]
@@ -408,19 +407,31 @@ export const useWorktabStore = defineStore(
      */
     const validateWorktabs = (routerInstance: Router): void => {
       try {
+        const hasValidMatch = (matched: ReturnType<Router['resolve']>['matched']): boolean => {
+          return matched.some((record) => {
+            return record.name !== 'Exception404' && !record.path.includes(':pathMatch')
+          })
+        }
+
         // 动态路由校验：优先使用路由 name 判断有效性；否则用 resolve 匹配参数化路径
         const isTabRouteValid = (tab: Partial<WorkTab>): boolean => {
           try {
             if (tab.name) {
-              const routes = routerInstance.getRoutes()
-              if (routes.some((r) => r.name === tab.name)) return true
+              const resolvedByName = routerInstance.resolve({
+                name: tab.name,
+                params: tab.params as any,
+                query: (tab.query as LocationQueryRaw) || undefined
+              })
+              if (hasValidMatch(resolvedByName.matched)) {
+                return !tab.path || resolvedByName.path === tab.path
+              }
             }
             if (tab.path) {
               const resolved = routerInstance.resolve({
                 path: tab.path,
                 query: (tab.query as LocationQueryRaw) || undefined
               })
-              return resolved.matched.length > 0
+              return hasValidMatch(resolved.matched)
             }
             return false
           } catch {
@@ -429,9 +440,19 @@ export const useWorktabStore = defineStore(
         }
 
         // 过滤出有效的标签页
+        const seenTabIds = new Set<string>()
         const validTabs = opened.value
           .map((tab) => normalizeTab(tab))
-          .filter((tab) => isTabRouteValid(tab))
+          .filter((tab) => {
+            if (!isTabRouteValid(tab)) return false
+
+            const expectedTabId = buildTabId(tab)
+            if (tab.tabId !== expectedTabId) return false
+
+            if (seenTabIds.has(tab.tabId)) return false
+            seenTabIds.add(tab.tabId)
+            return true
+          })
 
         if (validTabs.length !== opened.value.length) {
           console.warn('发现无效的标签页路由，已自动清理')

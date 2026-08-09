@@ -44,6 +44,7 @@
   defineOptions({ name: 'ArtDragVerify' })
 
   // 事件定义
+  // value 由父组件控制；通过时同时回传 v-model 更新和一次性完成事件。
   const emit = defineEmits(['handlerMove', 'update:value', 'passCallback'])
 
   // 组件属性接口定义
@@ -142,7 +143,7 @@
     moveX = e.targetTouches[0].pageX
     moveY = e.targetTouches[0].pageY
 
-    // 如果横向移动距离大于纵向移动距离，阻止默认行为（防止页面滑动）
+    // 只拦截明显的横向拖动，纵向手势仍交给页面滚动。
     if (Math.abs(moveX - startX) > Math.abs(moveY - startY)) {
       e.preventDefault()
     }
@@ -188,6 +189,7 @@
 
   // 组件卸载前清理事件监听器
   onBeforeUnmount(() => {
+    // 触摸监听挂在 document 上，组件销毁时必须显式解除。
     document.removeEventListener('touchstart', onTouchStart)
     document.removeEventListener('touchmove', onTouchMove)
   })

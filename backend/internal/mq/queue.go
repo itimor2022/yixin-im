@@ -1,16 +1,16 @@
+// 文件用途：定义异步消息队列的生产、消费和任务分发。
+// 核心逻辑：统一队列名称、优先级、worker 生命周期和失败处理。
+
 package mq
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // MessageQueue 消息队列 - 基于Redis实现高性能消息队列
@@ -43,9 +43,8 @@ const (
 	QueueMessageSync = "mq:message:sync" // 消息同步队列
 	QueuePushNotify  = "mq:push:notify"  // 推送通知队列
 	QueueUserStatus  = "mq:user:status"  // 用户状态队列
-	QueueDelayed      = "mq:delayed"         // 延迟队列
-	QueueDead         = "mq:dead"            // 死信队列
-	QueueUserChatSync = "mq:user_chat:sync"  // 会话预览异步更新队列
+	QueueDelayed     = "mq:delayed"      // 延迟队列
+	QueueDead        = "mq:dead"         // 死信队列
 )
 
 // NewMessageQueue 创建消息队列
@@ -68,6 +67,7 @@ func (mq *MessageQueue) RegisterHandler(msgType string, handler Handler) {
 }
 
 // Publish 发布消息到队列
+
 func (mq *MessageQueue) Publish(ctx context.Context, queue string, msg *QueueMessage) error {
 	if msg.ID == "" {
 		msg.ID = generateID()
@@ -89,11 +89,11 @@ func (mq *MessageQueue) Publish(ctx context.Context, queue string, msg *QueueMes
 	if msg.Priority > 0 {
 		targetQueue = queue + ":high"
 	}
-
 	return mq.redis.LPush(ctx, targetQueue, data).Err()
 }
 
-// PublishDelayed 发布延迟消息
+// PublishDelayed
+
 func (mq *MessageQueue) PublishDelayed(ctx context.Context, msg *QueueMessage, delay time.Duration) error {
 	if msg.ID == "" {
 		msg.ID = generateID()
@@ -138,10 +138,10 @@ func (mq *MessageQueue) worker(id int, queues []string) {
 	// 构建队列列表（包含高优先级队列）
 	allQueues := make([]string, 0, len(queues)*2)
 	for _, q := range queues {
+
 		allQueues = append(allQueues, q+":high") // 优先处理高优先级
 		allQueues = append(allQueues, q)
 	}
-
 	for {
 		select {
 		case <-mq.ctx.Done():
@@ -150,7 +150,8 @@ func (mq *MessageQueue) worker(id int, queues []string) {
 		default:
 		}
 
-		// 使用BRPOP阻塞获取消息
+		//
+
 		result, err := mq.redis.BRPop(mq.ctx, time.Second, allQueues...).Result()
 		if err != nil {
 			if err != redis.Nil {
@@ -158,7 +159,6 @@ func (mq *MessageQueue) worker(id int, queues []string) {
 			}
 			continue
 		}
-
 		if len(result) < 2 {
 			continue
 		}
@@ -180,8 +180,8 @@ func (mq *MessageQueue) processMessage(msg *QueueMessage) {
 	mq.mu.RLock()
 	handler, ok := mq.handlers[msg.Type]
 	mq.mu.RUnlock()
-
 	if !ok {
+
 		log.Printf("[MQ] No handler for message type: %s", msg.Type)
 		return
 	}
@@ -197,7 +197,8 @@ func (mq *MessageQueue) processMessage(msg *QueueMessage) {
 		// 重试逻辑
 		msg.Retry++
 		if msg.Retry <= msg.MaxRetry {
-			// 指数退避重试
+			//
+
 			delay := time.Duration(msg.Retry*msg.Retry) * time.Second
 			mq.PublishDelayed(context.Background(), msg, delay)
 		} else {
@@ -213,7 +214,6 @@ func (mq *MessageQueue) processMessage(msg *QueueMessage) {
 func (mq *MessageQueue) processDelayed() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-mq.ctx.Done():
@@ -234,13 +234,11 @@ func (mq *MessageQueue) checkDelayed() {
 		Max:   formatFloat(now),
 		Count: 100,
 	}).Result()
-
 	if err != nil || len(results) == 0 {
 		return
 	}
-
 	for _, data := range results {
-		// 从延迟队列移除
+		//
 		if mq.redis.ZRem(mq.ctx, QueueDelayed, data).Val() == 0 {
 			continue // 已被其他worker处理
 		}
@@ -251,7 +249,8 @@ func (mq *MessageQueue) checkDelayed() {
 			continue
 		}
 
-		// 根据消息类型发布到对应队列
+		//
+
 		queue := getQueueByType(msg.Type)
 		mq.redis.LPush(mq.ctx, queue, data)
 	}
@@ -268,21 +267,23 @@ func getQueueByType(msgType string) string {
 		return QueuePushNotify
 	case "user_status":
 		return QueueUserStatus
-	case "user_chat_sync":
-		return QueueUserChatSync
 	default:
 		return QueueMessageSend
 	}
 }
 
-// 生成消息ID - 使用 crypto/rand 保证高并发下全局唯一
+// 生成消息ID
 func generateID() string {
-	b := make([]byte, 12)
-	if _, err := rand.Read(b); err != nil {
-		// 降级方案：时间戳 base36，极端情况下不崩溃
-		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	return time.Now().Format("20060102150405") + randomString(8)
+}
+
+func randomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
 	}
-	return time.Now().Format("20060102150405") + hex.EncodeToString(b)
+	return string(b)
 }
 
 func formatFloat(f float64) string {

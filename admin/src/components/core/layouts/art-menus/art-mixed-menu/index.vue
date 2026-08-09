@@ -244,6 +244,7 @@
     hover:text-g-900 
     hover:bg-g-200;
   }
+
 </style>
 
 <style scoped>

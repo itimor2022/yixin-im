@@ -1,19 +1,20 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"net/http"
 	"strings"
 	"time"
-
-	"gaoranim/internal/authsession"
-	"gaoranim/internal/cache"
-	"gaoranim/internal/models"
-	"gaoranim/internal/services"
-	"gaoranim/pkg/jwt"
-	"gaoranim/pkg/response"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"genericim/internal/authsession"
+	"genericim/internal/cache"
+	"genericim/internal/models"
+	"genericim/internal/services"
+	"genericim/pkg/jwt"
+	"genericim/pkg/response"
 )
 
 type ServiceAdminHandler struct {
@@ -40,20 +41,22 @@ func (h *ServiceAdminHandler) Login(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-
 	req.Username = strings.TrimSpace(req.Username)
+	if !checkLoginThrottle(c, h.cache, "service-admin", req.Username) {
+		return
+	}
 
 	var user models.User
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		recordLoginFailure(c, h.cache, "service-admin", req.Username)
 		response.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-
 	if !user.CheckPassword(req.Password) {
+		recordLoginFailure(c, h.cache, "service-admin", req.Username)
 		response.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-
 	if user.Status == models.UserStatusDisabled {
 		response.Error(c, http.StatusForbidden, "账号已被禁用")
 		return
@@ -61,12 +64,13 @@ func (h *ServiceAdminHandler) Login(c *gin.Context) {
 
 	var official models.OfficialUser
 	if err := h.db.Where("user_id = ? AND is_service_enabled = ?", user.ID, true).First(&official).Error; err != nil {
+		recordLoginFailure(c, h.cache, "service-admin", req.Username)
 		response.Error(c, http.StatusForbidden, "当前账号不是已启用的官方客服")
 		return
 	}
 
+	clearLoginAccountThrottle(c, h.cache, "service-admin", req.Username)
 	h.db.Model(&user).Update("last_seen", time.Now())
-
 	sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
 
 	token, err := jwt.GenerateToken(user.UUID, req.DeviceID, sessionVersion)
@@ -74,7 +78,6 @@ func (h *ServiceAdminHandler) Login(c *gin.Context) {
 		response.ServerError(c, "生成Token失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"token": token,
 		"user": gin.H{
@@ -119,7 +122,6 @@ func (h *ServiceAdminHandler) officialUserByContext(c *gin.Context) (*models.Use
 	if err := h.db.Where("user_id = ? AND is_service_enabled = ?", user.ID, true).First(&official).Error; err != nil {
 		return nil, nil, err
 	}
-
 	return &user, &official, nil
 }
 
@@ -135,12 +137,10 @@ func (h *ServiceAdminHandler) GetProfile(c *gin.Context) {
 	if err := h.db.Where("service_user_id = ?", user.ID).Order("id ASC").First(&invite).Error; err == nil {
 		inviteCode = invite.Code
 	}
-
 	phone := ""
 	if user.Phone != nil {
 		phone = *user.Phone
 	}
-
 	response.Success(c, gin.H{
 		"nickname":   user.Nickname,
 		"phone":      phone,
@@ -185,7 +185,6 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
 		Where("ic.service_user_id = ?", user.ID).
 		Count(&inviteeCount)
-
 	now := time.Now()
 	currentLocation := now.Location()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, currentLocation)
@@ -222,12 +221,10 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		Scan(&trend).Error; err != nil {
 		trend = []trendItem{}
 	}
-
 	trendMap := make(map[string]int64, len(trend))
 	for _, item := range trend {
 		trendMap[item.Date] = item.Count
 	}
-
 	series := make([]gin.H, 0, 7)
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
@@ -249,7 +246,6 @@ func (h *ServiceAdminHandler) GetDashboard(c *gin.Context) {
 		Scan(&recentInvitees).Error; err != nil {
 		recentInvitees = []recentInviteeItem{}
 	}
-
 	response.Success(c, gin.H{
 		"inviteCode":        inviteCode,
 		"inviteeCount":      inviteeCount,
@@ -275,7 +271,6 @@ func (h *ServiceAdminHandler) GetInviteCode(c *gin.Context) {
 		response.NotFound(c, "邀请码不存在")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"code":             invite.Code,
 		"updatedAt":        invite.UpdatedAt.Format("2006-01-02 15:04"),
@@ -300,30 +295,22 @@ func (h *ServiceAdminHandler) GetInvitees(c *gin.Context) {
 		RegisteredAt time.Time `json:"registered_at"`
 		Active       bool      `json:"active"`
 	}
-
 	latestUsageSubQuery := h.db.Table("invite_code_usages").
 		Select("MAX(id)").
 		Group("user_id")
 
 	var list []inviteeItem
 	if err := h.db.Table("invite_code_usages AS icu").
-		Select(`
-			u.id AS id,
-			u.nickname AS name,
-			u.uuid AS uuid,
-			icu.created_at AS registered_at,
-			CASE WHEN u.status = 1 THEN true ELSE false END AS active
-		`).
+		Select(` 			u.id AS id, u.nickname AS name, u.uuid AS uuid, icu.created_at AS registered_at, CASE WHEN u.status = 1 THEN true ELSE false END AS active 		`).
 		Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
 		Joins("JOIN users u ON u.id = icu.user_id AND u.deleted_at IS NULL").
-		Where("icu.id IN (?)", latestUsageSubQuery).
+		Where("icu.id IN(?)", latestUsageSubQuery).
 		Where("ic.service_user_id = ?", user.ID).
 		Order("icu.created_at DESC").
 		Scan(&list).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "获取失败")
 		return
 	}
-
 	result := make([]gin.H, 0, len(list))
 	for _, item := range list {
 		result = append(result, gin.H{
@@ -334,7 +321,6 @@ func (h *ServiceAdminHandler) GetInvitees(c *gin.Context) {
 			"active":       item.Active,
 		})
 	}
-
 	response.Success(c, result)
 }
 
@@ -344,12 +330,10 @@ func (h *ServiceAdminHandler) GetWelcomeMessage(c *gin.Context) {
 		response.Forbidden(c, "仅官方客服可访问")
 		return
 	}
-
 	message := strings.TrimSpace(official.WelcomeMessage)
 	if message == "" {
 		message = defaultServiceWelcomeMessage()
 	}
-
 	response.Success(c, gin.H{"message": message})
 }
 
@@ -367,7 +351,6 @@ func (h *ServiceAdminHandler) UpdateWelcomeMessage(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
 		message = defaultServiceWelcomeMessage()
@@ -376,12 +359,10 @@ func (h *ServiceAdminHandler) UpdateWelcomeMessage(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "欢迎语不能超过500个字符")
 		return
 	}
-
 	if err := h.db.Model(&models.OfficialUser{}).Where("id = ?", official.ID).Update("welcome_message", message).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
-
 	response.Success(c, gin.H{"success": true, "message": message, "length": len([]rune(message))})
 }
 
@@ -400,26 +381,21 @@ func (h *ServiceAdminHandler) UpdatePassword(c *gin.Context) {
 		response.BadRequest(c, "参数错误：新密码长度需为6-20位")
 		return
 	}
-
 	if !user.CheckPassword(req.OldPassword) {
 		response.Error(c, http.StatusBadRequest, "原密码错误")
 		return
 	}
-
 	if err := user.SetPassword(req.NewPassword); err != nil {
 		response.Error(c, http.StatusInternalServerError, "密码加密失败")
 		return
 	}
-
 	if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Update("password", user.Password).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
-
 	if h.cache != nil {
 		authsession.MarkPasswordReset(c.Request.Context(), h.cache, user.UUID)
 	}
-
 	response.SuccessWithMessage(c, "密码已更新，请重新登录", gin.H{"success": true})
 }
 
@@ -434,7 +410,6 @@ func (h *ServiceAdminHandler) SendPhoneBindCode(c *gin.Context) {
 		response.Forbidden(c, "仅官方客服可访问")
 		return
 	}
-
 	if user.Phone != nil && *user.Phone != "" {
 		response.Error(c, http.StatusBadRequest, "已绑定手机号，如需更换请联系管理员")
 		return
@@ -447,7 +422,6 @@ func (h *ServiceAdminHandler) SendPhoneBindCode(c *gin.Context) {
 		response.BadRequest(c, "请输入手机号")
 		return
 	}
-
 	phone := services.NormalizeCNMobile(req.Phone)
 	if phone == "" {
 		response.BadRequest(c, "请输入有效的中国大陆手机号")
@@ -460,27 +434,23 @@ func (h *ServiceAdminHandler) SendPhoneBindCode(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "该手机号已被其他账号使用")
 		return
 	}
-
 	ctx := c.Request.Context()
 	ok, rateErr := h.cache.RateLimit(ctx, "service-admin:smsbind:"+phone, 1, time.Minute)
 	if rateErr != nil || !ok {
 		response.Error(c, http.StatusTooManyRequests, "发送过于频繁，请稍后再试")
 		return
 	}
-
 	code := services.GenPhoneBindCode()
 	if err := h.cache.SetVerifyCode(ctx, phone, code); err != nil {
 		response.ServerError(c, "验证码缓存失败")
 		return
 	}
-
 	if err := h.smsSvc.SendOTP(ctx, phone, code); err != nil {
 		_ = h.cache.DeleteVerifyCode(ctx, phone)
 		response.Error(c, http.StatusBadGateway, "短信发送失败，请稍后重试")
 		return
 	}
 	clearSMSVerifyAttempts(ctx, h.cache, "service-admin-bind-phone:"+phone)
-
 	response.Success(c, gin.H{
 		"message":    "验证码已发送",
 		"expires_in": int(cache.TTLVerifyCode / time.Second),
@@ -498,7 +468,6 @@ func (h *ServiceAdminHandler) BindPhone(c *gin.Context) {
 		response.Forbidden(c, "仅官方客服可访问")
 		return
 	}
-
 	if user.Phone != nil && *user.Phone != "" {
 		response.Error(c, http.StatusBadRequest, "已绑定手机号")
 		return
@@ -512,13 +481,11 @@ func (h *ServiceAdminHandler) BindPhone(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-
 	phone := services.NormalizeCNMobile(req.Phone)
 	if phone == "" {
 		response.BadRequest(c, "手机号无效")
 		return
 	}
-
 	ctx := c.Request.Context()
 	stored, cacheErr := h.cache.GetVerifyCode(ctx, phone)
 	if cacheErr != nil || stored == "" {
@@ -539,7 +506,6 @@ func (h *ServiceAdminHandler) BindPhone(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "该手机号已被占用")
 		return
 	}
-
 	if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 		"phone":      phone,
 		"updated_at": time.Now(),

@@ -1,23 +1,60 @@
-import 'package:flutter/foundation.dart';
+// 文件用途：实现 QRScannerPage 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 QRScannerPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
-import '../../../core/utils/platform_utils.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/auth_service.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/system_ui_styles.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/utils/qr_payload.dart';
 import '../../settings/pages/device_login_confirm_page.dart';
 import '../providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
+import '../services/qr_image_decoder.dart'
+    if (dart.library.html) '../services/qr_image_decoder_web.dart';
 
+String _qrText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _qrRuntimeText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：二维码 scanner page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class QRScannerPage extends ConsumerStatefulWidget {
   const QRScannerPage({super.key});
 
@@ -39,6 +76,7 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
   String? _lastHandledValue;
   DateTime? _lastHandledAt;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -50,6 +88,20 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
     WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
+  }
+
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
   }
 
   @override
@@ -109,7 +161,14 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
     try {
       final payload = parseOneChatQrPayload(rawValue);
       if (payload == null) {
-        _showMessage('无法识别');
+        _showMessage(
+          _qrText(
+            context,
+            zhCN: '无法识别',
+            zhTW: '無法識別',
+            en: 'Unable to recognize QR code',
+          ),
+        );
         await _resumeScanner();
         return;
       }
@@ -125,21 +184,42 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
       }
 
       if (payload.type != OneChatQrType.user) {
-        _showMessage('无法识别');
+        _showMessage(
+          _qrText(
+            context,
+            zhCN: '无法识别',
+            zhTW: '無法識別',
+            en: 'Unable to recognize QR code',
+          ),
+        );
         await _resumeScanner();
         return;
       }
 
       final currentUser = ref.read(authServiceProvider).user;
       if (currentUser?.uuid == payload.id) {
-        _showMessage('这是你自己的二维码');
+        _showMessage(
+          _qrText(
+            context,
+            zhCN: '这是你自己的二维码',
+            zhTW: '這是你自己的二維碼',
+            en: 'This is your own QR code',
+          ),
+        );
         await _resumeScanner();
         return;
       }
 
       final scannedUser = await _fetchScannedUser(payload.id);
       if (scannedUser == null) {
-        _showMessage('无法识别');
+        _showMessage(
+          _qrText(
+            context,
+            zhCN: '无法识别',
+            zhTW: '無法識別',
+            en: 'Unable to recognize QR code',
+          ),
+        );
         await _resumeScanner();
         return;
       }
@@ -173,7 +253,21 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
           final success = await ref
               .read(contactListProvider.notifier)
               .addContact(scannedUser.uuid);
-          _showMessage(success ? '已将 ${scannedUser.name} 添加到联系人' : '添加失败，请重试');
+          _showMessage(
+            success
+                ? _qrText(
+                    context,
+                    zhCN: '已将 ${scannedUser.name} 添加到联系人',
+                    zhTW: '已將 ${scannedUser.name} 加入聯絡人',
+                    en: 'Added ${scannedUser.name} to contacts',
+                  )
+                : _qrText(
+                    context,
+                    zhCN: '添加失败，请重试',
+                    zhTW: '新增失敗，請重試',
+                    en: 'Failed to add contact. Please try again.',
+                  ),
+          );
           await _resumeScanner();
           break;
         case _ScanAction.viewProfile:
@@ -210,7 +304,14 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
     if (!mounted) return;
 
     if (confirmed == true) {
-      _showMessage('已确认登录桌面设备');
+      _showMessage(
+        _qrText(
+          context,
+          zhCN: '已确认登录桌面设备',
+          zhTW: '已確認登入桌面裝置',
+          en: 'Desktop login approved',
+        ),
+      );
       context.pop();
       return;
     }
@@ -263,10 +364,23 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
       }
 
       _showMessage(
-          response.message.isNotEmpty ? response.message : '打开聊天失败，请重试');
+        _serverMessage(
+          raw: response.message,
+          zhCN: '打开聊天失败，请重试',
+          zhTW: '開啟聊天失敗，請重試',
+          en: 'Failed to open chat. Please try again.',
+        ),
+      );
       await _resumeScanner();
     } catch (_) {
-      _showMessage('打开聊天失败，请重试');
+      _showMessage(
+        _qrText(
+          context,
+          zhCN: '打开聊天失败，请重试',
+          zhTW: '開啟聊天失敗，請重試',
+          en: 'Failed to open chat. Please try again.',
+        ),
+      );
       await _resumeScanner();
     }
   }
@@ -286,19 +400,38 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
         final requiresApproval = data['requires_approval'] == true;
         if (requiresApproval) {
           _showMessage(
-            response.message.isNotEmpty ? response.message : '已提交加入申请，请等待管理员审批',
+            _serverMessage(
+              raw: response.message,
+              zhCN: '已提交加入申请，请等待管理员审批',
+              zhTW: '已提交加入申請，請等待管理員審批',
+              en: 'Join request submitted. Please wait for approval.',
+            ),
           );
           await _resumeScanner();
           return;
         }
         final chatId = data['chat_id']?.toString() ?? '';
         if (chatId.isEmpty) {
-          _showMessage('加入群组失败，请重试');
+          _showMessage(
+            _qrText(
+              context,
+              zhCN: '加入群组失败，请重试',
+              zhTW: '加入群組失敗，請重試',
+              en: 'Failed to join group. Please try again.',
+            ),
+          );
           await _resumeScanner();
           return;
         }
 
-        final chatName = (data['chat_name'] ?? '群组').toString();
+        final chatName = (data['chat_name'] ??
+                _qrText(
+                  context,
+                  zhCN: '群组',
+                  zhTW: '群組',
+                  en: 'Group',
+                ))
+            .toString();
         final rawAvatar = data['chat_avatar']?.toString();
         final chatAvatar = rawAvatar != null && rawAvatar.isNotEmpty
             ? ApiConfig.getMediaUrl(rawAvatar)
@@ -320,11 +453,23 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
       }
 
       _showMessage(
-        response.message.isNotEmpty ? response.message : '加入群组失败，请重试',
+        _serverMessage(
+          raw: response.message,
+          zhCN: '加入群组失败，请重试',
+          zhTW: '加入群組失敗，請重試',
+          en: 'Failed to join group. Please try again.',
+        ),
       );
       await _resumeScanner();
     } catch (_) {
-      _showMessage('加入群组失败，请重试');
+      _showMessage(
+        _qrText(
+          context,
+          zhCN: '加入群组失败，请重试',
+          zhTW: '加入群組失敗，請重試',
+          en: 'Failed to join group. Please try again.',
+        ),
+      );
       await _resumeScanner();
     }
   }
@@ -346,24 +491,59 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
     await _controller.stop();
 
     try {
-      final capture = await _controller.analyzeImage(file.path);
-      final rawValue = capture?.barcodes
-          .map((code) => code.rawValue?.trim())
-          .whereType<String>()
-          .firstWhere(
-            (value) => value.isNotEmpty,
-            orElse: () => '',
+      final String? rawValue;
+      if (PlatformUtils.isWeb) {
+        if (!isQrImageDecodeSupported()) {
+          _showMessage(
+            _qrText(
+              context,
+              zhCN: '当前浏览器不支持相册识别二维码',
+              zhTW: '目前瀏覽器不支援相簿識別二維碼',
+              en: 'This browser does not support QR recognition from images.',
+            ),
           );
+          await _resumeScanner();
+          return;
+        }
+
+        rawValue = await decodeQrImageBytes(
+          await file.readAsBytes(),
+          mimeType: file.mimeType ?? 'image/png',
+        );
+      } else {
+        final capture = await _controller.analyzeImage(file.path);
+        rawValue = capture?.barcodes
+            .map((code) => code.rawValue?.trim())
+            .whereType<String>()
+            .firstWhere(
+              (value) => value.isNotEmpty,
+              orElse: () => '',
+            );
+      }
 
       if (rawValue == null || rawValue.isEmpty) {
-        _showMessage('无法识别');
+        _showMessage(
+          _qrText(
+            context,
+            zhCN: '无法识别',
+            zhTW: '無法識別',
+            en: 'Unable to recognize QR code',
+          ),
+        );
         await _resumeScanner();
         return;
       }
 
       await _processRawValue(rawValue);
     } catch (_) {
-      _showMessage('无法识别');
+      _showMessage(
+        _qrText(
+          context,
+          zhCN: '无法识别',
+          zhTW: '無法識別',
+          en: 'Unable to recognize QR code',
+        ),
+      );
       await _resumeScanner();
       if (mounted) {
         setState(() => _isProcessing = false);
@@ -374,6 +554,17 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
   }
 
   Future<void> _toggleTorch() async {
+    if (PlatformUtils.isWeb) {
+      _showMessage(
+        _qrText(
+          context,
+          zhCN: '浏览器暂不支持闪光灯控制',
+          zhTW: '瀏覽器暫不支援閃光燈控制',
+          en: 'Flashlight control is not supported in the browser.',
+        ),
+      );
+      return;
+    }
     await _controller.toggleTorch();
     if (!mounted) return;
     setState(() => _torchEnabled = !_torchEnabled);
@@ -393,17 +584,49 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
   String _scannerErrorText(MobileScannerException error) {
     switch (error.errorCode) {
       case MobileScannerErrorCode.permissionDenied:
-        return '相机权限被拒绝，请到系统设置里允许相机权限';
+        return _qrText(
+          context,
+          zhCN: '相机权限被拒绝，请到系统设置里允许相机权限',
+          zhTW: '相機權限被拒絕，請到系統設定允許相機權限',
+          en: 'Camera permission denied. Please enable it in system settings.',
+        );
       case MobileScannerErrorCode.unsupported:
-        return '当前设备不支持扫码功能';
+        return _qrText(
+          context,
+          zhCN: '当前设备不支持扫码功能',
+          zhTW: '目前裝置不支援掃碼功能',
+          en: 'This device does not support QR scanning.',
+        );
       case MobileScannerErrorCode.controllerUninitialized:
-        return '扫码器尚未准备好，请稍后重试';
+      case MobileScannerErrorCode.controllerInitializing:
+      case MobileScannerErrorCode.controllerNotAttached:
+        return _qrText(
+          context,
+          zhCN: '扫码器尚未准备好，请稍后重试',
+          zhTW: '掃碼器尚未準備好，請稍後重試',
+          en: 'Scanner is not ready yet. Please try again shortly.',
+        );
       case MobileScannerErrorCode.controllerAlreadyInitialized:
-        return '扫码器正在初始化，请稍后重试';
+        return _qrText(
+          context,
+          zhCN: '扫码器正在初始化，请稍后重试',
+          zhTW: '掃碼器正在初始化，請稍後重試',
+          en: 'Scanner is initializing. Please try again shortly.',
+        );
       case MobileScannerErrorCode.controllerDisposed:
-        return '扫码器已关闭，请重新进入页面';
+        return _qrText(
+          context,
+          zhCN: '扫码器已关闭，请重新进入页面',
+          zhTW: '掃碼器已關閉，請重新進入頁面',
+          en: 'Scanner has been closed. Please reopen this page.',
+        );
       case MobileScannerErrorCode.genericError:
-        return '相机初始化失败，请重试或使用相册识别';
+        return _qrText(
+          context,
+          zhCN: '相机初始化失败，请重试或使用相册识别',
+          zhTW: '相機初始化失敗，請重試或使用相簿識別',
+          en: 'Camera initialization failed. Retry or use gallery recognition.',
+        );
     }
   }
 
@@ -453,15 +676,29 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white54),
                   ),
-                  child: const Text('重试'),
+                  child: Text(
+                    _qrText(
+                      context,
+                      zhCN: '重试',
+                      zhTW: '重試',
+                      en: 'Retry',
+                    ),
+                  ),
                 ),
                 FilledButton(
                   onPressed: _pickFromGallery,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.primaryFor(context),
+                    foregroundColor: AppColors.onPrimaryFor(context),
                   ),
-                  child: const Text('相册识别'),
+                  child: Text(
+                    _qrText(
+                      context,
+                      zhCN: '相册识别',
+                      zhTW: '相簿識別',
+                      en: 'Scan from Gallery',
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -473,11 +710,6 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
 
   @override
   Widget build(BuildContext context) {
-    // Web 端不支持摄像头扫码，显示上传图片识别界面
-    if (kIsWeb) {
-      return _buildWebFallback(context);
-    }
-
     final overlayColor = Colors.black.withOpacity(0.6);
 
     return Scaffold(
@@ -485,21 +717,52 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('扫描二维码'),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: Colors.white),
+        systemOverlayStyle: AppSystemUiStyles.onDarkBackground,
+        title: Text(
+          _qrText(
+            context,
+            zhCN: '扫描二维码',
+            zhTW: '掃描二維碼',
+            en: 'Scan QR Code',
+          ),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: '相册识别',
+            tooltip: _qrText(
+              context,
+              zhCN: '相册识别',
+              zhTW: '相簿識別',
+              en: 'Scan from Gallery',
+            ),
             onPressed: _pickFromGallery,
             icon: const Icon(Icons.photo_library_outlined),
           ),
-          IconButton(
-            tooltip: _torchEnabled ? '关闭闪光灯' : '打开闪光灯',
-            onPressed: _toggleTorch,
-            icon: Icon(_torchEnabled
-                ? Icons.flash_on_rounded
-                : Icons.flash_off_rounded),
-          ),
+          if (!PlatformUtils.isWeb)
+            IconButton(
+              tooltip: _torchEnabled
+                  ? _qrText(
+                      context,
+                      zhCN: '关闭闪光灯',
+                      zhTW: '關閉閃光燈',
+                      en: 'Turn off flashlight',
+                    )
+                  : _qrText(
+                      context,
+                      zhCN: '打开闪光灯',
+                      zhTW: '打開閃光燈',
+                      en: 'Turn on flashlight',
+                    ),
+              onPressed: _toggleTorch,
+              icon: Icon(_torchEnabled
+                  ? Icons.flash_on_rounded
+                  : Icons.flash_off_rounded),
+            ),
         ],
       ),
       body: Stack(
@@ -508,14 +771,19 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
             controller: _controller,
             fit: BoxFit.cover,
             onDetect: _handleDetect,
-            errorBuilder: (context, error, child) {
+            errorBuilder: (context, error) {
               return _buildScannerErrorWidget(error);
               /*
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    '扫码功能暂不可用，请检查相机权限或使用相册识别',
+      child: Text(
+                    _qrText(
+                      context,
+                      zhCN: '扫码功能暂不可用，请检查相机权限或使用相册识别',
+                      zhTW: '掃碼功能暫不可用，請檢查相機權限或使用相簿識別',
+                      en: 'QR scanning is temporarily unavailable. Check camera permission or use gallery recognition.',
+                    ),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.9),
@@ -546,7 +814,12 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
                 Text(
-                  '将二维码放入框内即可自动识别',
+                  _qrText(
+                    context,
+                    zhCN: '将二维码放入框内即可自动识别',
+                    zhTW: '將二維碼放入框內即可自動識別',
+                    en: 'Place the QR code inside the frame to scan',
+                  ),
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.92),
                     fontSize: 16,
@@ -557,9 +830,19 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 36),
                   child: Text(
-                    PlatformUtils.isMobile
-                        ? '支持扫描好友二维码，识别后可直接加好友或查看资料'
-                        : '可通过相册选择二维码图片进行识别',
+                    Platform.isIOS || Platform.isAndroid
+                        ? _qrText(
+                            context,
+                            zhCN: '支持扫描好友二维码，识别后可直接加好友或查看资料',
+                            zhTW: '支援掃描好友二維碼，識別後可直接加好友或查看資料',
+                            en: 'Scan a friend QR code to add them or view their profile',
+                          )
+                        : _qrText(
+                            context,
+                            zhCN: '可通过相册选择二维码图片进行识别',
+                            zhTW: '可透過相簿選擇二維碼圖片進行識別',
+                            en: 'Choose a QR image from the gallery to scan',
+                          ),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.7),
@@ -572,88 +855,6 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
             ),
           ),
         ],
-      ),
-    );
-  }
-  /// Web 端降级：不支持摄像头扫码，提供图片上传识别
-  Widget _buildWebFallback(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        foregroundColor: isDark ? Colors.white : Colors.black,
-        title: const Text('扫描二维码'),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  size: 52,
-                  color: Colors.blue,
-                ),
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'Web 端扫码',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Web 端不支持摄像头扫码\n请上传包含二维码的图片进行识别',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.white54 : Colors.black54,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 36),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : _pickFromGallery,
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.photo_library_outlined),
-                  label: Text(_isProcessing ? '识别中...' : '从图片识别二维码'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -678,7 +879,14 @@ class _ScannedUser {
     final avatar = (json['avatar'] ?? '').toString().trim();
     return _ScannedUser(
       uuid: (json['id'] ?? '').toString(),
-      name: (json['nickname'] ?? json['username'] ?? '用户').toString(),
+      name: (json['nickname'] ??
+              json['username'] ??
+              _qrRuntimeText(
+                zhCN: '用户',
+                zhTW: '使用者',
+                en: 'User',
+              ))
+          .toString(),
       username: json['username']?.toString(),
       avatar: avatar.isEmpty ? null : ApiConfig.getMediaUrl(avatar),
       bio: json['bio']?.toString(),
@@ -705,7 +913,7 @@ class _ScannedUserSheet extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        color: AppColors.cardFor(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
@@ -719,23 +927,23 @@ class _ScannedUserSheet extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
               const SizedBox(height: 20),
               CircleAvatar(
                 radius: 34,
-                backgroundColor: AppColors.primary.withOpacity(0.12),
+                backgroundColor: AppColors.primaryWithOpacity(context, 0.12),
                 backgroundImage:
                     user.avatar != null ? NetworkImage(user.avatar!) : null,
                 child: user.avatar == null
                     ? Text(
                         user.name.isNotEmpty ? user.name[0] : 'U',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
+                          color: AppColors.primaryFor(context),
                         ),
                       )
                     : null,
@@ -746,16 +954,16 @@ class _ScannedUserSheet extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
               if (user.username != null && user.username!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
                   '@${user.username}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -767,7 +975,7 @@ class _ScannedUserSheet extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppColors.textSecondaryFor(context),
                     height: 1.45,
                   ),
                 ),
@@ -782,10 +990,17 @@ class _ScannedUserSheet extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(46),
                         side: BorderSide(
-                          color: isDark ? Colors.white24 : Colors.black12,
+                          color: AppColors.dividerFor(context),
                         ),
                       ),
-                      child: const Text('查看资料'),
+                      child: Text(
+                        _qrText(
+                          context,
+                          zhCN: '查看资料',
+                          zhTW: '查看資料',
+                          en: 'View Profile',
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -795,9 +1010,17 @@ class _ScannedUserSheet extends StatelessWidget {
                           Navigator.pop(context, _ScanAction.addFriend),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(46),
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: AppColors.primaryFor(context),
+                        foregroundColor: AppColors.onPrimaryFor(context),
                       ),
-                      child: const Text('添加好友'),
+                      child: Text(
+                        _qrText(
+                          context,
+                          zhCN: '添加好友',
+                          zhTW: '新增好友',
+                          en: 'Add Contact',
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -805,7 +1028,14 @@ class _ScannedUserSheet extends StatelessWidget {
               const SizedBox(height: 10),
               TextButton(
                 onPressed: () => Navigator.pop(context, _ScanAction.cancel),
-                child: const Text('取消'),
+                child: Text(
+                  _qrText(
+                    context,
+                    zhCN: '取消',
+                    zhTW: '取消',
+                    en: 'Cancel',
+                  ),
+                ),
               ),
             ],
           ),
@@ -814,7 +1044,6 @@ class _ScannedUserSheet extends StatelessWidget {
     );
   }
 }
-
 
 class _ScannerOverlayPainter extends CustomPainter {
   final Color overlayColor;

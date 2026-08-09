@@ -11,7 +11,7 @@
     <div v-if="error" class="state-card error-state">
       <div class="state-title">用户列表加载失败</div>
       <p class="state-text">{{ error }}</p>
-      <ElButton type="success" @click="loadUsers">重新加载</ElButton>
+        <ElButton type="primary" @click="loadUsers">重新加载</ElButton>
     </div>
 
     <div v-else-if="filteredUsers.length === 0" class="state-card empty-state">
@@ -31,7 +31,7 @@
           <div class="user-meta">UUID: {{ user.uuid }} · 注册于 {{ user.registeredAt }}</div>
         </div>
         <div class="user-right">
-          <ElButton text type="success" @click="copyUuid(user.uuid)">复制 UUID</ElButton>
+          <ElButton text type="primary" @click="copyUuid(user.uuid)">复制 UUID</ElButton>
           <ElTag :type="user.active ? 'success' : 'info'" round>{{ user.active ? '已绑定' : '未激活' }}</ElTag>
         </div>
       </div>
@@ -53,6 +53,7 @@ const keyword = ref('')
 const users = ref<ServiceAdminInvitee[]>([])
 const highlightedUuid = ref('')
 const animatedUuid = ref('')
+// 表格行引用随筛选结果动态增删，用于从工作台跳转后精确滚动到目标用户。
 const userRowRefs = new Map<string, HTMLElement>()
 let animationTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -65,6 +66,7 @@ const filteredUsers = computed(() => {
 })
 
 const syncQueryState = () => {
+  // 工作台通过查询参数同时传入筛选词和高亮 UUID，列表页需保持二者同步。
   const keywordQuery = typeof route.query.keyword === 'string' ? route.query.keyword : ''
   const highlightQuery = typeof route.query.highlight === 'string' ? route.query.highlight : ''
   keyword.value = keywordQuery
@@ -140,12 +142,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
-.page-wrap { padding: 28px; }
+.page-wrap { padding: 24px; }
 .head-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 22px; }
 .user-list { display: grid; gap: 12px; }
-.user-row, .state-card { padding: 18px; border-radius: 16px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.user-row, .state-card { padding: 18px; border-radius: var(--kf-radius-md); background: var(--kf-surface); border: 1px solid var(--kf-border); }
 .user-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; transition: .2s ease; }
-.user-row.active { border-color: rgba(74,222,128,.4); box-shadow: 0 0 0 1px rgba(74,222,128,.18); }
+.user-row.active { border-color: var(--kf-primary); box-shadow: 0 0 0 1px var(--kf-primary); }
 .user-row.pulse { animation: pulse-highlight 1.1s ease; }
 .user-name { font-size: 16px; font-weight: 600; }
 .user-meta, .state-text { margin-top: 6px; color: var(--text-soft); font-size: 13px; }
@@ -154,9 +156,9 @@ onBeforeUnmount(() => {
 .state-text { font-size: 14px; line-height: 1.8; margin-bottom: 16px; }
 
 @keyframes pulse-highlight {
-  0% { transform: scale(1); box-shadow: 0 0 0 1px rgba(74,222,128,.18); }
-  35% { transform: scale(1.01); box-shadow: 0 0 0 1px rgba(74,222,128,.26), 0 0 0 10px rgba(74,222,128,.08); }
-  100% { transform: scale(1); box-shadow: 0 0 0 1px rgba(74,222,128,.18); }
+  0% { transform: scale(1); box-shadow: 0 0 0 1px var(--kf-primary); }
+  35% { transform: scale(1.005); box-shadow: 0 0 0 1px var(--kf-primary), 0 0 0 8px rgb(23 23 23 / 6%); }
+  100% { transform: scale(1); box-shadow: 0 0 0 1px var(--kf-primary); }
 }
 
 @media (max-width: 720px) { .head-row, .user-row { flex-direction: column; align-items: flex-start; } }

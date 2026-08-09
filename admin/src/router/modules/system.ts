@@ -1,18 +1,21 @@
 import { AppRouteRecord } from '@/types/router'
 
-// 用户管理（顶级菜单）
-export const userRoutes: AppRouteRecord = {
-  path: '/user',
-  name: 'UserManage',
+const commonRoles = ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+
+// 用户与权限
+export const userPermissionRoutes: AppRouteRecord = {
+  path: '/user-permission',
+  name: 'UserPermission',
   component: '/index/index',
   meta: {
-    title: '用户管理',
-    icon: 'ri:user-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    title: '用户与权限',
+    icon: 'ri:user-settings-line',
+    roles: commonRoles
   },
   children: [
     {
-      path: 'list',
+      path: 'users',
+      alias: ['/user/list'],
       name: 'UserList',
       component: '/system/user',
       meta: {
@@ -20,81 +23,68 @@ export const userRoutes: AppRouteRecord = {
         icon: 'ri:team-line',
         keepAlive: true
       }
-    }
-  ]
-}
-
-// 全局公告（顶级菜单）
-export const broadcastRoutes: AppRouteRecord = {
-  path: '/broadcast',
-  name: 'BroadcastManage',
-  component: '/index/index',
-  meta: {
-    title: '全局公告',
-    icon: 'ri:megaphone-line',
-    roles: ['R_SUPER', 'R_ADMIN']
-  },
-  children: [
+    },
     {
-      path: 'index',
-      name: 'Broadcast',
-      component: '/broadcast',
+      path: 'admins',
+      alias: ['/admin-accounts/list', '/system/admins'],
+      name: 'AdminAccountManageList',
+      component: '/system/admin',
       meta: {
-        title: '发送公告',
-        icon: 'ri:notification-3-line',
+        title: '管理员管理',
+        icon: 'ri:admin-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'role-permissions',
+      name: 'RolePermissions',
+      component: '/system/role-permissions',
+      meta: {
+        title: '角色权限',
+        icon: 'ri:shield-user-line',
+        roles: commonRoles,
         keepAlive: true
       }
     }
   ]
 }
 
-// 官方客服（顶级菜单）
-export const officialServiceRoutes: AppRouteRecord = {
-  path: '/official-service',
-  name: 'OfficialServiceManage',
+// 消息与社群
+export const messageCommunityRoutes: AppRouteRecord = {
+  path: '/message-community',
+  name: 'MessageCommunity',
   component: '/index/index',
   meta: {
-    title: '官方客服',
-    icon: 'ri:customer-service-2-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
-  },
-  children: [
-    {
-      path: 'index',
-      name: 'OfficialService',
-      component: '/official-service',
-      meta: {
-        title: '官方客服',
-        icon: 'ri:user-star-line',
-        keepAlive: true
-      }
-    }
-  ]
-}
-
-// 会话管理（顶级菜单）
-export const chatRoutes: AppRouteRecord = {
-  path: '/chat',
-  name: 'ChatManage',
-  component: '/index/index',
-  meta: {
-    title: '会话管理',
+    title: '消息与社群',
     icon: 'ri:chat-3-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    roles: commonRoles
   },
   children: [
     {
-      path: 'list',
+      path: 'private-chats',
+      alias: ['/chat/list'],
       name: 'ChatList',
       component: '/system/chat',
       meta: {
-        title: '会话列表',
+        title: '私聊列表',
         icon: 'ri:chat-1-line',
         keepAlive: true
       }
     },
     {
+      path: 'groups',
+      alias: ['/group/manage'],
+      name: 'GroupList',
+      component: '/group/manage',
+      meta: {
+        title: '群列表',
+        icon: 'ri:group-line',
+        keepAlive: true
+      }
+    },
+    {
       path: 'message-search',
+      alias: ['/chat/message-search'],
       name: 'MessageSearch',
       component: '/message/search',
       meta: {
@@ -102,23 +92,46 @@ export const chatRoutes: AppRouteRecord = {
         icon: 'ri:search-line',
         keepAlive: true
       }
+    },
+    {
+      path: 'calls',
+      alias: ['/call/list'],
+      name: 'CallList',
+      component: '/call/list',
+      meta: {
+        title: '通话记录',
+        icon: 'ri:phone-find-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'official-service',
+      alias: ['/official-service/index'],
+      name: 'OfficialService',
+      component: '/official-service',
+      meta: {
+        title: '官方客服',
+        icon: 'ri:customer-service-2-line',
+        keepAlive: true
+      }
     }
   ]
 }
 
-// 动态管理（顶级菜单）
-export const momentRoutes: AppRouteRecord = {
-  path: '/moment',
-  name: 'MomentManage',
+// 内容与风控
+export const contentRiskRoutes: AppRouteRecord = {
+  path: '/content-risk',
+  name: 'ContentRisk',
   component: '/index/index',
   meta: {
-    title: '动态广场',
-    icon: 'ri:compass-3-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    title: '内容与风控',
+    icon: 'ri:shield-check-line',
+    roles: commonRoles
   },
   children: [
     {
-      path: 'list',
+      path: 'moments',
+      alias: ['/moment/list'],
       name: 'MomentList',
       component: '/moment/list',
       meta: {
@@ -129,6 +142,7 @@ export const momentRoutes: AppRouteRecord = {
     },
     {
       path: 'topics',
+      alias: ['/moment/topics'],
       name: 'TopicList',
       component: '/moment/topics',
       meta: {
@@ -138,7 +152,41 @@ export const momentRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'discover-page',
+      alias: ['/discover/list'],
+      name: 'DiscoverList',
+      component: '/discover',
+      meta: {
+        title: '发现页配置',
+        icon: 'ri:compass-discover-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'emoji-store',
+      alias: ['/system/emoji-store'],
+      name: 'EmojiStoreCatalog',
+      component: '/system/emoji-store',
+      meta: {
+        title: '表情包管理',
+        icon: 'ri:emotion-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'reports',
+      alias: ['/report/list'],
+      name: 'ReportList',
+      component: '/system/report',
+      meta: {
+        title: '举报列表',
+        icon: 'ri:error-warning-line',
+        keepAlive: true
+      }
+    },
+    {
       path: 'banned-words',
+      alias: ['/moment/banned-words'],
       name: 'BannedWordList',
       component: '/moment/banned-words',
       meta: {
@@ -150,29 +198,64 @@ export const momentRoutes: AppRouteRecord = {
   ]
 }
 
-// 钱包管理（顶级菜单）
-export const walletRoutes: AppRouteRecord = {
-  path: '/wallet',
-  name: 'WalletManage',
+// 会员与钱包
+export const memberWalletRoutes: AppRouteRecord = {
+  path: '/member-wallet',
+  name: 'MemberWallet',
   component: '/index/index',
   meta: {
-    title: '钱包管理',
-    icon: 'ri:wallet-3-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    title: '会员与钱包',
+    icon: 'ri:vip-crown-2-line',
+    roles: commonRoles
   },
   children: [
     {
-      path: 'membership',
-      name: 'MembershipManage',
-      component: '/wallet/membership',
+      path: 'vip',
+      alias: ['/vip/index'],
+      name: 'VipManageIndex',
+      component: '/vip',
       meta: {
         title: '会员管理',
-        icon: 'ri:vip-crown-2-line',
+        icon: 'ri:vip-crown-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'user-wallets',
+      alias: ['/wallet/user-wallets'],
+      name: 'UserWalletList',
+      component: '/wallet/user-wallets',
+      meta: {
+        title: '用户钱包',
+        icon: 'ri:bank-card-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'recharge',
+      alias: ['/wallet/recharge'],
+      name: 'RechargeManage',
+      component: '/wallet/recharge',
+      meta: {
+        title: '充值管理',
+        icon: 'ri:bank-card-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'withdraw',
+      alias: ['/wallet/withdraw'],
+      name: 'WithdrawList',
+      component: '/wallet/withdraw',
+      meta: {
+        title: '提现管理',
+        icon: 'ri:money-cny-box-line',
         keepAlive: true
       }
     },
     {
       path: 'red-packets',
+      alias: ['/wallet/red-packets'],
       name: 'RedPacketList',
       component: '/wallet/red-packets',
       meta: {
@@ -183,6 +266,7 @@ export const walletRoutes: AppRouteRecord = {
     },
     {
       path: 'transfers',
+      alias: ['/wallet/transfers'],
       name: 'TransferList',
       component: '/wallet/transfers',
       meta: {
@@ -192,27 +276,8 @@ export const walletRoutes: AppRouteRecord = {
       }
     },
     {
-      path: 'user-wallets',
-      name: 'UserWalletList',
-      component: '/wallet/user-wallets',
-      meta: {
-        title: '用户钱包',
-        icon: 'ri:bank-card-line',
-        keepAlive: true
-      }
-    },
-    {
-      path: 'withdraw',
-      name: 'WithdrawList',
-      component: '/wallet/withdraw',
-      meta: {
-        title: '提现管理',
-        icon: 'ri:money-cny-box-line',
-        keepAlive: true
-      }
-    },
-    {
-      path: 'settings',
+      path: 'wallet-settings',
+      alias: ['/wallet/settings'],
       name: 'WalletSettings',
       component: '/wallet/settings',
       meta: {
@@ -224,72 +289,37 @@ export const walletRoutes: AppRouteRecord = {
   ]
 }
 
-// 通话记录管理（顶级菜单）
-export const callRoutes: AppRouteRecord = {
-  path: '/call',
-  name: 'CallManage',
+// 运营触达
+export const operationRoutes: AppRouteRecord = {
+  path: '/operation',
+  name: 'Operation',
   component: '/index/index',
   meta: {
-    title: '通话管理',
-    icon: 'ri:phone-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    title: '运营触达',
+    icon: 'ri:send-plane-line',
+    roles: commonRoles
   },
   children: [
     {
-      path: 'list',
-      name: 'CallList',
-      component: '/call/list',
+      path: 'broadcast',
+      alias: ['/broadcast/index'],
+      name: 'Broadcast',
+      component: '/broadcast',
       meta: {
-        title: '通话记录',
-        icon: 'ri:phone-find-line',
+        title: '全局公告',
+        icon: 'ri:megaphone-line',
+        roles: commonRoles,
         keepAlive: true
       }
-    }
-  ]
-}
-
-// 举报管理（顶级菜单）
-export const reportRoutes: AppRouteRecord = {
-  path: '/report',
-  name: 'ReportManage',
-  component: '/index/index',
-  meta: {
-    title: '举报管理',
-    icon: 'ri:alarm-warning-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
-  },
-  children: [
+    },
     {
-      path: 'list',
-      name: 'ReportList',
-      component: '/system/report',
+      path: 'sms-gateway',
+      alias: ['/system/sms-gateway'],
+      name: 'SmsGateway',
+      component: '/system/sms-gateway',
       meta: {
-        title: '举报列表',
-        icon: 'ri:error-warning-line',
-        keepAlive: true
-      }
-    }
-  ]
-}
-
-// 发现管理（顶级菜单）
-export const discoverRoutes: AppRouteRecord = {
-  path: '/discover',
-  name: 'DiscoverManage',
-  component: '/index/index',
-  meta: {
-    title: '发现管理',
-    icon: 'ri:compass-discover-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
-  },
-  children: [
-    {
-      path: 'list',
-      name: 'DiscoverList',
-      component: '/discover',
-      meta: {
-        title: '发现管理',
-        icon: 'ri:apps-2-line',
+        title: '短信网关',
+        icon: 'ri:message-2-line',
         keepAlive: true
       }
     }
@@ -304,7 +334,7 @@ export const exceptionRoutes: AppRouteRecord = {
   meta: {
     title: '异常页面',
     icon: 'ri:error-warning-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO'],
+    roles: commonRoles,
     isHide: true
   },
   children: [
@@ -338,15 +368,15 @@ export const exceptionRoutes: AppRouteRecord = {
   ]
 }
 
-// 系统设置（顶级菜单）
+// 系统配置
 export const systemRoutes: AppRouteRecord = {
   path: '/system',
   name: 'System',
   component: '/index/index',
   meta: {
-    title: '系统设置',
+    title: '系统配置',
     icon: 'ri:settings-3-line',
-    roles: ['R_SUPER', 'R_ADMIN', 'R_DEMO']
+    roles: commonRoles
   },
   children: [
     {
@@ -354,8 +384,100 @@ export const systemRoutes: AppRouteRecord = {
       name: 'SystemSettings',
       component: '/system/settings',
       meta: {
-        title: '系统设置',
+        title: '基础设置',
         icon: 'ri:settings-4-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'rtc-settings',
+      name: 'SystemRTCSettings',
+      component: '/system/settings',
+      meta: {
+        title: '音视频接口',
+        icon: 'ri:vidicon-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'feature-settings',
+      name: 'SystemFeatureSettings',
+      component: '/system/settings',
+      meta: {
+        title: '客户端功能',
+        icon: 'ri:toggle-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'ai-config',
+      name: 'SystemAIConfig',
+      component: '/system/settings',
+      meta: {
+        title: 'AI配置',
+        icon: 'ri:brain-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'storage-config',
+      name: 'SystemStorageConfig',
+      component: '/system/settings',
+      meta: {
+        title: '存储配置',
+        icon: 'ri:cloud-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'health',
+      name: 'SystemHealth',
+      component: '/system/health',
+      meta: {
+        title: '系统健康',
+        icon: 'ri:pulse-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'security',
+      name: 'SystemSecurity',
+      component: '/system/security',
+      meta: {
+        title: '安全审计',
+        icon: 'ri:shield-keyhole-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'push-report',
+      alias: ['/operation/push-report'],
+      name: 'PushReport',
+      component: '/system/push-report',
+      meta: {
+        title: '推送报表',
+        icon: 'ri:bar-chart-box-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'push-config',
+      alias: ['/operation/push-config'],
+      name: 'PushConfig',
+      component: '/system/push-config',
+      meta: {
+        title: '推送配置',
+        icon: 'ri:notification-3-line',
+        keepAlive: true
+      }
+    },
+    {
+      path: 'multi-line-entry',
+      name: 'MultiLineEntry',
+      component: '/system/multi-line-entry',
+      meta: {
+        title: '多线路入口',
+        icon: 'ri:route-line',
         keepAlive: true
       }
     },
@@ -370,32 +492,12 @@ export const systemRoutes: AppRouteRecord = {
       }
     },
     {
-      path: 'sms-gateway',
-      name: 'SmsGateway',
-      component: '/system/sms-gateway',
-      meta: {
-        title: '短信网关',
-        icon: 'ri:message-2-line',
-        keepAlive: true
-      }
-    },
-    {
       path: 'payment-gateway',
       name: 'PaymentGateway',
       component: '/system/payment-gateway',
       meta: {
         title: '支付网关',
         icon: 'ri:bank-line'
-      }
-    },
-    {
-      path: 'emoji-store',
-      name: 'EmojiStoreCatalog',
-      component: '/system/emoji-store',
-      meta: {
-        title: '表情包管理',
-        icon: 'ri:emotion-line',
-        keepAlive: true
       }
     },
     {

@@ -1,15 +1,16 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"fmt"
-	"net/http"
-
-	"gaoranim/internal/models"
-	"gaoranim/internal/services"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"net/http"
+	"genericim/internal/models"
+	"genericim/internal/services"
+	"genericim/pkg/response"
 )
 
 type OnlinePaymentHandler struct {

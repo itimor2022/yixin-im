@@ -1,11 +1,31 @@
+// 文件用途：实现 AuthDesktopLayout 相关逻辑，服务于跨模块共享能力。
+// 核心逻辑：围绕 AuthDesktopLayout 组织，完成输入校验、核心处理和结果回传。
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/platform_utils.dart';
 
+String _authDesktopText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：auth desktop layout 把桌面系统能力封装成应用接口，处理窗口、托盘或快捷键生命周期并避免泄漏监听器。
 /// 桌面端认证页面布局
 /// Telegram 风格 - 左侧品牌展示 + 右侧表单
 class AuthDesktopLayout extends ConsumerWidget {
@@ -29,13 +49,14 @@ class AuthDesktopLayout extends ConsumerWidget {
     this.title,
   });
 
+  // 流程逻辑：`build` 先校验输入并完成空值/格式规范化，再返回稳定结果，不承担页面或网络副作用。
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
 
     // 桌面端使用双栏布局
-    if (PlatformUtils.isDesktop || screenWidth >= 900) {
+    if (PlatformUtils.isPhysicalDesktop || screenWidth >= 900) {
       return _buildDesktopLayout(context, isDark, ref);
     }
 
@@ -51,11 +72,11 @@ class AuthDesktopLayout extends ConsumerWidget {
   /// 桌面端双栏布局
   Widget _buildDesktopLayout(BuildContext context, bool isDark, WidgetRef ref) {
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0E0E0E) : Colors.white,
+      backgroundColor: AppColors.backgroundFor(context),
       body: Row(
         children: [
           // 左侧品牌区域
-          Expanded(flex: 5, child: _buildBrandingSection(isDark, ref)),
+          Expanded(flex: 5, child: _buildBrandingSection(context, isDark, ref)),
 
           // 右侧表单区域
           Expanded(flex: 4, child: _buildFormSection(context, isDark)),
@@ -67,15 +88,13 @@ class AuthDesktopLayout extends ConsumerWidget {
   /// 平板居中卡片布局
   Widget _buildTabletLayout(BuildContext context, bool isDark) {
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF1A1A1A)
-          : const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.backgroundFor(context),
       body: Center(
         child: Container(
           width: 480,
           margin: const EdgeInsets.symmetric(vertical: 40),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0E0E0E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -108,7 +127,7 @@ class AuthDesktopLayout extends ConsumerWidget {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+            color: AppColors.dividerFor(context),
           ),
         ),
       ),
@@ -119,7 +138,7 @@ class AuthDesktopLayout extends ConsumerWidget {
               onPressed: onBack,
               icon: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                color: isDark ? Colors.white : Colors.black,
+                color: AppColors.textPrimaryFor(context),
                 size: 20,
               ),
             )
@@ -132,7 +151,7 @@ class AuthDesktopLayout extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black,
+                color: AppColors.textPrimaryFor(context),
               ),
             ),
           ),
@@ -143,17 +162,20 @@ class AuthDesktopLayout extends ConsumerWidget {
   }
 
   /// 左侧品牌展示区
-  Widget _buildBrandingSection(bool isDark, WidgetRef ref) {
-    final appName = ref.watch(systemSettingsProvider).valueOrNull?.displayName ?? kDefaultAppDisplayName;
+  Widget _buildBrandingSection(
+      BuildContext context, bool isDark, WidgetRef ref) {
+    final appName =
+        ref.watch(systemSettingsProvider).valueOrNull?.displayName ??
+            defaultAppDisplayName();
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primary.withOpacity(0.9),
-            AppColors.primary,
-            AppColors.primary.withOpacity(0.8),
+            AppColors.primaryWithOpacity(context, 0.9),
+            AppColors.primaryFor(context),
+            AppColors.primaryWithOpacity(context, 0.8),
           ],
         ),
       ),
@@ -208,25 +230,22 @@ class AuthDesktopLayout extends ConsumerWidget {
                   children: [
                     // Logo
                     Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 24,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
                           ),
-                          padding: const EdgeInsets.all(14),
-                          child: Image.asset('assets/logo.png'),
-                        )
-                        .animate()
-                        .fadeIn(duration: 500.ms)
-                        .scale(
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(14),
+                      child: Image.asset('assets/logo.png'),
+                    ).animate().fadeIn(duration: 500.ms).scale(
                           begin: const Offset(0.8, 0.8),
                           curve: Curves.easeOut,
                           duration: 500.ms,
@@ -249,7 +268,12 @@ class AuthDesktopLayout extends ConsumerWidget {
 
                     // 副标题
                     Text(
-                      '安全、快速、跨平台的即时通讯',
+                      _authDesktopText(
+                        context,
+                        zhCN: '安全、快速、跨平台的即时通讯',
+                        zhTW: '安全、快速、跨平台的即時通訊',
+                        en: 'Secure, fast, cross-platform messaging',
+                      ),
                       style: TextStyle(
                         fontSize: 15,
                         color: Colors.white.withOpacity(0.85),
@@ -269,9 +293,20 @@ class AuthDesktopLayout extends ConsumerWidget {
                       child: Column(
                         children: [
                           _buildFeatureItem(
+                            context,
                             Icons.security_rounded,
-                            '端到端加密',
-                            '保护您的每一条消息',
+                            _authDesktopText(
+                              context,
+                              zhCN: '端到端加密',
+                              zhTW: '端到端加密',
+                              en: 'End-to-end encryption',
+                            ),
+                            _authDesktopText(
+                              context,
+                              zhCN: '保护您的每一条消息',
+                              zhTW: '保護您的每一則訊息',
+                              en: 'Protect every message you send',
+                            ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -281,9 +316,20 @@ class AuthDesktopLayout extends ConsumerWidget {
                             ),
                           ),
                           _buildFeatureItem(
+                            context,
                             Icons.devices_rounded,
-                            '多端同步',
-                            '手机、平板、电脑无缝切换',
+                            _authDesktopText(
+                              context,
+                              zhCN: '多端同步',
+                              zhTW: '多端同步',
+                              en: 'Multi-device sync',
+                            ),
+                            _authDesktopText(
+                              context,
+                              zhCN: '手机、平板、电脑无缝切换',
+                              zhTW: '手機、平板、電腦無縫切換',
+                              en: 'Move seamlessly across phone, tablet, and desktop',
+                            ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -293,9 +339,20 @@ class AuthDesktopLayout extends ConsumerWidget {
                             ),
                           ),
                           _buildFeatureItem(
+                            context,
                             Icons.speed_rounded,
-                            '快速传输',
-                            '文件、图片秒速送达',
+                            _authDesktopText(
+                              context,
+                              zhCN: '快速传输',
+                              zhTW: '快速傳輸',
+                              en: 'Fast transfer',
+                            ),
+                            _authDesktopText(
+                              context,
+                              zhCN: '文件、图片秒速送达',
+                              zhTW: '檔案、圖片快速送達',
+                              en: 'Files and images delivered in seconds',
+                            ),
                           ),
                         ],
                       ),
@@ -311,7 +368,12 @@ class AuthDesktopLayout extends ConsumerWidget {
   }
 
   /// 特性项
-  Widget _buildFeatureItem(IconData icon, String title, String subtitle) {
+  Widget _buildFeatureItem(
+    BuildContext _,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
     return Row(
       children: [
         Container(
@@ -354,7 +416,7 @@ class AuthDesktopLayout extends ConsumerWidget {
   /// 右侧表单区域
   Widget _buildFormSection(BuildContext context, bool isDark) {
     return Container(
-      color: isDark ? const Color(0xFF0E0E0E) : Colors.white,
+      color: AppColors.backgroundFor(context),
       child: Column(
         children: [
           // 顶部栏（带窗口控制按钮占位）
@@ -368,7 +430,7 @@ class AuthDesktopLayout extends ConsumerWidget {
                       onPressed: onBack,
                       icon: Icon(
                         Icons.arrow_back_ios_new_rounded,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: AppColors.textPrimaryFor(context),
                         size: 20,
                       ),
                     )
@@ -381,7 +443,7 @@ class AuthDesktopLayout extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                   ),

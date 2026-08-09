@@ -30,12 +30,13 @@ export class RouteTransformer {
   /**
    * 转换路由配置
    */
-  transform(route: AppRouteRecord, depth = 0): ConvertedRoute {
+  transform(route: AppRouteRecord, depth = 0, parentPath = ''): ConvertedRoute {
     const { component, children, ...routeConfig } = route
 
     // 基础路由配置
     const converted: ConvertedRoute = {
       ...routeConfig,
+      path: this.toRouterPath(route.path || '', parentPath, depth),
       component: undefined
     }
 
@@ -52,7 +53,8 @@ export class RouteTransformer {
 
     // 递归处理子路由
     if (children?.length) {
-      converted.children = children.map((child) => this.transform(child, depth + 1))
+      const currentFullPath = this.toFullPath(route.path || '', parentPath)
+      converted.children = children.map((child) => this.transform(child, depth + 1, currentFullPath))
     }
 
     return converted
@@ -170,5 +172,34 @@ export class RouteTransformer {
   private extractFirstSegment(path: string): string {
     const segments = path.split('/').filter(Boolean)
     return segments.length > 0 ? `/${segments[0]}` : '/'
+  }
+
+  /**
+   * 菜单中的子级 path 会被规范化成完整路径，注册到 Vue Router 时需要转回相对路径。
+   */
+  private toRouterPath(path: string, parentPath: string, depth: number): string {
+    if (depth === 0 || !path || this.isExternalPath(path) || !path.startsWith('/')) {
+      return path
+    }
+
+    const normalizedParent = parentPath.replace(/\/$/, '')
+    if (!normalizedParent || !path.startsWith(`${normalizedParent}/`)) {
+      return path
+    }
+
+    return path.slice(normalizedParent.length + 1)
+  }
+
+  private toFullPath(path: string, parentPath: string): string {
+    if (!path) return parentPath
+    if (this.isExternalPath(path)) return path
+    if (path.startsWith('/')) return path
+
+    const normalizedParent = parentPath.replace(/\/$/, '')
+    return normalizedParent ? `${normalizedParent}/${path}` : `/${path}`
+  }
+
+  private isExternalPath(path: string): boolean {
+    return /^https?:\/\//i.test(path)
   }
 }

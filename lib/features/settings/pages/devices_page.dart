@@ -1,5 +1,6 @@
+// 文件用途：实现 DeviceInfo 页面及其交互流程，属于应用设置。
+// 核心逻辑：维护 DeviceInfo 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:universal_io/io.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
@@ -7,15 +8,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/system_settings_service.dart';
+import '../../../core/services/e2ee/e2ee_recovery_models.dart';
+import '../../../core/services/e2ee/e2ee_service.dart';
 import '../../chat/providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
 
+// 关键声明：devices page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 设备数据模型
 class DeviceInfo {
   final int id;
@@ -57,6 +62,8 @@ class DeviceInfo {
 }
 
 List<DeviceInfo> _dedupeDevices(Iterable<DeviceInfo> devices) {
+  // 服务端历史记录可能包含相同 deviceId；当前会话优先，其次保留最近活跃、
+  // 服务端记录 ID 更新的一条，避免同一设备被重复展示和重复终止。
   final deduped = <String, DeviceInfo>{};
   for (final device in devices) {
     final key = device.deviceId.trim();
@@ -85,6 +92,22 @@ List<DeviceInfo> _dedupeDevices(Iterable<DeviceInfo> devices) {
   return result;
 }
 
+String _devicesText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
 /// 设备管理页面 -
 class DevicesPage extends ConsumerStatefulWidget {
   final bool isDesktopPanel;
@@ -102,14 +125,20 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
   String _appVersion = '';
   bool _isLoggingOut = false;
   bool _isLoading = true;
+  bool _isRecoveryBusy = false;
+  bool _isRecoveryCapabilityLoading = true;
+  bool _isRecoverySupported = false;
   List<DeviceInfo> _devices = [];
+  List<E2EERecoveryRequest> _recoveryRequests = [];
   DeviceInfo? _currentDevice;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
     _loadDeviceInfo();
     _loadDevices();
+    _loadRecoveryCapability();
   }
 
   Future<void> _loadDeviceInfo() async {
@@ -137,13 +166,14 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('获取设备信息失败: $e');
+      debugPrint('获取设备信息失败: $e');
     }
   }
 
   Future<void> _loadDevices() async {
     try {
       final apiClient = ref.read(apiClientProvider);
+      // 当前设备标识和有效会话列表均以服务端返回为准，本机型号仅用于展示兜底。
       final response = await apiClient.get<Map<String, dynamic>>(
         '/user/devices',
       );
@@ -166,9 +196,218 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('获取设备列表失败: $e');
+      debugPrint('获取设备列表失败: $e');
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadRecoveryRequests() async {
+    if (!_isRecoverySupported) {
+      if (mounted && _recoveryRequests.isNotEmpty) {
+        setState(() => _recoveryRequests = []);
+      }
+      return;
+    }
+    try {
+      final requests =
+          await ref.read(e2eeServiceProvider).listRecoveryRequests();
+      if (!mounted) return;
+      setState(() => _recoveryRequests = requests);
+    } catch (error) {
+      debugPrint('[Devices] Load E2EE recovery requests failed: $error');
+    }
+  }
+
+  Future<void> _loadRecoveryCapability() async {
+    try {
+      // 先由服务端声明协议能力，避免旧后端上展示无法完成的恢复入口。
+      final response = await ref
+          .read(apiClientProvider)
+          .get<Map<String, dynamic>>('/message/recovery-capabilities');
+      final supported = response.isSuccess &&
+          supportsTrustedDeviceE2EERecovery(response.data);
+      if (!mounted) return;
+      setState(() {
+        _isRecoveryCapabilityLoading = false;
+        _isRecoverySupported = supported;
+        if (!supported) _recoveryRequests = [];
+      });
+      if (supported) await _loadRecoveryRequests();
+    } catch (error) {
+      debugPrint('[Devices] Load recovery capability failed: $error');
+      if (!mounted) return;
+      setState(() {
+        _isRecoveryCapabilityLoading = false;
+        _isRecoverySupported = false;
+        _recoveryRequests = [];
+      });
+    }
+  }
+
+  Future<void> _createRecoveryRequest() async {
+    if (_isRecoveryBusy || !_isRecoverySupported) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_devicesText(
+          context,
+          zhCN: '申请恢复加密消息',
+          zhTW: '申請復原加密訊息',
+          en: 'Request encrypted history recovery',
+        )),
+        content: Text(_devicesText(
+          context,
+          zhCN: '请求发出后，需要在仍能阅读旧加密消息的已登录设备上批准。服务器不会获得明文私钥。',
+          zhTW: '請求送出後，需要在仍能閱讀舊加密訊息的已登入裝置上批准。伺服器不會取得明文私鑰。',
+          en: 'Approve this request on a signed-in device that can still read the old encrypted messages. The server never receives the private key in plaintext.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(_devicesText(
+              context,
+              zhCN: '取消',
+              zhTW: '取消',
+              en: 'Cancel',
+            )),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(_devicesText(
+              context,
+              zhCN: '发出请求',
+              zhTW: '送出請求',
+              en: 'Send Request',
+            )),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _isRecoveryBusy = true);
+    try {
+      // E2EEService 负责在可信设备间加密恢复材料；页面不接触明文私钥。
+      await ref.read(e2eeServiceProvider).createRecoveryRequest();
+      await _loadRecoveryRequests();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_devicesText(
+            context,
+            zhCN: '恢复请求已发出，请在旧设备上批准',
+            zhTW: '復原請求已送出，請在舊裝置上批准',
+            en: 'Recovery request sent. Approve it on the old device.',
+          )),
+        ));
+      }
+    } catch (error) {
+      _showRecoveryError(error);
+    } finally {
+      if (mounted) setState(() => _isRecoveryBusy = false);
+    }
+  }
+
+  Future<void> _approveRecoveryRequest(E2EERecoveryRequest request) async {
+    if (_isRecoveryBusy) return;
+    final requesterName = request.requesterDeviceName.isNotEmpty
+        ? request.requesterDeviceName
+        : _getDeviceTypeName(context, request.requesterDeviceType);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_devicesText(
+          context,
+          zhCN: '批准加密消息恢复？',
+          zhTW: '批准加密訊息復原？',
+          en: 'Approve encrypted history recovery?',
+        )),
+        content: Text(_devicesText(
+          context,
+          zhCN: '仅在确认“$requesterName”是你刚登录的新设备时批准。当前设备会将历史解密身份端到端加密后发送给该设备。',
+          zhTW: '僅在確認「$requesterName」是你剛登入的新裝置時批准。目前裝置會將歷史解密身分端對端加密後傳送給該裝置。',
+          en: 'Approve only if "$requesterName" is the new device you just signed in. This device will end-to-end encrypt the historical decryption identity for it.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(_devicesText(
+              context,
+              zhCN: '取消',
+              zhTW: '取消',
+              en: 'Cancel',
+            )),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(_devicesText(
+              context,
+              zhCN: '批准',
+              zhTW: '批准',
+              en: 'Approve',
+            )),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _isRecoveryBusy = true);
+    try {
+      // 批准动作只授权指定请求，恢复身份仍以端到端加密形式交付给新设备。
+      await ref.read(e2eeServiceProvider).approveRecoveryRequest(request);
+      await _loadRecoveryRequests();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_devicesText(
+            context,
+            zhCN: '已安全批准，新设备可以导入历史解密身份',
+            zhTW: '已安全批准，新裝置可以匯入歷史解密身分',
+            en: 'Approved securely. The new device can import the historical identity.',
+          )),
+        ));
+      }
+    } catch (error) {
+      _showRecoveryError(error);
+    } finally {
+      if (mounted) setState(() => _isRecoveryBusy = false);
+    }
+  }
+
+  Future<void> _importApprovedRecovery() async {
+    if (_isRecoveryBusy) return;
+    setState(() => _isRecoveryBusy = true);
+    try {
+      final imported =
+          await ref.read(e2eeServiceProvider).importApprovedRecovery();
+      await _loadRecoveryRequests();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(imported
+              ? _devicesText(
+                  context,
+                  zhCN: '历史加密消息解密身份已恢复',
+                  zhTW: '歷史加密訊息解密身分已復原',
+                  en: 'Historical encrypted-message identity restored.',
+                )
+              : _devicesText(
+                  context,
+                  zhCN: '暂时没有已批准的恢复结果',
+                  zhTW: '暫時沒有已批准的復原結果',
+                  en: 'No approved recovery result is available yet.',
+                )),
+        ));
+      }
+    } catch (error) {
+      _showRecoveryError(error);
+    } finally {
+      if (mounted) setState(() => _isRecoveryBusy = false);
+    }
+  }
+
+  void _showRecoveryError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(error.toString()),
+      backgroundColor: AppColors.error,
+    ));
   }
 
   DeviceInfo _createDefaultDevice() {
@@ -191,19 +430,47 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('终止设备会话'),
+        title: Text(
+          _devicesText(
+            context,
+            zhCN: '终止设备会话',
+            zhTW: '終止裝置工作階段',
+            en: 'End Device Session',
+          ),
+        ),
         content: Text(
-          '确定要终止 ${device.deviceName.isNotEmpty ? device.deviceName : _getDeviceTypeName(device.deviceType)} 的会话吗？',
+          _devicesText(
+            context,
+            zhCN:
+                '确定要终止 ${device.deviceName.isNotEmpty ? device.deviceName : _getDeviceTypeName(context, device.deviceType)} 的会话吗？',
+            zhTW:
+                '確定要終止 ${device.deviceName.isNotEmpty ? device.deviceName : _getDeviceTypeName(context, device.deviceType)} 的工作階段嗎？',
+            en: 'End the session for ${device.deviceName.isNotEmpty ? device.deviceName : _getDeviceTypeName(context, device.deviceType)}?',
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(
+              _devicesText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('终止'),
+            child: Text(
+              _devicesText(
+                context,
+                zhCN: '终止',
+                zhTW: '終止',
+                en: 'End',
+              ),
+            ),
           ),
         ],
       ),
@@ -218,36 +485,73 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
       );
 
       if (response.isSuccess) {
+        // 会话终止是服务端安全状态，确认成功后才同步移除页面条目。
         setState(() {
           _devices.removeWhere((d) => d.deviceId == device.deviceId);
         });
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('已终止该设备会话')));
+          ).showSnackBar(
+            SnackBar(
+              content: Text(
+                _devicesText(
+                  context,
+                  zhCN: '已终止该设备会话',
+                  zhTW: '已終止該裝置工作階段',
+                  en: 'Device session ended',
+                ),
+              ),
+            ),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text(
+              _devicesText(
+                context,
+                zhCN: '操作失败，请重试',
+                zhTW: '操作失敗，請重試',
+                en: 'Operation failed. Please try again.',
+              ),
+            ),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     }
   }
 
-  String _getDeviceTypeName(String type) {
+  String _getDeviceTypeName(BuildContext context, String type) {
     switch (type.toLowerCase()) {
       case 'ios':
         return 'iPhone';
       case 'android':
         return 'Android';
       case 'web':
-        return '网页版';
+        return _devicesText(
+          context,
+          zhCN: '网页版',
+          zhTW: '網頁版',
+          en: 'Web',
+        );
       case 'desktop':
-        return '桌面版';
+        return _devicesText(
+          context,
+          zhCN: '桌面版',
+          zhTW: '桌面版',
+          en: 'Desktop',
+        );
       default:
-        return '未知设备';
+        return _devicesText(
+          context,
+          zhCN: '未知设备',
+          zhTW: '未知裝置',
+          en: 'Unknown Device',
+        );
     }
   }
 
@@ -266,14 +570,37 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     }
   }
 
-  String _formatLastActive(DateTime time) {
+  String _formatLastActive(BuildContext context, DateTime time) {
     final now = DateTime.now();
     final diff = now.difference(time);
 
-    if (diff.inMinutes < 5) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
+    if (diff.inMinutes < 5) {
+      return _devicesText(context, zhCN: '刚刚', zhTW: '剛剛', en: 'Just now');
+    }
+    if (diff.inHours < 1) {
+      return _devicesText(
+        context,
+        zhCN: '${diff.inMinutes} 分钟前',
+        zhTW: '${diff.inMinutes} 分鐘前',
+        en: '${diff.inMinutes}m ago',
+      );
+    }
+    if (diff.inDays < 1) {
+      return _devicesText(
+        context,
+        zhCN: '${diff.inHours} 小时前',
+        zhTW: '${diff.inHours} 小時前',
+        en: '${diff.inHours}h ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _devicesText(
+        context,
+        zhCN: '${diff.inDays} 天前',
+        zhTW: '${diff.inDays} 天前',
+        en: '${diff.inDays}d ago',
+      );
+    }
     return '${time.month}/${time.day}';
   }
 
@@ -285,7 +612,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final appName =
         ref.watch(systemSettingsProvider).valueOrNull?.displayName ??
-            kDefaultAppDisplayName;
+            defaultAppDisplayName();
 
     // 桌面端面板模式：只返回内容，不需要 Scaffold 和 AppBar
     if (widget.isDesktopPanel) {
@@ -324,7 +651,9 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
-            onRefresh: _loadDevices,
+            onRefresh: () async {
+              await Future.wait([_loadDevices(), _loadRecoveryCapability()]);
+            },
             child: ListView(
               children: [
                 const SizedBox(height: 35),
@@ -350,7 +679,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                   children: [
                     _buildTapTile(
                       icon: Icons.qr_code_scanner_rounded,
-                      iconBgColor: AppColors.primary,
+                      iconBgColor: AppColors.primaryFor(context),
                       title: l10n.scanQrCode,
                       subtitle: l10n.loginToOtherDevice,
                       isDark: isDark,
@@ -365,7 +694,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     l10n.scanQrCodeHint,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ),
@@ -402,7 +731,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     l10n.suspiciousDeviceHint,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ),
@@ -421,6 +750,154 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
                 const SizedBox(height: 35),
 
+                _buildSectionHeader(
+                  _devicesText(
+                    context,
+                    zhCN: '加密消息恢复',
+                    zhTW: '加密訊息復原',
+                    en: 'Encrypted History Recovery',
+                  ),
+                  isDark,
+                ),
+
+                _buildSettingsCard(
+                  isDark: isDark,
+                  cardColor: cardColor,
+                  children: [
+                    _buildTapTile(
+                      icon: _isRecoverySupported
+                          ? Icons.enhanced_encryption_outlined
+                          : Icons.cloud_off_outlined,
+                      iconBgColor: _isRecoverySupported
+                          ? AppColors.info
+                          : AppColors.textTertiaryFor(context),
+                      title: _devicesText(
+                        context,
+                        zhCN: _isRecoveryCapabilityLoading
+                            ? '正在检查服务端恢复能力'
+                            : _isRecoverySupported
+                                ? '申请从旧设备恢复'
+                                : '加密消息恢复暂不可用',
+                        zhTW: _isRecoveryCapabilityLoading
+                            ? '正在檢查伺服器復原能力'
+                            : _isRecoverySupported
+                                ? '申請從舊裝置復原'
+                                : '加密訊息復原暫不可用',
+                        en: _isRecoveryCapabilityLoading
+                            ? 'Checking Server Recovery Support'
+                            : _isRecoverySupported
+                                ? 'Request Recovery from Old Device'
+                                : 'Encrypted History Recovery Unavailable',
+                      ),
+                      subtitle: _devicesText(
+                        context,
+                        zhCN: _isRecoveryCapabilityLoading
+                            ? '请稍候'
+                            : _isRecoverySupported
+                                ? '需要另一台仍可阅读旧加密消息的设备批准'
+                                : '当前服务器版本不支持，请先升级服务端',
+                        zhTW: _isRecoveryCapabilityLoading
+                            ? '請稍候'
+                            : _isRecoverySupported
+                                ? '需要另一台仍可閱讀舊加密訊息的裝置批准'
+                                : '目前伺服器版本不支援，請先升級伺服器',
+                        en: _isRecoveryCapabilityLoading
+                            ? 'Please wait'
+                            : _isRecoverySupported
+                                ? 'Requires approval from another device that can read old messages'
+                                : 'Upgrade the server before using this feature',
+                      ),
+                      isDark: isDark,
+                      onTap: _isRecoveryBusy || !_isRecoverySupported
+                          ? () {}
+                          : _createRecoveryRequest,
+                    ),
+                    if (_isRecoverySupported)
+                      ..._recoveryRequests
+                          .where((item) => item.isRequester && item.isPending)
+                          .map((item) => _buildTapTile(
+                                icon: Icons.hourglass_top_rounded,
+                                iconBgColor: AppColors.warning,
+                                title: _devicesText(
+                                  context,
+                                  zhCN: '等待旧设备批准',
+                                  zhTW: '等待舊裝置批准',
+                                  en: 'Waiting for Old Device Approval',
+                                ),
+                                subtitle: _devicesText(
+                                  context,
+                                  zhCN: '点击刷新恢复状态',
+                                  zhTW: '點擊重新整理復原狀態',
+                                  en: 'Tap to refresh recovery status',
+                                ),
+                                isDark: isDark,
+                                onTap: _loadRecoveryRequests,
+                              )),
+                    if (_isRecoverySupported)
+                      ..._recoveryRequests
+                          .where((item) => item.isRequester && item.isApproved)
+                          .map((item) => _buildTapTile(
+                                icon: Icons.download_done_rounded,
+                                iconBgColor: AppColors.success,
+                                title: _devicesText(
+                                  context,
+                                  zhCN: '导入已批准的恢复身份',
+                                  zhTW: '匯入已批准的復原身分',
+                                  en: 'Import Approved Recovery Identity',
+                                ),
+                                subtitle: _devicesText(
+                                  context,
+                                  zhCN: '恢复后可尝试解密该旧设备收到的历史消息',
+                                  zhTW: '復原後可嘗試解密該舊裝置收到的歷史訊息',
+                                  en: 'Restores access to history encrypted for that old device',
+                                ),
+                                isDark: isDark,
+                                onTap: _importApprovedRecovery,
+                              )),
+                    if (_isRecoverySupported)
+                      ..._recoveryRequests
+                          .where((item) => !item.isRequester && item.isPending)
+                          .map((item) => _buildTapTile(
+                                icon: Icons.phonelink_lock_rounded,
+                                iconBgColor: AppColors.primaryFor(context),
+                                title: _devicesText(
+                                  context,
+                                  zhCN:
+                                      '批准 ${item.requesterDeviceName.isNotEmpty ? item.requesterDeviceName : "新设备"}',
+                                  zhTW:
+                                      '批准 ${item.requesterDeviceName.isNotEmpty ? item.requesterDeviceName : "新裝置"}',
+                                  en: 'Approve ${item.requesterDeviceName.isNotEmpty ? item.requesterDeviceName : "New Device"}',
+                                ),
+                                subtitle: _devicesText(
+                                  context,
+                                  zhCN: '请先核对这是否是你刚登录的设备',
+                                  zhTW: '請先核對這是否是你剛登入的裝置',
+                                  en: 'Verify that this is the device you just signed in',
+                                ),
+                                isDark: isDark,
+                                onTap: () => _approveRecoveryRequest(item),
+                              )),
+                  ],
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    _devicesText(
+                      context,
+                      zhCN: '没有可用旧设备、没有备份或旧密钥已重置时，历史密文无法恢复。',
+                      zhTW: '沒有可用舊裝置、沒有備份或舊金鑰已重設時，歷史密文無法復原。',
+                      en: 'Old encrypted history cannot be recovered without an available trusted device or backup, or after the old key was reset.',
+                    ),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textTertiaryFor(context),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 35),
+
                 // 退出登录
                 _buildSettingsCard(
                   isDark: isDark,
@@ -434,7 +911,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     l10n.logoutHint,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ),
@@ -455,7 +932,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white38 : Colors.black38,
+              color: AppColors.textTertiaryFor(context),
               letterSpacing: 0.3,
             ),
           ),
@@ -465,7 +942,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
               trailing,
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
           ],
@@ -508,7 +985,10 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
         ? _currentDevice!.deviceName
         : (_deviceName.isNotEmpty
             ? _deviceName
-            : _getDeviceTypeName(Platform.isIOS ? 'ios' : 'android'));
+            : _getDeviceTypeName(
+                context,
+                Platform.isIOS ? 'ios' : 'android',
+              ));
 
     // 显示 IP 信息（如果有）
     final ipInfo =
@@ -523,12 +1003,12 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
+              color: AppColors.emphasisSoftFor(context),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
-              color: AppColors.primary,
+              color: AppColors.linkFor(context),
               size: 24,
             ),
           ),
@@ -552,7 +1032,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                   '$_appVersion · $_osVersion$ipInfo',
                   style: TextStyle(
                     fontSize: 14,
-                    color: isDark ? Colors.white54 : Colors.black45,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
               ],
@@ -579,7 +1059,12 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  '在线',
+                  _devicesText(
+                    context,
+                    zhCN: '在线',
+                    zhTW: '在線',
+                    en: 'Online',
+                  ),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -631,7 +1116,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                       title,
                       style: TextStyle(
                         fontSize: 16,
-                        color: AppColors.primary,
+                        color: AppColors.linkFor(context),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -641,7 +1126,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                         subtitle,
                         style: TextStyle(
                           fontSize: 14,
-                          color: isDark ? Colors.white54 : Colors.black45,
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                     ],
@@ -668,14 +1153,14 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
           Icon(
             Icons.devices_other_rounded,
             size: 48,
-            color: isDark ? Colors.white24 : Colors.black12,
+            color: AppColors.textTertiaryFor(context).withOpacity(0.72),
           ),
           const SizedBox(height: 12),
           Text(
             l10n.noOtherDevices,
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white54 : Colors.black45,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ],
@@ -690,7 +1175,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
   ) {
     final deviceName = device.deviceName.isNotEmpty
         ? device.deviceName
-        : _getDeviceTypeName(device.deviceType);
+        : _getDeviceTypeName(context, device.deviceType);
 
     return Dismissible(
       key: Key(device.deviceId),
@@ -761,10 +1246,10 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${device.ip.isNotEmpty ? device.ip : "未知IP"} · ${_formatLastActive(device.lastActive)}',
+                      '${device.ip.isNotEmpty ? device.ip : _devicesText(context, zhCN: "未知IP", zhTW: "未知 IP", en: "Unknown IP")} · ${_formatLastActive(context, device.lastActive)}',
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark ? Colors.white54 : Colors.black45,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                   ],
@@ -775,7 +1260,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
               IconButton(
                 icon: Icon(
                   Icons.close_rounded,
-                  color: isDark ? Colors.white38 : Colors.black38,
+                  color: AppColors.textTertiaryFor(context),
                   size: 20,
                 ),
                 onPressed: () => _terminateDevice(device),
@@ -849,6 +1334,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
       );
 
       if (response.isSuccess) {
+        // 服务端按当前会话执行批量终止；页面只保留服务端标记的当前设备。
         setState(() {
           _devices.removeWhere((d) => d.deviceId != _currentDevice?.deviceId);
         });
@@ -862,7 +1348,14 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${l10n.operationFailed}: $e'),
+            content: Text(
+              _devicesText(
+                context,
+                zhCN: '操作失败，请重试',
+                zhTW: '操作失敗，請重試',
+                en: 'Operation failed. Please try again.',
+              ),
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -914,6 +1407,8 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
   void _showLogoutConfirm(AppLocalizations l10n) {
     HapticFeedback.mediumImpact();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final credentialsPending =
+        ref.read(authServiceProvider).user?.credentialsInitialized == false;
 
     showGeneralDialog(
       context: context,
@@ -956,7 +1451,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                         SizedBox(
                           width: 90,
                           height: 90,
-                          child: Lottie.asset(
+                          child: WebSafeLottie.asset(
                             'assets/emoji/lottie/hatched_chick.json',
                             repeat: true,
                           ),
@@ -974,7 +1469,14 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                         const SizedBox(height: 6),
                         // 内容
                         Text(
-                          l10n.logoutHint,
+                          credentialsPending
+                              ? _devicesText(
+                                  context,
+                                  zhCN: '当前账号尚未设置登录账号和密码，退出后可能无法找回。确定继续退出吗？',
+                                  zhTW: '目前帳號尚未設定登入帳號和密碼，登出後可能無法找回。確定繼續登出嗎？',
+                                  en: 'This account has no sign-in credentials yet and may be unrecoverable after logout. Continue?',
+                                )
+                              : l10n.logoutHint,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -1060,16 +1562,16 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     HapticFeedback.mediumImpact();
 
     try {
-      // 重置聊天和联系人状态
+      // 先隔离当前账号的内存态，再由 AuthService 完成令牌撤销和持久化清理，
+      // 避免退出过程中旧聊天或联系人短暂显示给后续账号。
       ref.read(chatListProvider.notifier).reset();
       ref.read(contactListProvider.notifier).reset();
 
-      // 调用 AuthService 的 logout 方法
       await ref.read(authServiceProvider.notifier).logout();
 
       if (!mounted) return;
 
-      // 跳转到登录页面
+      // 只有认证清理完成后才离开当前账号页面。
       context.go('/login');
     } catch (e) {
       if (!mounted) return;
@@ -1078,7 +1580,14 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('退出失败: $e'),
+          content: Text(
+            _devicesText(
+              context,
+              zhCN: '退出失败，请重试',
+              zhTW: '登出失敗，請重試',
+              en: 'Logout failed. Please try again.',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(

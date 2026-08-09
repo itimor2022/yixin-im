@@ -11,6 +11,7 @@ export function useSettingsConfig() {
   const { t } = useI18n()
 
   // 标签页风格选项
+  // 使用 computed 保证切换语言后选项文案随 i18n 状态重新生成。
   const tabStyleOptions = computed(() => [
     {
       value: 'tab-default',
@@ -215,7 +216,7 @@ export function useSettingsConfig() {
       }
     ]
 
-    // 根据 headerBarConfig 过滤设置项
+    // 根据构建期 headerBar 能力过滤设置项，避免展示当前布局未启用的开关。
     return (
       allSettings
         .filter((setting) => {
@@ -229,6 +230,7 @@ export function useSettingsConfig() {
           return headerBarFeature?.enabled !== false
         })
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        // headerBarKey 仅用于内部筛选，不属于设置组件的渲染契约。
         .map(({ headerBarKey: _headerBarKey, ...setting }) => setting)
     )
   })

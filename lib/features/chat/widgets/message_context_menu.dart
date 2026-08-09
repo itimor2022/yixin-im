@@ -1,21 +1,63 @@
+// 文件用途：提供 MessageContextMenu 可复用界面组件，服务于聊天与消息。
+// 核心逻辑：根据输入模型和状态渲染 MessageContextMenu，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'dart:convert';
 import 'package:universal_io/io.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/constants/emoji_animations.dart';
 import '../../../core/services/api/api_client.dart' show ApiConfig;
 import '../../../core/services/notification_sound_service.dart';
+import '../../../core/services/time_zone_refresh_service.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/sticker_image.dart';
 import '../providers/message_provider.dart';
+import '../services/emoji_store_service.dart';
 
+String _messageContextText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _messageContextL10n(
+  BuildContext context,
+  AppLocalizations l10n,
+  String key, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  final value = l10n.get(key);
+  if (value.isEmpty || value == key) {
+    return _messageContextText(
+      context,
+      zhCN: zhCN,
+      zhTW: zhTW,
+      en: en,
+    );
+  }
+  return value;
+}
+
+// 关键声明：message context menu 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 ///  消息长按菜单
 class MessageContextMenu extends StatefulWidget {
   final MessageItem message;
@@ -26,15 +68,18 @@ class MessageContextMenu extends StatefulWidget {
   final Function(String emoji)? onReaction;
   final VoidCallback? onReply;
   final VoidCallback? onCopy;
+  final VoidCallback? onTranslate;
   final VoidCallback? onForward;
   final VoidCallback? onFavorite;
+  final VoidCallback? onDetails;
+  final VoidCallback? onReport;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onRevoke;
+  final String? revokeLabel;
   final VoidCallback? onSelect;
   final VoidCallback? onPin;
   // 桌面端文件操作
-  final VoidCallback? onDownload;
   final VoidCallback? onSaveAs;
   final VoidCallback? onShowInFolder;
   final VoidCallback? onOpenFile;
@@ -49,14 +94,17 @@ class MessageContextMenu extends StatefulWidget {
     this.onReaction,
     this.onReply,
     this.onCopy,
+    this.onTranslate,
     this.onForward,
     this.onFavorite,
+    this.onDetails,
+    this.onReport,
     this.onEdit,
     this.onDelete,
     this.onRevoke,
+    this.revokeLabel,
     this.onSelect,
     this.onPin,
-    this.onDownload,
     this.onSaveAs,
     this.onShowInFolder,
     this.onOpenFile,
@@ -64,6 +112,22 @@ class MessageContextMenu extends StatefulWidget {
 
   @override
   State<MessageContextMenu> createState() => _MessageContextMenuState();
+}
+
+class _MobileMenuAction {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final bool isDestructive;
+  final bool isConfirming;
+
+  const _MobileMenuAction({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.isDestructive = false,
+    this.isConfirming = false,
+  });
 }
 
 class _MessageContextMenuState extends State<MessageContextMenu>
@@ -79,7 +143,10 @@ class _MessageContextMenuState extends State<MessageContextMenu>
 
   bool _showEmojiPanel = false;
   bool _showDeleteConfirm = false;
+  static const int _mobilePreviewMaxLines = 8;
+  static const int _mobileCompactPreviewMaxLines = 5;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -250,7 +317,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     Size screenSize,
     EdgeInsets padding,
   ) {
-    final isDesktop = PlatformUtils.isDesktop;
+    final isDesktop = PlatformUtils.useDesktopLayout(context);
 
     // 桌面端：紧凑的右键菜单，定位在点击位置附近
     if (isDesktop) {
@@ -259,12 +326,11 @@ class _MessageContextMenuState extends State<MessageContextMenu>
 
     // 移动端：原有的全屏模糊菜单
     final isTopHalf = widget.tapPosition.dy < screenSize.height / 2;
-    final menuWidth = screenSize.width * 0.65;
+    final menuWidth = (screenSize.width - 32).clamp(300.0, 380.0).toDouble();
 
     return Column(
-      mainAxisAlignment: isTopHalf
-          ? MainAxisAlignment.start
-          : MainAxisAlignment.end,
+      mainAxisAlignment:
+          isTopHalf ? MainAxisAlignment.start : MainAxisAlignment.end,
       children: [
         if (!isTopHalf) const Spacer(),
 
@@ -286,15 +352,22 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           const SizedBox(height: 12),
         ],
 
-        // 操作菜单（只在未展开表情面板时显示）
-        AnimatedOpacity(
-          opacity: _showEmojiPanel ? 0.0 : 1.0,
-          duration: const Duration(milliseconds: 150),
-          child: AnimatedSlide(
-            offset: _showEmojiPanel ? const Offset(0, 0.2) : Offset.zero,
-            duration: const Duration(milliseconds: 150),
-            child: _buildActionMenu(isDark, menuWidth),
-          ),
+        // Keep actions in the layout only when they are usable.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _showEmojiPanel
+              ? const SizedBox.shrink()
+              : AnimatedOpacity(
+                  opacity: 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: AnimatedSlide(
+                    offset: Offset.zero,
+                    duration: const Duration(milliseconds: 150),
+                    child: _buildActionMenu(context, isDark, menuWidth),
+                  ),
+                ),
         ),
 
         if (isTopHalf) const Spacer(),
@@ -344,7 +417,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               _buildDesktopReactionBar(isDark),
               const SizedBox(height: 6),
               // 操作菜单
-              _buildDesktopActionMenu(isDark, menuWidth),
+              _buildDesktopActionMenu(context, isDark, menuWidth),
             ],
           ),
         ),
@@ -357,7 +430,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        color: AppColors.cardFor(context),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -388,7 +461,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           width: 32,
           height: 32,
           padding: const EdgeInsets.all(2),
-          child: Lottie.asset(emoji.path, repeat: true, animate: true),
+          child: WebSafeLottie.asset(emoji.path, repeat: true, animate: true),
         ),
       ),
     );
@@ -407,7 +480,9 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white12 : Colors.black.withOpacity(0.05),
+              color: isDark
+                  ? AppColors.darkControlBackgroundStrong
+                  : Colors.black.withOpacity(0.05),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -422,12 +497,16 @@ class _MessageContextMenuState extends State<MessageContextMenu>
   }
 
   /// 桌面端操作菜单 - 紧凑样式
-  Widget _buildDesktopActionMenu(bool isDark, double menuWidth) {
+  Widget _buildDesktopActionMenu(
+    BuildContext context,
+    bool isDark,
+    double menuWidth,
+  ) {
+    final l10n = AppLocalizations.of(context);
     final message = widget.message;
 
     // 判断是否是媒体/文件类型消息
-    final isMediaMessage =
-        message.type == MessageItemType.image ||
+    final isMediaMessage = message.type == MessageItemType.image ||
         message.type == MessageItemType.video ||
         message.type == MessageItemType.file ||
         message.type == MessageItemType.voice;
@@ -435,7 +514,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     return Container(
       width: menuWidth,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        color: AppColors.cardFor(context),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -448,22 +527,41 @@ class _MessageContextMenuState extends State<MessageContextMenu>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildDesktopMenuItem(
-            icon: Icons.reply_rounded,
-            title: '回复',
-            isDark: isDark,
-            onTap: () => _handleAction(widget.onReply),
-          ),
-          _buildDesktopDivider(isDark),
+          if (widget.onReply != null) ...[
+            _buildDesktopMenuItem(
+              icon: Icons.reply_rounded,
+              title: l10n.reply,
+              isDark: isDark,
+              onTap: () => _handleAction(widget.onReply),
+            ),
+            _buildDesktopDivider(isDark),
+          ],
 
           if (message.type != MessageItemType.redPacket &&
               message.type != MessageItemType.transfer &&
               message.type != MessageItemType.system) ...[
             _buildDesktopMenuItem(
               icon: Icons.copy_rounded,
-              title: '复制',
+              title: l10n.copy,
               isDark: isDark,
               onTap: () => _handleAction(widget.onCopy),
+            ),
+            _buildDesktopDivider(isDark),
+          ],
+
+          if (widget.onTranslate != null) ...[
+            _buildDesktopMenuItem(
+              icon: Icons.translate_rounded,
+              title: _messageContextL10n(
+                context,
+                l10n,
+                'translate',
+                zhCN: '翻译',
+                zhTW: '翻譯',
+                en: 'Translate',
+              ),
+              isDark: isDark,
+              onTap: () => _handleAction(widget.onTranslate),
             ),
             _buildDesktopDivider(isDark),
           ],
@@ -471,7 +569,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           if (widget.onForward != null)
             _buildDesktopMenuItem(
               icon: Icons.shortcut_rounded,
-              title: '转发',
+              title: l10n.forward,
               isDark: isDark,
               onTap: () => _handleAction(widget.onForward),
             ),
@@ -480,41 +578,52 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             _buildDesktopDivider(isDark),
             _buildDesktopMenuItem(
               icon: Icons.favorite_border_rounded,
-              title: '收藏',
+              title: l10n.get('favorite'),
               isDark: isDark,
               onTap: () => _handleAction(widget.onFavorite),
             ),
           ],
 
+          if (widget.onDetails != null) ...[
+            _buildDesktopDivider(isDark),
+            _buildDesktopMenuItem(
+              icon: Icons.info_outline_rounded,
+              title: _messageContextText(
+                context,
+                zhCN: '消息详情',
+                zhTW: '訊息詳情',
+                en: 'Message details',
+              ),
+              isDark: isDark,
+              onTap: () => _handleAction(widget.onDetails),
+            ),
+          ],
+
+          if (widget.onReport != null) ...[
+            _buildDesktopDivider(isDark),
+            _buildDesktopMenuItem(
+              icon: Icons.report_gmailerrorred_outlined,
+              title: l10n.report,
+              isDark: isDark,
+              onTap: () => _handleAction(widget.onReport),
+              isDestructive: true,
+            ),
+          ],
+
           // 媒体/文件类型消息显示额外操作
           if (isMediaMessage) ...[
-            if (widget.onDownload != null) ...[
-              _buildDesktopDivider(isDark),
-              _buildDesktopMenuItem(
-                icon: Icons.download_rounded,
-                title: '下载',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onDownload),
-              ),
-            ],
-            if (widget.onSaveAs != null) ...[
-              _buildDesktopDivider(isDark),
-              _buildDesktopMenuItem(
-                icon: Icons.save_alt_rounded,
-                title: '存储到...',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onSaveAs),
-              ),
-            ],
+            _buildDesktopDivider(isDark),
+            _buildDesktopMenuItem(
+              icon: Icons.save_alt_rounded,
+              title: l10n.saveAs,
+              isDark: isDark,
+              onTap: () => _handleAction(widget.onSaveAs),
+            ),
             if (widget.onShowInFolder != null) ...[
               _buildDesktopDivider(isDark),
               _buildDesktopMenuItem(
                 icon: Icons.folder_open_rounded,
-                title: Platform.isMacOS
-                    ? '在 Finder 中显示'
-                    : Platform.isWindows
-                    ? '在资源管理器中显示'
-                    : '在文件管理器中显示',
+                title: l10n.showInFolder,
                 isDark: isDark,
                 onTap: () => _handleAction(widget.onShowInFolder),
               ),
@@ -524,7 +633,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               _buildDesktopDivider(isDark),
               _buildDesktopMenuItem(
                 icon: Icons.open_in_new_rounded,
-                title: '使用默认应用打开',
+                title: l10n.get('open_with_default_app'),
                 isDark: isDark,
                 onTap: () => _handleAction(widget.onOpenFile),
               ),
@@ -537,7 +646,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             _buildDesktopDivider(isDark),
             _buildDesktopMenuItem(
               icon: Icons.edit_rounded,
-              title: '编辑',
+              title: l10n.edit,
               isDark: isDark,
               onTap: () => _handleAction(widget.onEdit),
             ),
@@ -547,7 +656,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             _buildDesktopDivider(isDark),
             _buildDesktopMenuItem(
               icon: Icons.undo_rounded,
-              title: '撤回',
+              title: widget.revokeLabel ?? l10n.get('revoke'),
               isDark: isDark,
               onTap: () => _handleAction(widget.onRevoke),
             ),
@@ -557,7 +666,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             _buildDesktopDivider(isDark),
             _buildDesktopMenuItem(
               icon: Icons.push_pin_rounded,
-              title: '置顶',
+              title: l10n.pin,
               isDark: isDark,
               onTap: () => _handleAction(widget.onPin),
             ),
@@ -566,7 +675,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           _buildDesktopDivider(isDark),
           _buildDesktopMenuItem(
             icon: Icons.check_circle_outline_rounded,
-            title: '选择',
+            title: l10n.select,
             isDark: isDark,
             onTap: () => _handleAction(widget.onSelect),
           ),
@@ -574,7 +683,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           _buildDesktopDivider(isDark),
           _buildDesktopMenuItem(
             icon: Icons.delete_outline_rounded,
-            title: '删除',
+            title: l10n.delete,
             isDark: isDark,
             onTap: () => _handleAction(widget.onDelete),
             isDestructive: true,
@@ -628,7 +737,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     return Container(
       height: 0.5,
       margin: const EdgeInsets.symmetric(horizontal: 8),
-      color: isDark ? Colors.white12 : Colors.black.withOpacity(0.08),
+      color: AppColors.dividerFor(context),
     );
   }
 
@@ -645,7 +754,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             width: _showEmojiPanel ? screenSize.width - 16 : null,
             decoration: BoxDecoration(
               color: isDark
-                  ? const Color(0xFF2C2C2E).withOpacity(0.85)
+                  ? AppColors.cardFor(context).withOpacity(0.92)
                   : Colors.white.withOpacity(0.85),
               borderRadius: BorderRadius.circular(_showEmojiPanel ? 14 : 22),
               boxShadow: [
@@ -708,7 +817,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
         width: 38,
         height: 38,
         padding: const EdgeInsets.all(3),
-        child: Lottie.asset(emoji.path, repeat: true, animate: true),
+        child: WebSafeLottie.asset(emoji.path, repeat: true, animate: true),
       ),
     );
   }
@@ -728,15 +837,17 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             height: 28,
             decoration: BoxDecoration(
               color: _showEmojiPanel
-                  ? AppColors.primary.withOpacity(0.15)
-                  : (isDark ? Colors.white12 : Colors.black.withOpacity(0.05)),
+                  ? AppColors.emphasisSoftFor(context)
+                  : (isDark
+                      ? AppColors.darkControlBackgroundStrong
+                      : Colors.black.withOpacity(0.05)),
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.add,
               size: 18,
               color: _showEmojiPanel
-                  ? AppColors.primary
+                  ? AppColors.linkFor(context)
                   : (isDark ? Colors.white70 : Colors.black54),
             ),
           ),
@@ -751,30 +862,33 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     bool isDark,
     Size screenSize,
   ) {
+    final l10n = AppLocalizations.of(context);
     final message = widget.message;
     final isOutgoing = widget.isOutgoing;
+    final maxTextLines = screenSize.height < 640
+        ? _mobileCompactPreviewMaxLines
+        : _mobilePreviewMaxLines;
 
     final bubbleColor = isOutgoing
         ? (isDark
-              ? AppColors.darkBubbleOutgoing
-              : AppColors.lightBubbleOutgoing)
+            ? AppColors.darkBubbleOutgoing
+            : AppColors.lightBubbleOutgoing)
         : (isDark
-              ? AppColors.darkBubbleIncoming
-              : AppColors.lightBubbleIncoming);
+            ? AppColors.darkBubbleIncoming
+            : AppColors.lightBubbleIncoming);
 
-    final textColor = isDark
-        ? AppColors.darkTextPrimary
-        : AppColors.lightTextPrimary;
+    final textColor = AppColors.textPrimaryFor(context);
     final timeColor = isOutgoing
-        ? (isDark ? Colors.white60 : const Color(0xFF5D9B5D))
-        : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary);
+        ? (isDark
+            ? AppColors.textSecondaryFor(context)
+            : const Color(0xFF5D9B5D))
+        : (AppColors.textTertiaryFor(context));
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: isOutgoing ? 40 : 16),
       child: Row(
-        mainAxisAlignment: isOutgoing
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isOutgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isOutgoing && widget.showSenderName) ...[
@@ -786,7 +900,6 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             ),
             const SizedBox(width: 8),
           ],
-
           Flexible(
             child: Container(
               constraints: BoxConstraints(maxWidth: screenSize.width * 0.7),
@@ -825,7 +938,13 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                     ),
 
                   // 根据消息类型显示不同预览
-                  _buildMessageContent(message, textColor, isDark),
+                  _buildMessageContent(
+                    message,
+                    textColor,
+                    isDark,
+                    l10n,
+                    maxTextLines: maxTextLines,
+                  ),
 
                   const SizedBox(height: 4),
 
@@ -845,7 +964,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                               : Icons.done,
                           size: 14,
                           color: message.status == MessageStatus.read
-                              ? AppColors.primary
+                              ? AppColors.linkFor(context)
                               : timeColor,
                         ),
                       ],
@@ -865,7 +984,9 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     MessageItem message,
     Color textColor,
     bool isDark,
-  ) {
+    AppLocalizations l10n, {
+    int maxTextLines = _mobilePreviewMaxLines,
+  }) {
     switch (message.type) {
       case MessageItemType.image:
         // 显示图片缩略图
@@ -909,7 +1030,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               color: textColor.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
-            Text('图片', style: TextStyle(fontSize: 16, color: textColor)),
+            Text(l10n.photo, style: TextStyle(fontSize: 16, color: textColor)),
           ],
         );
       case MessageItemType.video:
@@ -972,15 +1093,14 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               color: textColor.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
-            Text('视频', style: TextStyle(fontSize: 16, color: textColor)),
+            Text(l10n.video, style: TextStyle(fontSize: 16, color: textColor)),
           ],
         );
       case MessageItemType.voice:
         // 语音消息 - 显示波形样式
         final durationMs = message.mediaDuration ?? 0;
-        final durationSec = durationMs > 1000
-            ? (durationMs / 1000).round()
-            : durationMs;
+        final durationSec =
+            durationMs > 1000 ? (durationMs / 1000).round() : durationMs;
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -988,12 +1108,12 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: AppColors.primary,
+                color: AppColors.controlActiveFor(context),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.play_arrow_rounded,
-                color: Colors.white,
+                color: AppColors.onControlActiveFor(context),
                 size: 18,
               ),
             ),
@@ -1016,7 +1136,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             ),
             const SizedBox(width: 8),
             Text(
-              '${durationSec}″',
+              '${durationSec}s',
               style: TextStyle(fontSize: 14, color: textColor.withOpacity(0.7)),
             ),
           ],
@@ -1029,12 +1149,12 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.emphasisSoftFor(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 Icons.insert_drive_file_rounded,
-                color: AppColors.primary,
+                color: AppColors.linkFor(context),
                 size: 22,
               ),
             ),
@@ -1045,7 +1165,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    message.fileName ?? '文件',
+                    message.fileName ?? l10n.file,
                     style: TextStyle(fontSize: 14, color: textColor),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1063,17 +1183,25 @@ class _MessageContextMenuState extends State<MessageContextMenu>
           ],
         );
       case MessageItemType.redPacket:
-        String rpMessage = '恭喜发财，大吉大利';
+        final defaultMessage = _messageContextL10n(
+          context,
+          l10n,
+          'best_wishes_and_good_luck',
+          zhCN: '恭喜发财，大吉大利',
+          zhTW: '恭喜發財，大吉大利',
+          en: 'Wishing you prosperity and good fortune',
+        );
+        String rpMessage = defaultMessage;
         try {
           final json = message.content.isNotEmpty
               ? Map<String, dynamic>.from(
                   (message.content.startsWith('{'))
                       ? (const JsonDecoder().convert(message.content)
-                            as Map<String, dynamic>)
+                          as Map<String, dynamic>)
                       : {'message': message.content},
                 )
               : {};
-          rpMessage = json['message'] as String? ?? '恭喜发财，大吉大利';
+          rpMessage = json['message'] as String? ?? defaultMessage;
         } catch (_) {}
         return Container(
           padding: const EdgeInsets.all(12),
@@ -1105,7 +1233,14 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '红包',
+                      _messageContextL10n(
+                        context,
+                        l10n,
+                        'red_packet',
+                        zhCN: '红包',
+                        zhTW: '紅包',
+                        en: 'Red Packet',
+                      ),
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 12,
@@ -1133,8 +1268,15 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                 size: 28,
               ),
               const SizedBox(width: 10),
-              const Text(
-                '转账',
+              Text(
+                _messageContextL10n(
+                  context,
+                  l10n,
+                  'transfer',
+                  zhCN: '转账',
+                  zhTW: '轉帳',
+                  en: 'Transfer',
+                ),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -1146,7 +1288,14 @@ class _MessageContextMenuState extends State<MessageContextMenu>
         );
       case MessageItemType.system:
         return Text(
-          '系统消息',
+          _messageContextL10n(
+            context,
+            l10n,
+            'system_message',
+            zhCN: '系统消息',
+            zhTW: '系統消息',
+            en: 'System Message',
+          ),
           style: TextStyle(
             fontSize: 14,
             color: textColor.withOpacity(0.6),
@@ -1163,7 +1312,10 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               color: textColor.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
-            Text('表情', style: TextStyle(fontSize: 16, color: textColor)),
+            Text(
+              l10n.sticker,
+              style: TextStyle(fontSize: 16, color: textColor),
+            ),
           ],
         );
       case MessageItemType.call:
@@ -1177,7 +1329,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             ),
             const SizedBox(width: 8),
             Text(
-              message.content.isNotEmpty ? message.content : '通话',
+              message.content.isNotEmpty ? message.content : l10n.call,
               style: TextStyle(fontSize: 16, color: textColor),
             ),
           ],
@@ -1192,7 +1344,17 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               color: textColor.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
-            Text('联系人名片', style: TextStyle(fontSize: 16, color: textColor)),
+            Text(
+              _messageContextL10n(
+                context,
+                l10n,
+                'contact_card',
+                zhCN: '联系人名片',
+                zhTW: '聯絡人名片',
+                en: 'Contact Card',
+              ),
+              style: TextStyle(fontSize: 16, color: textColor),
+            ),
           ],
         );
       case MessageItemType.location:
@@ -1205,13 +1367,25 @@ class _MessageContextMenuState extends State<MessageContextMenu>
               color: textColor.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
-            Text('位置', style: TextStyle(fontSize: 16, color: textColor)),
+            Text(
+              _messageContextL10n(
+                context,
+                l10n,
+                'location',
+                zhCN: '位置',
+                zhTW: '位置',
+                en: 'Location',
+              ),
+              style: TextStyle(fontSize: 16, color: textColor),
+            ),
           ],
         );
       default:
         return Text(
-          message.content.isEmpty ? '消息' : message.content,
+          message.content.isEmpty ? l10n.get('message') : message.content,
           style: TextStyle(fontSize: 16, height: 1.3, color: textColor),
+          maxLines: maxTextLines,
+          overflow: TextOverflow.ellipsis,
         );
     }
   }
@@ -1223,15 +1397,114 @@ class _MessageContextMenuState extends State<MessageContextMenu>
   }
 
   /// 操作菜单
-  Widget _buildActionMenu(bool isDark, double menuWidth) {
+  Widget _buildActionMenu(BuildContext context, bool isDark, double menuWidth) {
+    final l10n = AppLocalizations.of(context);
     final message = widget.message;
+    final actions = <_MobileMenuAction>[
+      if (widget.onReply != null)
+        _MobileMenuAction(
+          icon: Icons.reply_rounded,
+          title: l10n.reply,
+          onTap: () => _handleAction(widget.onReply),
+        ),
+      if (message.type != MessageItemType.redPacket &&
+          message.type != MessageItemType.transfer &&
+          message.type != MessageItemType.system)
+        _MobileMenuAction(
+          icon: Icons.copy_rounded,
+          title: l10n.copy,
+          onTap: () => _handleAction(widget.onCopy),
+        ),
+      if (widget.onTranslate != null)
+        _MobileMenuAction(
+          icon: Icons.translate_rounded,
+          title: _messageContextL10n(
+            context,
+            l10n,
+            'translate',
+            zhCN: '翻译',
+            zhTW: '翻譯',
+            en: 'Translate',
+          ),
+          onTap: () => _handleAction(widget.onTranslate),
+        ),
+      if (widget.onForward != null)
+        _MobileMenuAction(
+          icon: Icons.shortcut_rounded,
+          title: l10n.forward,
+          onTap: () => _handleAction(widget.onForward),
+        ),
+      if (widget.onFavorite != null)
+        _MobileMenuAction(
+          icon: Icons.favorite_border_rounded,
+          title: l10n.get('favorite'),
+          onTap: () => _handleAction(widget.onFavorite),
+        ),
+      if (widget.onDetails != null)
+        _MobileMenuAction(
+          icon: Icons.info_outline_rounded,
+          title: _messageContextText(
+            context,
+            zhCN: '消息详情',
+            zhTW: '訊息詳情',
+            en: 'Message details',
+          ),
+          onTap: () => _handleAction(widget.onDetails),
+        ),
+      if (widget.onReport != null)
+        _MobileMenuAction(
+          icon: Icons.report_gmailerrorred_outlined,
+          title: l10n.report,
+          onTap: () => _handleAction(widget.onReport),
+          isDestructive: true,
+        ),
+      if (message.isOutgoing &&
+          message.type != MessageItemType.redPacket &&
+          message.type != MessageItemType.transfer)
+        _MobileMenuAction(
+          icon: Icons.edit_rounded,
+          title: l10n.edit,
+          onTap: () => _handleAction(widget.onEdit),
+        ),
+      if (widget.onRevoke != null)
+        _MobileMenuAction(
+          icon: Icons.undo_rounded,
+          title: widget.revokeLabel ?? l10n.get('revoke'),
+          onTap: () => _handleAction(widget.onRevoke),
+        ),
+      if (widget.onPin != null)
+        _MobileMenuAction(
+          icon: Icons.push_pin_rounded,
+          title: l10n.pin,
+          onTap: () => _handleAction(widget.onPin),
+        ),
+      _MobileMenuAction(
+        icon: Icons.check_circle_outline_rounded,
+        title: l10n.select,
+        onTap: () => _handleAction(widget.onSelect),
+      ),
+      _MobileMenuAction(
+        icon: _showDeleteConfirm
+            ? Icons.delete_forever_rounded
+            : Icons.delete_outline_rounded,
+        title: _showDeleteConfirm
+            ? (l10n.language == AppLanguage.en
+                ? '${l10n.confirm} ${l10n.delete}'
+                : '${l10n.confirm}${l10n.delete}')
+            : l10n.delete,
+        onTap: _showDeleteConfirm ? _confirmDelete : _toggleDeleteConfirm,
+        isDestructive: true,
+        isConfirming: _showDeleteConfirm,
+      ),
+    ];
 
     return Center(
       child: Container(
         width: menuWidth,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          color: AppColors.cardFor(context),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.15),
@@ -1240,91 +1513,73 @@ class _MessageContextMenuState extends State<MessageContextMenu>
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildMenuItem(
-              icon: Icons.reply_rounded,
-              title: '回复',
-              isDark: isDark,
-              onTap: () => _handleAction(widget.onReply),
-            ),
-            _buildDivider(isDark),
+        child: GridView.builder(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 5,
+            mainAxisExtent: 62,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 2,
+          ),
+          itemCount: actions.length > 10 ? 10 : actions.length,
+          itemBuilder: (context, index) {
+            final action = actions[index];
+            return _buildGridMenuItem(action: action, isDark: isDark);
+          },
+        ),
+      ),
+    );
+  }
 
-            if (message.type != MessageItemType.redPacket &&
-                message.type != MessageItemType.transfer &&
-                message.type != MessageItemType.system) ...[
-              _buildMenuItem(
-                icon: Icons.copy_rounded,
-                title: '复制',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onCopy),
+  Widget _buildGridMenuItem({
+    required _MobileMenuAction action,
+    required bool isDark,
+  }) {
+    final baseColor = action.isDestructive
+        ? AppColors.error
+        : (isDark ? Colors.white : Colors.black87);
+    final iconBackground = action.isConfirming
+        ? AppColors.error.withOpacity(isDark ? 0.24 : 0.12)
+        : (isDark ? Colors.white10 : Colors.black.withOpacity(0.045));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(action.icon, size: 19, color: baseColor),
               ),
-              _buildDivider(isDark),
-            ],
-
-            if (widget.onForward != null)
-              _buildMenuItem(
-                icon: Icons.shortcut_rounded,
-                title: '转发',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onForward),
-              ),
-
-            if (widget.onFavorite != null) ...[
-              _buildDivider(isDark),
-              _buildMenuItem(
-                icon: Icons.favorite_border_rounded,
-                title: '收藏',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onFavorite),
-              ),
-            ],
-
-            if (message.isOutgoing &&
-                message.type != MessageItemType.redPacket &&
-                message.type != MessageItemType.transfer) ...[
-              _buildDivider(isDark),
-              _buildMenuItem(
-                icon: Icons.edit_rounded,
-                title: '编辑',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onEdit),
-              ),
-            ],
-
-            if (widget.onRevoke != null) ...[
-              _buildDivider(isDark),
-              _buildMenuItem(
-                icon: Icons.undo_rounded,
-                title: '撤回',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onRevoke),
-              ),
-            ],
-
-            if (widget.onPin != null) ...[
-              _buildDivider(isDark),
-              _buildMenuItem(
-                icon: Icons.push_pin_rounded,
-                title: '置顶',
-                isDark: isDark,
-                onTap: () => _handleAction(widget.onPin),
+              const SizedBox(height: 4),
+              Text(
+                action.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.1,
+                  color: baseColor,
+                  fontWeight:
+                      action.isConfirming ? FontWeight.w600 : FontWeight.w400,
+                ),
               ),
             ],
-
-            _buildDivider(isDark),
-            _buildMenuItem(
-              icon: Icons.check_circle_outline_rounded,
-              title: '选择',
-              isDark: isDark,
-              onTap: () => _handleAction(widget.onSelect),
-            ),
-
-            _buildDivider(isDark),
-            // 删除按钮 - 侧滑确认
-            _buildDeleteMenuItem(isDark),
-          ],
+          ),
         ),
       ),
     );
@@ -1332,6 +1587,10 @@ class _MessageContextMenuState extends State<MessageContextMenu>
 
   /// 删除菜单项 - 带侧滑确认
   Widget _buildDeleteMenuItem(bool isDark) {
+    final l10n = AppLocalizations.of(context);
+    final confirmDeleteText = l10n.language == AppLanguage.en
+        ? '${l10n.confirm} ${l10n.delete}'
+        : '${l10n.confirm}${l10n.delete}';
     return ClipRRect(
       borderRadius: const BorderRadius.only(
         bottomLeft: Radius.circular(14),
@@ -1354,7 +1613,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                       color: Colors.transparent,
                       child: InkWell(
                         onTap: progress > 0.5 ? _confirmDelete : null,
-                        child: const Padding(
+                        child: Padding(
                           padding: EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 12,
@@ -1368,7 +1627,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '确认删除',
+                                confirmDeleteText,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.white,
@@ -1392,7 +1651,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                   child: IgnorePointer(
                     ignoring: progress > 0.5,
                     child: Container(
-                      color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                      color: AppColors.cardFor(context),
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -1405,7 +1664,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
                             child: Row(
                               children: [
                                 Text(
-                                  '删除',
+                                  l10n.delete,
                                   style: TextStyle(
                                     fontSize: 16,
                                     color: AppColors.error,
@@ -1475,7 +1734,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
     return Container(
       height: 0.5,
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      color: isDark ? Colors.white12 : Colors.black.withOpacity(0.08),
+      color: AppColors.dividerFor(context),
     );
   }
 
@@ -1492,6 +1751,7 @@ class _MessageContextMenuState extends State<MessageContextMenu>
   }
 
   String _formatTime(DateTime time) {
+    time = toCurrentLocalTime(time);
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
@@ -1530,17 +1790,30 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
   }
 
   Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final installed = prefs.getStringList('installed_sticker_packs') ?? [];
-    _installedPackIds = installed.toSet();
+    final emojiData = await EmojiStoreService.loadAll();
+    if (!mounted) return;
+    _installedPackIds = emojiData.installedPackIds.toSet();
 
     if (_installedPackIds.isEmpty) {
       _installedPackIds = BuiltInStickerPacks.all.map((p) => p.id).toSet();
     }
 
-    _recentEmojis =
-        prefs.getStringList('recent_emojis') ??
-        ['👋', '😂', '❤️', '😎', '🤔', '👍', '🔥', '🎉', '😍', '✨', '👏', '🙏'];
+    _recentEmojis = emojiData.recentEmojis.isNotEmpty
+        ? [...emojiData.recentEmojis]
+        : [
+            '👋',
+            '😂',
+            '❤️',
+            '😎',
+            '🤔',
+            '👍',
+            '🔥',
+            '🎉',
+            '😍',
+            '✨',
+            '👏',
+            '🙏'
+          ];
 
     _tabController = TabController(
       length: _installedPacks.length + 1,
@@ -1565,13 +1838,12 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
   }
 
   Future<void> _updateRecent(String emoji) async {
-    final prefs = await SharedPreferences.getInstance();
     _recentEmojis.remove(emoji);
     _recentEmojis.insert(0, emoji);
     if (_recentEmojis.length > 30) {
       _recentEmojis = _recentEmojis.sublist(0, 30);
     }
-    await prefs.setStringList('recent_emojis', _recentEmojis);
+    await EmojiStoreService.addRecentEmoji(emoji);
   }
 
   @override
@@ -1594,9 +1866,8 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
         // 分隔线
         Container(
           height: 0.5,
-          color: widget.isDark
-              ? Colors.white10
-              : Colors.black.withOpacity(0.06),
+          color:
+              widget.isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
         ),
 
         // 顶部导航 - 贴纸包图标
@@ -1647,9 +1918,7 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? (widget.isDark
-                          ? Colors.white12
-                          : AppColors.primary.withOpacity(0.1))
+                    ? AppColors.emphasisSoftFor(context)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -1659,15 +1928,14 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
                         Icons.access_time_rounded,
                         size: 18,
                         color: isSelected
-                            ? AppColors.primary
-                            : (widget.isDark ? Colors.white38 : Colors.black26),
+                            ? AppColors.linkFor(context)
+                            : AppColors.textTertiaryFor(context),
                       )
                     : SizedBox(
                         width: 22,
                         height: 22,
-                        child: Lottie.asset(
-                          _installedPacks[index - 1].previewPath,
-                          repeat: isSelected,
+                        child: _StickerPreviewAsset(
+                          path: _installedPacks[index - 1].previewPath,
                           animate: isSelected,
                         ),
                       ),
@@ -1698,14 +1966,14 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
           Icon(
             Icons.search_rounded,
             size: 18,
-            color: widget.isDark ? Colors.white30 : Colors.black26,
+            color: AppColors.textTertiaryFor(context),
           ),
           const SizedBox(width: 4),
           Text(
-            '搜索',
+            AppLocalizations.of(context).search,
             style: TextStyle(
               fontSize: 13,
-              color: widget.isDark ? Colors.white30 : Colors.black26,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
           const Spacer(),
@@ -1716,7 +1984,7 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
               child: Icon(
                 icon,
                 size: 18,
-                color: widget.isDark ? Colors.white30 : Colors.black26,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
           ),
@@ -1741,7 +2009,7 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
         return GestureDetector(
           onTap: () => _selectEmoji(emoji),
           child: animated != null
-              ? Lottie.asset(animated.path, repeat: true)
+              ? WebSafeLottie.asset(animated.path, repeat: true)
               : Center(
                   child: Text(emoji, style: const TextStyle(fontSize: 24)),
                 ),
@@ -1761,6 +2029,17 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
       itemCount: pack.stickerFiles.length,
       itemBuilder: (context, index) {
         final file = pack.stickerFiles[index];
+        if (EmojiStoreService.isRemoteStickerFile(file) ||
+            file.startsWith('assets/stickers/')) {
+          return GestureDetector(
+            onTap: () => HapticFeedback.selectionClick(),
+            child: StickerImage(
+              source: file,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          );
+        }
         final emoji = EmojiAnimations.all.firstWhere(
           (e) => e.file == file,
           orElse: () => EmojiAnimations.all.first,
@@ -1768,9 +2047,31 @@ class _TGEmojiPanelState extends State<_TGEmojiPanel>
 
         return GestureDetector(
           onTap: () => _selectEmoji(emoji.emoji),
-          child: Lottie.asset(EmojiAnimations.getPath(file), repeat: true),
+          child:
+              WebSafeLottie.asset(EmojiAnimations.getPath(file), repeat: true),
         );
       },
+    );
+  }
+}
+
+class _StickerPreviewAsset extends StatelessWidget {
+  final String path;
+  final bool animate;
+
+  const _StickerPreviewAsset({
+    required this.path,
+    this.animate = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StickerImage(
+      source: path,
+      fit: BoxFit.contain,
+      repeat: animate,
+      animate: animate,
+      errorBuilder: (_, __) => const SizedBox.shrink(),
     );
   }
 }
@@ -1785,15 +2086,18 @@ Future<void> showMessageContextMenu({
   Function(String emoji)? onReaction,
   VoidCallback? onReply,
   VoidCallback? onCopy,
+  VoidCallback? onTranslate,
   VoidCallback? onForward,
   VoidCallback? onFavorite,
+  VoidCallback? onDetails,
+  VoidCallback? onReport,
   VoidCallback? onEdit,
   VoidCallback? onDelete,
   VoidCallback? onRevoke,
+  String? revokeLabel,
   VoidCallback? onSelect,
   VoidCallback? onPin,
   // 桌面端文件操作
-  VoidCallback? onDownload,
   VoidCallback? onSaveAs,
   VoidCallback? onShowInFolder,
   VoidCallback? onOpenFile,
@@ -1812,14 +2116,17 @@ Future<void> showMessageContextMenu({
       onReaction: onReaction,
       onReply: onReply,
       onCopy: onCopy,
+      onTranslate: onTranslate,
       onForward: onForward,
       onFavorite: onFavorite,
+      onDetails: onDetails,
+      onReport: onReport,
       onEdit: onEdit,
       onDelete: onDelete,
       onRevoke: onRevoke,
+      revokeLabel: revokeLabel,
       onSelect: onSelect,
       onPin: onPin,
-      onDownload: onDownload,
       onSaveAs: onSaveAs,
       onShowInFolder: onShowInFolder,
       onOpenFile: onOpenFile,

@@ -1,14 +1,35 @@
+// 文件用途：提供 MeetingOverlay 可复用界面组件，服务于群组会议。
+// 核心逻辑：根据输入模型和状态渲染 MeetingOverlay，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/meeting_service.dart';
 import '../../../core/services/meeting_session_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../pages/meeting_page.dart';
 
+String _meetingOverlayText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：meeting overlay 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 class MeetingOverlay extends ConsumerStatefulWidget {
   const MeetingOverlay({super.key});
 
@@ -18,6 +39,20 @@ class MeetingOverlay extends ConsumerStatefulWidget {
 
 class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
   Offset _position = const Offset(20, 220);
+
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
+  }
 
   void _openMeetingPage() {
     HapticFeedback.selectionClick();
@@ -42,20 +77,65 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: Text(session.isHost ? '结束会议' : '离开会议'),
+          title: Text(
+            session.isHost
+                ? _meetingOverlayText(
+                    context,
+                    zhCN: '结束会议',
+                    zhTW: '結束會議',
+                    en: 'End Meeting',
+                  )
+                : _meetingOverlayText(
+                    context,
+                    zhCN: '离开会议',
+                    zhTW: '離開會議',
+                    en: 'Leave Meeting',
+                  ),
+          ),
           content: Text(
             session.isHost
-                ? '确认结束当前群会议吗？'
-                : '确认离开当前群会议吗？',
+                ? _meetingOverlayText(
+                    context,
+                    zhCN: '确认结束当前群会议吗？',
+                    zhTW: '確認結束目前群會議嗎？',
+                    en: 'End the current group meeting?',
+                  )
+                : _meetingOverlayText(
+                    context,
+                    zhCN: '确认离开当前群会议吗？',
+                    zhTW: '確認離開目前群會議嗎？',
+                    en: 'Leave the current group meeting?',
+                  ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
+              child: Text(
+                _meetingOverlayText(
+                  context,
+                  zhCN: '取消',
+                  zhTW: '取消',
+                  en: 'Cancel',
+                ),
+              ),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(session.isHost ? '结束' : '离开'),
+              child: Text(
+                session.isHost
+                    ? _meetingOverlayText(
+                        context,
+                        zhCN: '结束',
+                        zhTW: '結束',
+                        en: 'End',
+                      )
+                    : _meetingOverlayText(
+                        context,
+                        zhCN: '离开',
+                        zhTW: '離開',
+                        en: 'Leave',
+                      ),
+              ),
             ),
           ],
         );
@@ -72,9 +152,14 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            response.message?.trim().isNotEmpty == true
-                ? response.message!
-                : (session.isHost ? '结束会议失败' : '离开会议失败'),
+            _serverMessage(
+              raw: response.message,
+              zhCN: session.isHost ? '结束会议失败' : '离开会议失败',
+              zhTW: session.isHost ? '結束會議失敗' : '離開會議失敗',
+              en: session.isHost
+                  ? 'Failed to end the meeting'
+                  : 'Failed to leave the meeting',
+            ),
           ),
         ),
       );
@@ -83,10 +168,27 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
 
     ref.read(meetingSessionProvider.notifier).clear();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(session.isHost ? '会议已结束' : '已离开会议')),
+      SnackBar(
+        content: Text(
+          session.isHost
+              ? _meetingOverlayText(
+                  context,
+                  zhCN: '会议已结束',
+                  zhTW: '會議已結束',
+                  en: 'Meeting ended',
+                )
+              : _meetingOverlayText(
+                  context,
+                  zhCN: '已离开会议',
+                  zhTW: '已離開會議',
+                  en: 'Left the meeting',
+                ),
+        ),
+      ),
     );
   }
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(meetingSessionProvider);
@@ -105,7 +207,8 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
         onPanUpdate: (details) {
           setState(() {
             _position = Offset(
-              (_position.dx + details.delta.dx).clamp(0, screenSize.width - 186),
+              (_position.dx + details.delta.dx)
+                  .clamp(0, screenSize.width - 186),
               (_position.dy + details.delta.dy).clamp(
                 MediaQuery.paddingOf(context).top,
                 screenSize.height - 124,
@@ -167,7 +270,19 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            session.isHost ? '主持中' : '会议中',
+                            session.isHost
+                                ? _meetingOverlayText(
+                                    context,
+                                    zhCN: '主持中',
+                                    zhTW: '主持中',
+                                    en: 'Hosting',
+                                  )
+                                : _meetingOverlayText(
+                                    context,
+                                    zhCN: '会议中',
+                                    zhTW: '會議中',
+                                    en: 'In Meeting',
+                                  ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -184,8 +299,22 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
                 Row(
                   children: [
                     _buildTag(
-                      icon: isVideo ? Icons.videocam_outlined : Icons.mic_outlined,
-                      text: isVideo ? '视频' : '语音',
+                      icon: isVideo
+                          ? Icons.videocam_outlined
+                          : Icons.mic_outlined,
+                      text: isVideo
+                          ? _meetingOverlayText(
+                              context,
+                              zhCN: '视频',
+                              zhTW: '視訊',
+                              en: 'Video',
+                            )
+                          : _meetingOverlayText(
+                              context,
+                              zhCN: '语音',
+                              zhTW: '語音',
+                              en: 'Audio',
+                            ),
                     ),
                     const SizedBox(width: 6),
                     _buildTag(
@@ -200,7 +329,12 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
                   children: [
                     Expanded(
                       child: _actionButton(
-                        label: '打开',
+                        label: _meetingOverlayText(
+                          context,
+                          zhCN: '打开',
+                          zhTW: '開啟',
+                          en: 'Open',
+                        ),
                         icon: Icons.open_in_full_rounded,
                         background: Colors.white.withOpacity(0.10),
                         onTap: _openMeetingPage,
@@ -209,7 +343,19 @@ class _MeetingOverlayState extends ConsumerState<MeetingOverlay> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _actionButton(
-                        label: session.isHost ? '结束' : '离开',
+                        label: session.isHost
+                            ? _meetingOverlayText(
+                                context,
+                                zhCN: '结束',
+                                zhTW: '結束',
+                                en: 'End',
+                              )
+                            : _meetingOverlayText(
+                                context,
+                                zhCN: '离开',
+                                zhTW: '離開',
+                                en: 'Leave',
+                              ),
                         icon: Icons.call_end_rounded,
                         background: AppColors.error,
                         onTap: _leaveOrEndMeeting,

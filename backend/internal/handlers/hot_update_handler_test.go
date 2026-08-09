@@ -1,10 +1,12 @@
+// 文件用途：验证 hot_update_handler_test.go 对应模块的正常流程、异常处理和回归行为。
+// 核心逻辑：覆盖输入校验、状态变化、错误返回、边界条件和并发幸命。
+
 package handlers
 
 import (
 	"testing"
 	"time"
-
-	"gaoranim/internal/models"
+	"genericim/internal/models"
 )
 
 func TestCompareVersion(t *testing.T) {
@@ -25,9 +27,8 @@ func TestIsInRolloutDeterministic(t *testing.T) {
 	hit1, bucket1 := isInRollout(seed, 30)
 	hit2, bucket2 := isInRollout(seed, 30)
 	if hit1 != hit2 || bucket1 != bucket2 {
-		t.Fatalf("rollout should be deterministic: (%v,%d) vs (%v,%d)", hit1, bucket1, hit2, bucket2)
+		t.Fatalf("rollout should be deterministic: (%v,%d) vs(%v,%d)", hit1, bucket1, hit2, bucket2)
 	}
-
 	if ok, _ := isInRollout(seed, 0); ok {
 		t.Fatalf("0%% rollout should never hit")
 	}
@@ -40,7 +41,6 @@ func TestPatchEligibility(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-time.Hour)
 	end := now.Add(time.Hour)
-
 	patch := models.HotUpdatePatch{
 		MinAppVersion:     "1.0.0",
 		MaxAppVersion:     "2.0.0",
@@ -50,7 +50,6 @@ func TestPatchEligibility(t *testing.T) {
 		StartAt:           &start,
 		EndAt:             &end,
 	}
-
 	if !isPatchEligibleForClient(patch, "1.5.0", 15, now) {
 		t.Fatalf("expected patch eligible")
 	}
@@ -60,12 +59,10 @@ func TestPatchEligibility(t *testing.T) {
 	if isPatchEligibleForClient(patch, "1.5.0", 9, now) {
 		t.Fatalf("expected low build to be ineligible")
 	}
-
 	past := now.Add(2 * time.Hour)
 	if isPatchEligibleForClient(patch, "1.5.0", 15, past) {
 		t.Fatalf("expected expired patch to be ineligible")
 	}
-
 	patch.TargetAppVersion = "1.5.0+15"
 	if isPatchEligibleForClient(patch, "1.5.0", 15, now) {
 		t.Fatalf("expected target version reached to be ineligible")
@@ -103,7 +100,6 @@ func TestParseHotUpdateBoolFlag(t *testing.T) {
 			t.Fatalf("expected %q to parse as true", item)
 		}
 	}
-
 	falseCases := []string{"", "0", "false", "off", "no", "random"}
 	for _, item := range falseCases {
 		if parseHotUpdateBoolFlag(item) {
@@ -114,7 +110,13 @@ func TestParseHotUpdateBoolFlag(t *testing.T) {
 
 func TestValidateHotUpdatePatchURL(t *testing.T) {
 	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformAndroid, "https://cdn.example.com/app.apk"); err != nil {
-		t.Fatalf("expected android http url valid, got %v", err)
+		t.Fatalf("expected android https apk url valid, got %v", err)
+	}
+	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformAndroid, "http://cdn.example.com/app.apk"); err == nil {
+		t.Fatalf("expected android http url invalid")
+	}
+	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformAndroid, "https://cdn.example.com/app.zip"); err == nil {
+		t.Fatalf("expected android non-apk url invalid")
 	}
 	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformIOS, "https://cdn.example.com/manifest.plist"); err != nil {
 		t.Fatalf("expected ios plist url valid, got %v", err)
@@ -131,6 +133,9 @@ func TestValidateHotUpdatePatchURL(t *testing.T) {
 	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformIOS, "itms-services://?action=download-manifest&url=ftp://cdn.example.com/manifest.plist"); err == nil {
 		t.Fatalf("expected ios itms-services url with non-http embedded plist invalid")
 	}
+	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformIOS, "itms-services://?action=download-manifest&url=http://cdn.example.com/manifest.plist"); err == nil {
+		t.Fatalf("expected ios itms-services url with http embedded plist invalid")
+	}
 	if err := validateHotUpdatePatchURL(models.HotUpdatePatchPlatformIOS, "itms-services://?action=download-manifest&url=https://cdn.example.com/download.html"); err == nil {
 		t.Fatalf("expected ios itms-services url without plist suffix invalid")
 	}
@@ -143,8 +148,6 @@ func TestValidateHotUpdatePatchHash(t *testing.T) {
 	validCases := []string{
 		"",
 		"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		"sha1:0123456789abcdef0123456789abcdef01234567",
-		"md5:0123456789abcdef0123456789abcdef",
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}
 	for _, item := range validCases {
@@ -154,6 +157,22 @@ func TestValidateHotUpdatePatchHash(t *testing.T) {
 	}
 	if err := validateHotUpdatePatchHash("sha256:abc"); err == nil {
 		t.Fatalf("expected short hash invalid")
+	}
+	if err := validateHotUpdatePatchHash("md5:0123456789abcdef0123456789abcdef"); err == nil {
+		t.Fatalf("expected md5 hash invalid")
+	}
+}
+
+func TestValidateSelfHostedHotUpdatePatch(t *testing.T) {
+	validHash := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := validateSelfHostedHotUpdatePatch(models.HotUpdatePatchPlatformAndroid, "https://cdn.example.com/app.apk", validHash); err != nil {
+		t.Fatalf("expected self_hosted android patch valid, got %v", err)
+	}
+	if err := validateSelfHostedHotUpdatePatch(models.HotUpdatePatchPlatformAndroid, "https://cdn.example.com/app.apk", ""); err == nil {
+		t.Fatalf("expected missing self_hosted hash invalid")
+	}
+	if err := validateSelfHostedHotUpdatePatch(models.HotUpdatePatchPlatformAndroid, "https://cdn.example.com/app.apk", "md5:0123456789abcdef0123456789abcdef"); err == nil {
+		t.Fatalf("expected non-sha256 self_hosted hash invalid")
 	}
 }
 
@@ -201,6 +220,7 @@ func TestBuildPatchFromRequestByDeliveryMode(t *testing.T) {
 		DeliveryMode: models.HotUpdatePatchDeliveryModeSelfHosted,
 		PatchVersion: "2026.05.10.1",
 		PatchURL:     "https://cdn.example.com/app.apk",
+		PatchHash:    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}
 	values, err := buildPatchFromRequest(selfHostedReq, nil, 1, true)
 	if err != nil {
@@ -212,7 +232,6 @@ func TestBuildPatchFromRequestByDeliveryMode(t *testing.T) {
 	if readString(values, "patch_url") == "" {
 		t.Fatalf("expected self_hosted patch_url to be preserved")
 	}
-
 	shorebirdReq := hotUpdatePatchUpsertRequest{
 		Name:         "Shorebird Patch",
 		Platform:     models.HotUpdatePatchPlatformAndroid,
@@ -234,7 +253,6 @@ func TestBuildPatchFromRequestByDeliveryMode(t *testing.T) {
 	if readString(values, "patch_hash") != "" {
 		t.Fatalf("expected shorebird patch_hash to be cleared")
 	}
-
 	invalidSelfHostedReq := hotUpdatePatchUpsertRequest{
 		Name:         "Invalid Self Hosted",
 		Platform:     models.HotUpdatePatchPlatformAll,

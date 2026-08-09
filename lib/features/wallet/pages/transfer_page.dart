@@ -1,14 +1,35 @@
+// 文件用途：实现 TransferPage 页面及其交互流程，属于钱包与支付。
+// 核心逻辑：维护 TransferPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/system_ui_styles.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/pay_password_input.dart';
 
 /// 转账页面
+String _transferText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：transfer page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class TransferPage extends ConsumerStatefulWidget {
-  final String receiverId;  // 接收者 UUID
+  final String receiverId; // 接收者 UUID
   final String receiverName;
   final String? receiverAvatar;
 
@@ -27,7 +48,9 @@ class _TransferPageState extends ConsumerState<TransferPage> {
   final _amountController = TextEditingController();
   final _remarkController = TextEditingController();
   bool _isLoading = false;
+  String get _currency => ref.read(walletCurrencyProvider);
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -106,24 +129,30 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white24 : Colors.grey[300],
+                          color: AppColors.dividerFor(context),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
                     // 标题栏 - 取消/标题/确定
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 8),
                       child: Row(
                         children: [
                           // 取消按钮
                           TextButton(
                             onPressed: () => Navigator.pop(context),
                             child: Text(
-                              '取消',
+                              _transferText(
+                                context,
+                                zhCN: '取消',
+                                zhTW: '取消',
+                                en: 'Cancel',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
-                                color: isDark ? Colors.white60 : Colors.grey[600],
+                                color: AppColors.textSecondaryFor(context),
                               ),
                             ),
                           ),
@@ -131,11 +160,16 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                           Expanded(
                             child: Center(
                               child: Text(
-                                '转账金额',
+                                _transferText(
+                                  context,
+                                  zhCN: '转账金额',
+                                  zhTW: '轉帳金額',
+                                  en: 'Transfer Amount',
+                                ),
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
+                                  color: AppColors.textPrimaryFor(context),
                                 ),
                               ),
                             ),
@@ -149,11 +183,16 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                               Navigator.pop(context);
                             },
                             child: Text(
-                              '确定',
+                              _transferText(
+                                context,
+                                zhCN: '确定',
+                                zhTW: '確定',
+                                en: 'Confirm',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
+                                color: AppColors.linkFor(context),
                               ),
                             ),
                           ),
@@ -169,11 +208,11 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Text(
-                            '¥',
+                            _currency,
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
+                              color: AppColors.linkFor(context),
                             ),
                           ),
                           const SizedBox(width: 4),
@@ -183,10 +222,8 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                               fontSize: 48,
                               fontWeight: FontWeight.w600,
                               color: inputAmount.isEmpty
-                                  ? (isDark
-                                      ? Colors.white24
-                                      : Colors.grey[300])
-                                  : (isDark ? Colors.white : Colors.black87),
+                                  ? AppColors.textTertiaryFor(context)
+                                  : AppColors.textPrimaryFor(context),
                               letterSpacing: -1,
                             ),
                           ),
@@ -195,7 +232,7 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                             height: 40,
                             margin: const EdgeInsets.only(left: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.primary,
+                              color: AppColors.linkFor(context),
                               borderRadius: BorderRadius.circular(1),
                             ),
                           ),
@@ -260,14 +297,14 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                       ? Icon(
                           Icons.backspace_outlined,
                           size: 22,
-                          color: isDark ? Colors.white70 : Colors.black87,
+                          color: AppColors.textSecondaryFor(context),
                         )
                       : Text(
                           key,
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : Colors.black87,
+                            color: AppColors.textPrimaryFor(context),
                           ),
                         ),
                 ),
@@ -283,7 +320,14 @@ class _TransferPageState extends ConsumerState<TransferPage> {
     if (_amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('请输入有效金额'),
+          content: Text(
+            _transferText(
+              context,
+              zhCN: '请输入有效金额',
+              zhTW: '請輸入有效金額',
+              en: 'Enter a valid amount',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -298,7 +342,14 @@ class _TransferPageState extends ConsumerState<TransferPage> {
     if (balance < _amount) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('余额不足'),
+          content: Text(
+            _transferText(
+              context,
+              zhCN: '余额不足',
+              zhTW: '餘額不足',
+              en: 'Insufficient balance',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -310,9 +361,19 @@ class _TransferPageState extends ConsumerState<TransferPage> {
     // 显示密码输入
     final password = await showPayPasswordDialog(
       context: context,
-      title: '确认转账',
-      amount: '¥${_amount.toStringAsFixed(2)}',
-      subtitle: '转账给 ${widget.receiverName}',
+      title: _transferText(
+        context,
+        zhCN: '确认转账',
+        zhTW: '確認轉帳',
+        en: 'Confirm Transfer',
+      ),
+      amount: '$_currency${_amount.toStringAsFixed(2)}',
+      subtitle: _transferText(
+        context,
+        zhCN: '转账给 ${widget.receiverName}',
+        zhTW: '轉帳給 ${widget.receiverName}',
+        en: 'Transfer to ${widget.receiverName}',
+      ),
     );
 
     if (password == null) return;
@@ -323,11 +384,12 @@ class _TransferPageState extends ConsumerState<TransferPage> {
     try {
       // 调用真实 API 发起转账
       final response = await ref.read(walletProvider.notifier).transfer(
-        receiverId: widget.receiverId,
-        amount: _amount,
-        remark: _remarkController.text.isEmpty ? null : _remarkController.text,
-        payPassword: password,
-      );
+            receiverId: widget.receiverId,
+            amount: _amount,
+            remark:
+                _remarkController.text.isEmpty ? null : _remarkController.text,
+            payPassword: password,
+          );
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -337,7 +399,15 @@ class _TransferPageState extends ConsumerState<TransferPage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ref.read(walletProvider).error ?? '转账失败'),
+            content: Text(
+              ref.read(walletProvider).error ??
+                  _transferText(
+                    context,
+                    zhCN: '转账失败',
+                    zhTW: '轉帳失敗',
+                    en: 'Transfer failed',
+                  ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -350,7 +420,14 @@ class _TransferPageState extends ConsumerState<TransferPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('转账失败: $e'),
+            content: Text(
+              _transferText(
+                context,
+                zhCN: '转账失败: $e',
+                zhTW: '轉帳失敗: $e',
+                en: 'Transfer failed: $e',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -362,6 +439,7 @@ class _TransferPageState extends ConsumerState<TransferPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(walletCurrencyProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final walletState = ref.watch(walletProvider);
 
@@ -369,10 +447,16 @@ class _TransferPageState extends ConsumerState<TransferPage> {
       backgroundColor:
           isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.primaryFor(context),
+        systemOverlayStyle: AppSystemUiStyles.onDarkBackground,
         elevation: 0,
-        title: const Text(
-          '转账',
+        title: Text(
+          _transferText(
+            context,
+            zhCN: '转账',
+            zhTW: '轉帳',
+            en: 'Transfer',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -397,7 +481,7 @@ class _TransferPageState extends ConsumerState<TransferPage> {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
               decoration: BoxDecoration(
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(32),
                   bottomRight: Radius.circular(32),
@@ -441,7 +525,12 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '转账给',
+                          _transferText(
+                            context,
+                            zhCN: '转账给',
+                            zhTW: '轉帳給',
+                            en: 'Transfer to',
+                          ),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.white.withOpacity(0.7),
@@ -469,7 +558,14 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '余额 ¥${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                      _transferText(
+                        context,
+                        zhCN:
+                            '余额 $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                        zhTW:
+                            '餘額 $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                        en: 'Balance $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                      ),
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.white,
@@ -505,10 +601,15 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                           child: Text(
-                            '转账金额',
+                            _transferText(
+                              context,
+                              zhCN: '转账金额',
+                              zhTW: '轉帳金額',
+                              en: 'Transfer Amount',
+                            ),
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white54 : Colors.grey[600],
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ),
@@ -522,11 +623,11 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                               textBaseline: TextBaseline.alphabetic,
                               children: [
                                 Text(
-                                  '¥',
+                                  _currency,
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
+                                    color: AppColors.linkFor(context),
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -538,12 +639,8 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                                     fontSize: 42,
                                     fontWeight: FontWeight.w600,
                                     color: _amountController.text.isEmpty
-                                        ? (isDark
-                                            ? Colors.white24
-                                            : Colors.grey[300])
-                                        : (isDark
-                                            ? Colors.white
-                                            : Colors.black87),
+                                        ? AppColors.textTertiaryFor(context)
+                                        : AppColors.textPrimaryFor(context),
                                     letterSpacing: -1,
                                   ),
                                 ),
@@ -567,7 +664,7 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                           Icon(
                             Icons.edit_note,
                             size: 20,
-                            color: isDark ? Colors.white54 : Colors.grey[600],
+                            color: AppColors.textSecondaryFor(context),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -579,15 +676,21 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                               ),
                               decoration: InputDecoration(
                                 border: InputBorder.none,
-                                hintText: '添加转账说明',
+                                hintText: _transferText(
+                                  context,
+                                  zhCN: '添加转账说明',
+                                  zhTW: '新增轉帳說明',
+                                  en: 'Add transfer note',
+                                ),
                                 hintStyle: TextStyle(
-                                  color: isDark
-                                      ? Colors.white38
-                                      : Colors.grey[400],
+                                  color: AppColors.inputHintFor(context),
                                 ),
                               ),
                               maxLength: 50,
-                              buildCounter: (_, {required currentLength, required isFocused, required maxLength}) =>
+                              buildCounter: (_,
+                                      {required currentLength,
+                                      required isFocused,
+                                      required maxLength}) =>
                                   null,
                             ),
                           ),
@@ -610,8 +713,8 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                 child: ElevatedButton(
                   onPressed: _isLoading || _amount <= 0 ? null : _transfer,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.primaryFor(context),
+                    foregroundColor: AppColors.onPrimaryFor(context),
                     disabledBackgroundColor:
                         isDark ? Colors.white12 : Colors.grey[300],
                     shape: RoundedRectangleBorder(
@@ -620,12 +723,12 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                     elevation: 0,
                   ),
                   child: _isLoading
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: AppColors.onPrimaryFor(context),
                           ),
                         )
                       : Row(
@@ -635,8 +738,20 @@ class _TransferPageState extends ConsumerState<TransferPage> {
                             const SizedBox(width: 8),
                             Text(
                               _amount > 0
-                                  ? '转账 ¥${_amount.toStringAsFixed(2)}'
-                                  : '转账',
+                                  ? _transferText(
+                                      context,
+                                      zhCN:
+                                          '转账 $_currency${_amount.toStringAsFixed(2)}',
+                                      zhTW:
+                                          '轉帳 $_currency${_amount.toStringAsFixed(2)}',
+                                      en: 'Transfer $_currency${_amount.toStringAsFixed(2)}',
+                                    )
+                                  : _transferText(
+                                      context,
+                                      zhCN: '转账',
+                                      zhTW: '轉帳',
+                                      en: 'Transfer',
+                                    ),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,

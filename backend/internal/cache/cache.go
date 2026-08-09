@@ -1,14 +1,15 @@
+// 文件用途：封装缓存访问、键命名和 TTL 约定。
+// 核心逻辑：统一序列化、计数、过期和删除操作，避免业务层直接依赖 Redis 细节。
+
 package cache
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"github.com/redis/go-redis/v9"
 	"sync/atomic"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // Cache Redis缓存层
@@ -17,6 +18,16 @@ type Cache struct {
 }
 
 var rateLimitMemberSeq uint64
+
+var setCurrentMsgSeqAtLeastScript = redis.NewScript(`
+local current = redis.call("GET", KEYS[1])
+local requested = tonumber(ARGV[1])
+if (not current) or tonumber(current) < requested then
+	redis.call("SET", KEYS[1], ARGV[1])
+	return requested
+end
+return tonumber(current)
+`)
 
 func (c *Cache) Ping(ctx context.Context) error {
 	if c == nil || c.client == nil {
@@ -40,6 +51,7 @@ func (c *Cache) SortedSetLen(ctx context.Context, key string) (int64, error) {
 }
 
 // 缓存Key前缀
+
 const (
 	KeyUser        = "user:"         // 用户信息
 	KeyUserToken   = "user:token:"   // 用户Token
@@ -49,23 +61,16 @@ const (
 	KeyMsgSeq      = "msg:seq:"      // 消息序号
 	KeyVerifyCode  = "verify:code:"  // 验证码
 	KeyRateLimit   = "rate:"         // 限流
-
-	// ★ 新增Key前缀
-	KeySystemSetting = "sys:setting:" // 系统设置
-	KeyUserPhone     = "user:phone:"  // 用户手机号绑定状态
 )
 
 // 缓存过期时间
+
 const (
 	TTLUser       = 30 * time.Minute
 	TTLChat       = 30 * time.Minute
 	TTLOnline     = 5 * time.Minute
 	TTLVerifyCode = 5 * time.Minute
 	TTLToken      = 7 * 24 * time.Hour
-
-	// ★ 新增TTL
-	TTLSystemSetting = 10 * time.Minute // 系统设置，变化极少
-	TTLUserPhone     = 5 * time.Minute  // 用户手机绑定状态
 )
 
 // NewCache 创建缓存实例
@@ -75,7 +80,8 @@ func NewCache(client *redis.Client) *Cache {
 
 // --- 通用方法 ---
 
-// Set 设置缓存
+// Set
+
 func (c *Cache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -85,22 +91,6 @@ func (c *Cache) Set(ctx context.Context, key string, value interface{}, ttl time
 }
 
 // Get 获取缓存
-// GetRaw 获取原始字符串值
-func (c *Cache) GetRaw(ctx context.Context, key string) (string, error) {
-	if c == nil || c.client == nil {
-		return "", fmt.Errorf("cache unavailable")
-	}
-	return c.client.Get(ctx, key).Result()
-}
-
-// SetRaw 设置原始字符串值
-func (c *Cache) SetRaw(ctx context.Context, key string, value string, ttlSeconds int) error {
-	if c == nil || c.client == nil {
-		return fmt.Errorf("cache unavailable")
-	}
-	return c.client.Set(ctx, key, value, time.Duration(ttlSeconds)*time.Second).Err()
-}
-
 func (c *Cache) Get(ctx context.Context, key string, dest interface{}) error {
 	data, err := c.client.Get(ctx, key).Bytes()
 	if err != nil {
@@ -109,9 +99,91 @@ func (c *Cache) Get(ctx context.Context, key string, dest interface{}) error {
 	return json.Unmarshal(data, dest)
 }
 
+// Take
+func (c *Cache) Take(ctx context.Context, key string, dest interface{}) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+	data, err := c.client.GetDel(ctx, key).Bytes()
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dest)
+}
+
 // Delete 删除缓存
 func (c *Cache) Delete(ctx context.Context, keys ...string) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
 	return c.client.Del(ctx, keys...).Err()
+}
+
+// GetUint64 returns a raw unsigned integer stored in Redis.
+func (c *Cache) GetUint64(ctx context.Context, key string) (uint64, error) {
+	if c == nil || c.client == nil {
+		return 0, fmt.Errorf("redis client is nil")
+	}
+	return c.client.Get(ctx, key).Uint64()
+}
+
+// Increment advances a generation/version key without scanning Redis.
+func (c *Cache) Increment(ctx context.Context, key string) (uint64, error) {
+	if c == nil || c.client == nil {
+		return 0, fmt.Errorf("redis client is nil")
+	}
+	value, err := c.client.Incr(ctx, key).Uint64()
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
+}
+
+// IncrementMany advances generation/version keys in one Redis pipeline.
+func (c *Cache) IncrementMany(ctx context.Context, keys ...string) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	_, err := c.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, key := range keys {
+			if key != "" {
+				pipe.Incr(ctx, key)
+			}
+		}
+		return nil
+	})
+	return err
+}
+
+// DeleteByPattern removes keys matched by a Redis glob pattern using SCAN.
+func (c *Cache) DeleteByPattern(ctx context.Context, pattern string) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+	if pattern == "" {
+		return nil
+	}
+	iter := c.client.Scan(ctx, 0, pattern, 100).Iterator()
+	var batch []string
+	for iter.Next(ctx) {
+		batch = append(batch, iter.Val())
+		if len(batch) >= 100 {
+			if err := c.client.Del(ctx, batch...).Err(); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		return c.client.Del(ctx, batch...).Err()
+	}
+	return nil
 }
 
 // Exists 检查key是否存在
@@ -147,6 +219,7 @@ func (c *Cache) GetUserToken(ctx context.Context, userID string) (string, error)
 }
 
 // SetUserOnline 设置用户在线状态
+
 func (c *Cache) SetUserOnline(ctx context.Context, userID string, deviceID string) error {
 	key := KeyUserOnline + userID
 	return c.client.HSet(ctx, key, deviceID, time.Now().Unix()).Err()
@@ -186,15 +259,14 @@ func (c *Cache) GetChat(ctx context.Context, chatID string, dest interface{}) er
 // SetChatMembers 缓存会话成员
 func (c *Cache) SetChatMembers(ctx context.Context, chatID string, memberIDs []string) error {
 	key := KeyChatMembers + chatID
+
 	if len(memberIDs) == 0 {
 		return nil
 	}
-
 	members := make([]interface{}, len(memberIDs))
 	for i, id := range memberIDs {
 		members[i] = id
 	}
-
 	pipe := c.client.Pipeline()
 	pipe.Del(ctx, key)
 	pipe.SAdd(ctx, key, members...)
@@ -229,9 +301,18 @@ func (c *Cache) GetCurrentMsgSeq(ctx context.Context, chatID string) (uint64, er
 	return result, err
 }
 
-// SetCurrentMsgSeq 设置当前消息序号（用于 Redis 序号丢失后的兜底校准）
+// SetCurrentMsgSeq 原子地向上校准当前消息序号。
+//
+// 消息发送使用 INCR 并发分配序号，因此校准不能使用普通 SET：增量同步和
+// 重复键修复可能在 INCR 进行中读到较旧的 Mongo 最大值，普通 SET 会把
+// 计数器回退并导致多个消息拿到相同 seq。
 func (c *Cache) SetCurrentMsgSeq(ctx context.Context, chatID string, seq uint64) error {
-	return c.client.Set(ctx, KeyMsgSeq+chatID, seq, 0).Err()
+	return setCurrentMsgSeqAtLeastScript.Run(
+		ctx,
+		c.client,
+		[]string{KeyMsgSeq + chatID},
+		seq,
+	).Err()
 }
 
 // --- 验证码 ---
@@ -253,11 +334,14 @@ func (c *Cache) DeleteVerifyCode(ctx context.Context, phone string) error {
 
 // --- 限流 ---
 
-// RateLimit 限流检查（滑动窗口）
+// RateLimit
+
 func (c *Cache) RateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
+	if c == nil || c.client == nil {
+		return false, fmt.Errorf("redis client is nil")
+	}
 	now := time.Now().UnixMilli()
 	windowStart := now - window.Milliseconds()
-
 	rateKey := KeyRateLimit + key
 
 	pipe := c.client.Pipeline()
@@ -266,445 +350,49 @@ func (c *Cache) RateLimit(ctx context.Context, key string, limit int, window tim
 	// 计数
 	countCmd := pipe.ZCard(ctx, rateKey)
 	// 添加当前请求
+
 	member := fmt.Sprintf("%d-%d", now, atomic.AddUint64(&rateLimitMemberSeq, 1))
 	pipe.ZAdd(ctx, rateKey, redis.Z{Score: float64(now), Member: member})
 	// 设置过期时间
 	pipe.Expire(ctx, rateKey, window)
-
 	if _, err := pipe.Exec(ctx); err != nil {
 		return false, err
 	}
-
 	return countCmd.Val() < int64(limit), nil
 }
 
-// ★ --- 系统设置缓存 ---
-
-// GetSystemSetting 从缓存获取系统设置值
-// 返回 (value, found)，found=false 表示缓存未命中需要查DB
-func (c *Cache) GetSystemSetting(ctx context.Context, key string) (string, bool) {
+// RateLimitCount returns the current number of rate-limit events in the window
+// without adding a new event.
+func (c *Cache) RateLimitCount(ctx context.Context, key string, window time.Duration) (int64, error) {
 	if c == nil || c.client == nil {
-		return "", false
+		return 0, fmt.Errorf("redis client is nil")
 	}
-	var val string
-	if err := c.Get(ctx, KeySystemSetting+key, &val); err != nil {
-		return "", false
-	}
-	return val, true
-}
+	now := time.Now().UnixMilli()
+	windowStart := now - window.Milliseconds()
+	rateKey := KeyRateLimit + key
 
-// SetSystemSetting 将系统设置写入缓存
-func (c *Cache) SetSystemSetting(ctx context.Context, key, value string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Set(ctx, KeySystemSetting+key, value, TTLSystemSetting)
-}
-
-// DeleteSystemSetting 使系统设置缓存失效（管理员修改设置时调用）
-func (c *Cache) DeleteSystemSetting(ctx context.Context, key string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeySystemSetting+key)
-}
-
-// ★ --- 用户手机绑定状态缓存 ---
-
-// UserPhoneStatus 用户手机绑定状态（缓存结构体，只存必要字段避免缓存大对象）
-type UserPhoneStatus struct {
-	HasPhone bool   `json:"has_phone"`
-	Phone    string `json:"phone,omitempty"` // 可选，用于展示
-}
-
-// GetUserPhoneStatus 从缓存获取用户手机绑定状态
-// 返回 (status, found)
-func (c *Cache) GetUserPhoneStatus(ctx context.Context, userUUID string) (*UserPhoneStatus, bool) {
-	if c == nil || c.client == nil {
-		return nil, false
-	}
-	var status UserPhoneStatus
-	if err := c.Get(ctx, KeyUserPhone+userUUID, &status); err != nil {
-		return nil, false
-	}
-	return &status, true
-}
-
-// SetUserPhoneStatus 缓存用户手机绑定状态
-func (c *Cache) SetUserPhoneStatus(ctx context.Context, userUUID string, status *UserPhoneStatus) error {
-	if c == nil || c.client == nil || status == nil {
-		return nil
-	}
-	return c.Set(ctx, KeyUserPhone+userUUID, status, TTLUserPhone)
-}
-
-// DeleteUserPhoneStatus 使用户手机绑定状态缓存失效（用户绑定/换绑手机时调用）
-func (c *Cache) DeleteUserPhoneStatus(ctx context.Context, userUUID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyUserPhone+userUUID)
-}
-
-// ★ --- 群组信息缓存 ---
-
-const (
-	KeyChatInfo       = "chat:info:"        // 群组完整信息 by UUID
-	KeyChatMemberInfo = "chat:member:"      // 单个成员信息 chat:member:{chatID}:{userID}
-	KeyChatMemberUUIDs = "chat:muuids:"     // 群成员UUID SET
-	KeyChatMemberIDMap = "chat:midmap:"     // 群成员 ID->UUID HASH
-	KeyChatMutedSet   = "chat:muted:"       // 群内muted用户ID SET
-	KeyUserInfo       = "user:info:"        // 用户核心信息 by UUID
-
-	TTLChatInfo    = 10 * time.Minute
-	TTLChatMember  = 10 * time.Minute
-	TTLUserInfo    = 30 * time.Minute
-	TTLMutedSet    = 5 * time.Minute
-)
-
-// SetChatInfo 缓存群组完整信息
-func (c *Cache) SetChatInfo(ctx context.Context, chatUUID string, chat interface{}) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Set(ctx, KeyChatInfo+chatUUID, chat, TTLChatInfo)
-}
-
-// GetChatInfo 获取群组缓存信息，未命中返回 redis.Nil
-func (c *Cache) GetChatInfo(ctx context.Context, chatUUID string, dest interface{}) error {
-	if c == nil || c.client == nil {
-		return fmt.Errorf("cache unavailable")
-	}
-	return c.Get(ctx, KeyChatInfo+chatUUID, dest)
-}
-
-// DeleteChatInfo 删除群组缓存（群信息变更时调用）
-func (c *Cache) DeleteChatInfo(ctx context.Context, chatUUID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyChatInfo+chatUUID)
-}
-
-// SetChatMemberInfo 缓存单个成员信息
-func (c *Cache) SetChatMemberInfo(ctx context.Context, chatID, userID string, member interface{}) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Set(ctx, KeyChatMemberInfo+chatID+":"+userID, member, TTLChatMember)
-}
-
-// GetChatMemberInfo 获取单个成员缓存
-func (c *Cache) GetChatMemberInfo(ctx context.Context, chatID, userID string, dest interface{}) error {
-	if c == nil || c.client == nil {
-		return fmt.Errorf("cache unavailable")
-	}
-	return c.Get(ctx, KeyChatMemberInfo+chatID+":"+userID, dest)
-}
-
-// DeleteChatMemberInfo 删除成员缓存（成员信息变更时调用）
-func (c *Cache) DeleteChatMemberInfo(ctx context.Context, chatID, userID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyChatMemberInfo+chatID+":"+userID)
-}
-
-// SetChatMemberIDMap 缓存群成员 ID->UUID 映射（HASH结构）
-// key: chat:midmap:{chatID}  field: strconv.FormatUint(id,10)  value: uuid
-func (c *Cache) SetChatMemberIDMap(ctx context.Context, chatID string, idToUUID map[string]string) error {
-	if c == nil || c.client == nil || len(idToUUID) == 0 {
-		return nil
-	}
-	key := KeyChatMemberIDMap + chatID
 	pipe := c.client.Pipeline()
-	pipe.Del(ctx, key)
-	// HSet 接受 map[string]interface{}
-	fields := make(map[string]interface{}, len(idToUUID))
-	for k, v := range idToUUID {
-		fields[k] = v
+	pipe.ZRemRangeByScore(ctx, rateKey, "0", fmt.Sprintf("%d", windowStart))
+	countCmd := pipe.ZCard(ctx, rateKey)
+	pipe.Expire(ctx, rateKey, window)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
 	}
-	pipe.HSet(ctx, key, fields)
-	pipe.Expire(ctx, key, TTLChatMember)
+	return countCmd.Val(), nil
+}
+
+// RecordRateLimit records a rate-limit event without checking a limit.
+func (c *Cache) RecordRateLimit(ctx context.Context, key string, window time.Duration) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+	now := time.Now().UnixMilli()
+	rateKey := KeyRateLimit + key
+
+	pipe := c.client.Pipeline()
+	member := fmt.Sprintf("%d-%d", now, atomic.AddUint64(&rateLimitMemberSeq, 1))
+	pipe.ZAdd(ctx, rateKey, redis.Z{Score: float64(now), Member: member})
+	pipe.Expire(ctx, rateKey, window)
 	_, err := pipe.Exec(ctx)
 	return err
-}
-
-// GetChatMemberUUIDs 从 ID->UUID HASH 批量获取 UUID 列表
-func (c *Cache) GetChatMemberUUIDs(ctx context.Context, chatID string, ids []string) ([]string, error) {
-	if c == nil || c.client == nil || len(ids) == 0 {
-		return nil, fmt.Errorf("cache unavailable")
-	}
-	key := KeyChatMemberIDMap + chatID
-	vals, err := c.client.HMGet(ctx, key, ids...).Result()
-	if err != nil {
-		return nil, err
-	}
-	uuids := make([]string, 0, len(vals))
-	for _, v := range vals {
-		if v != nil {
-			if s, ok := v.(string); ok && s != "" {
-				uuids = append(uuids, s)
-			}
-		}
-	}
-	// 如果有 nil（缓存不完整）则返回 error 触发 fallback
-	if len(uuids) != len(ids) {
-		return nil, fmt.Errorf("cache incomplete")
-	}
-	return uuids, nil
-}
-
-// SetChatMemberAllIDs 缓存群全部成员 ID 列表（用于发消息时获取推送目标）
-// 使用 Redis SET 存储成员 userID 字符串
-func (c *Cache) SetChatMemberAllIDs(ctx context.Context, chatID string, userIDs []string) error {
-	if c == nil || c.client == nil || len(userIDs) == 0 {
-		return nil
-	}
-	key := KeyChatMemberUUIDs + chatID
-	members := make([]interface{}, len(userIDs))
-	for i, id := range userIDs {
-		members[i] = id
-	}
-	pipe := c.client.Pipeline()
-	pipe.Del(ctx, key)
-	pipe.SAdd(ctx, key, members...)
-	pipe.Expire(ctx, key, TTLChatMember)
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-// GetChatMemberAllIDs 获取群全部成员 ID 列表
-func (c *Cache) GetChatMemberAllIDs(ctx context.Context, chatID string) ([]string, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("cache unavailable")
-	}
-	key := KeyChatMemberUUIDs + chatID
-	vals, err := c.client.SMembers(ctx, key).Result()
-	if err != nil {
-		return nil, err
-	}
-	if len(vals) == 0 {
-		return nil, fmt.Errorf("cache miss")
-	}
-	return vals, nil
-}
-
-// SetChatMutedIDs 缓存群内所有 muted 用户 ID（SET结构，通常极少）
-func (c *Cache) SetChatMutedIDs(ctx context.Context, chatID string, mutedIDs []string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	key := KeyChatMutedSet + chatID
-	pipe := c.client.Pipeline()
-	pipe.Del(ctx, key)
-	if len(mutedIDs) > 0 {
-		members := make([]interface{}, len(mutedIDs))
-		for i, id := range mutedIDs {
-			members[i] = id
-		}
-		pipe.SAdd(ctx, key, members...)
-	}
-	// 即使空集合也设置 TTL，避免每次都穿透
-	pipe.Set(ctx, key+":loaded", "1", TTLMutedSet)
-	pipe.Expire(ctx, key, TTLMutedSet)
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-// GetChatMutedIDs 获取群内 muted 用户 ID SET
-// 返回 (ids, loaded)，loaded=false 表示缓存未命中
-func (c *Cache) GetChatMutedIDs(ctx context.Context, chatID string) (map[string]bool, bool) {
-	if c == nil || c.client == nil {
-		return nil, false
-	}
-	key := KeyChatMutedSet + chatID
-	// 先检查是否已加载过（区分空集合和未命中）
-	loaded := c.client.Get(ctx, key+":loaded").Val() == "1"
-	if !loaded {
-		return nil, false
-	}
-	vals, err := c.client.SMembers(ctx, key).Result()
-	if err != nil {
-		return nil, false
-	}
-	result := make(map[string]bool, len(vals))
-	for _, v := range vals {
-		result[v] = true
-	}
-	return result, true
-}
-
-// InvalidateChatMutedIDs 使群 muted 缓存失效（禁言/解禁时调用）
-func (c *Cache) InvalidateChatMutedIDs(ctx context.Context, chatID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyChatMutedSet+chatID, KeyChatMutedSet+chatID+":loaded")
-}
-
-// InvalidateChatMembers 使群成员相关所有缓存失效（加人/踢人时调用）
-func (c *Cache) InvalidateChatMembers(ctx context.Context, chatID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx,
-		KeyChatMemberUUIDs+chatID,
-		KeyChatMemberIDMap+chatID,
-		KeyChatMutedSet+chatID,
-		KeyChatMutedSet+chatID+":loaded",
-	)
-}
-
-// SetUserInfo 缓存用户核心信息（by UUID）
-func (c *Cache) SetUserInfo(ctx context.Context, userUUID string, user interface{}) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Set(ctx, KeyUserInfo+userUUID, user, TTLUserInfo)
-}
-
-// GetUserInfo 获取用户缓存（by UUID）
-func (c *Cache) GetUserInfo(ctx context.Context, userUUID string, dest interface{}) error {
-	if c == nil || c.client == nil {
-		return fmt.Errorf("cache unavailable")
-	}
-	return c.Get(ctx, KeyUserInfo+userUUID, dest)
-}
-
-// DeleteUserInfo 使用户缓存失效（用户信息变更时调用）
-func (c *Cache) DeleteUserInfo(ctx context.Context, userUUID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyUserInfo+userUUID)
-}
-
-// ★ 阶段二：ChatLastMsg Redis缓存（写优先，异步刷MySQL）
-const (
-	KeyChatLastMsg = "chat:lastmsg:" // chat:lastmsg:{chatID} → JSON
-	TTLChatLastMsg = 30 * time.Minute
-)
-
-// SetChatLastMsg 写入/更新 chat_last_msg 缓存
-func (c *Cache) SetChatLastMsg(ctx context.Context, chatID string, data interface{}) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Set(ctx, KeyChatLastMsg+chatID, data, TTLChatLastMsg)
-}
-
-// GetChatLastMsg 读取 chat_last_msg 缓存
-func (c *Cache) GetChatLastMsg(ctx context.Context, chatID string, dest interface{}) error {
-	if c == nil || c.client == nil {
-		return fmt.Errorf("cache unavailable")
-	}
-	return c.Get(ctx, KeyChatLastMsg+chatID, dest)
-}
-
-// DeleteChatLastMsg 使 chat_last_msg 缓存失效
-func (c *Cache) DeleteChatLastMsg(ctx context.Context, chatID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.Delete(ctx, KeyChatLastMsg+chatID)
-}
-
-// ★ 阶段二：推送设备缓存（减少MySQL压力）
-const (
-	KeyPushableUsers  = "push:users"          // 有有效push_token的用户ID SET（全局）
-	KeyUserPushSetting = "push:setting:"      // push:setting:{userID} → "0"/"1" (show_preview)
-	TTLPushableUsers  = 10 * time.Minute
-	TTLUserPushSetting = 30 * time.Minute
-)
-
-// AddPushableUser 标记用户有有效设备（注册/更新token时调用）
-func (c *Cache) AddPushableUser(ctx context.Context, userID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.client.SAdd(ctx, KeyPushableUsers, userID).Err()
-}
-
-// RemovePushableUser 移除用户的可推送标记（token失效时调用）
-func (c *Cache) RemovePushableUser(ctx context.Context, userID string) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	return c.client.SRem(ctx, KeyPushableUsers, userID).Err()
-}
-
-// IsPushableUsersLoaded 检查可推送用户集合是否已加载
-func (c *Cache) IsPushableUsersLoaded(ctx context.Context) bool {
-	if c == nil || c.client == nil {
-		return false
-	}
-	exists, _ := c.client.Exists(ctx, KeyPushableUsers).Result()
-	return exists > 0
-}
-
-// LoadPushableUsers 批量初始化可推送用户集合
-func (c *Cache) LoadPushableUsers(ctx context.Context, userIDs []string) error {
-	if c == nil || c.client == nil || len(userIDs) == 0 {
-		return nil
-	}
-	args := make([]interface{}, len(userIDs))
-	for i, id := range userIDs {
-		args[i] = id
-	}
-	pipe := c.client.Pipeline()
-	pipe.SAdd(ctx, KeyPushableUsers, args...)
-	pipe.Expire(ctx, KeyPushableUsers, TTLPushableUsers)
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-// FilterPushableUsers 从候选用户ID列表中过滤出有有效设备的用户
-func (c *Cache) FilterPushableUsers(ctx context.Context, userIDs []uint64) ([]uint64, error) {
-	if c == nil || c.client == nil {
-		return userIDs, nil // 降级：返回全部
-	}
-	if len(userIDs) == 0 {
-		return nil, nil
-	}
-	// 用 SMISMEMBER 批量检查
-	args := make([]interface{}, len(userIDs))
-	for i, id := range userIDs {
-		args[i] = strconv.FormatUint(id, 10)
-	}
-	results, err := c.client.SMIsMember(ctx, KeyPushableUsers, args...).Result()
-	if err != nil {
-		return userIDs, nil // 降级：返回全部
-	}
-	filtered := make([]uint64, 0)
-	for i, ok := range results {
-		if ok {
-			filtered = append(filtered, userIDs[i])
-		}
-	}
-	return filtered, nil
-}
-
-// SetUserPushSetting 缓存用户推送设置
-func (c *Cache) SetUserPushSetting(ctx context.Context, userID string, showPreview bool) error {
-	if c == nil || c.client == nil {
-		return nil
-	}
-	val := "1"
-	if !showPreview {
-		val = "0"
-	}
-	return c.client.Set(ctx, KeyUserPushSetting+userID, val, TTLUserPushSetting).Err()
-}
-
-// GetUserPushSetting 获取用户推送设置，返回 (showPreview, found)
-func (c *Cache) GetUserPushSetting(ctx context.Context, userID string) (bool, bool) {
-	if c == nil || c.client == nil {
-		return true, false
-	}
-	val, err := c.client.Get(ctx, KeyUserPushSetting+userID).Result()
-	if err != nil {
-		return true, false
-	}
-	return val == "1", true
 }

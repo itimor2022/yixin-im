@@ -124,10 +124,12 @@
   // 生命周期钩子
   onMounted(() => {
     mittBus.on('openSearchDialog', openSearchDialog)
+    // 键盘快捷键挂在 document 上，使焦点不在搜索按钮时也能唤起搜索。
     document.addEventListener('keydown', handleKeydown)
   })
 
   onUnmounted(() => {
+    // document 监听不会随组件卸载自动释放。
     document.removeEventListener('keydown', handleKeydown)
   })
 
@@ -180,6 +182,7 @@
     const result: AppRouteRecord[] = []
 
     const flattenAndMatch = (item: AppRouteRecord) => {
+      // 搜索结果只暴露可见叶子路由，目录节点本身不作为可跳转目标。
       if (item.meta?.isHide) return
 
       const lowerItemTitle = formatMenuTitle(item.meta.title).toLowerCase()
@@ -323,6 +326,7 @@
     }
 
     const cleanedItem = { ...item }
+    // 历史记录只保留导航需要的数据，避免持久化整棵子路由和权限明细。
     delete cleanedItem.children
     delete cleanedItem.meta.authList
     historyResult.value.unshift(cleanedItem)

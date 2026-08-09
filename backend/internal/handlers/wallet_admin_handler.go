@@ -1,19 +1,22 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
-	"time"
-
-	"gaoranim/internal/config"
-	"gaoranim/internal/models"
-	"gaoranim/internal/services"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/http"
+	"time"
+	"genericim/internal/config"
+	"genericim/internal/middleware"
+	"genericim/internal/models"
+	"genericim/internal/services"
+	"genericim/pkg/response"
 )
 
 type WalletAdminHandler struct {
@@ -31,7 +34,6 @@ func (h *WalletAdminHandler) ListWithdrawRequests(c *gin.Context) {
 	page := getQueryInt(c, "page", 1)
 	pageSize := getQueryInt(c, "page_size", 20)
 	status := c.Query("status")
-
 	query := h.db.Model(&models.WithdrawRequest{})
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -46,41 +48,20 @@ func (h *WalletAdminHandler) ListWithdrawRequests(c *gin.Context) {
 		Limit(pageSize).
 		Find(&requests)
 
-	// ★ 批量查询 user 和 withdrawMethod，避免双倍 N+1
-	wdUserIDs := make([]uint64, 0, len(requests))
-	wdMethodIDs := make([]uint64, 0, len(requests))
-	for _, r := range requests {
-		wdUserIDs = append(wdUserIDs, r.UserID)
-		wdMethodIDs = append(wdMethodIDs, r.MethodID)
-	}
-	var wdUsers []models.User
-	if len(wdUserIDs) > 0 {
-		h.db.Where("id IN ?", wdUserIDs).Find(&wdUsers)
-	}
-	wdUserMap := make(map[uint64]models.User, len(wdUsers))
-	for _, u := range wdUsers {
-		wdUserMap[u.ID] = u
-	}
-	var wdMethods []models.WithdrawMethod
-	if len(wdMethodIDs) > 0 {
-		h.db.Where("id IN ?", wdMethodIDs).Find(&wdMethods)
-	}
-	wdMethodMap := make(map[uint64]models.WithdrawMethod, len(wdMethods))
-	for _, m := range wdMethods {
-		wdMethodMap[m.ID] = m
-	}
-
 	// 获取用户和方式信息
 	result := make([]gin.H, len(requests))
 	for i, req := range requests {
-		u := wdUserMap[req.UserID]
-		method := wdMethodMap[req.MethodID]
+		var user models.User
+		h.db.First(&user, req.UserID)
+
+		var method models.WithdrawMethod
+		h.db.First(&method, req.MethodID)
 		item := gin.H{
 			"id":            req.ID,
-			"user_id":       u.UUID,
-			"user_name":     u.Nickname,
-			"username":      u.Username,
-			"avatar":        u.Avatar,
+			"user_id":       user.UUID,
+			"user_name":     user.Nickname,
+			"username":      user.Username,
+			"avatar":        user.Avatar,
 			"method_name":   method.Name,
 			"amount":        req.Amount,
 			"fee":           req.Fee,
@@ -93,7 +74,6 @@ func (h *WalletAdminHandler) ListWithdrawRequests(c *gin.Context) {
 		}
 		result[i] = item
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -104,6 +84,7 @@ func (h *WalletAdminHandler) ListWithdrawRequests(c *gin.Context) {
 
 // ReviewWithdrawRequest 审核提现申请
 func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
+
 	requestID := c.Param("id")
 
 	var req struct {
@@ -114,10 +95,8 @@ func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
-	adminID := c.GetUint64("adminID")
+	adminID := middleware.GetAdminID(c)
 	now := time.Now()
-
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -125,7 +104,8 @@ func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
 		}
 	}()
 
-	// FOR UPDATE 锁定提现申请行
+	//
+
 	var withdrawReq models.WithdrawRequest
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&withdrawReq, requestID).Error; err != nil {
 		tx.Rollback()
@@ -162,6 +142,11 @@ func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
 			Where("user_id = ?", withdrawReq.UserID).First(&wallet).Error; err != nil {
 			tx.Rollback()
 			response.Error(c, http.StatusInternalServerError, "用户钱包不存在")
+			return
+		}
+		if wallet.FrozenBalance < withdrawReq.Amount {
+			tx.Rollback()
+			response.Error(c, http.StatusBadRequest, "冻结余额不足")
 			return
 		}
 		newBalance := wallet.Balance + withdrawReq.Amount
@@ -205,6 +190,11 @@ func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
 			response.Error(c, http.StatusInternalServerError, "用户钱包不存在")
 			return
 		}
+		if wallet.FrozenBalance < withdrawReq.Amount {
+			tx.Rollback()
+			response.Error(c, http.StatusBadRequest, "冻结余额不足")
+			return
+		}
 		if err := tx.Model(&wallet).Updates(map[string]interface{}{
 			"frozen_balance": gorm.Expr("frozen_balance - ?", withdrawReq.Amount),
 			"updated_at":     time.Now(),
@@ -223,14 +213,12 @@ func (h *WalletAdminHandler) ReviewWithdrawRequest(c *gin.Context) {
 			return
 		}
 	}
-
 	withdrawReq.UpdatedAt = now
 	if err := tx.Save(&withdrawReq).Error; err != nil {
 		tx.Rollback()
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
@@ -247,9 +235,7 @@ func (h *WalletAdminHandler) GetWithdrawStats(c *gin.Context) {
 	h.db.Model(&models.WithdrawRequest{}).Where("status = ?", models.WithdrawStatusApproved).Count(&approvedCount)
 	h.db.Model(&models.WithdrawRequest{}).Where("status = ?", models.WithdrawStatusCompleted).Count(&completedCount)
 	h.db.Model(&models.WithdrawRequest{}).Where("status = ?", models.WithdrawStatusRejected).Count(&rejectedCount)
-
 	h.db.Model(&models.WithdrawRequest{}).Where("status = ?", models.WithdrawStatusCompleted).Select("COALESCE(SUM(actual_amount), 0)").Scan(&totalAmount)
-
 	response.Success(c, gin.H{
 		"pending_count":   pendingCount,
 		"approved_count":  approvedCount,
@@ -281,7 +267,6 @@ func (h *WalletAdminHandler) CreateWithdrawMethod(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
 	method := models.WithdrawMethod{
 		Name:      req.Name,
 		Icon:      req.Icon,
@@ -294,12 +279,10 @@ func (h *WalletAdminHandler) CreateWithdrawMethod(c *gin.Context) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-
 	if err := h.db.Create(&method).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "创建失败")
 		return
 	}
-
 	response.Success(c, method)
 }
 
@@ -327,7 +310,6 @@ func (h *WalletAdminHandler) UpdateWithdrawMethod(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
 	updates := map[string]interface{}{"updated_at": time.Now()}
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -353,12 +335,10 @@ func (h *WalletAdminHandler) UpdateWithdrawMethod(c *gin.Context) {
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
-
 	if err := h.db.Model(&method).Updates(updates).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
-
 	h.db.First(&method, methodID)
 	response.Success(c, method)
 }
@@ -366,12 +346,10 @@ func (h *WalletAdminHandler) UpdateWithdrawMethod(c *gin.Context) {
 // DeleteWithdrawMethod 删除提现方式
 func (h *WalletAdminHandler) DeleteWithdrawMethod(c *gin.Context) {
 	methodID := c.Param("id")
-
 	if err := h.db.Delete(&models.WithdrawMethod{}, methodID).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "删除失败")
 		return
 	}
-
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
@@ -413,7 +391,6 @@ func (h *WalletAdminHandler) ListUserWallets(c *gin.Context) {
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&wallets)
-
 	result := make([]gin.H, 0, len(wallets))
 	for _, wallet := range wallets {
 		var user models.User
@@ -434,7 +411,6 @@ func (h *WalletAdminHandler) ListUserWallets(c *gin.Context) {
 			"created_at":       wallet.CreatedAt,
 		})
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -470,7 +446,6 @@ func (h *WalletAdminHandler) GetUserWallet(c *gin.Context) {
 		})
 		return
 	}
-
 	response.Success(c, gin.H{
 		"user_id":          user.UUID,
 		"user_name":        user.Nickname,
@@ -496,6 +471,10 @@ func (h *WalletAdminHandler) UpdateUserBalance(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
+	if req.Amount == 0 {
+		response.Error(c, http.StatusBadRequest, "调整金额不能为0")
+		return
+	}
 
 	// 查找用户
 	var user models.User
@@ -504,19 +483,8 @@ func (h *WalletAdminHandler) UpdateUserBalance(c *gin.Context) {
 		return
 	}
 
-	// 确保钱包存在
-	var checkWallet models.Wallet
-	if err := h.db.Where("user_id = ?", user.ID).First(&checkWallet).Error; err != nil {
-		checkWallet = models.Wallet{
-			UserID:    user.ID,
-			Balance:   0,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		h.db.Create(&checkWallet)
-	}
+	//
 
-	// 事务内操作：锁定钱包 -> 验证 -> 更新
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -528,9 +496,22 @@ func (h *WalletAdminHandler) UpdateUserBalance(c *gin.Context) {
 	var wallet models.Wallet
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, http.StatusInternalServerError, "获取钱包失败")
-		return
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			tx.Rollback()
+			response.Error(c, http.StatusInternalServerError, "获取钱包失败")
+			return
+		}
+		wallet = models.Wallet{
+			UserID:    user.ID,
+			Balance:   0,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := tx.Create(&wallet).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, http.StatusInternalServerError, "创建钱包失败")
+			return
+		}
 	}
 
 	// 锁定后检查扣减是否足够
@@ -561,7 +542,6 @@ func (h *WalletAdminHandler) UpdateUserBalance(c *gin.Context) {
 	if req.Remark != "" {
 		remark = req.Remark
 	}
-
 	transaction := models.Transaction{
 		UserID:       user.ID,
 		Type:         txType,
@@ -575,12 +555,10 @@ func (h *WalletAdminHandler) UpdateUserBalance(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "记录交易失败")
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"message":     "操作成功",
 		"new_balance": newBalance,
@@ -623,13 +601,11 @@ func (h *WalletAdminHandler) ResetUserPayPassword(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "设置密码失败")
 		return
 	}
-
 	wallet.UpdatedAt = time.Now()
 	if err := h.db.Save(&wallet).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "保存失败")
 		return
 	}
-
 	response.Success(c, gin.H{"message": "支付密码重置成功"})
 }
 
@@ -658,7 +634,6 @@ func (h *WalletAdminHandler) ClearUserPayPassword(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
 	}
-
 	response.Success(c, gin.H{"message": "支付密码已清除"})
 }
 
@@ -675,7 +650,6 @@ func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户不存在")
 		return
 	}
-
 	query := h.db.Model(&models.Transaction{}).Where("user_id = ?", user.ID)
 	if txType != "" {
 		query = query.Where("type = ?", txType)
@@ -702,7 +676,6 @@ func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 			"remark":        tx.Remark,
 			"created_at":    tx.CreatedAt,
 		}
-
 		if tx.RelatedUserID != nil {
 			var relatedUser models.User
 			if h.db.First(&relatedUser, *tx.RelatedUserID).Error == nil {
@@ -716,7 +689,6 @@ func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 
 		result[i] = item
 	}
-
 	response.Success(c, gin.H{
 		"user_id":   user.UUID,
 		"user_name": user.Nickname,
@@ -742,14 +714,12 @@ func (h *WalletAdminHandler) LockUserWallet(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户钱包不存在")
 		return
 	}
-
 	wallet.IsLocked = true
 	wallet.UpdatedAt = time.Now()
 	if err := h.db.Save(&wallet).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
 	}
-
 	response.Success(c, gin.H{"message": "钱包已锁定"})
 }
 
@@ -768,14 +738,12 @@ func (h *WalletAdminHandler) UnlockUserWallet(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户钱包不存在")
 		return
 	}
-
 	wallet.IsLocked = false
 	wallet.UpdatedAt = time.Now()
 	if err := h.db.Save(&wallet).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "操作失败")
 		return
 	}
-
 	response.Success(c, gin.H{"message": "钱包已解锁"})
 }
 
@@ -789,13 +757,10 @@ func (h *WalletAdminHandler) GetWalletStats(c *gin.Context) {
 	h.db.Model(&models.Wallet{}).Count(&walletCount)
 	h.db.Model(&models.Wallet{}).Select("COALESCE(SUM(balance), 0)").Scan(&totalBalance)
 	h.db.Model(&models.Wallet{}).Select("COALESCE(SUM(frozen_balance), 0)").Scan(&totalFrozen)
-
 	h.db.Model(&models.RedPacket{}).Count(&redPacketCount)
 	h.db.Model(&models.RedPacket{}).Select("COALESCE(SUM(total_amount), 0)").Scan(&redPacketAmount)
-
 	h.db.Model(&models.Transfer{}).Count(&transferCount)
 	h.db.Model(&models.Transfer{}).Select("COALESCE(SUM(amount), 0)").Scan(&transferAmount)
-
 	response.Success(c, gin.H{
 		"wallet_count":      walletCount,
 		"total_balance":     totalBalance,
@@ -815,13 +780,10 @@ func (h *WalletAdminHandler) ListRedPackets(c *gin.Context) {
 	pageSize := getQueryInt(c, "page_size", 20)
 	status := c.Query("status")
 	userID := c.Query("user_id")
-
 	query := h.db.Model(&models.RedPacket{})
-
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-
 	if userID != "" {
 		var user models.User
 		if h.db.Where("uuid = ?", userID).First(&user).Error == nil {
@@ -837,44 +799,15 @@ func (h *WalletAdminHandler) ListRedPackets(c *gin.Context) {
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&redPackets)
-
-	// ★ 批量查询 sender，避免 N+1
-	rpSenderIDs := make([]uint64, 0, len(redPackets))
-	rpIDs := make([]uint64, 0, len(redPackets))
-	for _, rp := range redPackets {
-		rpSenderIDs = append(rpSenderIDs, rp.SenderID)
-		rpIDs = append(rpIDs, rp.ID)
-	}
-	var rpSenders []models.User
-	if len(rpSenderIDs) > 0 {
-		h.db.Where("id IN ?", rpSenderIDs).Find(&rpSenders)
-	}
-	rpSenderMap := make(map[uint64]models.User, len(rpSenders))
-	for _, u := range rpSenders {
-		rpSenderMap[u.ID] = u
-	}
-
-	// ★ 批量查询领取数，避免 N+1（GROUP BY 一次汇总）
-	type claimCountRow struct {
-		RedPacketID uint64
-		Count       int64
-	}
-	var claimCounts []claimCountRow
-	if len(rpIDs) > 0 {
-		h.db.Model(&models.RedPacketClaim{}).
-			Select("red_packet_id, COUNT(*) as count").
-			Where("red_packet_id IN ?", rpIDs).
-			Group("red_packet_id").
-			Scan(&claimCounts)
-	}
-	claimCountMap := make(map[uint64]int64, len(claimCounts))
-	for _, cc := range claimCounts {
-		claimCountMap[cc.RedPacketID] = cc.Count
-	}
-
 	result := make([]gin.H, len(redPackets))
 	for i, rp := range redPackets {
-		sender := rpSenderMap[rp.SenderID]
+		var sender models.User
+		h.db.First(&sender, rp.SenderID)
+
+		// 获取领取数
+		var claimCount int64
+		h.db.Model(&models.RedPacketClaim{}).Where("red_packet_id = ?", rp.ID).Count(&claimCount)
+
 		result[i] = gin.H{
 			"id":               rp.UUID,
 			"sender_id":        sender.UUID,
@@ -886,14 +819,13 @@ func (h *WalletAdminHandler) ListRedPackets(c *gin.Context) {
 			"total_count":      rp.TotalCount,
 			"remaining_amount": rp.RemainingAmount,
 			"remaining_count":  rp.RemainingCount,
-			"claim_count":      claimCountMap[rp.ID],
+			"claim_count":      claimCount,
 			"message":          rp.Message,
 			"status":           rp.Status,
 			"expired_at":       rp.ExpiredAt,
 			"created_at":       rp.CreatedAt,
 		}
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -918,34 +850,19 @@ func (h *WalletAdminHandler) GetRedPacketDetail(c *gin.Context) {
 	// 获取领取记录
 	var claims []models.RedPacketClaim
 	h.db.Where("red_packet_id = ?", redPacket.ID).Order("created_at").Find(&claims)
-
-	// ★ 批量查询领取用户，避免 N+1
-	claimUserIDs := make([]uint64, 0, len(claims))
-	for _, cl := range claims {
-		claimUserIDs = append(claimUserIDs, cl.UserID)
-	}
-	var claimUsers []models.User
-	if len(claimUserIDs) > 0 {
-		h.db.Where("id IN ?", claimUserIDs).Find(&claimUsers)
-	}
-	claimUserMap := make(map[uint64]models.User, len(claimUsers))
-	for _, u := range claimUsers {
-		claimUserMap[u.ID] = u
-	}
-
 	claimList := make([]gin.H, len(claims))
 	for i, claim := range claims {
-		u := claimUserMap[claim.UserID]
+		var user models.User
+		h.db.First(&user, claim.UserID)
 		claimList[i] = gin.H{
-			"user_id":     u.UUID,
-			"user_name":   u.Nickname,
-			"user_avatar": u.Avatar,
+			"user_id":     user.UUID,
+			"user_name":   user.Nickname,
+			"user_avatar": user.Avatar,
 			"amount":      claim.Amount,
 			"is_best":     claim.IsBest,
 			"created_at":  claim.CreatedAt,
 		}
 	}
-
 	response.Success(c, gin.H{
 		"id":               redPacket.UUID,
 		"sender_id":        sender.UUID,
@@ -968,7 +885,6 @@ func (h *WalletAdminHandler) GetRedPacketDetail(c *gin.Context) {
 // RefundRedPacket 退还红包（强制退回剩余金额）
 func (h *WalletAdminHandler) RefundRedPacket(c *gin.Context) {
 	redPacketID := c.Param("id")
-
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -984,7 +900,6 @@ func (h *WalletAdminHandler) RefundRedPacket(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "红包不存在")
 		return
 	}
-
 	if redPacket.RemainingAmount <= 0 {
 		tx.Rollback()
 		response.Error(c, http.StatusBadRequest, "红包已无剩余金额")
@@ -999,7 +914,6 @@ func (h *WalletAdminHandler) RefundRedPacket(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "获取钱包失败")
 		return
 	}
-
 	refundAmount := redPacket.RemainingAmount
 	newBalance := wallet.Balance + refundAmount
 
@@ -1039,12 +953,10 @@ func (h *WalletAdminHandler) RefundRedPacket(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "记录交易失败")
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "退款失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"message":       "退款成功",
 		"refund_amount": refundAmount,
@@ -1059,13 +971,10 @@ func (h *WalletAdminHandler) ListTransfers(c *gin.Context) {
 	pageSize := getQueryInt(c, "page_size", 20)
 	status := c.Query("status")
 	userID := c.Query("user_id")
-
 	query := h.db.Model(&models.Transfer{})
-
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-
 	if userID != "" {
 		var user models.User
 		if h.db.Where("uuid = ?", userID).First(&user).Error == nil {
@@ -1081,25 +990,12 @@ func (h *WalletAdminHandler) ListTransfers(c *gin.Context) {
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&transfers)
-
-	// ★ 批量查询 sender/receiver，避免双倍 N+1
-	tfUserIDs := make([]uint64, 0, len(transfers)*2)
-	for _, tf := range transfers {
-		tfUserIDs = append(tfUserIDs, tf.SenderID, tf.ReceiverID)
-	}
-	var tfUsers []models.User
-	if len(tfUserIDs) > 0 {
-		h.db.Where("id IN ?", tfUserIDs).Find(&tfUsers)
-	}
-	tfUserMap := make(map[uint64]models.User, len(tfUsers))
-	for _, u := range tfUsers {
-		tfUserMap[u.ID] = u
-	}
-
 	result := make([]gin.H, len(transfers))
 	for i, tf := range transfers {
-		sender := tfUserMap[tf.SenderID]
-		receiver := tfUserMap[tf.ReceiverID]
+		var sender, receiver models.User
+		h.db.First(&sender, tf.SenderID)
+		h.db.First(&receiver, tf.ReceiverID)
+
 		result[i] = gin.H{
 			"id":              tf.UUID,
 			"sender_id":       sender.UUID,
@@ -1116,7 +1012,6 @@ func (h *WalletAdminHandler) ListTransfers(c *gin.Context) {
 			"created_at":      tf.CreatedAt,
 		}
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -1138,7 +1033,6 @@ func (h *WalletAdminHandler) GetTransferDetail(c *gin.Context) {
 	var sender, receiver models.User
 	h.db.First(&sender, transfer.SenderID)
 	h.db.First(&receiver, transfer.ReceiverID)
-
 	response.Success(c, gin.H{
 		"id":              transfer.UUID,
 		"sender_id":       sender.UUID,
@@ -1159,7 +1053,6 @@ func (h *WalletAdminHandler) GetTransferDetail(c *gin.Context) {
 // RefundTransfer 退回转账（强制退回给发送者）
 func (h *WalletAdminHandler) RefundTransfer(c *gin.Context) {
 	transferID := c.Param("id")
-
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -1175,7 +1068,6 @@ func (h *WalletAdminHandler) RefundTransfer(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "转账不存在")
 		return
 	}
-
 	if transfer.Status != models.TransferStatusPending {
 		tx.Rollback()
 		response.Error(c, http.StatusBadRequest, "转账已处理，无法退回")
@@ -1190,7 +1082,6 @@ func (h *WalletAdminHandler) RefundTransfer(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "获取钱包失败")
 		return
 	}
-
 	newBalance := wallet.Balance + transfer.Amount
 
 	// 原子更新余额
@@ -1216,7 +1107,6 @@ func (h *WalletAdminHandler) RefundTransfer(c *gin.Context) {
 	// 用 tx 查询接收者信息（修复之前用 h.db 的 bug）
 	var receiver models.User
 	tx.First(&receiver, transfer.ReceiverID)
-
 	if err := tx.Create(&models.Transaction{
 		UserID:          transfer.SenderID,
 		Type:            models.TransactionTypeRefund,
@@ -1232,12 +1122,10 @@ func (h *WalletAdminHandler) RefundTransfer(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "记录交易失败")
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "退回失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"message":       "退回成功",
 		"refund_amount": transfer.Amount,
@@ -1256,7 +1144,6 @@ func (h *WalletAdminHandler) GetWalletSettings(c *gin.Context) {
 	}
 	var settings []models.SystemSetting
 	h.db.Where("`key` IN ?", keys).Find(&settings)
-
 	result := make(map[string]string)
 	for _, s := range settings {
 		result[s.Key] = s.Value
@@ -1277,7 +1164,6 @@ func (h *WalletAdminHandler) GetWalletSettings(c *gin.Context) {
 	if result[models.SettingRechargeReview] == "" {
 		result[models.SettingRechargeReview] = "0"
 	}
-
 	response.Success(c, result)
 }
 
@@ -1288,14 +1174,12 @@ func (h *WalletAdminHandler) SaveWalletSettings(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
 	allowed := map[string]bool{
 		models.SettingWalletCurrency: true, models.SettingWalletCurrencyName: true,
 		models.SettingRedPacketExpireHours: true, models.SettingTransferExpireHours: true,
 		models.SettingWalletNotice: true, models.SettingRechargeNotice: true,
 		models.SettingWithdrawNotice: true, models.SettingRechargeReview: true,
 	}
-
 	now := time.Now()
 	for key, value := range req {
 		if !allowed[key] {
@@ -1317,7 +1201,21 @@ func (h *WalletAdminHandler) GetPaymentGatewayConfig(c *gin.Context) {
 		return
 	}
 	cfg := services.LoadPaymentForRuntime(h.db, h.cfg.Payment)
+	if middleware.GetAdminRole(c) == "demo_admin" {
+		cfg = maskPaymentConfigForDemo(cfg)
+	}
 	response.Success(c, cfg)
+}
+
+func maskPaymentConfigForDemo(cfg config.PaymentConfig) config.PaymentConfig {
+	cfg.Wechat.MchAPIv3Key = maskSecret(cfg.Wechat.MchAPIv3Key)
+	cfg.Wechat.PrivateKeyPath = maskSecret(cfg.Wechat.PrivateKeyPath)
+	cfg.Wechat.PrivateKeyPEM = maskSecret(cfg.Wechat.PrivateKeyPEM)
+	cfg.Alipay.PrivateKeyPath = maskSecret(cfg.Alipay.PrivateKeyPath)
+	cfg.Alipay.AppPrivateKeyPEM = maskSecret(cfg.Alipay.AppPrivateKeyPEM)
+	cfg.Alipay.AlipayPublicKeyPath = maskSecret(cfg.Alipay.AlipayPublicKeyPath)
+	cfg.Alipay.AlipayPublicKeyPEM = maskSecret(cfg.Alipay.AlipayPublicKeyPEM)
+	return cfg
 }
 
 func (h *WalletAdminHandler) SavePaymentGatewayConfig(c *gin.Context) {
@@ -1434,7 +1332,6 @@ func (h *WalletAdminHandler) UpdateRechargeMethod(c *gin.Context) {
 	if req.Sort != nil {
 		updates["sort"] = *req.Sort
 	}
-
 	if err := h.db.Model(&method).Updates(updates).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "更新失败")
 		return
@@ -1460,7 +1357,6 @@ func (h *WalletAdminHandler) ListRechargeOrders(c *gin.Context) {
 	page := getQueryInt(c, "page", 1)
 	pageSize := getQueryInt(c, "page_size", 20)
 	status := c.Query("status")
-
 	query := h.db.Model(&models.RechargeOrder{})
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -1471,50 +1367,27 @@ func (h *WalletAdminHandler) ListRechargeOrders(c *gin.Context) {
 
 	var orders []models.RechargeOrder
 	query.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&orders)
-
-	// ★ 批量查询 user 和 rechargeMethod，避免双倍 N+1
-	orderUserIDs := make([]uint64, 0, len(orders))
-	orderMethodIDs := make([]uint64, 0, len(orders))
-	for _, o := range orders {
-		orderUserIDs = append(orderUserIDs, o.UserID)
-		orderMethodIDs = append(orderMethodIDs, o.MethodID)
-	}
-	var orderUsers []models.User
-	if len(orderUserIDs) > 0 {
-		h.db.Where("id IN ?", orderUserIDs).Find(&orderUsers)
-	}
-	orderUserMap := make(map[uint64]models.User, len(orderUsers))
-	for _, u := range orderUsers {
-		orderUserMap[u.ID] = u
-	}
-	var orderMethods []models.RechargeMethod
-	if len(orderMethodIDs) > 0 {
-		h.db.Where("id IN ?", orderMethodIDs).Find(&orderMethods)
-	}
-	orderMethodMap := make(map[uint64]models.RechargeMethod, len(orderMethods))
-	for _, m := range orderMethods {
-		orderMethodMap[m.ID] = m
-	}
-
 	result := make([]gin.H, len(orders))
 	for i, o := range orders {
-		u := orderUserMap[o.UserID]
-		method := orderMethodMap[o.MethodID]
+		var user models.User
+		h.db.First(&user, o.UserID)
+		var method models.RechargeMethod
+		h.db.First(&method, o.MethodID)
 		result[i] = gin.H{
-			"id": o.ID, "user_id": u.UUID, "user_name": u.Nickname,
-			"username": u.Username, "avatar": u.Avatar,
+			"id": o.ID, "user_id": user.UUID, "user_name": user.Nickname,
+			"username": user.Username, "avatar": user.Avatar,
 			"method_name": method.Name, "amount": o.Amount,
 			"proof_image": o.ProofImage, "status": o.Status,
 			"remark": o.Remark, "reviewed_by": o.ReviewedBy,
 			"reviewed_at": o.ReviewedAt, "created_at": o.CreatedAt,
 		}
 	}
-
 	response.Success(c, gin.H{"list": result, "total": total, "page": page, "page_size": pageSize})
 }
 
 // ReviewRechargeOrder 审核充值订单
 func (h *WalletAdminHandler) ReviewRechargeOrder(c *gin.Context) {
+
 	orderID := c.Param("id")
 	var req struct {
 		Action string `json:"action" binding:"required,oneof=approve reject"`
@@ -1524,10 +1397,8 @@ func (h *WalletAdminHandler) ReviewRechargeOrder(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
-	adminID := c.GetUint64("adminID")
+	adminID := middleware.GetAdminID(c)
 	now := time.Now()
-
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -1546,7 +1417,6 @@ func (h *WalletAdminHandler) ReviewRechargeOrder(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "订单已处理")
 		return
 	}
-
 	order.ReviewedBy = &adminID
 	order.ReviewedAt = &now
 	order.Remark = req.Remark
@@ -1558,19 +1428,36 @@ func (h *WalletAdminHandler) ReviewRechargeOrder(c *gin.Context) {
 		var wallet models.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", order.UserID).First(&wallet).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				tx.Rollback()
+				response.Error(c, http.StatusInternalServerError, "获取钱包失败")
+				return
+			}
 			// 创建钱包
 			wallet = models.Wallet{UserID: order.UserID, Balance: 0, CreatedAt: now, UpdatedAt: now}
-			tx.Create(&wallet)
+			if err := tx.Create(&wallet).Error; err != nil {
+				tx.Rollback()
+				response.Error(c, http.StatusInternalServerError, "创建钱包失败")
+				return
+			}
 		}
 		newBalance := wallet.Balance + order.Amount
-		tx.Model(&wallet).Updates(map[string]interface{}{
+		if err := tx.Model(&wallet).Updates(map[string]interface{}{
 			"balance": gorm.Expr("balance + ?", order.Amount), "updated_at": now,
-		})
-		tx.Create(&models.Transaction{
+		}).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, http.StatusInternalServerError, "充值失败")
+			return
+		}
+		if err := tx.Create(&models.Transaction{
 			UserID: order.UserID, Type: models.TransactionTypeRecharge,
 			Amount: order.Amount, BalanceAfter: newBalance,
 			Remark: "充值(审核通过)", CreatedAt: now,
-		})
+		}).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, http.StatusInternalServerError, "记录交易失败")
+			return
+		}
 	} else {
 		order.Status = models.RechargeOrderRejected
 		// 记录拒绝的交易记录（包含拒绝原因）
@@ -1584,14 +1471,17 @@ func (h *WalletAdminHandler) ReviewRechargeOrder(c *gin.Context) {
 		if tx.Where("user_id = ?", order.UserID).First(&userWallet).Error == nil {
 			curBalance = userWallet.Balance
 		}
-		tx.Create(&models.Transaction{
+		if err := tx.Create(&models.Transaction{
 			UserID: order.UserID, Type: models.TransactionTypeRechargeRejected,
 			Amount: 0, BalanceAfter: curBalance,
 			RelatedID: fmt.Sprintf("%d", order.ID),
 			Remark:    rejectRemark, CreatedAt: now,
-		})
+		}).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, http.StatusInternalServerError, "记录交易失败")
+			return
+		}
 	}
-
 	if err := tx.Save(&order).Error; err != nil {
 		tx.Rollback()
 		response.Error(c, http.StatusInternalServerError, "操作失败")

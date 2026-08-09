@@ -34,7 +34,7 @@
 -dontwarn com.google.android.play.core.tasks.Task
 
 # App entry
--keep class com.yixinim.app.MainActivity { *; }
+-keep class com.genericim.app.MainActivity { *; }
 -keep class * extends android.app.Application {
     <init>();
 }
@@ -102,9 +102,14 @@
     <init>();
 }
 
-# Vendor push SDKs (Huawei/Xiaomi/OPPO)
+# Vendor push SDKs (Huawei/JPush/Xiaomi/OPPO)
 -keep class com.huawei.hms.** { *; }
 -dontwarn com.huawei.hms.**
+
+-keep class cn.jpush.** { *; }
+-dontwarn cn.jpush.**
+-keep class cn.jiguang.** { *; }
+-dontwarn cn.jiguang.**
 
 -keep class com.xiaomi.** { *; }
 -dontwarn com.xiaomi.**

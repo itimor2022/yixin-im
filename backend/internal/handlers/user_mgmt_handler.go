@@ -1,19 +1,20 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"context"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"gaoranim/internal/cache"
-	"gaoranim/internal/models"
-	"gaoranim/internal/services"
-	"gaoranim/pkg/response"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"genericim/internal/cache"
+	"genericim/internal/models"
+	"genericim/internal/services"
+	"genericim/pkg/response"
 )
 
 type UserMgmtHub interface {
@@ -28,6 +29,8 @@ type UserMgmtHandler struct {
 	push  *services.PushService
 }
 
+var adminTimeLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 func NewUserMgmtHandler(db *gorm.DB, hub UserMgmtHub, c *cache.Cache, pushServices ...*services.PushService) *UserMgmtHandler {
 	h := &UserMgmtHandler{db: db, hub: hub, cache: c}
 	if len(pushServices) > 0 {
@@ -38,29 +41,32 @@ func NewUserMgmtHandler(db *gorm.DB, hub UserMgmtHub, c *cache.Cache, pushServic
 
 // UserListItem 用户列表项（包含设备和在线信息）
 type UserListItem struct {
-	ID                uint64  `json:"id"`
-	UUID              string  `json:"uuid"`
-	Username          string  `json:"username"`
-	Nickname          string  `json:"nickname"`
-	Phone             *string `json:"phone"`
-	Avatar            *string `json:"avatar"`
-	Bio               *string `json:"bio"`
-	Status            int8    `json:"status"`
-	BanReason         *string `json:"ban_reason"`
-	BannedAt          *string `json:"banned_at"`
-	IsOnline          bool    `json:"is_online"`
-	LastSeen          *string `json:"last_seen"`
-	CreatedAt         string  `json:"created_at"`
-	DeviceType        *string `json:"device_type"`
-	DeviceName        *string `json:"device_name"`
-	DeviceIP          *string `json:"device_ip"`
-	PushChannel       *string `json:"push_channel"`
-	PushTokenBound    *bool   `json:"push_token_bound"`
-	PushTokenLength   *int    `json:"push_token_length"`
-	ServiceUserID     *uint64 `json:"service_user_id"`
-	ServiceUsername   *string `json:"service_username"`
-	ServiceNickname   *string `json:"service_nickname"`
-	ServiceInviteCode *string `json:"service_invite_code"`
+	ID                     uint64  `json:"id"`
+	UUID                   string  `json:"uuid"`
+	Username               string  `json:"username"`
+	Nickname               string  `json:"nickname"`
+	Gender                 string  `json:"gender"`
+	RegisterSource         string  `json:"register_source"`
+	CredentialsInitialized bool    `json:"credentials_initialized"`
+	Phone                  *string `json:"phone"`
+	Avatar                 *string `json:"avatar"`
+	Bio                    *string `json:"bio"`
+	Status                 int8    `json:"status"`
+	BanReason              *string `json:"ban_reason"`
+	BannedAt               *string `json:"banned_at"`
+	IsOnline               bool    `json:"is_online"`
+	LastSeen               *string `json:"last_seen"`
+	CreatedAt              string  `json:"created_at"`
+	DeviceType             *string `json:"device_type"`
+	DeviceName             *string `json:"device_name"`
+	DeviceIP               *string `json:"device_ip"`
+	PushChannel            *string `json:"push_channel"`
+	PushTokenBound         *bool   `json:"push_token_bound"`
+	PushTokenLength        *int    `json:"push_token_length"`
+	ServiceUserID          *uint64 `json:"service_user_id"`
+	ServiceUsername        *string `json:"service_username"`
+	ServiceNickname        *string `json:"service_nickname"`
+	ServiceInviteCode      *string `json:"service_invite_code"`
 }
 
 func uint64Ptr(v uint64) *uint64 {
@@ -83,10 +89,18 @@ func formatAdminTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("2006-01-02 15:04:05")
+	return t.In(adminTimeLocation).Format("2006-01-02 15:04:05")
 }
 
-// ListUsers 获取用户列表（包含在线状态和设备信息）
+func formatAdminTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return formatAdminTime(*t)
+}
+
+// ListUsers
+
 func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -96,23 +110,60 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	keyword := c.Query("keyword")
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	searchMode := strings.ToLower(strings.TrimSpace(c.DefaultQuery("search_mode", "exact")))
 	status := c.Query("status")
+	gender := strings.ToLower(strings.TrimSpace(c.Query("gender")))
+	registerSource := strings.ToLower(strings.TrimSpace(c.Query("register_source")))
+	credentialsStatus := strings.ToLower(strings.TrimSpace(c.Query("credentials_status")))
 	onlineOnly := isSystemSettingTrue(c.Query("online_only"))
-
 	offset := (page - 1) * pageSize
 
 	query := h.db.Model(&models.User{})
 
-	// 搜索（支持 UUID 精确匹配）
-	if keyword != "" {
-		query = query.Where("uuid = ? OR nickname LIKE ? OR username LIKE ? OR phone LIKE ?",
-			keyword, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
-	}
-
 	// 状态筛选
 	if status != "" {
 		query = query.Where("status = ?", status)
+	}
+	if gender != "" {
+		switch gender {
+		case "male", "female":
+			query = query.Where("gender = ?", gender)
+		case "unknown":
+			query = query.Where("gender IS NULL OR gender = '' OR gender = 'unknown'")
+		default:
+			response.Error(c, http.StatusBadRequest, "性别筛选参数错误")
+			return
+		}
+	}
+	if registerSource != "" {
+		if registerSource != models.UserRegisterSourceManual && registerSource != models.UserRegisterSourceQuick {
+			response.Error(c, http.StatusBadRequest, "注册来源筛选参数错误")
+			return
+		}
+		query = query.Where("register_source = ?", registerSource)
+	}
+	if credentialsStatus != "" {
+		switch credentialsStatus {
+		case "initialized":
+			query = query.Where("credentials_initialized = ?", true)
+		case "pending":
+			query = query.Where("credentials_initialized = ?", false)
+		default:
+			response.Error(c, http.StatusBadRequest, "登录凭证筛选参数错误")
+			return
+		}
+	}
+
+	// 搜索模式由后台显式控制：精确账号用于定位单个账号，模糊搜索用于批量排查。
+	if keyword != "" {
+		exactCondition := "uuid = ? OR username = ? OR phone = ?"
+		if searchMode == "fuzzy" {
+			query = query.Where("uuid = ? OR nickname LIKE ? OR username LIKE ? OR phone LIKE ?",
+				keyword, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+		} else {
+			query = query.Where(exactCondition, keyword, keyword, keyword)
+		}
 	}
 
 	var total int64
@@ -165,16 +216,10 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 
 		var bindings []userInviteBinding
 		if err := h.db.Table("invite_code_usages AS icu").
-			Select(`
-				icu.user_id AS user_id,
-				ic.service_user_id AS service_user_id,
-				su.username AS service_username,
-				su.nickname AS service_nickname,
-				ic.code AS invite_code
-			`).
+			Select(` 				icu.user_id AS user_id, ic.service_user_id AS service_user_id, su.username AS service_username, su.nickname AS service_nickname, ic.code AS invite_code 			`).
 			Joins("JOIN invite_codes ic ON ic.id = icu.invite_code_id").
 			Joins("LEFT JOIN users su ON su.id = ic.service_user_id AND su.deleted_at IS NULL").
-			Where("icu.id IN (?)", latestUsageSubQuery).
+			Where("icu.id IN(?)", latestUsageSubQuery).
 			Scan(&bindings).Error; err != nil {
 			response.Error(c, http.StatusInternalServerError, "查询失败")
 			return
@@ -200,13 +245,16 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	result := make([]UserListItem, 0, len(users))
 	for _, u := range users {
 		item := UserListItem{
-			ID:        u.ID,
-			UUID:      u.UUID,
-			Username:  u.Username,
-			Nickname:  u.Nickname,
-			Status:    u.Status,
-			IsOnline:  false,
-			CreatedAt: u.CreatedAt.Format("2006-01-02 15:04:05"),
+			ID:                     u.ID,
+			UUID:                   u.UUID,
+			Username:               u.Username,
+			Nickname:               u.Nickname,
+			Gender:                 u.Gender,
+			RegisterSource:         u.RegisterSource,
+			CredentialsInitialized: u.CredentialsInitialized,
+			Status:                 u.Status,
+			IsOnline:               false,
+			CreatedAt:              formatAdminTime(u.CreatedAt),
 		}
 
 		// 设置可选字段
@@ -220,7 +268,7 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			item.Bio = &u.Bio
 		}
 		if !u.LastSeen.IsZero() {
-			lastSeen := u.LastSeen.Format("2006-01-02 15:04:05")
+			lastSeen := formatAdminTime(u.LastSeen)
 			item.LastSeen = &lastSeen
 		}
 		// 封禁信息
@@ -228,7 +276,7 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			item.BanReason = &u.BanReason
 		}
 		if u.BannedAt != nil {
-			bannedAt := u.BannedAt.Format("2006-01-02 15:04:05")
+			bannedAt := formatAdminTime(*u.BannedAt)
 			item.BannedAt = &bannedAt
 		}
 
@@ -252,7 +300,7 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			if !item.IsOnline && device.LastActive.After(onlineThreshold) {
 				item.IsOnline = true
 			}
-			lastActive := device.LastActive.Format("2006-01-02 15:04:05")
+			lastActive := formatAdminTime(device.LastActive)
 			item.LastSeen = &lastActive
 		}
 
@@ -291,7 +339,6 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 		}
 		result = result[start:end]
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -310,6 +357,7 @@ func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
 		Phone    *string `json:"phone"`
 		Bio      *string `json:"bio"`
 		Status   *int8   `json:"status"`
+		Gender   *string `json:"gender"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "参数错误")
@@ -345,7 +393,14 @@ func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
-
+	if req.Gender != nil {
+		gender := strings.ToLower(strings.TrimSpace(*req.Gender))
+		if gender != "male" && gender != "female" && gender != "unknown" {
+			response.Error(c, http.StatusBadRequest, "性别必须为 male、female 或 unknown")
+			return
+		}
+		updates["gender"] = gender
+	}
 	if len(updates) > 0 {
 		if err := h.db.Model(&user).Updates(updates).Error; err != nil {
 			response.Error(c, http.StatusInternalServerError, "更新失败")
@@ -375,13 +430,11 @@ func (h *UserMgmtHandler) UpdateUserStatus(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户不存在")
 		return
 	}
-
 	user.Status = req.Status
 	if err := h.db.Save(&user).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
-
 	response.Success(c, user)
 }
 
@@ -394,14 +447,15 @@ func (h *UserMgmtHandler) GetUserStats(c *gin.Context) {
 
 	h.db.Model(&models.User{}).Count(&totalUsers)
 	h.db.Model(&models.User{}).Where("status = 1").Count(&activeUsers)
-	h.db.Model(&models.User{}).Where("DATE(created_at) = CURDATE()").Count(&newUsersToday)
+	h.db.Model(&models.User{}).
+		Where("created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)").
+		Count(&newUsersToday)
 
 	// 在线用户数（最近5分钟活跃）
 	h.db.Model(&models.UserDevice{}).
 		Where("last_active > DATE_SUB(NOW(), INTERVAL 5 MINUTE)").
 		Distinct("user_id").
 		Count(&onlineUsers)
-
 	response.Success(c, gin.H{
 		"total_users":     totalUsers,
 		"active_users":    activeUsers,
@@ -410,7 +464,8 @@ func (h *UserMgmtHandler) GetUserStats(c *gin.Context) {
 	})
 }
 
-// KickUser 强制下线用户
+// KickUser
+
 func (h *UserMgmtHandler) KickUser(c *gin.Context) {
 	userID := c.Param("id")
 
@@ -422,7 +477,6 @@ func (h *UserMgmtHandler) KickUser(c *gin.Context) {
 	if err := h.db.Where("id = ?", userID).First(&user).Error; err == nil {
 		h.hub.DisconnectUser(user.UUID)
 	}
-
 	response.SuccessWithMessage(c, "用户已强制下线", nil)
 }
 
@@ -449,7 +503,6 @@ func (h *UserMgmtHandler) BanUser(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "用户已被禁用，无需封禁")
 		return
 	}
-
 	now := time.Now()
 	result := h.db.Model(&user).Updates(map[string]interface{}{
 		"status":     models.UserStatusBanned,
@@ -457,12 +510,10 @@ func (h *UserMgmtHandler) BanUser(c *gin.Context) {
 		"banned_at":  now,
 		"updated_at": now,
 	})
-
 	if result.Error != nil {
 		response.Error(c, http.StatusInternalServerError, "封禁失败")
 		return
 	}
-
 	response.SuccessWithMessage(c, "用户已被封禁", gin.H{
 		"user_id":    user.ID,
 		"uuid":       user.UUID,
@@ -480,31 +531,28 @@ func (h *UserMgmtHandler) UnbanUser(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户不存在")
 		return
 	}
-
 	if user.Status != models.UserStatusBanned {
 		response.Error(c, http.StatusBadRequest, "用户未被封禁")
 		return
 	}
-
 	result := h.db.Model(&user).Updates(map[string]interface{}{
 		"status":     models.UserStatusNormal,
 		"ban_reason": "",
 		"banned_at":  nil,
 		"updated_at": time.Now(),
 	})
-
 	if result.Error != nil {
 		response.Error(c, http.StatusInternalServerError, "解封失败")
 		return
 	}
-
 	response.SuccessWithMessage(c, "用户已解封", gin.H{
 		"user_id": user.ID,
 		"uuid":    user.UUID,
 	})
 }
 
-// FreezeUser 冻结用户（禁用账号 + Token失效 + 强制断开WebSocket）
+// FreezeUser
+
 func (h *UserMgmtHandler) FreezeUser(c *gin.Context) {
 	userID := c.Param("id")
 
@@ -521,7 +569,6 @@ func (h *UserMgmtHandler) FreezeUser(c *gin.Context) {
 		response.NotFound(c, "用户不存在")
 		return
 	}
-
 	now := time.Now()
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"status":     models.UserStatusDisabled,
@@ -540,7 +587,6 @@ func (h *UserMgmtHandler) FreezeUser(c *gin.Context) {
 	if h.cache != nil {
 		h.cache.Set(context.Background(), "user:frozen:"+user.UUID, "1", 365*24*time.Hour)
 	}
-
 	response.SuccessWithMessage(c, "用户已冻结并强制下线", gin.H{
 		"user_id": user.ID,
 		"uuid":    user.UUID,
@@ -556,7 +602,6 @@ func (h *UserMgmtHandler) UnfreezeUser(c *gin.Context) {
 		response.NotFound(c, "用户不存在")
 		return
 	}
-
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"status":     models.UserStatusNormal,
 		"ban_reason": "",
@@ -568,11 +613,11 @@ func (h *UserMgmtHandler) UnfreezeUser(c *gin.Context) {
 	if h.cache != nil {
 		h.cache.Delete(context.Background(), "user:frozen:"+user.UUID)
 	}
-
 	response.SuccessWithMessage(c, "用户已解冻", nil)
 }
 
-// ResetUserPassword 重置用户登录密码（重置后强制下线）
+// ResetUserPassword
+
 func (h *UserMgmtHandler) ResetUserPassword(c *gin.Context) {
 	userID := c.Param("id")
 
@@ -589,12 +634,10 @@ func (h *UserMgmtHandler) ResetUserPassword(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户不存在")
 		return
 	}
-
 	if err := user.SetPassword(req.NewPassword); err != nil {
 		response.Error(c, http.StatusInternalServerError, "设置密码失败")
 		return
 	}
-
 	user.UpdatedAt = time.Now()
 	if err := h.db.Save(&user).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "保存失败")
@@ -609,7 +652,6 @@ func (h *UserMgmtHandler) ResetUserPassword(c *gin.Context) {
 	if h.cache != nil {
 		h.cache.Set(context.Background(), "user:pwd_reset:"+user.UUID, "1", 24*time.Hour)
 	}
-
 	response.SuccessWithMessage(c, "密码重置成功，用户已强制下线", gin.H{
 		"user_id": user.ID,
 		"uuid":    user.UUID,

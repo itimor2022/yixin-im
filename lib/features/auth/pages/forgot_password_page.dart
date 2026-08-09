@@ -1,3 +1,5 @@
+// 文件用途：实现 ForgotPasswordPage 页面及其交互流程，属于用户认证。
+// 核心逻辑：维护 ForgotPasswordPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,10 +8,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/services/api/auth_service.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/utils/phone_validation.dart';
 import '../../../shared/widgets/desktop/auth_desktop_layout.dart';
 
+String _forgotPasswordText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：forgot password page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
 
@@ -42,22 +64,43 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     super.dispose();
   }
 
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
+  }
+
+  // 流程逻辑：`build` 根据输入状态生成页面片段或触发回调，交互副作用由页面状态边界统一处理。
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    if (PlatformUtils.isDesktop || screenWidth >= 600) {
+    if (PlatformUtils.isPhysicalDesktop || screenWidth >= 600) {
       return AuthDesktopLayout(
         showBackButton: true,
         onBack: _goBack,
-        title: '找回账号密码',
+        title: _forgotPasswordText(
+          context,
+          zhCN: '找回账号密码',
+          zhTW: '找回帳號密碼',
+          en: 'Recover Account Password',
+        ),
         child: _buildContent(isDark),
       );
     }
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0E0E0E) : Colors.white,
+      backgroundColor:
+          isDark ? AppColors.darkBackground : AppColors.lightSurface,
       body: SafeArea(
         child: Column(
           children: [
@@ -89,7 +132,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
           ),
           Expanded(
             child: Text(
-              '找回账号密码',
+              _forgotPasswordText(
+                context,
+                zhCN: '找回账号密码',
+                zhTW: '找回帳號密碼',
+                en: 'Recover Account Password',
+              ),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 17,
@@ -112,11 +160,16 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         Icon(
           Icons.lock_reset_rounded,
           size: 64,
-          color: AppColors.primary.withOpacity(0.95),
+          color: AppColors.linkFor(context),
         ),
         const SizedBox(height: 20),
         Text(
-          '重置登录密码',
+          _forgotPasswordText(
+            context,
+            zhCN: '重置登录密码',
+            zhTW: '重置登入密碼',
+            en: 'Reset Login Password',
+          ),
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
@@ -125,10 +178,15 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          '使用已绑定手机号接收验证码',
+          _forgotPasswordText(
+            context,
+            zhCN: '使用已绑定手机号接收验证码',
+            zhTW: '使用已綁定手機號接收驗證碼',
+            en: 'Use your bound phone number to receive the verification code',
+          ),
           style: TextStyle(
             fontSize: 14,
-            color: isDark ? Colors.white54 : Colors.black54,
+            color: AppColors.textSecondaryFor(context),
           ),
         ),
         const SizedBox(height: 32),
@@ -138,7 +196,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         const SizedBox(height: 16),
         _buildPasswordField(
           controller: _passwordController,
-          hint: '新密码（6-20位）',
+          hint: _forgotPasswordText(
+            context,
+            zhCN: '新密码（6-20位）',
+            zhTW: '新密碼（6-20位）',
+            en: 'New password (6-20 chars)',
+          ),
           obscure: _obscurePassword,
           onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
           isDark: isDark,
@@ -146,7 +209,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         const SizedBox(height: 16),
         _buildPasswordField(
           controller: _confirmPasswordController,
-          hint: '确认新密码',
+          hint: _forgotPasswordText(
+            context,
+            zhCN: '确认新密码',
+            zhTW: '確認新密碼',
+            en: 'Confirm new password',
+          ),
           obscure: _obscureConfirmPassword,
           onToggle: () => setState(
             () => _obscureConfirmPassword = !_obscureConfirmPassword,
@@ -176,10 +244,15 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         const SizedBox(height: 16),
         TextButton(
           onPressed: _goBack,
-          child: const Text(
-            '返回登录',
+          child: Text(
+            _forgotPasswordText(
+              context,
+              zhCN: '返回登录',
+              zhTW: '返回登入',
+              en: 'Back to Login',
+            ),
             style: TextStyle(
-              color: AppColors.primary,
+              color: AppColors.linkFor(context),
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -199,14 +272,19 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         onChanged: (_) => _clearMessage(),
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
-          hintText: '手机号',
-          hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
+          hintText: _forgotPasswordText(
+            context,
+            zhCN: '手机号',
+            zhTW: '手機號',
+            en: 'Phone Number',
+          ),
+          hintStyle: TextStyle(color: AppColors.inputHintFor(context)),
           prefixIcon: Icon(
             Icons.phone_iphone_rounded,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           border: InputBorder.none,
@@ -230,25 +308,43 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         onChanged: (_) => _clearMessage(),
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
-          hintText: '短信验证码',
-          hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
+          hintText: _forgotPasswordText(
+            context,
+            zhCN: '短信验证码',
+            zhTW: '短信驗證碼',
+            en: 'SMS Verification Code',
+          ),
+          hintStyle: TextStyle(color: AppColors.inputHintFor(context)),
           prefixIcon: Icon(
             Icons.sms_outlined,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           suffixIcon: TextButton(
             onPressed: (_secondsLeft > 0 || _isSending) ? null : _sendCode,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.linkFor(context),
+              disabledForegroundColor: AppColors.textTertiaryFor(context),
+            ),
             child: _isSending
                 ? const SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(_secondsLeft > 0 ? '${_secondsLeft}s' : '获取验证码'),
+                : Text(
+                    _secondsLeft > 0
+                        ? '${_secondsLeft}s'
+                        : _forgotPasswordText(
+                            context,
+                            zhCN: '获取验证码',
+                            zhTW: '獲取驗證碼',
+                            en: 'Send Code',
+                          ),
+                  ),
           ),
           border: InputBorder.none,
           contentPadding:
@@ -277,14 +373,14 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         onChanged: (_) => _clearMessage(),
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
+          hintStyle: TextStyle(color: AppColors.inputHintFor(context)),
           prefixIcon: Icon(
             Icons.lock_outline_rounded,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           suffixIcon: IconButton(
@@ -293,7 +389,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
               obscure
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined,
-              color: isDark ? Colors.white30 : Colors.black38,
+              color: AppColors.inputIconFor(context),
               size: 20,
             ),
           ),
@@ -311,7 +407,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   Widget _inputShell({required bool isDark, required Widget child}) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+        color: AppColors.inputBackgroundFor(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,
@@ -325,23 +421,28 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
       child: ElevatedButton(
         onPressed: _isSubmitting ? null : _submit,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.primaryFor(context),
+          foregroundColor: AppColors.onPrimaryFor(context),
           elevation: 0,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isSubmitting
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: AppColors.onPrimaryFor(context),
                 ),
               )
-            : const Text(
-                '重置密码',
+            : Text(
+                _forgotPasswordText(
+                  context,
+                  zhCN: '重置密码',
+                  zhTW: '重置密碼',
+                  en: 'Reset Password',
+                ),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
       ),
@@ -351,7 +452,15 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   Future<void> _sendCode() async {
     final phone = _phoneController.text.trim();
     if (!_isValidPhone(phone)) {
-      _showMessage('请输入正确的手机号', true);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '请输入正确的手机号',
+          zhTW: '請輸入正確的手機號',
+          en: 'Please enter a valid phone number',
+        ),
+        true,
+      );
       return;
     }
 
@@ -368,9 +477,25 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     setState(() => _isSending = false);
     if (response.isSuccess) {
       _startCountdown();
-      _showMessage('验证码已发送', false);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '验证码已发送',
+          zhTW: '驗證碼已發送',
+          en: 'Verification code sent',
+        ),
+        false,
+      );
     } else {
-      _showMessage(response.message, true);
+      _showMessage(
+        _serverMessage(
+          raw: response.message,
+          zhCN: '发送失败',
+          zhTW: '發送失敗',
+          en: 'Send failed.',
+        ),
+        true,
+      );
     }
   }
 
@@ -381,19 +506,51 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     final confirmPassword = _confirmPasswordController.text;
 
     if (!_isValidPhone(phone)) {
-      _showMessage('请输入正确的手机号', true);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '请输入正确的手机号',
+          zhTW: '請輸入正確的手機號',
+          en: 'Please enter a valid phone number',
+        ),
+        true,
+      );
       return;
     }
     if (code.length < 4) {
-      _showMessage('请输入短信验证码', true);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '请输入短信验证码',
+          zhTW: '請輸入短信驗證碼',
+          en: 'Please enter the SMS verification code',
+        ),
+        true,
+      );
       return;
     }
     if (password.length < 6 || password.length > 20) {
-      _showMessage('新密码需要6-20位', true);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '新密码需要6-20位',
+          zhTW: '新密碼需要 6-20 位',
+          en: 'The new password must be 6-20 characters',
+        ),
+        true,
+      );
       return;
     }
     if (password != confirmPassword) {
-      _showMessage('两次输入的密码不一致', true);
+      _showMessage(
+        _forgotPasswordText(
+          context,
+          zhCN: '两次输入的密码不一致',
+          zhTW: '兩次輸入的密碼不一致',
+          en: 'The two passwords do not match',
+        ),
+        true,
+      );
       return;
     }
 
@@ -418,8 +575,19 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
       if (data is Map) {
         username = (data['username'] ?? '').toString().trim();
       }
-      final successMessage =
-          username.isEmpty ? '密码已重置，请重新登录' : '密码已重置，账号：$username';
+      final successMessage = username.isEmpty
+          ? _forgotPasswordText(
+              context,
+              zhCN: '密码已重置，请重新登录',
+              zhTW: '密碼已重置，請重新登入',
+              en: 'Password reset. Please log in again',
+            )
+          : _forgotPasswordText(
+              context,
+              zhCN: '密码已重置，账号：$username',
+              zhTW: '密碼已重置，帳號：$username',
+              en: 'Password reset. Account: $username',
+            );
       _showMessage(successMessage, false);
       Future.delayed(const Duration(milliseconds: 1200), () {
         if (!mounted) return;
@@ -432,7 +600,15 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         }
       });
     } else {
-      _showMessage(response.message, true);
+      _showMessage(
+        _serverMessage(
+          raw: response.message,
+          zhCN: '重置失败',
+          zhTW: '重置失敗',
+          en: 'Reset failed.',
+        ),
+        true,
+      );
     }
   }
 
@@ -454,7 +630,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   }
 
   bool _isValidPhone(String phone) {
-    return RegExp(r'^1\d{10}$').hasMatch(phone);
+    return isValidMainlandChinaMobile(phone);
   }
 
   void _clearMessage() {
@@ -465,7 +641,21 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
   void _showMessage(String message, bool isError) {
     setState(() {
-      _message = message.isEmpty ? (isError ? '操作失败' : '操作成功') : message;
+      _message = message.isEmpty
+          ? (isError
+              ? _forgotPasswordText(
+                  context,
+                  zhCN: '操作失败',
+                  zhTW: '操作失敗',
+                  en: 'Action failed',
+                )
+              : _forgotPasswordText(
+                  context,
+                  zhCN: '操作成功',
+                  zhTW: '操作成功',
+                  en: 'Action succeeded',
+                ))
+          : message;
       _messageIsError = isError;
     });
     if (isError) {

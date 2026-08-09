@@ -38,7 +38,8 @@ interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showSuccessMessage?: boolean
 }
 
-const { VITE_API_URL, VITE_WITH_CREDENTIALS } = import.meta.env
+const { VITE_WITH_CREDENTIALS } = import.meta.env
+const VITE_API_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 /** Axios实例 */
 const axiosInstance = axios.create({
@@ -48,8 +49,9 @@ const axiosInstance = axios.create({
   validateStatus: (status) => status >= 200 && status < 300,
   transformResponse: [
     (data, headers) => {
+      // 仅解析明确声明为 JSON 的响应，文件流和纯文本保持 Axios 原始数据形态。
       const contentType = headers['content-type']
-      if (contentType?.includes('application/json')) {
+      if (typeof contentType === 'string' && contentType.includes('application/json')) {
         try {
           return JSON.parse(data)
         } catch {
@@ -64,9 +66,24 @@ const axiosInstance = axios.create({
 /** 请求拦截器 */
 axiosInstance.interceptors.request.use(
   (request: InternalAxiosRequestConfig) => {
-    const { accessToken } = useUserStore()
+    const userStore = useUserStore()
+    const { accessToken } = userStore
     // 后端需要 Bearer Token 格式
     if (accessToken) request.headers.set('Authorization', `Bearer ${accessToken}`)
+
+    const method = request.method?.toUpperCase() || 'GET'
+    const url = request.url || ''
+    const isAdminWrite =
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) &&
+      url.startsWith('/admin') &&
+      url !== '/admin/login'
+    const isDemoAdmin = userStore.info?.roles?.includes('R_DEMO')
+    // 演示账号写保护放在统一请求层，覆盖所有页面入口，避免仅靠按钮禁用被绕过。
+    if (isAdminWrite && isDemoAdmin) {
+      const error = createHttpError('演示账号只能查看，无法执行新增、修改、删除或审核操作', ApiStatus.forbidden)
+      showError(error, true)
+      return Promise.reject(error)
+    }
 
     if (request.data && !(request.data instanceof FormData) && !request.headers['Content-Type']) {
       request.headers.set('Content-Type', 'application/json')
@@ -84,6 +101,7 @@ axiosInstance.interceptors.request.use(
 /** 响应拦截器 */
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse<BaseResponse>) => {
+    // HTTP 2xx 只表示传输成功；业务是否成功仍由响应体 code 决定。
     const { code, message, msg } = response.data as any
     const errorMsg = message || msg // 兼容 message 和 msg 两种字段
     if (code === ApiStatus.success) return response

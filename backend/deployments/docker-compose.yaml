@@ -1,3 +1,6 @@
+# 文件用途：deployments\docker-compose.yaml 是一个运行时配置或容器编排文件。
+# 核心逻辑：按文件中的顺序执行配置加载、数据库变更、构建部署或维护操作，并保持可重复执行。
+
 version: '3.8'
 
 services:
@@ -17,61 +20,61 @@ services:
       - mongodb
       - redis
     networks:
-      - grimimim
+      - genericim
     restart: unless-stopped
 
   # MySQL数据库
   mysql:
     image: mysql:8.0
-    container_name: grimimim-mysql
+    container_name: genericim-mysql
     ports:
       - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: grimimim
-      MYSQL_DATABASE: grimimim
-      MYSQL_USER: grimimim
-      MYSQL_PASSWORD: grimimim
+      MYSQL_ROOT_PASSWORD: genericim
+      MYSQL_DATABASE: genericim
+      MYSQL_USER: genericim
+      MYSQL_PASSWORD: genericim
     volumes:
       - mysql_data:/var/lib/mysql
       - ../scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     networks:
-      - grimimim
+      - genericim
     restart: unless-stopped
 
   # MongoDB数据库
   mongodb:
     image: mongo:7.0
-    container_name: grimimim-mongodb
+    container_name: genericim-mongodb
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: grimimim
-      MONGO_INITDB_ROOT_PASSWORD: grimimim
-      MONGO_INITDB_DATABASE: grimimim_messages
+      MONGO_INITDB_ROOT_USERNAME: genericim
+      MONGO_INITDB_ROOT_PASSWORD: genericim
+      MONGO_INITDB_DATABASE: genericim_messages
     volumes:
       - mongodb_data:/data/db
     networks:
-      - grimimim
+      - genericim
     restart: unless-stopped
 
   # Redis缓存
   redis:
     image: redis:7-alpine
-    container_name: grimimim-redis
+    container_name: genericim-redis
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     networks:
-      - grimimim
+      - genericim
     restart: unless-stopped
 
   # Redis Commander (可视化管理)
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: grimimim-redis-commander
+    container_name: genericim-redis-commander
     ports:
       - "8081:8081"
     environment:
@@ -79,11 +82,11 @@ services:
     depends_on:
       - redis
     networks:
-      - grimimim
+      - genericim
     restart: unless-stopped
 
 networks:
-  grimimim:
+  genericim:
     driver: bridge
 
 volumes:

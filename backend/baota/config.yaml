@@ -1,0 +1,113 @@
+# 文件用途：baota\config.yaml 是一个运行时配置或容器编排文件。
+# 核心逻辑：按文件中的顺序执行配置加载、数据库变更、构建部署或维护操作，并保持可重复执行。
+
+server:
+  port: 8080
+  mode: release  # 生产环境使用 release
+  read_timeout: 10s
+  write_timeout: 10s
+  base_url: "https://api.example.com"  # 线上后端域名，用于上传等完整 URL
+  register_base_url: "https://h5.example.com/#"
+  allowed_origins:
+    - "https://api.example.com"
+    - "https://admin.example.com"
+    - "https://h5.example.com"
+    - "http://h5.example.com"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:4173"
+    - "http://localhost:4173"
+  upload_dir: "./uploads"  # 上传文件存储目录
+
+storage:
+  provider: local  # local | aliyun | qiniu；后台「系统设置」里的云存储配置优先
+  local:
+    base_url: ""  # 留空使用 server.base_url
+  aliyun:
+    endpoint: ""  # 如 oss-cn-hangzhou.aliyuncs.com
+    bucket: ""
+    access_key_id: ""
+    access_key_secret: ""
+    public_base_url: ""  # 如 https://cdn.example.com；留空使用 https://{bucket}.{endpoint}
+    use_https: true
+  qiniu:
+    upload_url: "https://upload.qiniup.com"
+    bucket: ""
+    access_key: ""
+    secret_key: ""
+    public_base_url: ""  # 如 https://cdn.example.com
+    use_https: true
+
+mysql:
+  host: localhost
+  port: 3306
+  user: your_mysql_user
+  password: ""
+  database: your_mysql_database
+  max_idle_conns: 100
+  max_open_conns: 1000
+  conn_max_lifetime: 3600s
+
+mongodb:
+  # 宝塔创建的用户在「数据库名」库下，必须加 authSource=数据库名，否则认证失败。
+  uri: mongodb://your_mongo_user:your_mongo_password@localhost:27017/?authSource=your_auth_db
+  database: genericim_messages
+  max_pool_size: 500
+  min_pool_size: 50
+
+redis:
+  addr: localhost:6379
+  password: ""  # 如有密码请填写
+  db: 0
+  pool_size: 1000
+  min_idle_conns: 100
+
+jwt:
+  secret: ""  # 生产环境必须通过私有配置或 GENERIC_IM_JWT_SECRET 设置，泄露后必须重新生成并强制用户重新登录
+  expire: 720h  # 30 days
+  refresh_expire: 2160h  # 90 days, allows long-idle clients to refresh without re-login
+
+websocket:
+  read_buffer_size: 4096
+  write_buffer_size: 4096
+  max_message_size: 65536
+  pong_wait: 60s
+  ping_period: 54s
+  write_wait: 10s
+  allowed_origins:
+    - "https://api.example.com"
+    - "https://admin.example.com"
+    - "https://h5.example.com"
+    - "http://h5.example.com"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:4173"
+    - "http://localhost:4173"
+
+message_queue:
+  channel_buffer: 10000
+  workers: 100
+  batch_size: 100
+  flush_interval: 100ms
+
+message_storage:
+  retention_months: 120
+  idempotency_months: 120
+
+shard:
+  count: 64
+
+# Agora audio/video call config
+agora:
+  enabled: false
+  app_id: ""
+  app_certificate: ""
+  token_expire: 3600
+
+# LiveKit audio/video call and meeting config
+livekit:
+  enabled: false
+  server_url: ""
+  api_key: ""
+  api_secret: ""
+  token_expire: 3600

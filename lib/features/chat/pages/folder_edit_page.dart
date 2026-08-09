@@ -1,11 +1,31 @@
+// 文件用途：实现 FolderEditSheet 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 FolderEditSheet 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../providers/chat_provider.dart';
 import '../providers/folder_provider.dart';
 
+String _folderEditText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：folder edit page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 文件夹编辑弹窗
 class FolderEditSheet extends ConsumerStatefulWidget {
   const FolderEditSheet({super.key});
@@ -29,7 +49,8 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+            color:
+                isDark ? AppColors.darkBackground : AppColors.lightBackground,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
           child: Column(
@@ -40,11 +61,12 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
+                  color:
+                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
+
               // 标题栏
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -52,11 +74,23 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('完成'),
-                    ),
-                    const Expanded(
                       child: Text(
-                        '编辑文件夹',
+                        _folderEditText(
+                          context,
+                          zhCN: '完成',
+                          zhTW: '完成',
+                          en: 'Done',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _folderEditText(
+                          context,
+                          zhCN: '编辑文件夹',
+                          zhTW: '編輯資料夾',
+                          en: 'Edit Folder',
+                        ),
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
@@ -66,26 +100,38 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
                     ),
                     TextButton(
                       onPressed: () => _showCreateFolder(context),
-                      child: const Text('添加'),
+                      child: Text(
+                        _folderEditText(
+                          context,
+                          zhCN: '添加',
+                          zhTW: '新增',
+                          en: 'Add',
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-              
+
               const Divider(height: 1),
-              
+
               // 提示文字
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '创建文件夹来整理聊天。长按并拖动来重新排序。',
+                  _folderEditText(
+                    context,
+                    zhCN: '创建文件夹来整理聊天。长按并拖动来重新排序。',
+                    zhTW: '建立資料夾來整理聊天。長按並拖動即可重新排序。',
+                    en: 'Create folders to organize chats. Long press and drag to reorder.',
+                  ),
                   style: TextStyle(
                     fontSize: 14,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
               ),
-              
+
               // 文件夹列表
               Expanded(
                 child: ReorderableListView.builder(
@@ -93,7 +139,9 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
                   onReorder: (oldIndex, newIndex) {
                     HapticFeedback.mediumImpact();
                     if (newIndex > oldIndex) newIndex--;
-                    ref.read(folderProvider.notifier).reorderFolders(oldIndex, newIndex);
+                    ref
+                        .read(folderProvider.notifier)
+                        .reorderFolders(oldIndex, newIndex);
                   },
                   itemCount: folderState.folders.length,
                   itemBuilder: (context, index) {
@@ -102,7 +150,9 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
                       key: ValueKey(folder.id),
                       folder: folder,
                       onEdit: () => _showEditFolder(context, folder),
-                      onDelete: folder.isDefault ? null : () => _confirmDelete(context, folder),
+                      onDelete: folder.isDefault
+                          ? null
+                          : () => _confirmDelete(context, folder),
                     );
                   },
                 ),
@@ -118,7 +168,12 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
     showDialog(
       context: context,
       builder: (context) => _FolderDialog(
-        title: '新建文件夹',
+        title: _folderEditText(
+          context,
+          zhCN: '新建文件夹',
+          zhTW: '新增資料夾',
+          en: 'New Folder',
+        ),
         onSave: (name, types, showUnreadOnly) {
           final folder = ChatFolder(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -136,7 +191,12 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
     showDialog(
       context: context,
       builder: (context) => _FolderDialog(
-        title: '编辑文件夹',
+        title: _folderEditText(
+          context,
+          zhCN: '编辑文件夹',
+          zhTW: '編輯資料夾',
+          en: 'Edit Folder',
+        ),
         initialName: folder.name,
         initialTypes: folder.includeTypes?.toSet() ?? {},
         initialShowUnreadOnly: folder.showUnreadOnly,
@@ -156,19 +216,48 @@ class _FolderEditSheetState extends ConsumerState<FolderEditSheet> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除文件夹'),
-        content: Text('确定要删除"${folder.name}"文件夹吗？聊天不会被删除。'),
+        title: Text(
+          _folderEditText(
+            context,
+            zhCN: '删除文件夹',
+            zhTW: '刪除資料夾',
+            en: 'Delete Folder',
+          ),
+        ),
+        content: Text(
+          _folderEditText(
+            context,
+            zhCN: '确定要删除"${folder.name}"文件夹吗？聊天不会被删除。',
+            zhTW: '確定要刪除「${folder.name}」資料夾嗎？聊天不會被刪除。',
+            en: 'Delete "${folder.name}"? Chats will not be deleted.',
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(
+              _folderEditText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+            ),
           ),
           TextButton(
             onPressed: () {
               ref.read(folderProvider.notifier).deleteFolder(folder.id);
               Navigator.pop(context);
             },
-            child: const Text('删除', style: TextStyle(color: AppColors.error)),
+            child: Text(
+              _folderEditText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: const TextStyle(color: AppColors.error),
+            ),
           ),
         ],
       ),
@@ -200,12 +289,12 @@ class _FolderListItem extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.1),
+            color: AppColors.primaryWithOpacity(context, 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             Icons.folder_outlined,
-            color: AppColors.primary,
+            color: AppColors.primaryFor(context),
           ),
         ),
         title: Text(
@@ -213,14 +302,14 @@ class _FolderListItem extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
-            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         subtitle: Text(
-          _getSubtitle(),
+          _getSubtitle(context),
           style: TextStyle(
             fontSize: 13,
-            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+            color: AppColors.textSecondaryFor(context),
           ),
         ),
         trailing: Row(
@@ -233,7 +322,8 @@ class _FolderListItem extends StatelessWidget {
               ),
               if (onDelete != null)
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.error),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppColors.error),
                   onPressed: onDelete,
                 ),
             ],
@@ -244,32 +334,66 @@ class _FolderListItem extends StatelessWidget {
     );
   }
 
-  String _getSubtitle() {
+  String _getSubtitle(BuildContext context) {
     if (folder.isDefault) {
-      return '所有聊天';
+      return _folderEditText(
+        context,
+        zhCN: '所有聊天',
+        zhTW: '所有聊天',
+        en: 'All Chats',
+      );
     }
-    
+
     final parts = <String>[];
-    
+
     if (folder.includeTypes?.isNotEmpty == true) {
       final typeNames = folder.includeTypes!.map((t) {
         switch (t) {
           case ChatItemType.private:
-            return '私聊';
+            return _folderEditText(
+              context,
+              zhCN: '私聊',
+              zhTW: '私聊',
+              en: 'Private',
+            );
           case ChatItemType.group:
-            return '群组';
+            return _folderEditText(
+              context,
+              zhCN: '群组',
+              zhTW: '群組',
+              en: 'Group',
+            );
           case ChatItemType.channel:
-            return '频道';
+            return _folderEditText(
+              context,
+              zhCN: '频道',
+              zhTW: '頻道',
+              en: 'Channel',
+            );
         }
       }).join('、');
       parts.add(typeNames);
     }
-    
+
     if (folder.showUnreadOnly) {
-      parts.add('仅未读');
+      parts.add(
+        _folderEditText(
+          context,
+          zhCN: '仅未读',
+          zhTW: '僅未讀',
+          en: 'Unread Only',
+        ),
+      );
     }
-    
-    return parts.isEmpty ? '自定义' : parts.join(' · ');
+
+    return parts.isEmpty
+        ? _folderEditText(
+            context,
+            zhCN: '自定义',
+            zhTW: '自訂',
+            en: 'Custom',
+          )
+        : parts.join(' · ');
   }
 }
 
@@ -279,7 +403,8 @@ class _FolderDialog extends StatefulWidget {
   final String? initialName;
   final Set<ChatItemType>? initialTypes;
   final bool initialShowUnreadOnly;
-  final Function(String name, List<ChatItemType> types, bool showUnreadOnly) onSave;
+  final Function(String name, List<ChatItemType> types, bool showUnreadOnly)
+      onSave;
 
   const _FolderDialog({
     required this.title,
@@ -298,6 +423,7 @@ class _FolderDialogState extends State<_FolderDialog> {
   late Set<ChatItemType> _types;
   late bool _showUnreadOnly;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -323,32 +449,81 @@ class _FolderDialogState extends State<_FolderDialog> {
           children: [
             TextField(
               controller: _controller,
-              decoration: const InputDecoration(
-                labelText: '文件夹名称',
-                hintText: '输入名称',
+              decoration: InputDecoration(
+                labelText: _folderEditText(
+                  context,
+                  zhCN: '文件夹名称',
+                  zhTW: '資料夾名稱',
+                  en: 'Folder Name',
+                ),
+                hintText: _folderEditText(
+                  context,
+                  zhCN: '输入名称',
+                  zhTW: '輸入名稱',
+                  en: 'Enter a name',
+                ),
                 border: OutlineInputBorder(),
               ),
               autofocus: true,
             ),
             const SizedBox(height: 20),
-            const Text('包含的聊天类型', style: TextStyle(fontWeight: FontWeight.w500)),
+            Text(
+              _folderEditText(
+                context,
+                zhCN: '包含的聊天类型',
+                zhTW: '包含的聊天類型',
+                en: 'Included Chat Types',
+              ),
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _buildTypeChip('私聊', ChatItemType.private),
-                _buildTypeChip('群组', ChatItemType.group),
-                _buildTypeChip('频道', ChatItemType.channel),
+                _buildTypeChip(
+                  _folderEditText(
+                    context,
+                    zhCN: '私聊',
+                    zhTW: '私聊',
+                    en: 'Private',
+                  ),
+                  ChatItemType.private,
+                ),
+                _buildTypeChip(
+                  _folderEditText(
+                    context,
+                    zhCN: '群组',
+                    zhTW: '群組',
+                    en: 'Group',
+                  ),
+                  ChatItemType.group,
+                ),
+                _buildTypeChip(
+                  _folderEditText(
+                    context,
+                    zhCN: '频道',
+                    zhTW: '頻道',
+                    en: 'Channel',
+                  ),
+                  ChatItemType.channel,
+                ),
               ],
             ),
             const SizedBox(height: 16),
             SwitchListTile(
-              title: const Text('只显示未读'),
+              title: Text(
+                _folderEditText(
+                  context,
+                  zhCN: '只显示未读',
+                  zhTW: '只顯示未讀',
+                  en: 'Show Unread Only',
+                ),
+              ),
               value: _showUnreadOnly,
               onChanged: (value) => setState(() => _showUnreadOnly = value),
               contentPadding: EdgeInsets.zero,
-              activeColor: AppColors.primary,
+              activeColor: AppColors.primaryFor(context),
             ),
           ],
         ),
@@ -356,7 +531,14 @@ class _FolderDialogState extends State<_FolderDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(
+            _folderEditText(
+              context,
+              zhCN: '取消',
+              zhTW: '取消',
+              en: 'Cancel',
+            ),
+          ),
         ),
         TextButton(
           onPressed: () {
@@ -365,7 +547,14 @@ class _FolderDialogState extends State<_FolderDialog> {
               Navigator.pop(context);
             }
           },
-          child: const Text('保存'),
+          child: Text(
+            _folderEditText(
+              context,
+              zhCN: '保存',
+              zhTW: '儲存',
+              en: 'Save',
+            ),
+          ),
         ),
       ],
     );
@@ -385,8 +574,8 @@ class _FolderDialogState extends State<_FolderDialog> {
           }
         });
       },
-      selectedColor: AppColors.primary.withOpacity(0.2),
-      checkmarkColor: AppColors.primary,
+      selectedColor: AppColors.primaryWithOpacity(context, 0.2),
+      checkmarkColor: AppColors.primaryFor(context),
     );
   }
 }

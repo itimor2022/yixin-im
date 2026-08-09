@@ -1,3 +1,6 @@
+// 文件用途：实现 backend 目录中的 shard_lock.go 模块。
+// 核心逻辑：围绕本文件的类型和函数完成输入处理、状态转换或辅助计算。
+
 package shard
 
 import (
@@ -25,21 +28,22 @@ func NewShardedLock(shardCount int) *ShardedLock {
 	for n < uint32(shardCount) {
 		n *= 2
 	}
-
 	return &ShardedLock{
 		shards:    make([]sync.RWMutex, n),
 		shardMask: n - 1,
 	}
 }
 
-// getShard 根据key获取分片索引
+// getShard 根据key获取
+
 func (sl *ShardedLock) getShard(key string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return h.Sum32() & sl.shardMask
 }
 
-// Lock 获取写锁
+// Lock 获取
+
 func (sl *ShardedLock) Lock(key string) {
 	sl.shards[sl.getShard(key)].Lock()
 }
@@ -75,17 +79,14 @@ func NewShardedMap[V any](shardCount int) *ShardedMap[V] {
 	if shardCount <= 0 {
 		shardCount = 64
 	}
-
 	n := uint32(1)
 	for n < uint32(shardCount) {
 		n *= 2
 	}
-
 	shards := make([]mapShard[V], n)
 	for i := range shards {
 		shards[i].items = make(map[string]V)
 	}
-
 	return &ShardedMap[V]{
 		shards:    shards,
 		shardMask: n - 1,
@@ -132,7 +133,8 @@ func (sm *ShardedMap[V]) Has(key string) bool {
 	return ok
 }
 
-// Count 获取总数量
+// Count 获取
+
 func (sm *ShardedMap[V]) Count() int {
 	count := 0
 	for i := range sm.shards {
@@ -143,7 +145,8 @@ func (sm *ShardedMap[V]) Count() int {
 	return count
 }
 
-// Keys 获取所有key
+// Keys 获取
+
 func (sm *ShardedMap[V]) Keys() []string {
 	keys := make([]string, 0)
 	for i := range sm.shards {
@@ -156,7 +159,8 @@ func (sm *ShardedMap[V]) Keys() []string {
 	return keys
 }
 
-// Range 遍历所有元素
+// Range
+
 func (sm *ShardedMap[V]) Range(f func(key string, value V) bool) {
 	for i := range sm.shards {
 		sm.shards[i].RLock()

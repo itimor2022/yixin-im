@@ -1,3 +1,7 @@
+// 文件用途：实现 E2EEKeyEnvelope 相关逻辑，服务于业务服务。
+// 核心逻辑：围绕 E2EEKeyEnvelope 组织，完成输入校验、核心处理和结果回传。
+// 关键声明：E2EE models 是加密载荷数据边界，负责承载设备密钥、信封和加解密结果的序列化字段。
+/// 单个接收设备的密钥信封：消息内容只加密一次，会话密钥再分别用各设备公钥封装。
 class E2EEKeyEnvelope {
   final String userId;
   final String deviceId;
@@ -11,6 +15,7 @@ class E2EEKeyEnvelope {
     required this.encryptedKey,
   });
 
+  // 流程逻辑：`fromJson` 集中处理输入规范化、空值和兼容字段，输出稳定的数据结构，避免调用方重复实现边界判断。
   factory E2EEKeyEnvelope.fromJson(Map<String, dynamic> json) {
     return E2EEKeyEnvelope(
       userId: json['user_id']?.toString() ?? '',
@@ -45,6 +50,7 @@ class E2EEPayload {
     required this.envelopes,
   });
 
+  // 这里只检查传输结构是否完整；MAC 校验和算法兼容性由解密流程负责。
   bool get isValid =>
       ciphertext.isNotEmpty && iv.isNotEmpty && mac.isNotEmpty && envelopes.isNotEmpty;
 
@@ -71,6 +77,7 @@ class E2EEPayload {
       };
 }
 
+/// 服务端发布的设备公钥描述，不包含任何私钥材料。
 class ChatDeviceKey {
   final String userId;
   final String deviceId;
@@ -98,6 +105,8 @@ class ChatDeviceKey {
 }
 
 class ChatDeviceKeyBundle {
+  // members 是会话成员权威集合，devices 是其中已注册加密公钥的设备集合。
+  // 两者数量不必相等，发送前必须由加密服务检查覆盖是否完整。
   final List<String> members;
   final List<ChatDeviceKey> devices;
 

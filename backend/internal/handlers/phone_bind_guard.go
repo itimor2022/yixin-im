@@ -1,11 +1,12 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
-	"strings"
-
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
+	"strings"
+	"genericim/internal/models"
 )
 
 // RequirePhoneBindIfPolicy 当系统设置「需要绑定手机」开启时，用户未绑定则返回 false。

@@ -93,6 +93,7 @@
       () => props.previousValue
     ],
     generateOptions: (): EChartsOption => {
+      // data 固定为 [当前值, 对比值]，图例文案分别取 currentValue 和 previousValue。
       const computedColor = props.color || useChartOps().themeColor
 
       return {

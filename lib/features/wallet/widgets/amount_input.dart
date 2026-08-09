@@ -1,26 +1,32 @@
+// 文件用途：提供 AmountInput 可复用界面组件，服务于钱包与支付。
+// 核心逻辑：根据输入模型和状态渲染 AmountInput，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 
+// 关键声明：amount input 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 金额输入组件 - 微信风格
 class AmountInput extends StatefulWidget {
   final String? initialAmount;
   final ValueChanged<double> onChanged;
-  final Color accentColor;
+  final Color? accentColor;
   final double? maxAmount;
   final String? hintText;
   final bool autoFocus;
+  final String currency;
 
   const AmountInput({
     super.key,
     this.initialAmount,
     required this.onChanged,
-    Color? accentColor,
+    this.accentColor,
     this.maxAmount,
     this.hintText,
     this.autoFocus = false,
-  }) : accentColor = accentColor ?? AppColors.primary;
+    this.currency = '¥',
+  });
 
   @override
   State<AmountInput> createState() => _AmountInputState();
@@ -30,6 +36,7 @@ class _AmountInputState extends State<AmountInput> {
   String _amount = '';
   bool _showKeyboard = false;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -89,6 +96,11 @@ class _AmountInputState extends State<AmountInput> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor =
+        widget.accentColor ?? AppColors.controlActiveFor(context);
+    final onAccentColor = widget.accentColor == null
+        ? AppColors.onControlActiveFor(context)
+        : Colors.white;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -106,11 +118,11 @@ class _AmountInputState extends State<AmountInput> {
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Text(
-                  '¥',
+                  widget.currency,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
-                    color: widget.accentColor,
+                    color: accentColor,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -120,8 +132,8 @@ class _AmountInputState extends State<AmountInput> {
                     fontSize: 48,
                     fontWeight: FontWeight.w600,
                     color: _amount.isEmpty
-                        ? (isDark ? Colors.white24 : Colors.grey[300])
-                        : (isDark ? Colors.white : Colors.black87),
+                        ? AppColors.textTertiaryFor(context)
+                        : AppColors.textPrimaryFor(context),
                     letterSpacing: -1,
                   ),
                 ),
@@ -132,7 +144,7 @@ class _AmountInputState extends State<AmountInput> {
                     height: 40,
                     margin: const EdgeInsets.only(left: 2),
                     decoration: BoxDecoration(
-                      color: widget.accentColor,
+                      color: accentColor,
                       borderRadius: BorderRadius.circular(1),
                     ),
                   ),
@@ -148,9 +160,15 @@ class _AmountInputState extends State<AmountInput> {
   }
 
   Widget _buildKeyboard(bool isDark) {
+    final l10n = AppLocalizations.of(context);
+    final accentColor =
+        widget.accentColor ?? AppColors.controlActiveFor(context);
+    final onAccentColor = widget.accentColor == null
+        ? AppColors.onControlActiveFor(context)
+        : Colors.white;
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFD1D5DB),
+        color: AppColors.keyboardBackgroundFor(context),
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(12),
           topRight: Radius.circular(12),
@@ -164,10 +182,10 @@ class _AmountInputState extends State<AmountInput> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                color: AppColors.cardFor(context),
                 border: Border(
                   bottom: BorderSide(
-                    color: isDark ? Colors.white10 : Colors.grey[200]!,
+                    color: AppColors.dividerFor(context),
                   ),
                 ),
               ),
@@ -185,15 +203,15 @@ class _AmountInputState extends State<AmountInput> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: widget.accentColor,
+                        color: accentColor,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        '完成',
+                      child: Text(
+                        l10n.done,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: Colors.white,
+                          color: onAccentColor,
                         ),
                       ),
                     ),
@@ -248,7 +266,7 @@ class _AmountInputState extends State<AmountInput> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: Material(
-          color: isDark ? const Color(0xFF3A3A3C) : Colors.white,
+          color: AppColors.keyboardKeyFor(context),
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             onTap: () => _onKeyPressed(key),
@@ -260,14 +278,14 @@ class _AmountInputState extends State<AmountInput> {
                   ? Icon(
                       Icons.backspace_outlined,
                       size: 22,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                      color: AppColors.textSecondaryFor(context),
                     )
                   : Text(
                       key,
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
             ),
@@ -286,6 +304,7 @@ Future<double?> showAmountInputSheet({
   double? initialAmount,
   double? maxAmount,
   Color? accentColor,
+  String currency = '¥',
 }) async {
   double amount = initialAmount ?? 0;
 
@@ -295,10 +314,11 @@ Future<double?> showAmountInputSheet({
     backgroundColor: Colors.transparent,
     builder: (context) {
       final isDark = Theme.of(context).brightness == Brightness.dark;
+      final l10n = AppLocalizations.of(context);
 
       return Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
             topRight: Radius.circular(20),
@@ -314,7 +334,7 @@ Future<double?> showAmountInputSheet({
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
+                  color: AppColors.textTertiaryFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -328,7 +348,7 @@ Future<double?> showAmountInputSheet({
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -337,7 +357,7 @@ Future<double?> showAmountInputSheet({
                         subtitle,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                     ],
@@ -351,6 +371,7 @@ Future<double?> showAmountInputSheet({
                 accentColor: accentColor,
                 maxAmount: maxAmount,
                 autoFocus: true,
+                currency: currency,
               ),
               // 确认按钮
               Padding(
@@ -361,15 +382,18 @@ Future<double?> showAmountInputSheet({
                   child: ElevatedButton(
                     onPressed: () => Navigator.pop(context, amount),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: accentColor ?? AppColors.primary,
-                      foregroundColor: Colors.white,
+                      backgroundColor:
+                          accentColor ?? AppColors.controlActiveFor(context),
+                      foregroundColor: accentColor == null
+                          ? AppColors.onControlActiveFor(context)
+                          : Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      '确定',
+                    child: Text(
+                      l10n.confirm,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

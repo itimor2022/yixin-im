@@ -1,13 +1,35 @@
+// 文件用途：提供 TGEmojiPicker 可复用界面组件，服务于聊天与消息。
+// 核心逻辑：根据输入模型和状态渲染 TGEmojiPicker，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
-import 'package:universal_io/io.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 
 import '../../../core/constants/emoji_animations.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/animated_gif_image.dart';
+import '../../../shared/widgets/sticker_image.dart';
 import '../pages/emoji_store_page.dart';
 import '../services/emoji_store_service.dart';
 
+String _emojiPickerText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：emoji picker 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 聊天输入区表情面板
 class TGEmojiPicker extends StatefulWidget {
   final Function(String emoji, {bool isAnimated}) onEmojiSelected;
@@ -53,6 +75,7 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
         ..._installedPacks.map(_PanelTab.pack),
       ];
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -117,20 +140,45 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
 
   void _selectCustomEmoji(CustomEmojiItem item) {
     HapticFeedback.selectionClick();
-    if (item.hasLocalPath) {
-      widget.onEmojiSelected(
-        '${EmojiStoreService.customEmojiSendPrefix}${item.path}',
-        isAnimated: false,
-      );
-      return;
-    }
-    final remote = item.remoteUrl ?? item.path;
+    final remote = item.remoteUrl ?? '';
     if (remote.isNotEmpty) {
       widget.onEmojiSelected(
         '${EmojiStoreService.customEmojiSendUrlPrefix}$remote',
         isAnimated: false,
       );
+      return;
     }
+    if (item.path.isNotEmpty) {
+      widget.onEmojiSelected(
+        '${EmojiStoreService.customEmojiSendPrefix}${item.path}',
+        isAnimated: false,
+      );
+    }
+  }
+
+  void _selectBuiltInSticker(String assetPath) {
+    HapticFeedback.selectionClick();
+    widget.onEmojiSelected(
+      '${EmojiStoreService.builtInStickerSendPrefix}$assetPath',
+      isAnimated: false,
+    );
+  }
+
+  void _selectRemoteSticker({
+    required StickerPack pack,
+    required String file,
+    required int index,
+  }) {
+    HapticFeedback.selectionClick();
+    widget.onEmojiSelected(
+      EmojiStoreService.encodeRemoteStickerSend(
+        packId: pack.id,
+        stickerId: EmojiStoreService.stickerIdFromFile(file, index),
+        url: EmojiStoreService.canonicalRemoteStickerUrl(file),
+        emoji: 'gif',
+      ),
+      isAnimated: false,
+    );
   }
 
   void _goPage(int index) {
@@ -163,10 +211,10 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
     return Container(
       height: widget.height,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+        color: AppColors.surfaceFor(context),
         border: Border(
           top: BorderSide(
-            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+            color: AppColors.dividerFor(context),
             width: 0.5,
           ),
         ),
@@ -177,7 +225,7 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
           _buildSearchEntry(isDark),
           Container(
             height: 0.5,
-            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+            color: AppColors.dividerFor(context),
           ),
           Expanded(
             child: PageView.builder(
@@ -208,7 +256,12 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
       child: Row(
         children: [
           IconButton(
-            tooltip: '表情商店',
+            tooltip: _emojiPickerText(
+              context,
+              zhCN: '表情商店',
+              zhTW: '表情商店',
+              en: 'Emoji Store',
+            ),
             onPressed: () => _openStore(initialTab: 0),
             icon: Icon(
               Icons.storefront_outlined,
@@ -234,9 +287,7 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     decoration: BoxDecoration(
                       color: selected
-                          ? (isDark
-                              ? Colors.white12
-                              : AppColors.primary.withOpacity(0.1))
+                          ? AppColors.emphasisSoftFor(context)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -247,12 +298,17 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
             ),
           ),
           IconButton(
-            tooltip: '删除',
+            tooltip: _emojiPickerText(
+              context,
+              zhCN: '删除',
+              zhTW: '刪除',
+              en: 'Delete',
+            ),
             onPressed: () =>
                 widget.onEmojiSelected('BACKSPACE', isAnimated: false),
             icon: Icon(
               Icons.backspace_outlined,
-              color: isDark ? Colors.white60 : Colors.black54,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ],
@@ -267,25 +323,26 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
           Icons.emoji_emotions_outlined,
           size: 20,
           color: selected
-              ? AppColors.primary
-              : (isDark ? Colors.white54 : Colors.black38),
+              ? AppColors.linkFor(context)
+              : AppColors.textSecondaryFor(context),
         );
       case _PanelTabType.favorites:
         return Icon(
           Icons.favorite_border_rounded,
           size: 20,
-          color: selected
-              ? Colors.redAccent
-              : (isDark ? Colors.white54 : Colors.black38),
+          color:
+              selected ? Colors.redAccent : AppColors.textSecondaryFor(context),
         );
       case _PanelTabType.pack:
         return SizedBox(
           width: 22,
           height: 22,
-          child: Lottie.asset(
-            tab.pack!.previewPath,
+          child: StickerImage(
+            source: tab.pack!.previewFile,
+            fit: BoxFit.contain,
             repeat: selected,
             animate: true,
+            errorBuilder: (_, __) => const SizedBox.shrink(),
           ),
         );
     }
@@ -309,20 +366,32 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
               Icon(
                 Icons.search,
                 size: 16,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
               const SizedBox(width: 6),
               Text(
-                '搜索表情商店',
+                _emojiPickerText(
+                  context,
+                  zhCN: '搜索表情商店',
+                  zhTW: '搜尋表情商店',
+                  en: 'Search Emoji Store',
+                ),
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white54 : Colors.black45,
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ),
               const Spacer(),
               TextButton(
                 onPressed: () => _openStore(initialTab: 1),
-                child: const Text('我的表情'),
+                child: Text(
+                  _emojiPickerText(
+                    context,
+                    zhCN: '我的表情',
+                    zhTW: '我的表情',
+                    en: 'My Emoji',
+                  ),
+                ),
               ),
             ],
           ),
@@ -416,6 +485,27 @@ class _TGEmojiPickerState extends State<TGEmojiPicker> {
       itemCount: pack.stickerFiles.length,
       itemBuilder: (_, index) {
         final file = pack.stickerFiles[index];
+        if (EmojiStoreService.isRemoteStickerFile(file)) {
+          return _EmojiTile(
+            imageUrl: file,
+            favorite: false,
+            onTap: () => _selectRemoteSticker(
+              pack: pack,
+              file: file,
+              index: index,
+            ),
+            onLongPress: () {},
+          );
+        }
+        if (file.startsWith('assets/stickers/')) {
+          final path = EmojiStoreService.resolveStickerDisplayPath(file);
+          return _EmojiTile(
+            localAssetPath: path,
+            favorite: false,
+            onTap: () => _selectBuiltInSticker(path),
+            onLongPress: () {},
+          );
+        }
         final animated = EmojiAnimations.all.firstWhere(
           (e) => e.file == file,
           orElse: () => EmojiAnimations.all.first,
@@ -448,6 +538,8 @@ class _PanelTab {
 
 class _EmojiTile extends StatelessWidget {
   final String? lottiePath;
+  final String? localAssetPath;
+  final String? imageUrl;
   final String? text;
   final bool favorite;
   final VoidCallback onTap;
@@ -455,6 +547,8 @@ class _EmojiTile extends StatelessWidget {
 
   const _EmojiTile({
     this.lottiePath,
+    this.localAssetPath,
+    this.imageUrl,
     this.text,
     required this.favorite,
     required this.onTap,
@@ -474,13 +568,25 @@ class _EmojiTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: lottiePath != null
-                  ? Lottie.asset(lottiePath!, repeat: true)
-                  : Center(
-                      child: Text(
-                        text ?? '',
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
+                  ? WebSafeLottie.asset(lottiePath!, repeat: true)
+                  : localAssetPath != null
+                      ? StickerImage(
+                          source: localAssetPath!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __) => const SizedBox.shrink(),
+                        )
+                      : imageUrl != null
+                          ? StickerImage(
+                              source: imageUrl!,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __) => const SizedBox.shrink(),
+                            )
+                          : Center(
+                              child: Text(
+                                text ?? '',
+                                style: const TextStyle(fontSize: 24),
+                              ),
+                            ),
             ),
           ),
           if (favorite)
@@ -512,15 +618,23 @@ class _CreateEmojiTile extends StatelessWidget {
           color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: AppColors.primary.withOpacity(0.3),
+            color: AppColors.controlActiveFor(context).withOpacity(0.3),
           ),
         ),
-        child: const Column(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.add_photo_alternate_outlined, size: 20),
-            SizedBox(height: 2),
-            Text('制作', style: TextStyle(fontSize: 11)),
+            const Icon(Icons.add_photo_alternate_outlined, size: 20),
+            const SizedBox(height: 2),
+            Text(
+              _emojiPickerText(
+                context,
+                zhCN: '制作',
+                zhTW: '製作',
+                en: 'Create',
+              ),
+              style: const TextStyle(fontSize: 11),
+            ),
           ],
         ),
       ),
@@ -553,27 +667,15 @@ class _CustomEmojiTile extends StatelessWidget {
           Positioned.fill(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: EmojiStoreService.isHttpUrl(item.path)
-                  ? Image.network(
-                      item.path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: isDark ? Colors.white10 : Colors.black12,
-                        alignment: Alignment.center,
-                        child:
-                            const Icon(Icons.broken_image_outlined, size: 16),
-                      ),
-                    )
-                  : Image.file(
-                      File(item.path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: isDark ? Colors.white10 : Colors.black12,
-                        alignment: Alignment.center,
-                        child:
-                            const Icon(Icons.broken_image_outlined, size: 16),
-                      ),
-                    ),
+              child: StickerImage(
+                source: item.displayPath ?? item.path,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __) => Container(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image_outlined, size: 16),
+                ),
+              ),
             ),
           ),
           if (favorite)

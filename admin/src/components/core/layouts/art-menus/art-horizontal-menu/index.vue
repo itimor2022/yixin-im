@@ -12,6 +12,8 @@
       :hide-timeout="50"
       popper-class="horizontal-menu-popper"
       class="w-full border-none"
+      :router="true"
+      @click.capture="handleMenuClickCapture"
     >
       <HorizontalSubmenu
         v-for="item in filteredMenuItems"
@@ -28,6 +30,7 @@
   import type { AppRouteRecord } from '@/types/router'
   import HorizontalSubmenu from './widget/HorizontalSubmenu.vue'
   import { useSettingStore } from '@/store/modules/setting'
+  import { handleMenuJump } from '@/utils/navigation'
 
   defineOptions({ name: 'ArtHorizontalMenu' })
 
@@ -40,6 +43,7 @@
   }
 
   const route = useRoute()
+  const router = useRouter()
 
   const props = withDefaults(defineProps<Props>(), {
     list: () => []
@@ -58,6 +62,58 @@
    * 用于菜单高亮显示
    */
   const routerPath = computed(() => String(route.meta.activePath || route.path))
+
+  const findMenuByPath = (items: AppRouteRecord[], path: string): AppRouteRecord | undefined => {
+    for (const item of items) {
+      if (item.path === path) {
+        return item
+      }
+
+      if (item.children?.length) {
+        const matched = findMenuByPath(item.children, path)
+        if (matched) {
+          return matched
+        }
+      }
+    }
+  }
+
+  const getClickedMenuPath = (event: MouseEvent): string => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) {
+      return ''
+    }
+
+    return target.closest<HTMLElement>('[data-menu-path]')?.dataset.menuPath || ''
+  }
+
+  const forceMenuRoute = (path: string): void => {
+    if (!path || path === route.path || !path.startsWith('/')) {
+      return
+    }
+
+    const target = findMenuByPath(filteredMenuItems.value, path)
+    if (target?.children?.length) {
+      return
+    }
+
+    if (target) {
+      handleMenuJump(target)
+      return
+    }
+
+    router.push(path)
+  }
+
+  const handleMenuClickCapture = (event: MouseEvent): void => {
+    const path = getClickedMenuPath(event)
+    if (!path) {
+      return
+    }
+
+    window.setTimeout(() => forceMenuRoute(path), 0)
+    window.setTimeout(() => forceMenuRoute(path), 120)
+  }
 
   /**
    * 递归过滤菜单项，移除隐藏的菜单

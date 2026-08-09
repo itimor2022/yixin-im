@@ -1,3 +1,6 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
@@ -5,47 +8,46 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
-	"time"
-
-	"gaoranim/internal/models"
-	"gaoranim/internal/services"
-	"gaoranim/internal/textutil"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strconv"
+	"strings"
+	"time"
+	"genericim/internal/models"
+	"genericim/internal/services"
+	"genericim/pkg/response"
 )
 
 var errMeetingParticipantKicked = errors.New("meeting participant kicked")
 var errMeetingCapacityReached = errors.New("meeting capacity reached")
 var errMeetingNotActive = errors.New("meeting not active")
 var errMeetingJoinApprovalRequired = errors.New("meeting join approval required")
+var errMeetingChatDissolved = errors.New("meeting chat dissolved")
 
 type MeetingWebSocketHub interface {
 	SendToUser(userID string, data interface{})
-	SendToUserCluster(userID string, data interface{}) // ★ 集群版，跨节点路由
 }
 
-// MeetingHandler 群会议处理器（MVP）
+// MeetingHandler
 type MeetingHandler struct {
-	db           *gorm.DB
-	agoraService *services.AgoraService
-	wsHub        MeetingWebSocketHub
-	pushService  *services.PushService
-	msgService   *services.MessageService
+	db             *gorm.DB
+	agoraService   *services.AgoraService
+	liveKitService *services.LiveKitService
+	wsHub          MeetingWebSocketHub
+	pushService    *services.PushService
+	msgService     *services.MessageService
 }
 
-func NewMeetingHandler(db *gorm.DB, agoraService *services.AgoraService, wsHub MeetingWebSocketHub, pushService *services.PushService, msgService *services.MessageService) *MeetingHandler {
+func NewMeetingHandler(db *gorm.DB, agoraService *services.AgoraService, liveKitService *services.LiveKitService, wsHub MeetingWebSocketHub, pushService *services.PushService, msgService *services.MessageService) *MeetingHandler {
 	return &MeetingHandler{
-		db:           db,
-		agoraService: agoraService,
-		wsHub:        wsHub,
-		pushService:  pushService,
-		msgService:   msgService,
+		db:             db,
+		agoraService:   agoraService,
+		liveKitService: liveKitService,
+		wsHub:          wsHub,
+		pushService:    pushService,
+		msgService:     msgService,
 	}
 }
 
@@ -62,7 +64,6 @@ func (h *MeetingHandler) getAgoraConfigFromDB() (enabled bool, appID, appCertifi
 		models.SettingAgoraAppCertificate,
 		models.SettingAgoraTokenExpire,
 	}).Find(&settings)
-
 	for _, s := range settings {
 		switch s.Key {
 		case models.SettingAgoraEnabled:
@@ -81,11 +82,118 @@ func (h *MeetingHandler) getAgoraConfigFromDB() (enabled bool, appID, appCertifi
 			}
 		}
 	}
-
 	if appID == "" || appCertificate == "" {
 		enabled = false
 	}
 	return
+}
+
+func (h *MeetingHandler) getLiveKitConfigFromDB() (enabled bool, serverURL, apiKey, apiSecret string, tokenExpire int) {
+	if h.liveKitService != nil {
+		enabled = h.liveKitService.Enabled
+		serverURL = h.liveKitService.ServerURL
+		apiKey = h.liveKitService.APIKey
+		apiSecret = h.liveKitService.APISecret
+		tokenExpire = h.liveKitService.TokenExpire
+	}
+
+	var settings []models.SystemSetting
+	h.db.Where("`key` IN ?", []string{
+		models.SettingLiveKitEnabled,
+		models.SettingLiveKitServerURL,
+		models.SettingLiveKitAPIKey,
+		models.SettingLiveKitAPISecret,
+		models.SettingLiveKitTokenExpire,
+	}).Find(&settings)
+	for _, s := range settings {
+		switch s.Key {
+		case models.SettingLiveKitEnabled:
+			enabled = s.Value == "true" || s.Value == "1"
+		case models.SettingLiveKitServerURL:
+			if strings.TrimSpace(s.Value) != "" {
+				serverURL = strings.TrimSpace(s.Value)
+			}
+		case models.SettingLiveKitAPIKey:
+			if strings.TrimSpace(s.Value) != "" {
+				apiKey = strings.TrimSpace(s.Value)
+			}
+		case models.SettingLiveKitAPISecret:
+			if strings.TrimSpace(s.Value) != "" {
+				apiSecret = strings.TrimSpace(s.Value)
+			}
+		case models.SettingLiveKitTokenExpire:
+			if v, err := strconv.Atoi(s.Value); err == nil && v > 0 {
+				tokenExpire = v
+			}
+		}
+	}
+	if serverURL == "" || apiKey == "" || apiSecret == "" {
+		enabled = false
+	}
+	if tokenExpire <= 0 {
+		tokenExpire = 3600
+	}
+	return
+}
+
+func (h *MeetingHandler) getDefaultRTCProviderFromDB() string {
+	provider := models.RTCProviderAgora
+	var setting models.SystemSetting
+	if err := h.db.Where("`key` = ?", models.SettingRTCProvider).First(&setting).Error; err == nil {
+		provider = normalizeRTCProvider(setting.Value)
+	}
+	if provider == "" {
+		return models.RTCProviderAgora
+	}
+	return provider
+}
+
+func (h *MeetingHandler) buildMeetingRTCResponse(provider, channelName string, user *models.User, base gin.H) (gin.H, error) {
+	provider = effectiveRTCProvider(provider)
+	if base == nil {
+		base = gin.H{}
+	}
+	identity := ""
+	name := ""
+	if user != nil {
+		identity = user.UUID
+		name = user.Nickname
+	}
+	base["provider"] = provider
+	base["rtc_provider"] = provider
+	base["channel_name"] = channelName
+	base["room_name"] = channelName
+	base["identity"] = identity
+
+	switch provider {
+	case models.RTCProviderLiveKit:
+		enabled, serverURL, apiKey, apiSecret, tokenExpire := h.getLiveKitConfigFromDB()
+		if !enabled {
+			return nil, fmt.Errorf("livekit not configured")
+		}
+		liveKitSvc := services.NewLiveKitService(enabled, serverURL, apiKey, apiSecret, tokenExpire)
+		token, err := liveKitSvc.GenerateJoinToken(channelName, identity, name, true)
+		if err != nil {
+			return nil, err
+		}
+		base["server_url"] = serverURL
+		base["token"] = token
+		return base, nil
+	default:
+		enabled, appID, appCertificate, tokenExpire := h.getAgoraConfigFromDB()
+		if !enabled {
+			return nil, fmt.Errorf("agora not configured")
+		}
+		agoraSvc := services.NewAgoraService(enabled, appID, appCertificate, tokenExpire)
+		token, err := agoraSvc.GenerateRTCToken(channelName, toAgoraUID(user.ID), services.RolePublisher)
+		if err != nil {
+			return nil, err
+		}
+		base["app_id"] = appID
+		base["token"] = token
+		base["agora_uid"] = toAgoraUID(user.ID)
+		return base, nil
+	}
 }
 
 type CreateMeetingRequest struct {
@@ -111,7 +219,6 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		response.BadRequest(c, "meeting_type 仅支持 voice/video")
 		return
 	}
-
 	maxParticipants := req.MaxParticipants
 	if maxParticipants <= 0 {
 		maxParticipants = 16
@@ -119,16 +226,11 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 	if maxParticipants > 200 {
 		maxParticipants = 200
 	}
-
-	enabled, appID, appCertificate, tokenExpire := h.getAgoraConfigFromDB()
-	if !enabled {
-		response.BadRequest(c, "音视频服务未启用")
-		return
-	}
+	rtcProvider := h.getDefaultRTCProviderFromDB()
 
 	creator, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 
@@ -136,11 +238,15 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 	if strings.TrimSpace(req.ChatID) != "" {
 		cItem, err := h.getChatByUUID(req.ChatID)
 		if err != nil {
-			response.NotFound(c, "群聊不存在")
+			response.NotFound(c, "chat not found")
 			return
 		}
 		if cItem.Type != 2 && cItem.Type != 3 {
-			response.BadRequest(c, "仅支持在群聊/频道内发起会议")
+			response.BadRequest(c, "only group or channel chats can start meetings")
+			return
+		}
+		if cItem.Status == models.ChatStatusDissolved {
+			response.Forbidden(c, "该群已解散，不能发起会议")
 			return
 		}
 		if !h.isChatMember(cItem.ID, creator.ID) {
@@ -149,15 +255,14 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		}
 		chat = cItem
 	}
-
 	invitees := h.resolveInvitees(req.InviteeUserIDs, creator.ID, chat)
-
 	now := time.Now()
 	meetingUUID := uuid.New().String()
 	channelName := generateMeetingChannelName(meetingUUID)
 	meeting := &models.Meeting{
 		UUID:            meetingUUID,
 		ChannelName:     channelName,
+		RTCProvider:     rtcProvider,
 		CreatorID:       creator.ID,
 		Title:           strings.TrimSpace(req.Title),
 		MeetingType:     meetingType,
@@ -169,11 +274,28 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		meeting.ChatID = chat.ID
 	}
 
+	rtcResponse, err := h.buildMeetingRTCResponse(rtcProvider, channelName, creator, gin.H{})
+	if err != nil {
+		response.BadRequest(c, "audio/video service is not configured")
+		return
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if chat != nil {
+
+			var lockedChat models.Chat
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id", "status").
+				Where("id = ?", chat.ID).
+				First(&lockedChat).Error; err != nil {
+				return err
+			}
+			if lockedChat.Status == models.ChatStatusDissolved {
+				return errMeetingChatDissolved
+			}
+		}
 		if err := tx.Create(meeting).Error; err != nil {
 			return err
 		}
-
 		joinedAt := now
 		host := &models.MeetingParticipant{
 			MeetingID: meeting.ID,
@@ -185,7 +307,6 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		if err := tx.Create(host).Error; err != nil {
 			return err
 		}
-
 		if len(invitees) > 0 {
 			participants := make([]models.MeetingParticipant, 0, len(invitees))
 			invites := make([]models.MeetingInvite, 0, len(invitees))
@@ -205,7 +326,6 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 					Status:     models.MeetingInviteStatusPending,
 				})
 			}
-
 			if err := tx.Create(&participants).Error; err != nil {
 				return err
 			}
@@ -215,27 +335,26 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errMeetingChatDissolved) {
+			response.Forbidden(c, "该群已解散，不能发起会议")
+			return
+		}
 		response.ServerError(c, "创建会议失败")
 		return
 	}
-
-	agoraSvc := services.NewAgoraService(enabled, appID, appCertificate, tokenExpire)
-	token, err := agoraSvc.GenerateRTCToken(channelName, toAgoraUID(creator.ID), services.RolePublisher)
-	if err != nil {
-		response.ServerError(c, "生成Token失败")
-		return
-	}
-
 	chatUUID := ""
 	if chat != nil {
 		chatUUID = chat.UUID
 	}
 	for _, invitee := range invitees {
-		h.wsHub.SendToUserCluster(invitee.UUID, map[string]interface{}{
+		h.wsHub.SendToUser(invitee.UUID, map[string]interface{}{
 			"type": "meeting_invite",
 			"data": gin.H{
 				"meeting_id":     meeting.UUID,
 				"channel_name":   meeting.ChannelName,
+				"room_name":      meeting.ChannelName,
+				"provider":       rtcProvider,
+				"rtc_provider":   rtcProvider,
 				"meeting_type":   meeting.MeetingType,
 				"title":          meeting.Title,
 				"chat_id":        chatUUID,
@@ -245,15 +364,13 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 				"start_time":     meeting.StartTime,
 			},
 		})
-
 		if h.pushService != nil {
-			go h.pushService.PushToUser(invitee.ID, creator.Nickname, "邀请你加入群会议", map[string]interface{}{
+			go h.pushService.PushToUser(invitee.ID, creator.Nickname, "Invite you to join group meeting", map[string]interface{}{
 				"type":       "meeting_invite",
 				"meeting_id": meeting.UUID,
 			})
 		}
 	}
-
 	if chat != nil {
 		startEvent := map[string]interface{}{
 			"type": "meeting_started",
@@ -263,6 +380,9 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 				"title":        meeting.Title,
 				"meeting_type": meeting.MeetingType,
 				"channel_name": meeting.ChannelName,
+				"room_name":    meeting.ChannelName,
+				"provider":     rtcProvider,
+				"rtc_provider": rtcProvider,
 				"host_user_id": creator.UUID,
 				"host_name":    creator.Nickname,
 				"host_avatar":  creator.Avatar,
@@ -270,9 +390,8 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 			},
 		}
 		for _, memberUUID := range h.getChatMemberUUIDs(chat.ID, 0) {
-			h.wsHub.SendToUserCluster(memberUUID, startEvent)
+			h.wsHub.SendToUser(memberUUID, startEvent)
 		}
-
 		h.sendMeetingSystemMessage(
 			c.Request.Context(),
 			chat,
@@ -283,38 +402,36 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 				"title":        meeting.Title,
 				"meeting_type": meeting.MeetingType,
 				"channel_name": meeting.ChannelName,
+				"room_name":    meeting.ChannelName,
+				"provider":     rtcProvider,
+				"rtc_provider": rtcProvider,
 				"host_user_id": creator.UUID,
 				"host_name":    creator.Nickname,
 				"host_avatar":  creator.Avatar,
 				"start_time":   meeting.StartTime,
 			},
 			func() string {
-				meetingLabel := "视频群会议"
+				meetingLabel := "video group meeting"
 				if meeting.MeetingType == models.MeetingTypeVoice {
-					meetingLabel = "语音群会议"
+					meetingLabel = "voice group meeting"
 				}
 				if strings.TrimSpace(meeting.Title) != "" {
-					return creator.Nickname + "发起了" + meetingLabel + "：" + meeting.Title
+					return creator.Nickname + " started " + meetingLabel + ": " + meeting.Title
 				}
-				return creator.Nickname + "发起了" + meetingLabel
+				return creator.Nickname + " started " + meetingLabel
 			}(),
 			h.getChatMemberUUIDs(chat.ID, 0),
 		)
 	}
 
-	response.Success(c, gin.H{
-		"meeting_id":       meeting.UUID,
-		"channel_name":     meeting.ChannelName,
-		"meeting_type":     meeting.MeetingType,
-		"chat_id":          chatUUID,
-		"title":            meeting.Title,
-		"token":            token,
-		"app_id":           appID,
-		"agora_uid":        toAgoraUID(creator.ID),
-		"max_participants": meeting.MaxParticipants,
-		"invite_count":     len(invitees),
-		"start_time":       meeting.StartTime,
-	})
+	rtcResponse["meeting_id"] = meeting.UUID
+	rtcResponse["meeting_type"] = meeting.MeetingType
+	rtcResponse["chat_id"] = chatUUID
+	rtcResponse["title"] = meeting.Title
+	rtcResponse["max_participants"] = meeting.MaxParticipants
+	rtcResponse["invite_count"] = len(invitees)
+	rtcResponse["start_time"] = meeting.StartTime
+	response.Success(c, rtcResponse)
 }
 
 type MeetingIDRequest struct {
@@ -330,32 +447,29 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 		return
 	}
 
-	enabled, appID, appCertificate, tokenExpire := h.getAgoraConfigFromDB()
-	if !enabled {
-		response.BadRequest(c, "音视频服务未启用")
-		return
-	}
-
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
-
 	now := time.Now()
 	approvalRequired := false
 	hostID := meeting.CreatorID
+	rtcProvider := effectiveRTCProvider(meeting.RTCProvider)
+	var rtcResponse gin.H
+	var rtcErr error
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+
 		lockedMeeting, err := h.lockMeetingForUpdate(tx, meeting.ID)
 		if err != nil {
 			return err
@@ -379,9 +493,9 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 		if participantErr == nil && participant.Status == models.MeetingParticipantStatusKicked {
 			return errMeetingParticipantKicked
 		}
-
 		canDirectJoin := hasHostInvite || participantErr == nil
 		if !canDirectJoin {
+
 			if lockedMeeting.ChatID == 0 || !h.isChatMember(lockedMeeting.ChatID, user.ID) {
 				return gorm.ErrRecordNotFound
 			}
@@ -391,7 +505,13 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 			approvalRequired = true
 			return nil
 		}
-
+		buildRTCResponse := func() error {
+			if rtcResponse != nil {
+				return nil
+			}
+			rtcResponse, rtcErr = h.buildMeetingRTCResponse(rtcProvider, lockedMeeting.ChannelName, user, gin.H{})
+			return rtcErr
+		}
 		if participantErr == gorm.ErrRecordNotFound {
 			var joinedCount int64
 			if err := tx.Model(&models.MeetingParticipant{}).
@@ -401,6 +521,9 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 			}
 			if isMeetingCapacityReached(lockedMeeting.MaxParticipants, joinedCount) {
 				return errMeetingCapacityReached
+			}
+			if err := buildRTCResponse(); err != nil {
+				return err
 			}
 			joinedAt := now
 			if err := tx.Create(&models.MeetingParticipant{
@@ -423,6 +546,9 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 			if isMeetingCapacityReached(lockedMeeting.MaxParticipants, joinedCount) {
 				return errMeetingCapacityReached
 			}
+			if err := buildRTCResponse(); err != nil {
+				return err
+			}
 			updates := map[string]interface{}{
 				"status":  models.MeetingParticipantStatusJoined,
 				"left_at": nil,
@@ -435,11 +561,12 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 				Updates(updates).Error; err != nil {
 				return err
 			}
+		} else if err := buildRTCResponse(); err != nil {
+			return err
 		}
-
 		if err := tx.Model(&models.MeetingInvite{}).
 			Where(
-				"meeting_id = ? AND invitee_id = ? AND status = ? AND (invite_type = ? OR invite_type = '' OR invite_type IS NULL)",
+				"meeting_id = ? AND invitee_id = ? AND status = ? AND(invite_type = ? OR invite_type = '' OR invite_type IS NULL)",
 				meeting.ID,
 				user.ID,
 				models.MeetingInviteStatusPending,
@@ -451,15 +578,18 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 			}).Error; err != nil {
 			return err
 		}
-
 		return nil
 	}); err != nil {
 		if err == errMeetingNotActive {
-			response.BadRequest(c, "会议已结束")
+			response.BadRequest(c, "meeting ended")
 			return
 		}
 		if err == errMeetingCapacityReached {
 			response.BadRequest(c, "会议人数已满")
+			return
+		}
+		if rtcErr != nil {
+			response.BadRequest(c, "audio/video service is not configured")
 			return
 		}
 		if err == gorm.ErrRecordNotFound {
@@ -467,13 +597,12 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 			return
 		}
 		if err == errMeetingParticipantKicked {
-			response.Forbidden(c, "你已被移出会议，请等待主持人重新邀请")
+			response.Forbidden(c, "you have been removed from the meeting")
 			return
 		}
 		response.ServerError(c, "加入会议失败")
 		return
 	}
-
 	if approvalRequired {
 		host, err := h.getUserByID(hostID)
 		if err == nil {
@@ -485,16 +614,8 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 		})
 		return
 	}
-
-	tokenSvc := services.NewAgoraService(enabled, appID, appCertificate, tokenExpire)
-	token, err := tokenSvc.GenerateRTCToken(meeting.ChannelName, toAgoraUID(user.ID), services.RolePublisher)
-	if err != nil {
-		response.ServerError(c, "生成 Token 失败")
-		return
-	}
-
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, user.ID) {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_member_joined",
 			"data": gin.H{
 				"meeting_id":   meeting.UUID,
@@ -503,18 +624,15 @@ func (h *MeetingHandler) JoinMeeting(c *gin.Context) {
 				"user_avatar":  user.Avatar,
 				"joined_at":    now,
 				"meeting_type": meeting.MeetingType,
+				"provider":     rtcProvider,
+				"rtc_provider": rtcProvider,
 			},
 		})
 	}
 
-	response.Success(c, gin.H{
-		"meeting_id":   meeting.UUID,
-		"channel_name": meeting.ChannelName,
-		"meeting_type": meeting.MeetingType,
-		"token":        token,
-		"app_id":       appID,
-		"agora_uid":    toAgoraUID(user.ID),
-	})
+	rtcResponse["meeting_id"] = meeting.UUID
+	rtcResponse["meeting_type"] = meeting.MeetingType
+	response.Success(c, rtcResponse)
 }
 
 type ReviewJoinRequest struct {
@@ -535,17 +653,17 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 
 	reviewer, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 	if meeting.CreatorID != reviewer.ID {
@@ -555,12 +673,17 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 
 	target, err := h.getUserByUUID(req.TargetUserID)
 	if err != nil {
-		response.NotFound(c, "申请用户不存在")
+		response.NotFound(c, "request user not found")
 		return
 	}
-
 	now := time.Now()
 	approved := req.Approve != nil && *req.Approve
+	if approved {
+		if _, err := h.buildMeetingRTCResponse(meeting.RTCProvider, meeting.ChannelName, target, gin.H{}); err != nil {
+			response.BadRequest(c, "audio/video service is not configured")
+			return
+		}
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		lockedMeeting, err := h.lockMeetingForUpdate(tx, meeting.ID)
 		if err != nil {
@@ -580,7 +703,6 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 		).Order("id DESC").First(&joinReq).Error; err != nil {
 			return err
 		}
-
 		nextStatus := models.MeetingInviteStatusRejected
 		if approved {
 			nextStatus = models.MeetingInviteStatusAccepted
@@ -593,7 +715,6 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 			if participantErr == nil && participant.Status == models.MeetingParticipantStatusKicked {
 				return errMeetingParticipantKicked
 			}
-
 			if participantErr == gorm.ErrRecordNotFound {
 				var joinedCount int64
 				if err := tx.Model(&models.MeetingParticipant{}).
@@ -636,7 +757,6 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 				}
 			}
 		}
-
 		return tx.Model(&models.MeetingInvite{}).
 			Where("id = ?", joinReq.ID).
 			Updates(map[string]interface{}{
@@ -645,11 +765,11 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 			}).Error
 	}); err != nil {
 		if err == gorm.ErrRecordNotFound {
-			response.NotFound(c, "未找到待审批的入会申请")
+			response.NotFound(c, "pending join request not found")
 			return
 		}
 		if err == errMeetingNotActive {
-			response.BadRequest(c, "会议已结束")
+			response.BadRequest(c, "meeting ended")
 			return
 		}
 		if err == errMeetingCapacityReached {
@@ -657,15 +777,14 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 			return
 		}
 		if err == errMeetingParticipantKicked {
-			response.Forbidden(c, "该用户已被移出会议")
+			response.Forbidden(c, "user has been removed from the meeting")
 			return
 		}
 		response.ServerError(c, "审批失败")
 		return
 	}
-
 	reason := strings.TrimSpace(req.Reason)
-	h.wsHub.SendToUserCluster(target.UUID, map[string]interface{}{
+	h.wsHub.SendToUser(target.UUID, map[string]interface{}{
 		"type": "meeting_join_request_reviewed",
 		"data": gin.H{
 			"meeting_id":     meeting.UUID,
@@ -673,15 +792,16 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 			"reviewer_id":    reviewer.UUID,
 			"reviewer_name":  reviewer.Nickname,
 			"approved":       approved,
+			"provider":       effectiveRTCProvider(meeting.RTCProvider),
+			"rtc_provider":   effectiveRTCProvider(meeting.RTCProvider),
 			"reason":         reason,
 			"reviewed_at":    now,
 		},
 	})
-
 	if h.pushService != nil {
-		statusText := "已拒绝你的会议加入申请"
+		statusText := "rejected your meeting join request"
 		if approved {
-			statusText = "已同意你的会议加入申请"
+			statusText = "approved your meeting join request"
 		}
 		go h.pushService.PushToUser(target.ID, reviewer.Nickname, statusText, map[string]interface{}{
 			"type":          "meeting_join_request_reviewed",
@@ -690,10 +810,9 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 			"reviewer_name": reviewer.Nickname,
 		})
 	}
-
 	if approved {
 		for _, uid := range h.getParticipantUUIDs(meeting.ID, target.ID) {
-			h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+			h.wsHub.SendToUser(uid, map[string]interface{}{
 				"type": "meeting_member_joined",
 				"data": gin.H{
 					"meeting_id":   meeting.UUID,
@@ -702,11 +821,12 @@ func (h *MeetingHandler) ReviewJoinRequest(c *gin.Context) {
 					"user_avatar":  target.Avatar,
 					"joined_at":    now,
 					"meeting_type": meeting.MeetingType,
+					"provider":     effectiveRTCProvider(meeting.RTCProvider),
+					"rtc_provider": effectiveRTCProvider(meeting.RTCProvider),
 				},
 			})
 		}
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id":      meeting.UUID,
 		"target_user_id":  target.UUID,
@@ -726,16 +846,16 @@ func (h *MeetingHandler) GetActiveMeeting(c *gin.Context) {
 
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	chat, err := h.getChatByUUID(chatUUID)
 	if err != nil {
-		response.NotFound(c, "群聊不存在")
+		response.NotFound(c, "chat not found")
 		return
 	}
 	if !h.isChatMember(chat.ID, user.ID) {
-		response.Forbidden(c, "无权查看该群聊会议")
+		response.Forbidden(c, "no permission to view this chat meeting")
 		return
 	}
 
@@ -747,7 +867,7 @@ func (h *MeetingHandler) GetActiveMeeting(c *gin.Context) {
 			response.Success(c, gin.H{"has_active": false})
 			return
 		}
-		response.ServerError(c, "查询群会议状态失败")
+		response.ServerError(c, "query active meeting failed")
 		return
 	}
 
@@ -760,7 +880,6 @@ func (h *MeetingHandler) GetActiveMeeting(c *gin.Context) {
 		hostName = host.Nickname
 		hostAvatar = host.Avatar
 	}
-
 	response.Success(c, gin.H{
 		"has_active":     true,
 		"meeting_id":     meeting.UUID,
@@ -768,6 +887,9 @@ func (h *MeetingHandler) GetActiveMeeting(c *gin.Context) {
 		"title":          meeting.Title,
 		"meeting_type":   meeting.MeetingType,
 		"channel_name":   meeting.ChannelName,
+		"room_name":      meeting.ChannelName,
+		"provider":       effectiveRTCProvider(meeting.RTCProvider),
+		"rtc_provider":   effectiveRTCProvider(meeting.RTCProvider),
 		"start_time":     meeting.StartTime,
 		"host_user_id":   hostUUID,
 		"host_name":      hostName,
@@ -793,13 +915,13 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 
@@ -808,7 +930,6 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 		response.SuccessWithMessage(c, "已离开", gin.H{"meeting_id": meeting.UUID})
 		return
 	}
-
 	now := time.Now()
 	ended := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -827,12 +948,10 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 			Count(&joinedCount).Error; err != nil {
 			return err
 		}
-
 		shouldEnd := me.Role == models.MeetingParticipantRoleHost || joinedCount == 0
 		if !shouldEnd {
 			return nil
 		}
-
 		reason := strings.TrimSpace(req.Reason)
 		if reason == "" {
 			if me.Role == models.MeetingParticipantRoleHost {
@@ -850,12 +969,11 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 		response.ServerError(c, "离开会议失败")
 		return
 	}
-
 	if ended {
 		h.notifyMeetingEnded(meeting, strings.TrimSpace(req.Reason))
 	} else {
 		for _, uid := range h.getParticipantUUIDs(meeting.ID, user.ID) {
-			h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+			h.wsHub.SendToUser(uid, map[string]interface{}{
 				"type": "meeting_member_left",
 				"data": gin.H{
 					"meeting_id": meeting.UUID,
@@ -866,7 +984,6 @@ func (h *MeetingHandler) LeaveMeeting(c *gin.Context) {
 			})
 		}
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id": meeting.UUID,
 		"ended":      ended,
@@ -893,17 +1010,17 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 
 	inviter, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
@@ -913,7 +1030,7 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 		return
 	}
 	if inviterParticipant.Role != models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "仅主持人可邀请")
+		response.Forbidden(c, "only host can invite")
 		return
 	}
 
@@ -921,7 +1038,7 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 	if meeting.ChatID > 0 {
 		chat = &models.Chat{}
 		if err := h.db.First(chat, meeting.ChatID).Error; err != nil {
-			response.NotFound(c, "会议关联群聊不存在")
+			response.NotFound(c, "meeting chat not found")
 			return
 		}
 	}
@@ -933,7 +1050,6 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 		})
 		return
 	}
-
 	now := time.Now()
 	created := make([]models.User, 0, len(invitees))
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -970,7 +1086,6 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 					return err
 				}
 			}
-
 			if err := tx.Create(&models.MeetingInvite{
 				MeetingID:  meeting.ID,
 				InviterID:  inviter.ID,
@@ -984,10 +1099,9 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
-		response.ServerError(c, "邀请失败")
+		response.ServerError(c, "invite failed")
 		return
 	}
-
 	chatUUID := ""
 	if meeting.ChatID > 0 {
 		var chat models.Chat
@@ -995,13 +1109,15 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 			chatUUID = chat.UUID
 		}
 	}
-
 	for _, invitee := range created {
-		h.wsHub.SendToUserCluster(invitee.UUID, map[string]interface{}{
+		h.wsHub.SendToUser(invitee.UUID, map[string]interface{}{
 			"type": "meeting_invite",
 			"data": gin.H{
 				"meeting_id":     meeting.UUID,
 				"channel_name":   meeting.ChannelName,
+				"room_name":      meeting.ChannelName,
+				"provider":       effectiveRTCProvider(meeting.RTCProvider),
+				"rtc_provider":   effectiveRTCProvider(meeting.RTCProvider),
 				"meeting_type":   meeting.MeetingType,
 				"title":          meeting.Title,
 				"chat_id":        chatUUID,
@@ -1012,13 +1128,12 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 			},
 		})
 		if h.pushService != nil {
-			go h.pushService.PushToUser(invitee.ID, inviter.Nickname, "邀请你加入群会议", map[string]interface{}{
+			go h.pushService.PushToUser(invitee.ID, inviter.Nickname, "Invite you to join group meeting", map[string]interface{}{
 				"type":       "meeting_invite",
 				"meeting_id": meeting.UUID,
 			})
 		}
 	}
-
 	if meeting.ChatID > 0 && h.msgService != nil && len(created) > 0 {
 		var chat models.Chat
 		if err := h.db.First(&chat, meeting.ChatID).Error; err == nil {
@@ -1033,6 +1148,9 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 					"type":           "meeting_invite",
 					"meeting_id":     meeting.UUID,
 					"channel_name":   meeting.ChannelName,
+					"room_name":      meeting.ChannelName,
+					"provider":       effectiveRTCProvider(meeting.RTCProvider),
+					"rtc_provider":   effectiveRTCProvider(meeting.RTCProvider),
 					"meeting_type":   meeting.MeetingType,
 					"title":          meeting.Title,
 					"chat_id":        chat.UUID,
@@ -1042,20 +1160,19 @@ func (h *MeetingHandler) InviteMembers(c *gin.Context) {
 					"start_time":     meeting.StartTime,
 				},
 				func() string {
-					meetingLabel := "视频群会议"
+					meetingLabel := "video group meeting"
 					if meeting.MeetingType == models.MeetingTypeVoice {
-						meetingLabel = "语音群会议"
+						meetingLabel = "voice group meeting"
 					}
 					if strings.TrimSpace(meeting.Title) != "" {
-						return inviter.Nickname + "邀请你加入" + meetingLabel + "：" + meeting.Title
+						return inviter.Nickname + " invited you to join " + meetingLabel + ": " + meeting.Title
 					}
-					return inviter.Nickname + "邀请你加入" + meetingLabel
+					return inviter.Nickname + " invited you to join " + meetingLabel
 				}(),
 				targets,
 			)
 		}
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id":    meeting.UUID,
 		"invited_count": len(created),
@@ -1079,12 +1196,12 @@ func (h *MeetingHandler) EndMeeting(c *gin.Context) {
 
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 
@@ -1094,15 +1211,13 @@ func (h *MeetingHandler) EndMeeting(c *gin.Context) {
 		return
 	}
 	if participant.Role != models.MeetingParticipantRoleHost && meeting.CreatorID != user.ID {
-		response.Forbidden(c, "仅主持人可结束会议")
+		response.Forbidden(c, "only host can end meeting")
 		return
 	}
-
 	if meeting.Status == models.MeetingStatusEnded {
 		response.Success(c, gin.H{"meeting_id": meeting.UUID, "status": meeting.Status})
 		return
 	}
-
 	now := time.Now()
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
@@ -1114,9 +1229,7 @@ func (h *MeetingHandler) EndMeeting(c *gin.Context) {
 		response.ServerError(c, "结束会议失败")
 		return
 	}
-
 	h.notifyMeetingEnded(meeting, reason)
-
 	response.Success(c, gin.H{
 		"meeting_id": meeting.UUID,
 		"status":     models.MeetingStatusEnded,
@@ -1132,24 +1245,18 @@ func (h *MeetingHandler) GetToken(c *gin.Context) {
 		return
 	}
 
-	enabled, appID, appCertificate, tokenExpire := h.getAgoraConfigFromDB()
-	if !enabled {
-		response.BadRequest(c, "音视频服务未启用")
-		return
-	}
-
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(meetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
@@ -1163,21 +1270,15 @@ func (h *MeetingHandler) GetToken(c *gin.Context) {
 		return
 	}
 
-	agoraSvc := services.NewAgoraService(enabled, appID, appCertificate, tokenExpire)
-	token, err := agoraSvc.GenerateRTCToken(meeting.ChannelName, toAgoraUID(user.ID), services.RolePublisher)
+	rtcResponse, err := h.buildMeetingRTCResponse(meeting.RTCProvider, meeting.ChannelName, user, gin.H{})
 	if err != nil {
-		response.ServerError(c, "生成Token失败")
+		response.BadRequest(c, "audio/video service is not configured")
 		return
 	}
 
-	response.Success(c, gin.H{
-		"meeting_id":   meeting.UUID,
-		"channel_name": meeting.ChannelName,
-		"meeting_type": meeting.MeetingType,
-		"token":        token,
-		"app_id":       appID,
-		"agora_uid":    toAgoraUID(user.ID),
-	})
+	rtcResponse["meeting_id"] = meeting.UUID
+	rtcResponse["meeting_type"] = meeting.MeetingType
+	response.Success(c, rtcResponse)
 }
 
 func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
@@ -1190,17 +1291,16 @@ func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
 
 	user, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(meetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
-
 	if !h.canAccessMeeting(meeting, user.ID) {
-		response.Forbidden(c, "无权限查看会议")
+		response.Forbidden(c, "no permission to view meeting")
 		return
 	}
 
@@ -1217,7 +1317,6 @@ func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
 		Where("mp.meeting_id = ?", meeting.ID).
 		Order("mp.role DESC, mp.updated_at DESC").
 		Find(&rows)
-
 	participants := make([]gin.H, 0, len(rows))
 	for _, item := range rows {
 		participants = append(participants, gin.H{
@@ -1233,7 +1332,6 @@ func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
 			"muted_video": item.MutedVideo,
 		})
 	}
-
 	chatUUID := ""
 	if meeting.ChatID > 0 {
 		var chat models.Chat
@@ -1241,7 +1339,6 @@ func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
 			chatUUID = chat.UUID
 		}
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id":       meeting.UUID,
 		"chat_id":          chatUUID,
@@ -1249,6 +1346,9 @@ func (h *MeetingHandler) GetMeetingDetail(c *gin.Context) {
 		"meeting_type":     meeting.MeetingType,
 		"status":           meeting.Status,
 		"channel_name":     meeting.ChannelName,
+		"room_name":        meeting.ChannelName,
+		"provider":         effectiveRTCProvider(meeting.RTCProvider),
+		"rtc_provider":     effectiveRTCProvider(meeting.RTCProvider),
 		"max_participants": meeting.MaxParticipants,
 		"start_time":       meeting.StartTime,
 		"end_time":         meeting.EndTime,
@@ -1271,29 +1371,28 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		response.BadRequest(c, "会议名称不能为空")
 		return
 	}
 	if len(title) > 100 {
-		response.BadRequest(c, "会议名称不能超过100个字符")
+		response.BadRequest(c, "meeting title cannot exceed 100 characters")
 		return
 	}
 
 	operator, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
@@ -1303,10 +1402,9 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 		return
 	}
 	if participant.Role != models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "仅主持人可修改会议名称")
+		response.Forbidden(c, "only host can update meeting title")
 		return
 	}
-
 	oldTitle := strings.TrimSpace(meeting.Title)
 	if oldTitle == title {
 		response.Success(c, gin.H{
@@ -1315,7 +1413,6 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 		})
 		return
 	}
-
 	if err := h.db.Model(&models.Meeting{}).
 		Where("id = ?", meeting.ID).
 		Update("title", title).Error; err != nil {
@@ -1334,22 +1431,21 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 		"updated_at":    now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_title_updated",
 			"data": eventData,
 		})
 	}
-
 	if meeting.ChatID > 0 {
 		var chat models.Chat
 		if err := h.db.First(&chat, meeting.ChatID).Error; err == nil {
-			label := "视频群会议"
+			label := "video group meeting"
 			if meeting.MeetingType == models.MeetingTypeVoice {
-				label = "语音群会议"
+				label = "voice group meeting"
 			}
-			preview := operator.Nickname + "修改了" + label + "名称"
+			preview := operator.Nickname + " updated " + label + " title"
 			if strings.TrimSpace(meeting.Title) != "" {
-				preview = preview + "：" + meeting.Title
+				preview = preview + ": " + meeting.Title
 			}
 			h.sendMeetingSystemMessage(
 				c.Request.Context(),
@@ -1369,7 +1465,6 @@ func (h *MeetingHandler) UpdateMeetingTitle(c *gin.Context) {
 			)
 		}
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id": meeting.UUID,
 		"title":      meeting.Title,
@@ -1398,16 +1493,16 @@ func (h *MeetingHandler) MuteMember(c *gin.Context) {
 
 	operator, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
@@ -1417,29 +1512,28 @@ func (h *MeetingHandler) MuteMember(c *gin.Context) {
 		return
 	}
 	if operatorParticipant.Role != models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "仅主持人可操作")
+		response.Forbidden(c, "only host can operate")
 		return
 	}
 
 	targetUser, err := h.getUserByUUID(req.TargetUserID)
 	if err != nil {
-		response.NotFound(c, "目标成员不存在")
+		response.NotFound(c, "target member not found")
 		return
 	}
 	targetParticipant, err := h.getMeetingParticipant(meeting.ID, targetUser.ID)
 	if err != nil {
-		response.NotFound(c, "目标成员不在会议中")
+		response.NotFound(c, "target member not in meeting")
 		return
 	}
 	if targetParticipant.Role == models.MeetingParticipantRoleHost && targetUser.ID != operator.ID {
-		response.Forbidden(c, "不能操作主持人")
+		response.Forbidden(c, "cannot operate host")
 		return
 	}
 	if targetParticipant.Status == models.MeetingParticipantStatusKicked {
 		response.BadRequest(c, "目标成员已被移出")
 		return
 	}
-
 	updates := map[string]interface{}{}
 	if req.MutedAudio != nil {
 		updates["muted_audio"] = *req.MutedAudio
@@ -1448,24 +1542,21 @@ func (h *MeetingHandler) MuteMember(c *gin.Context) {
 		updates["muted_video"] = *req.MutedVideo
 	}
 	if len(updates) == 0 {
-		response.BadRequest(c, "没有可更新字段")
+		response.BadRequest(c, "no fields to update")
 		return
 	}
-
 	if err := h.db.Model(&models.MeetingParticipant{}).
 		Where("id = ?", targetParticipant.ID).
 		Updates(updates).Error; err != nil {
-		response.ServerError(c, "更新成员状态失败")
+		response.ServerError(c, "failed to update member status")
 		return
 	}
-
 	if req.MutedAudio != nil {
 		targetParticipant.MutedAudio = *req.MutedAudio
 	}
 	if req.MutedVideo != nil {
 		targetParticipant.MutedVideo = *req.MutedVideo
 	}
-
 	now := time.Now()
 	eventData := gin.H{
 		"meeting_id":     meeting.UUID,
@@ -1476,12 +1567,11 @@ func (h *MeetingHandler) MuteMember(c *gin.Context) {
 		"updated_at":     now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_member_muted",
 			"data": eventData,
 		})
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id":     meeting.UUID,
 		"target_user_id": targetUser.UUID,
@@ -1506,16 +1596,16 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 
 	operator, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
@@ -1525,13 +1615,13 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 		return
 	}
 	if operatorParticipant.Role != models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "仅主持人可操作")
+		response.Forbidden(c, "only host can operate")
 		return
 	}
 
 	targetUser, err := h.getUserByUUID(req.TargetUserID)
 	if err != nil {
-		response.NotFound(c, "目标成员不存在")
+		response.NotFound(c, "target member not found")
 		return
 	}
 	if targetUser.ID == operator.ID {
@@ -1540,14 +1630,13 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 	}
 	targetParticipant, err := h.getMeetingParticipant(meeting.ID, targetUser.ID)
 	if err != nil {
-		response.NotFound(c, "目标成员不在会议中")
+		response.NotFound(c, "target member not in meeting")
 		return
 	}
 	if targetParticipant.Role == models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "不能移出主持人")
+		response.Forbidden(c, "cannot kick host")
 		return
 	}
-
 	now := time.Now()
 	if targetParticipant.Status != models.MeetingParticipantStatusKicked {
 		if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -1559,7 +1648,6 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 				}).Error; err != nil {
 				return err
 			}
-
 			if err := tx.Model(&models.MeetingInvite{}).
 				Where("meeting_id = ? AND invitee_id = ? AND status = ?",
 					meeting.ID, targetUser.ID, models.MeetingInviteStatusPending).
@@ -1575,7 +1663,6 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 			return
 		}
 	}
-
 	memberLeftData := gin.H{
 		"meeting_id":  meeting.UUID,
 		"user_id":     targetUser.UUID,
@@ -1585,12 +1672,12 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 		"operator_id": operator.UUID,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_member_left",
 			"data": memberLeftData,
 		})
 	}
-	h.wsHub.SendToUserCluster(targetUser.UUID, map[string]interface{}{
+	h.wsHub.SendToUser(targetUser.UUID, map[string]interface{}{
 		"type": "meeting_member_kicked",
 		"data": gin.H{
 			"meeting_id":  meeting.UUID,
@@ -1598,7 +1685,6 @@ func (h *MeetingHandler) KickMember(c *gin.Context) {
 			"kicked_at":   now,
 		},
 	})
-
 	response.Success(c, gin.H{
 		"meeting_id":     meeting.UUID,
 		"target_user_id": targetUser.UUID,
@@ -1622,44 +1708,43 @@ func (h *MeetingHandler) TransferHost(c *gin.Context) {
 
 	currentHost, err := h.getUserByUUID(userUUID)
 	if err != nil {
-		response.NotFound(c, "用户不存在")
+		response.NotFound(c, "user not found")
 		return
 	}
 	meeting, err := h.getMeetingByUUID(req.MeetingID)
 	if err != nil {
-		response.NotFound(c, "会议不存在")
+		response.NotFound(c, "meeting not found")
 		return
 	}
 	if meeting.Status != models.MeetingStatusActive {
-		response.BadRequest(c, "会议已结束")
+		response.BadRequest(c, "meeting ended")
 		return
 	}
 
 	hostParticipant, err := h.getMeetingParticipant(meeting.ID, currentHost.ID)
 	if err != nil || hostParticipant.Role != models.MeetingParticipantRoleHost {
-		response.Forbidden(c, "仅主持人可操作")
+		response.Forbidden(c, "only host can operate")
 		return
 	}
 
 	targetUser, err := h.getUserByUUID(req.TargetUserID)
 	if err != nil {
-		response.NotFound(c, "目标成员不存在")
+		response.NotFound(c, "target member not found")
 		return
 	}
 	targetParticipant, err := h.getMeetingParticipant(meeting.ID, targetUser.ID)
 	if err != nil {
-		response.NotFound(c, "目标成员不在会议中")
+		response.NotFound(c, "target member not in meeting")
 		return
 	}
 	if targetUser.ID == currentHost.ID {
-		response.BadRequest(c, "已是主持人")
+		response.BadRequest(c, "already host")
 		return
 	}
 	if targetParticipant.Status != models.MeetingParticipantStatusJoined {
-		response.BadRequest(c, "仅可转移给已加入会议的成员")
+		response.BadRequest(c, "only joined member can be host")
 		return
 	}
-
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.MeetingParticipant{}).
 			Where("meeting_id = ? AND user_id = ?", meeting.ID, currentHost.ID).
@@ -1682,10 +1767,9 @@ func (h *MeetingHandler) TransferHost(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
-		response.ServerError(c, "转移主持人失败")
+		response.ServerError(c, "transfer host failed")
 		return
 	}
-
 	now := time.Now()
 	eventData := gin.H{
 		"meeting_id":       meeting.UUID,
@@ -1696,12 +1780,11 @@ func (h *MeetingHandler) TransferHost(c *gin.Context) {
 		"updated_at":       now,
 	}
 	for _, uid := range h.getParticipantUUIDs(meeting.ID, 0) {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_host_changed",
 			"data": eventData,
 		})
 	}
-
 	response.Success(c, gin.H{
 		"meeting_id":       meeting.UUID,
 		"host_user_id":     targetUser.UUID,
@@ -1752,7 +1835,7 @@ func (h *MeetingHandler) hasHostInviteTx(tx *gorm.DB, meetingID, userID uint64) 
 	var count int64
 	if err := tx.Model(&models.MeetingInvite{}).
 		Where(
-			"meeting_id = ? AND invitee_id = ? AND status = ? AND (invite_type = ? OR invite_type = '' OR invite_type IS NULL)",
+			"meeting_id = ? AND invitee_id = ? AND status = ? AND(invite_type = ? OR invite_type = '' OR invite_type IS NULL)",
 			meetingID,
 			userID,
 			models.MeetingInviteStatusPending,
@@ -1774,6 +1857,7 @@ func (h *MeetingHandler) upsertJoinRequestTx(tx *gorm.DB, meeting *models.Meetin
 		models.MeetingInviteStatusPending,
 	).Order("id DESC").First(&pending).Error
 	if err == nil {
+
 		return tx.Model(&models.MeetingInvite{}).
 			Where("id = ?", pending.ID).
 			Update("updated_at", now).Error
@@ -1797,7 +1881,6 @@ func (h *MeetingHandler) notifyHostJoinRequest(meeting *models.Meeting, host, re
 	if host.ID == requester.ID {
 		return
 	}
-
 	chatUUID := ""
 	if meeting.ChatID > 0 {
 		var chat models.Chat
@@ -1805,8 +1888,7 @@ func (h *MeetingHandler) notifyHostJoinRequest(meeting *models.Meeting, host, re
 			chatUUID = chat.UUID
 		}
 	}
-
-	h.wsHub.SendToUserCluster(host.UUID, map[string]interface{}{
+	h.wsHub.SendToUser(host.UUID, map[string]interface{}{
 		"type": "meeting_join_request",
 		"data": gin.H{
 			"meeting_id":      meeting.UUID,
@@ -1818,9 +1900,8 @@ func (h *MeetingHandler) notifyHostJoinRequest(meeting *models.Meeting, host, re
 			"requested_at":    requestedAt,
 		},
 	})
-
 	if h.pushService != nil {
-		go h.pushService.PushToUser(host.ID, requester.Nickname, "有人申请加入群会议", map[string]interface{}{
+		go h.pushService.PushToUser(host.ID, requester.Nickname, "Someone requested to join group meeting", map[string]interface{}{
 			"type":            "meeting_join_request",
 			"meeting_id":      meeting.UUID,
 			"request_user_id": requester.UUID,
@@ -1832,7 +1913,6 @@ func (h *MeetingHandler) resolveInvitees(inviteeUUIDs []string, selfUserID uint6
 	if len(inviteeUUIDs) == 0 {
 		return nil
 	}
-
 	normalized := make([]string, 0, len(inviteeUUIDs))
 	seen := make(map[string]struct{}, len(inviteeUUIDs))
 	for _, item := range inviteeUUIDs {
@@ -1855,7 +1935,6 @@ func (h *MeetingHandler) resolveInvitees(inviteeUUIDs []string, selfUserID uint6
 	if len(users) == 0 {
 		return nil
 	}
-
 	allowedByChat := map[uint64]struct{}{}
 	if chat != nil {
 		var members []struct {
@@ -1873,7 +1952,6 @@ func (h *MeetingHandler) resolveInvitees(inviteeUUIDs []string, selfUserID uint6
 			allowedByChat[m.UserID] = struct{}{}
 		}
 	}
-
 	result := make([]models.User, 0, len(users))
 	for _, u := range users {
 		if u.ID == selfUserID {
@@ -1920,7 +1998,6 @@ func (h *MeetingHandler) getParticipantUUIDs(meetingID uint64, excludeUserID uin
 		query = query.Where("mp.user_id != ?", excludeUserID)
 	}
 	query.Find(&rows)
-
 	result := make([]string, 0, len(rows))
 	for _, item := range rows {
 		if item.UserUUID != "" {
@@ -1943,7 +2020,6 @@ func (h *MeetingHandler) getChatMemberUUIDs(chatID uint64, excludeUserID uint64)
 		query = query.Where("cm.user_id != ?", excludeUserID)
 	}
 	query.Find(&rows)
-
 	result := make([]string, 0, len(rows))
 	for _, item := range rows {
 		if item.UserUUID != "" {
@@ -1968,7 +2044,6 @@ func (h *MeetingHandler) sendMeetingSystemMessage(
 	if err != nil {
 		return
 	}
-
 	params := &services.SendMessageParams{
 		ChatID:   chat.UUID,
 		SenderID: "system",
@@ -1977,20 +2052,17 @@ func (h *MeetingHandler) sendMeetingSystemMessage(
 			"text": string(body),
 		},
 	}
-
 	if len(targetUserIDs) == 0 {
 		targetUserIDs = h.getChatMemberUUIDs(chat.ID, 0)
 	}
 
-	msg, err := h.msgService.SendMessage(ctx, params, "系统消息", "", "", "", "", targetUserIDs)
+	msg, err := h.msgService.SendMessage(ctx, params, "系统消息", "", "", "", targetUserIDs)
 	if err != nil {
 		return
 	}
-
 	if previewText == "" {
 		return
 	}
-
 	userIDs := make([]uint64, 0, len(targetUserIDs))
 	if len(targetUserIDs) > 0 {
 		h.db.Model(&models.User{}).Where("uuid IN ?", targetUserIDs).Pluck("id", &userIDs)
@@ -2000,26 +2072,25 @@ func (h *MeetingHandler) sendMeetingSystemMessage(
 	if len(userIDs) == 0 {
 		return
 	}
-
-	truncated := textutil.TruncateRunes(previewText, 100)
-
+	normalizedPreview := normalizeStoredChatPreviewText(previewText, models.MsgTypeSystem)
 	h.db.Model(&models.UserChat{}).
 		Where("chat_id = ? AND user_id IN ?", chat.ID, userIDs).
 		Updates(map[string]interface{}{
-			"last_msg_text":   truncated,
-			"last_msg_type":   models.MsgTypeSystem,
-			"last_msg_time":   msg.CreatedAt,
-			"last_msg_seq":    msg.Seq,
-			"last_msg_sender": "",
-			"sort_time":       msg.CreatedAt,
+			"last_msg_text":      normalizedPreview,
+			"last_msg_type":      models.MsgTypeSystem,
+			"last_msg_time":      msg.CreatedAt,
+			"last_msg_seq":       msg.Seq,
+			"last_msg_sender":    "",
+			"last_msg_media_url": "",
+			"sort_time":          msg.CreatedAt,
 		})
 }
 
 func (h *MeetingHandler) endMeetingTx(tx *gorm.DB, meeting *models.Meeting, reason string, endAt time.Time) error {
 	if meeting.Status == models.MeetingStatusEnded {
+
 		return nil
 	}
-
 	duration := int(endAt.Sub(meeting.StartTime).Seconds())
 	if duration < 0 {
 		duration = 0
@@ -2034,7 +2105,6 @@ func (h *MeetingHandler) endMeetingTx(tx *gorm.DB, meeting *models.Meeting, reas
 		}).Error; err != nil {
 		return err
 	}
-
 	if err := tx.Model(&models.MeetingParticipant{}).
 		Where("meeting_id = ? AND status = ?", meeting.ID, models.MeetingParticipantStatusJoined).
 		Updates(map[string]interface{}{
@@ -2043,7 +2113,6 @@ func (h *MeetingHandler) endMeetingTx(tx *gorm.DB, meeting *models.Meeting, reas
 		}).Error; err != nil {
 		return err
 	}
-
 	meeting.Status = models.MeetingStatusEnded
 	meeting.EndTime = &endAt
 	meeting.Duration = duration
@@ -2071,9 +2140,8 @@ func (h *MeetingHandler) notifyMeetingEnded(meeting *models.Meeting, reason stri
 			targets[uid] = struct{}{}
 		}
 	}
-
 	for uid := range targets {
-		h.wsHub.SendToUserCluster(uid, map[string]interface{}{
+		h.wsHub.SendToUser(uid, map[string]interface{}{
 			"type": "meeting_ended",
 			"data": gin.H{
 				"meeting_id":   meeting.UUID,
@@ -2086,17 +2154,16 @@ func (h *MeetingHandler) notifyMeetingEnded(meeting *models.Meeting, reason stri
 			},
 		})
 	}
-
 	if meeting.ChatID > 0 && h.msgService != nil {
 		var chat models.Chat
 		if err := h.db.First(&chat, meeting.ChatID).Error; err == nil {
-			label := "视频群会议"
+			label := "video group meeting"
 			if meeting.MeetingType == models.MeetingTypeVoice {
-				label = "语音群会议"
+				label = "voice group meeting"
 			}
-			preview := label + "已结束"
+			preview := label + " ended"
 			if strings.TrimSpace(reason) != "" {
-				preview = preview + "：" + reason
+				preview = preview + ": " + reason
 			}
 			h.sendMeetingSystemMessage(
 				context.Background(),

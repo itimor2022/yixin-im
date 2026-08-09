@@ -1,22 +1,23 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
-
-	"gaoranim/internal/authsession"
-	"gaoranim/internal/cache"
-	"gaoranim/internal/models"
-	"gaoranim/pkg/jwt"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"net/http"
+	"strings"
+	"time"
+	"genericim/internal/authsession"
+	"genericim/internal/cache"
+	"genericim/internal/models"
+	"genericim/pkg/jwt"
+	"genericim/pkg/response"
 )
 
 const (
@@ -30,12 +31,14 @@ const (
 )
 
 type QRLoginHandler struct {
-	db    *gorm.DB
-	cache *cache.Cache
+	db        *gorm.DB
+	cache     *cache.Cache
+	loginHub  loginSecurityHub
+	loginPush loginSecurityPusher
 }
 
-func NewQRLoginHandler(db *gorm.DB, cache *cache.Cache) *QRLoginHandler {
-	return &QRLoginHandler{db: db, cache: cache}
+func NewQRLoginHandler(db *gorm.DB, cache *cache.Cache, loginHub loginSecurityHub, loginPush loginSecurityPusher) *QRLoginHandler {
+	return &QRLoginHandler{db: db, cache: cache, loginHub: loginHub, loginPush: loginPush}
 }
 
 type qrLoginCreateRequest struct {
@@ -58,24 +61,22 @@ type qrLoginSession struct {
 	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
 }
 
-// Create 创建桌面端二维码登录票据
+// Create 创建
+
 func (h *QRLoginHandler) Create(c *gin.Context) {
 	var req qrLoginCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-
 	deviceType := strings.TrimSpace(req.DeviceType)
 	if deviceType == "" {
 		deviceType = "desktop"
 	}
-
 	deviceName := strings.TrimSpace(req.DeviceName)
 	if deviceName == "" {
 		deviceName = "Desktop"
 	}
-
 	ticket := uuid.New().String()
 	secret := uuid.New().String()
 	session := qrLoginSession{
@@ -88,22 +89,21 @@ func (h *QRLoginHandler) Create(c *gin.Context) {
 		DeviceIP:   c.ClientIP(),
 		CreatedAt:  time.Now(),
 	}
-
 	if err := h.cache.Set(c.Request.Context(), h.cacheKey(ticket), session, qrLoginPendingTTL); err != nil {
 		response.ServerError(c, "创建二维码登录失败")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"ticket":     ticket,
 		"secret":     secret,
-		"qr_text":    fmt.Sprintf("onechat://login/%s", ticket),
+		"qr_text":    fmt.Sprintf("genericim://login/%s", ticket),
 		"status":     qrLoginStatusPending,
 		"expires_in": int(qrLoginPendingTTL.Seconds()),
 	})
 }
 
-// GetStatus 获取二维码登录状态
+// GetStatus
+
 func (h *QRLoginHandler) GetStatus(c *gin.Context) {
 	ticket := strings.TrimSpace(c.Param("ticket"))
 	secret := strings.TrimSpace(c.Query("secret"))
@@ -121,7 +121,6 @@ func (h *QRLoginHandler) GetStatus(c *gin.Context) {
 		response.Success(c, gin.H{"status": qrLoginStatusExpired})
 		return
 	}
-
 	data := gin.H{
 		"status":       session.Status,
 		"device_id":    session.DeviceID,
@@ -131,15 +130,14 @@ func (h *QRLoginHandler) GetStatus(c *gin.Context) {
 		"created_at":   session.CreatedAt,
 		"confirmed_at": session.ConfirmedAt,
 	}
-
 	if secret != "" && secret == session.Secret && session.Status == qrLoginStatusConfirmed && session.Token != "" {
 		data["token"] = session.Token
 	}
-
 	response.Success(c, data)
 }
 
-// Confirm 手机端确认登录桌面设备
+// Confirm
+
 func (h *QRLoginHandler) Confirm(c *gin.Context) {
 	ticket := strings.TrimSpace(c.Param("ticket"))
 	userUUID := c.GetString("user_id")
@@ -167,15 +165,24 @@ func (h *QRLoginHandler) Confirm(c *gin.Context) {
 		response.NotFound(c, "用户不存在")
 		return
 	}
-
+	var privacy models.UserPrivacySetting
+	if err := h.db.Where("user_id = ?", user.ID).First(&privacy).Error; err == nil &&
+		privacy.TwoStepEnabled {
+		//
+		response.Error(c, twoStepClientUpgradeCode, "账号已开启两步验证，请升级桌面端后完成验证")
+		return
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		response.ServerError(c, "登录安全设置读取失败")
+		return
+	}
 	sessionVersion := authsession.EnsureLoginSession(c.Request.Context(), h.cache, user.UUID)
+	authsession.ActivateDeviceSession(c.Request.Context(), h.cache, user.UUID, session.DeviceID)
 
 	token, err := jwt.GenerateToken(user.UUID, session.DeviceID, sessionVersion)
 	if err != nil {
 		response.ServerError(c, "确认登录失败")
 		return
 	}
-
 	now := time.Now()
 	session.Status = qrLoginStatusConfirmed
 	session.UserUUID = user.UUID
@@ -186,12 +193,10 @@ func (h *QRLoginHandler) Confirm(c *gin.Context) {
 		response.ServerError(c, "确认登录失败")
 		return
 	}
-
-	if err := recordUserLogin(h.db, user.ID, token, session.DeviceID, session.DeviceType, session.DeviceName, session.DeviceIP, now); err != nil {
+	if err := recordUserLoginWithSecurityNotice(h.db, user, token, session.DeviceID, session.DeviceType, session.DeviceName, session.DeviceIP, now, h.loginHub, h.loginPush); err != nil {
 		response.ServerError(c, "确认登录失败")
 		return
 	}
-
 	response.SuccessWithMessage(c, "登录确认成功", gin.H{
 		"status": qrLoginStatusConfirmed,
 	})
@@ -234,7 +239,6 @@ func (h *QRLoginHandler) recordDeviceLogin(userID uint64, deviceID, deviceType, 
 	if result.Error != nil {
 		return result.Error
 	}
-
 	return h.db.Model(&device).Updates(map[string]interface{}{
 		"device_type": deviceType,
 		"device_name": deviceName,

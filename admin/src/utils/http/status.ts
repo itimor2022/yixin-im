@@ -1,6 +1,6 @@
 /**
  * 接口状态码
- * 适配 壹信后端
+ * 适配 通用IM后端
  */
 export enum ApiStatus {
   success = 0, // 成功 (后端使用 0 表示成功)

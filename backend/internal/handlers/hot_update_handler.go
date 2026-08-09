@@ -1,6 +1,12 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"hash/fnv"
 	"net/http"
 	"net/url"
@@ -8,14 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"gaoranim/internal/middleware"
-	"gaoranim/internal/models"
-	"gaoranim/pkg/response"
-
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"genericim/internal/middleware"
+	"genericim/internal/models"
+	"genericim/pkg/response"
 )
 
 type HotUpdateHandler struct {
@@ -27,46 +28,38 @@ func NewHotUpdateHandler(db *gorm.DB) *HotUpdateHandler {
 }
 
 type hotUpdatePatchUpsertRequest struct {
-	Name string `json:"name"`
-
-	Description  string `json:"description"`
-	Platform     string `json:"platform"`
-	Channel      string `json:"channel"`
-	DeliveryMode string `json:"delivery_mode"`
-
-	MinAppVersion  string `json:"min_app_version"`
-	MaxAppVersion  string `json:"max_app_version"`
-	MinBuildNumber *int   `json:"min_build_number"`
-	MaxBuildNumber *int   `json:"max_build_number"`
-
-	TargetAppVersion string `json:"target_app_version"`
-	PatchVersion     string `json:"patch_version"`
-	PatchURL         string `json:"patch_url"`
-	PatchHash        string `json:"patch_hash"`
-	ReleaseNotes     string `json:"release_notes"`
-
-	RolloutPercentage *int  `json:"rollout_percentage"`
-	IsMandatory       *bool `json:"is_mandatory"`
-	Priority          *int  `json:"priority"`
-
-	StartAt *time.Time `json:"start_at"`
-	EndAt   *time.Time `json:"end_at"`
+	Name              string     `json:"name"`
+	Description       string     `json:"description"`
+	Platform          string     `json:"platform"`
+	Channel           string     `json:"channel"`
+	DeliveryMode      string     `json:"delivery_mode"`
+	MinAppVersion     string     `json:"min_app_version"`
+	MaxAppVersion     string     `json:"max_app_version"`
+	MinBuildNumber    *int       `json:"min_build_number"`
+	MaxBuildNumber    *int       `json:"max_build_number"`
+	TargetAppVersion  string     `json:"target_app_version"`
+	PatchVersion      string     `json:"patch_version"`
+	PatchURL          string     `json:"patch_url"`
+	PatchHash         string     `json:"patch_hash"`
+	ReleaseNotes      string     `json:"release_notes"`
+	RolloutPercentage *int       `json:"rollout_percentage"`
+	IsMandatory       *bool      `json:"is_mandatory"`
+	Priority          *int       `json:"priority"`
+	StartAt           *time.Time `json:"start_at"`
+	EndAt             *time.Time `json:"end_at"`
 }
 
 type hotUpdatePatchReportCreateRequest struct {
-	PatchID    uint64 `json:"patch_id"`
-	PatchRefID string `json:"patch_ref_id"`
-
-	Platform string `json:"platform"`
-	Channel  string `json:"channel"`
-
+	PatchID     uint64 `json:"patch_id"`
+	PatchRefID  string `json:"patch_ref_id"`
+	Platform    string `json:"platform"`
+	Channel     string `json:"channel"`
 	AppVersion  string `json:"app_version"`
 	BuildNumber int    `json:"build_number"`
 	DeviceID    string `json:"device_id"`
 	UserUUID    string `json:"user_uuid"`
-
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Status      string `json:"status"`
+	Message     string `json:"message"`
 }
 
 func (h *HotUpdateHandler) ListPatches(c *gin.Context) {
@@ -81,13 +74,11 @@ func (h *HotUpdateHandler) ListPatches(c *gin.Context) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
-
 	status := strings.TrimSpace(c.Query("status"))
 	platform := strings.TrimSpace(c.Query("platform"))
 	channel := strings.TrimSpace(c.Query("channel"))
 	deliveryMode := strings.TrimSpace(c.Query("delivery_mode"))
 	keyword := strings.TrimSpace(c.Query("keyword"))
-
 	query := h.db.Model(&models.HotUpdatePatch{})
 	if status != "" {
 		normalizedStatus := normalizeHotUpdatePatchStatus(status)
@@ -128,6 +119,7 @@ func (h *HotUpdateHandler) ListPatches(c *gin.Context) {
 	}
 
 	var list []models.HotUpdatePatch
+
 	if err := query.
 		Order("priority DESC, id DESC").
 		Offset((page - 1) * pageSize).
@@ -139,7 +131,6 @@ func (h *HotUpdateHandler) ListPatches(c *gin.Context) {
 	for i := range list {
 		normalizeHotUpdatePatchRecord(&list[i])
 	}
-
 	response.Success(c, gin.H{
 		"list":      list,
 		"total":     total,
@@ -163,14 +154,12 @@ func (h *HotUpdateHandler) CreatePatch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid parameters")
 		return
 	}
-
 	adminID := middleware.GetAdminID(c)
 	values, err := buildPatchFromRequest(req, nil, adminID, true)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	patch := models.HotUpdatePatch{
 		PatchID:           readString(values, "patch_id"),
 		Name:              readString(values, "name"),
@@ -196,12 +185,10 @@ func (h *HotUpdateHandler) CreatePatch(c *gin.Context) {
 		CreatedBy:         uint64(readInt(values, "created_by")),
 		UpdatedBy:         uint64(readInt(values, "updated_by")),
 	}
-
 	if err := h.db.Create(&patch).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to create patch")
 		return
 	}
-
 	response.SuccessWithMessage(c, "created", patch)
 }
 func (h *HotUpdateHandler) UpdatePatch(c *gin.Context) {
@@ -217,19 +204,16 @@ func (h *HotUpdateHandler) UpdatePatch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid parameters")
 		return
 	}
-
 	adminID := middleware.GetAdminID(c)
 	updated, err := buildPatchFromRequest(req, &patch, adminID, false)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	if err := h.db.Model(&patch).Updates(updated).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update patch")
 		return
 	}
-
 	if err := h.db.Where("id = ?", patch.ID).First(&patch).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to reload patch")
 		return
@@ -269,7 +253,6 @@ func (h *HotUpdateHandler) updatePatchStatus(c *gin.Context, targetStatus string
 		response.Error(c, http.StatusNotFound, "patch not found")
 		return
 	}
-
 	now := time.Now()
 	adminID := middleware.GetAdminID(c)
 	updates := map[string]interface{}{
@@ -279,6 +262,7 @@ func (h *HotUpdateHandler) updatePatchStatus(c *gin.Context, targetStatus string
 
 	switch targetStatus {
 	case models.HotUpdatePatchStatusPublished:
+
 		if strings.TrimSpace(patch.PatchVersion) == "" {
 			response.Error(c, http.StatusBadRequest, "patch_version is required before publish")
 			return
@@ -288,10 +272,11 @@ func (h *HotUpdateHandler) updatePatchStatus(c *gin.Context, targetStatus string
 			response.Error(c, http.StatusBadRequest, "self_hosted does not support platform=all; create Android and iOS patches separately")
 			return
 		}
-		if normalizeHotUpdateDeliveryMode(patch.DeliveryMode) == models.HotUpdatePatchDeliveryModeSelfHosted &&
-			strings.TrimSpace(patch.PatchURL) == "" {
-			response.Error(c, http.StatusBadRequest, "patch_url is required before publish for self_hosted")
-			return
+		if normalizeHotUpdateDeliveryMode(patch.DeliveryMode) == models.HotUpdatePatchDeliveryModeSelfHosted {
+			if err := validateSelfHostedHotUpdatePatch(patch.Platform, patch.PatchURL, patch.PatchHash); err != nil {
+				response.Error(c, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		if patch.RolloutPercentage <= 0 {
 			response.Error(c, http.StatusBadRequest, "rollout_percentage must be between 1 and 100 before publish")
@@ -305,7 +290,6 @@ func (h *HotUpdateHandler) updatePatchStatus(c *gin.Context, targetStatus string
 	case models.HotUpdatePatchStatusRolledBack:
 		updates["rollback_at"] = now
 	}
-
 	if err := h.db.Model(&patch).Updates(updates).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update patch status")
 		return
@@ -317,19 +301,17 @@ func (h *HotUpdateHandler) CheckPatch(c *gin.Context) {
 	channel := normalizeHotUpdateChannel(c.DefaultQuery("channel", "stable"))
 	appVersion := strings.TrimSpace(c.Query("app_version"))
 	buildNumber, _ := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("build_number", "0")))
-
 	deviceID := strings.TrimSpace(c.Query("device_id"))
 	userUUID := strings.TrimSpace(c.Query("user_uuid"))
 	clientIP := strings.TrimSpace(c.ClientIP())
 	supportsShorebird := parseHotUpdateBoolFlag(c.Query("supports_shorebird"))
-
 	if platform == "" {
 		response.Error(c, http.StatusBadRequest, "platform is required")
 		return
 	}
-
 	now := time.Now()
 	var candidates []models.HotUpdatePatch
+
 	if err := h.db.
 		Where("status = ?", models.HotUpdatePatchStatusPublished).
 		Where("channel = ?", channel).
@@ -345,11 +327,14 @@ func (h *HotUpdateHandler) CheckPatch(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "failed to check patch")
 		return
 	}
-
 	for _, patch := range candidates {
-		if normalizeHotUpdateDeliveryMode(patch.DeliveryMode) == models.HotUpdatePatchDeliveryModeSelfHosted &&
-			patch.Platform == models.HotUpdatePatchPlatformAll {
-			continue
+		if normalizeHotUpdateDeliveryMode(patch.DeliveryMode) == models.HotUpdatePatchDeliveryModeSelfHosted {
+			if patch.Platform == models.HotUpdatePatchPlatformAll {
+				continue
+			}
+			if err := validateSelfHostedHotUpdatePatch(patch.Platform, patch.PatchURL, patch.PatchHash); err != nil {
+				continue
+			}
 		}
 		if _, completed := completedPatchIDs[patch.ID]; completed {
 			continue
@@ -362,11 +347,11 @@ func (h *HotUpdateHandler) CheckPatch(c *gin.Context) {
 			continue
 		}
 		seed := buildRolloutSeed(patch.PatchID, userUUID, deviceID, clientIP)
+
 		inRollout, _ := isInRollout(seed, patch.RolloutPercentage)
 		if !inRollout {
 			continue
 		}
-
 		response.Success(c, gin.H{
 			"has_patch": true,
 			"patch": gin.H{
@@ -388,7 +373,6 @@ func (h *HotUpdateHandler) CheckPatch(c *gin.Context) {
 		})
 		return
 	}
-
 	response.Success(c, gin.H{
 		"has_patch": false,
 	})
@@ -399,13 +383,11 @@ func (h *HotUpdateHandler) ReportPatchResult(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid parameters")
 		return
 	}
-
 	status := normalizeHotUpdateReportStatus(req.Status)
 	if status == "" {
 		response.Error(c, http.StatusBadRequest, "invalid report status")
 		return
 	}
-
 	if req.PatchID == 0 && strings.TrimSpace(req.PatchRefID) == "" {
 		response.Error(c, http.StatusBadRequest, "patch_id or patch_ref_id is required")
 		return
@@ -430,7 +412,6 @@ func (h *HotUpdateHandler) ReportPatchResult(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "patch not found")
 		return
 	}
-
 	platform := normalizeHotUpdatePlatform(req.Platform)
 	if platform == "" || platform == models.HotUpdatePatchPlatformAll {
 		if patch.Platform != models.HotUpdatePatchPlatformAll {
@@ -440,12 +421,10 @@ func (h *HotUpdateHandler) ReportPatchResult(c *gin.Context) {
 	if platform == "" || platform == models.HotUpdatePatchPlatformAll {
 		platform = models.HotUpdatePatchPlatformAndroid
 	}
-
 	channel := normalizeHotUpdateChannel(req.Channel)
 	if strings.TrimSpace(req.Channel) == "" && strings.TrimSpace(patch.Channel) != "" {
 		channel = normalizeHotUpdateChannel(patch.Channel)
 	}
-
 	userUUID := strings.TrimSpace(c.GetString("user_id"))
 	if userUUID == "" {
 		userUUID = truncateText(strings.TrimSpace(req.UserUUID), 36)
@@ -454,7 +433,6 @@ func (h *HotUpdateHandler) ReportPatchResult(c *gin.Context) {
 	if deviceID == "" {
 		deviceID = truncateText(strings.TrimSpace(req.DeviceID), 128)
 	}
-
 	report := models.HotUpdatePatchReport{
 		PatchID:      patch.ID,
 		PatchRefID:   patch.PatchID,
@@ -470,12 +448,10 @@ func (h *HotUpdateHandler) ReportPatchResult(c *gin.Context) {
 		Message:      truncateText(strings.TrimSpace(req.Message), 500),
 		ClientIP:     truncateText(strings.TrimSpace(c.ClientIP()), 64),
 	}
-
 	if err := h.db.Create(&report).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to save patch report")
 		return
 	}
-
 	response.Success(c, gin.H{
 		"id": report.ID,
 	})
@@ -492,7 +468,6 @@ func (h *HotUpdateHandler) ListPatchReports(c *gin.Context) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
-
 	statusText := strings.TrimSpace(c.Query("status"))
 	platformText := strings.TrimSpace(c.Query("platform"))
 	channel := strings.TrimSpace(c.Query("channel"))
@@ -501,9 +476,7 @@ func (h *HotUpdateHandler) ListPatchReports(c *gin.Context) {
 	userUUID := strings.TrimSpace(c.Query("user_uuid"))
 	deviceID := strings.TrimSpace(c.Query("device_id"))
 	keyword := strings.TrimSpace(c.Query("keyword"))
-
 	query := h.db.Model(&models.HotUpdatePatchReport{})
-
 	if statusText != "" {
 		status := normalizeHotUpdateReportStatus(statusText)
 		if status == "" {
@@ -512,7 +485,6 @@ func (h *HotUpdateHandler) ListPatchReports(c *gin.Context) {
 		}
 		query = query.Where("status = ?", status)
 	}
-
 	if platformText != "" {
 		platform := normalizeHotUpdatePlatform(platformText)
 		if platform == "" {
@@ -521,7 +493,6 @@ func (h *HotUpdateHandler) ListPatchReports(c *gin.Context) {
 		}
 		query = query.Where("platform = ?", platform)
 	}
-
 	if channel != "" {
 		query = query.Where("channel = ?", normalizeHotUpdateChannel(channel))
 	}
@@ -580,7 +551,6 @@ func (h *HotUpdateHandler) ListPatchReports(c *gin.Context) {
 	for i := range list {
 		normalizeHotUpdatePatchReportRecord(&list[i])
 	}
-
 	response.Success(c, gin.H{
 		"list":      list,
 		"total":     total,
@@ -596,7 +566,6 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if len([]rune(name)) > 120 {
 		return nil, errText("name must not exceed 120 characters")
 	}
-
 	platform := normalizeHotUpdatePlatform(req.Platform)
 	if platform == "" && isCreate {
 		platform = models.HotUpdatePatchPlatformAndroid
@@ -607,12 +576,10 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if platform == "" {
 		platform = models.HotUpdatePatchPlatformAndroid
 	}
-
 	channel := normalizeHotUpdateChannel(req.Channel)
 	if channel == "" {
 		channel = "stable"
 	}
-
 	rawDeliveryMode := strings.TrimSpace(req.DeliveryMode)
 	deliveryMode := ""
 	if rawDeliveryMode != "" {
@@ -627,7 +594,6 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if deliveryMode == "" {
 		deliveryMode = models.HotUpdatePatchDeliveryModeSelfHosted
 	}
-
 	minBuild := readOptionalInt(req.MinBuildNumber, 0)
 	maxBuild := readOptionalInt(req.MaxBuildNumber, 0)
 	if minBuild < 0 || maxBuild < 0 {
@@ -636,21 +602,17 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if minBuild > 0 && maxBuild > 0 && minBuild > maxBuild {
 		return nil, errText("min_build_number must not be greater than max_build_number")
 	}
-
 	rollout := readOptionalInt(req.RolloutPercentage, 100)
 	if rollout < 0 || rollout > 100 {
 		return nil, errText("rollout_percentage must be between 0 and 100")
 	}
-
 	priority := readOptionalInt(req.Priority, 0)
 	isMandatory := readOptionalBool(req.IsMandatory, false)
-
 	minVersion := strings.TrimSpace(req.MinAppVersion)
 	maxVersion := strings.TrimSpace(req.MaxAppVersion)
 	if minVersion != "" && maxVersion != "" && compareVersion(minVersion, maxVersion) > 0 {
 		return nil, errText("min_app_version must not be greater than max_app_version")
 	}
-
 	patchVersion := strings.TrimSpace(req.PatchVersion)
 	patchURL := strings.TrimSpace(req.PatchURL)
 	patchHash := strings.TrimSpace(req.PatchHash)
@@ -667,10 +629,7 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 		if platform == models.HotUpdatePatchPlatformAll {
 			return nil, errText("self_hosted does not support platform=all; create Android and iOS patches separately")
 		}
-		if patchURL == "" {
-			return nil, errText("patch_url is required for self_hosted")
-		}
-		if err := validateHotUpdatePatchURL(platform, patchURL); err != nil {
+		if err := validateSelfHostedHotUpdatePatch(platform, patchURL, patchHash); err != nil {
 			return nil, err
 		}
 	} else {
@@ -683,7 +642,6 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if req.StartAt != nil && req.EndAt != nil && req.StartAt.After(*req.EndAt) {
 		return nil, errText("start_at must not be later than end_at")
 	}
-
 	updates := map[string]interface{}{
 		"name":               name,
 		"description":        strings.TrimSpace(req.Description),
@@ -706,14 +664,12 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 		"end_at":             req.EndAt,
 		"updated_by":         adminID,
 	}
-
 	if isCreate {
 		patchID := uuid.NewString()
 		updates["patch_id"] = patchID
 		updates["status"] = models.HotUpdatePatchStatusDraft
 		updates["created_by"] = adminID
 	}
-
 	if isCreate {
 		return updates, nil
 	}
@@ -725,7 +681,6 @@ func buildPatchFromRequest(req hotUpdatePatchUpsertRequest, existing *models.Hot
 	if updates["patch_version"] == "" && existing != nil {
 		updates["patch_version"] = existing.PatchVersion
 	}
-
 	return updates, nil
 }
 func readOptionalInt(v *int, defaultValue int) int {
@@ -901,13 +856,11 @@ func (h *HotUpdateHandler) loadClientCompletedPatchIDs(candidates []models.HotUp
 	if len(candidates) == 0 {
 		return completed, nil
 	}
-
 	scopedDeviceID := strings.TrimSpace(deviceID)
 	scopedUserUUID := strings.TrimSpace(userUUID)
 	if scopedDeviceID == "" && scopedUserUUID == "" {
 		return completed, nil
 	}
-
 	patchIDs := make([]uint64, 0, len(candidates))
 	for _, patch := range candidates {
 		if patch.ID == 0 {
@@ -918,7 +871,6 @@ func (h *HotUpdateHandler) loadClientCompletedPatchIDs(candidates []models.HotUp
 	if len(patchIDs) == 0 {
 		return completed, nil
 	}
-
 	statuses := []string{
 		models.HotUpdatePatchReportStatusInstallConfirmed,
 		models.HotUpdatePatchReportStatusApplySuccess,
@@ -994,7 +946,6 @@ func isPatchEligibleForClient(patch models.HotUpdatePatch, appVersion string, bu
 	if patch.EndAt != nil && now.After(*patch.EndAt) {
 		return false
 	}
-
 	version := strings.TrimSpace(appVersion)
 	if patch.MinAppVersion != "" && compareVersion(version, patch.MinAppVersion) < 0 {
 		return false
@@ -1054,7 +1005,26 @@ func isInRollout(seed string, percentage int) (bool, int) {
 }
 
 var versionDigitPattern = regexp.MustCompile(`\d+`)
-var hotUpdateHashPattern = regexp.MustCompile(`^(?i:(sha256:[a-f0-9]{64}|sha1:[a-f0-9]{40}|md5:[a-f0-9]{32}|[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32}))$`)
+var hotUpdateHashPattern = regexp.MustCompile(`^(?i:(sha256:)?[a-f0-9]{64})$`)
+
+func validateSelfHostedHotUpdatePatch(platform, patchURL, patchHash string) error {
+	if platform != models.HotUpdatePatchPlatformAndroid && platform != models.HotUpdatePatchPlatformIOS {
+		return errText("self_hosted patch platform must be android or ios")
+	}
+	if strings.TrimSpace(patchURL) == "" {
+		return errText("patch_url is required for self_hosted")
+	}
+	if err := validateHotUpdatePatchURL(platform, patchURL); err != nil {
+		return err
+	}
+	if strings.TrimSpace(patchHash) == "" {
+		return errText("patch_hash is required for self_hosted")
+	}
+	if err := validateHotUpdatePatchHash(patchHash); err != nil {
+		return err
+	}
+	return nil
+}
 
 func validateHotUpdatePatchURL(platform, raw string) error {
 	value := strings.TrimSpace(raw)
@@ -1069,17 +1039,29 @@ func validateHotUpdatePatchURL(platform, raw string) error {
 	if err != nil || parsed == nil || parsed.Scheme == "" {
 		return errText("invalid patch_url format")
 	}
-
 	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
 	switch scheme {
-	case "http", "https":
+	case "https":
+		if strings.TrimSpace(parsed.Host) == "" {
+			return errText("patch_url must include a host")
+		}
+		if parsed.User != nil {
+			return errText("patch_url must not include credentials")
+		}
+		if platform == models.HotUpdatePatchPlatformAndroid &&
+			!strings.HasSuffix(strings.ToLower(parsed.Path), ".apk") {
+			return errText("android patch_url must be an https apk url")
+		}
 		if platform == models.HotUpdatePatchPlatformIOS &&
 			!strings.HasSuffix(strings.ToLower(parsed.Path), ".plist") {
-			return errText("ios patch_url must be a manifest.plist or itms-services link")
+			return errText("ios patch_url must be an https manifest.plist or itms-services link")
 		}
 	case "itms-services":
 		if platform == models.HotUpdatePatchPlatformAndroid {
 			return errText("android does not support itms-services patch_url")
+		}
+		if strings.ToLower(strings.TrimSpace(parsed.Query().Get("action"))) != "download-manifest" {
+			return errText("ios itms-services patch_url must use download-manifest")
 		}
 		embeddedURL := strings.TrimSpace(parsed.Query().Get("url"))
 		if embeddedURL == "" {
@@ -1094,16 +1076,18 @@ func validateHotUpdatePatchURL(platform, raw string) error {
 			return errText("ios patch_url must contain a valid manifest.plist url")
 		}
 		embeddedScheme := strings.ToLower(strings.TrimSpace(embeddedParsed.Scheme))
-		if embeddedScheme != "http" && embeddedScheme != "https" {
-			return errText("ios patch_url must point to an http/https manifest.plist url")
+		if embeddedScheme != "https" || strings.TrimSpace(embeddedParsed.Host) == "" {
+			return errText("ios patch_url must point to an https manifest.plist url")
+		}
+		if embeddedParsed.User != nil {
+			return errText("ios patch_url manifest url must not include credentials")
 		}
 		if !strings.HasSuffix(strings.ToLower(embeddedParsed.Path), ".plist") {
 			return errText("ios patch_url must point to a manifest.plist url")
 		}
 	default:
-		return errText("patch_url only supports http/https, and iOS also supports itms-services")
+		return errText("patch_url only supports https, and iOS also supports itms-services")
 	}
-
 	return nil
 }
 func validateHotUpdatePatchHash(raw string) error {
@@ -1112,7 +1096,7 @@ func validateHotUpdatePatchHash(raw string) error {
 		return nil
 	}
 	if !hotUpdateHashPattern.MatchString(value) {
-		return errText("invalid patch_hash format; only sha256/sha1/md5 are supported")
+		return errText("invalid patch_hash format; only sha256 is supported")
 	}
 	return nil
 }

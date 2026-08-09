@@ -1,12 +1,13 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
-	"strings"
-
-	"gaoranim/internal/models"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
+	"strings"
+	"genericim/internal/models"
+	"genericim/pkg/response"
 )
 
 // GetChatDeviceKeys returns all registered E2EE device public keys for a chat.
@@ -79,7 +80,6 @@ func (h *MessageHandler) GetChatDeviceKeys(c *gin.Context) {
 			"public_key":  device.E2EEPublicKey,
 		})
 	}
-
 	response.Success(c, gin.H{
 		"members": memberUUIDs,
 		"devices": result,

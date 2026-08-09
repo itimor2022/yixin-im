@@ -1,5 +1,6 @@
+// 文件用途：实现 LoginPage 页面及其交互流程，属于用户认证。
+// 核心逻辑：收集账号凭证并执行登录，处理验证码/设备校验、加载态和失败提示，成功后交给会话协调器完成跳转。
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -8,19 +9,41 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/system_settings_service.dart';
+import '../../../core/services/hot_update_sdk_adapter.dart';
+import '../../../core/router/redirect_utils.dart';
 import '../../../core/services/device_service.dart';
+import '../../../core/utils/link_utils.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../shared/widgets/desktop/auth_desktop_layout.dart';
 import 'agreement_page.dart';
 import 'forgot_password_page.dart';
 
 /// 登录页面
+String _loginText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：login page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -45,7 +68,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _qrLoginText;
   String? _qrLoginError;
   bool _showDesktopQrLogin = false;
+  String? _quickRegisterRequestId;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -59,14 +84,50 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.dispose();
   }
 
+  String _postLoginLocation() {
+    final redirect = GoRouterState.of(context).uri.queryParameters['redirect'];
+    return safeInAppRedirect(redirect) ?? '/home';
+  }
+
+  void _goAfterLogin() {
+    final location = _postLoginLocation();
+    debugPrint('[Login] Navigating to $location');
+    context.go(location);
+  }
+
+  void _goToRegister() {
+    final redirect = safeInAppRedirect(
+      GoRouterState.of(context).uri.queryParameters['redirect'],
+    );
+    context.go(
+      redirect == null
+          ? '/register'
+          : '/register?redirect=${Uri.encodeComponent(redirect)}',
+    );
+  }
+
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF0E0E0E) : Colors.white;
+    final bgColor = isDark ? AppColors.darkBackground : AppColors.lightSurface;
     final screenWidth = MediaQuery.of(context).size.width;
 
     // 桌面端或宽屏使用桌面布局
-    if (PlatformUtils.isDesktop || screenWidth >= 600) {
+    if (PlatformUtils.isPhysicalDesktop || screenWidth >= 600) {
       return AuthDesktopLayout(
         child: _buildLoginContent(isDark),
       );
@@ -86,12 +147,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   /// 登录内容（共享）
   Widget _buildLoginContent(bool isDark) {
-    final isDesktop =
-        PlatformUtils.isDesktop || MediaQuery.of(context).size.width >= 600;
+    final isDesktop = PlatformUtils.isPhysicalDesktop ||
+        MediaQuery.of(context).size.width >= 600;
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final appName =
         ref.watch(systemSettingsProvider).valueOrNull?.displayName ??
-            kDefaultAppDisplayName;
+            defaultAppDisplayName();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -104,19 +165,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           const SizedBox(height: 24),
         ],
 
-        if (!(PlatformUtils.isDesktop && _showDesktopQrLogin)) ...[
+        if (!(isDesktop && _showDesktopQrLogin)) ...[
           _buildTitle(isDark, l10n, appName),
           const SizedBox(height: 48),
         ],
 
         // 登录表单
-        if (PlatformUtils.isDesktop && _showDesktopQrLogin)
+        if (isDesktop && _showDesktopQrLogin)
           _buildDesktopQrLoginSection(isDark, l10n)
         else
           _buildLoginForm(isDark, l10n),
 
         SizedBox(
-          height: PlatformUtils.isDesktop && _showDesktopQrLogin ? 12 : 40,
+          height: isDesktop && _showDesktopQrLogin ? 12 : 40,
         ),
 
         // 底部
@@ -140,6 +201,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Widget _buildTitle(bool isDark, AppLocalizations l10n, String appName) {
+    final patchNumber =
+        ref.watch(shorebirdCurrentPatchNumberProvider).valueOrNull;
+
     return Column(
       children: [
         Text(
@@ -150,20 +214,34 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             color: isDark ? Colors.white : Colors.black,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          l10n.loginToAccount,
-          style: TextStyle(
-            fontSize: 15,
-            color: isDark ? Colors.white54 : Colors.black54,
+        if (patchNumber != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _loginText(
+              context,
+              zhCN: '热更新已生效 · Patch #$patchNumber',
+              zhTW: '熱更新已生效 · Patch #$patchNumber',
+              en: 'Hot update active · Patch #$patchNumber',
+            ),
+            style: TextStyle(
+              fontSize: 15,
+              color: AppColors.textSecondaryFor(context),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
 
   Widget _buildLoginForm(bool isDark, AppLocalizations l10n) {
-    final showDesktopQrSwitch = PlatformUtils.isDesktop;
+    final showDesktopQrSwitch = PlatformUtils.useDesktopLayout(context);
+    final allowQuickRegister =
+        ref.watch(systemSettingsProvider).valueOrNull?.allowQuickRegister ==
+            true;
+    final authError = ref.watch(
+      authServiceProvider.select((state) => state.error),
+    );
+    final displayError = _errorMessage ?? authError;
 
     return Column(
       children: [
@@ -183,7 +261,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           Align(
             alignment: Alignment.centerRight,
             child: Tooltip(
-              message: '扫码登录',
+              message: _loginText(
+                context,
+                zhCN: '扫码登录',
+                zhTW: '掃碼登入',
+                en: 'Scan to sign in',
+              ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: _openDesktopQrLogin,
@@ -191,12 +274,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: AppColors.emphasisSoftFor(context),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.qr_code_2_rounded,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                     size: 22,
                   ),
                 ),
@@ -209,11 +292,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          child: _errorMessage != null
+          child: displayError != null
               ? Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: Text(
-                    _errorMessage!,
+                    displayError,
                     style: TextStyle(
                       color: AppColors.error,
                       fontSize: 14,
@@ -232,46 +315,150 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           onPressed: () => _login(l10n),
           text: l10n.login,
         ),
+
+        if (allowQuickRegister) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: Divider(color: AppColors.dividerFor(context))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  _loginText(
+                    context,
+                    zhCN: '或者',
+                    zhTW: '或者',
+                    en: 'OR',
+                  ),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiaryFor(context),
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: AppColors.dividerFor(context))),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: OutlinedButton.icon(
+              key: const Key('quick_register_button'),
+              onPressed: _isLoading ? null : _quickRegister,
+              icon: const Icon(Icons.flash_on_rounded, size: 20),
+              label: Text(
+                _loginText(
+                  context,
+                  zhCN: '一键注册登录',
+                  zhTW: '一鍵註冊登入',
+                  en: 'One-Tap Registration',
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primaryFor(context),
+                side: BorderSide(color: AppColors.primaryFor(context)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _loginText(
+              context,
+              zhCN: '无需填写资料，直接创建正式账号',
+              zhTW: '無需填寫資料，直接建立正式帳號',
+              en: 'Create a full account without filling out a form',
+            ),
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.textTertiaryFor(context),
+            ),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildForgotPasswordEntry(bool isDark) {
-    return Row(
+    final hint = Row(
       children: [
         Icon(
           Icons.verified_user_outlined,
           size: 16,
-          color: isDark ? Colors.white38 : Colors.black38,
+          color: AppColors.textTertiaryFor(context),
         ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            '已绑定手机号可验证找回',
+            _loginText(
+              context,
+              zhCN: '已绑定手机号可验证找回',
+              zhTW: '已綁定手機號可驗證找回',
+              en: 'Recover with a verified phone',
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? Colors.white54 : Colors.black45,
-            ),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: _openForgotPassword,
-          icon: const Icon(Icons.lock_reset_rounded, size: 17),
-          label: const Text('找回账号密码'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.primary,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            minimumSize: const Size(0, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ),
       ],
+    );
+
+    final button = TextButton.icon(
+      onPressed: _openForgotPassword,
+      icon: const Icon(Icons.lock_reset_rounded, size: 17),
+      label: Text(
+        _loginText(
+          context,
+          zhCN: '找回账号密码',
+          zhTW: '找回帳號密碼',
+          en: 'Recover Password',
+        ),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.linkFor(context),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 260) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              hint,
+              Align(
+                alignment: Alignment.centerRight,
+                child: button,
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: hint),
+            button,
+          ],
+        );
+      },
     );
   }
 
@@ -295,6 +482,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (_errorMessage != null) {
       setState(() => _errorMessage = null);
     }
+    ref.read(authServiceProvider.notifier).clearError();
   }
 
   void _setAgreement(bool value) {
@@ -350,10 +538,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget _buildUsernameField(bool isDark, AppLocalizations l10n) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+        color: AppColors.inputBackgroundFor(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
+        key: const Key('login_username_field'),
         controller: _usernameController,
         keyboardType: TextInputType.visiblePassword,
         autocorrect: false,
@@ -362,16 +551,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         onChanged: (_) => _clearError(),
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
           hintText: l10n.usernameLabel,
           hintStyle: TextStyle(
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputHintFor(context),
           ),
           prefixIcon: Icon(
             Icons.person_outline_rounded,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           border: InputBorder.none,
@@ -398,7 +587,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+        color: AppColors.inputBackgroundFor(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
@@ -409,16 +598,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         onChanged: onChanged,
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputHintFor(context),
           ),
           prefixIcon: Icon(
             icon,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           border: InputBorder.none,
@@ -433,25 +622,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget _buildPasswordField(bool isDark, AppLocalizations l10n) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+        color: AppColors.inputBackgroundFor(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
+        key: const Key('login_password_field'),
         controller: _passwordController,
         obscureText: _obscurePassword,
         onChanged: (_) => _clearError(),
         style: TextStyle(
           fontSize: 16,
-          color: isDark ? Colors.white : Colors.black,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
           hintText: l10n.passwordLabel,
           hintStyle: TextStyle(
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputHintFor(context),
           ),
           prefixIcon: Icon(
             Icons.lock_outline_rounded,
-            color: isDark ? Colors.white30 : Colors.black38,
+            color: AppColors.inputIconFor(context),
             size: 22,
           ),
           suffixIcon: IconButton(
@@ -461,7 +651,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               _obscurePassword
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined,
-              color: isDark ? Colors.white30 : Colors.black38,
+              color: AppColors.inputIconFor(context),
               size: 20,
             ),
           ),
@@ -481,22 +671,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
+        key: const Key('login_submit_button'),
         onPressed: _isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.primaryFor(context),
+          foregroundColor: AppColors.onPrimaryFor(context),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
         child: _isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: AppColors.onPrimaryFor(context),
                 ),
               )
             : Text(
@@ -513,23 +704,35 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget _buildBottom(bool isDark, AppLocalizations l10n) {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
-              l10n.get('no_account_yet') ?? '还没有账号？',
+              l10n.get('no_account_yet') ??
+                  _loginText(
+                    context,
+                    zhCN: '还没有账号？',
+                    zhTW: '還沒有帳號？',
+                    en: "Don't have an account yet?",
+                  ),
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
             TextButton(
-              onPressed: () => context.goNamed('register'),
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _goToRegister,
               child: Text(
                 l10n.registerNow,
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppColors.primary,
+                  color: AppColors.linkFor(context),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -544,58 +747,79 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
                 width: 20,
                 height: 20,
                 child: Checkbox(
+                  key: const Key('login_terms_checkbox'),
                   value: _agreedToTerms,
                   onChanged: (value) {
                     _setAgreement(value ?? false);
                   },
-                  activeColor: AppColors.primary,
+                  activeColor: AppColors.controlActiveFor(context),
+                  checkColor: AppColors.onControlActiveFor(context),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
                   side: BorderSide(
-                    color: isDark ? Colors.white38 : Colors.black26,
+                    color: AppColors.controlBorderFor(context),
                     width: 1.5,
                   ),
                 ),
               ),
               const SizedBox(width: 6),
-              RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white38 : Colors.black38,
-                    height: 1.2,
+              Flexible(
+                child: RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondaryFor(context),
+                      height: 1.2,
+                    ),
+                    children: [
+                      TextSpan(text: l10n.agreeTermsPrefix),
+                      TextSpan(
+                        text: _loginText(
+                          context,
+                          zhCN: '《用户协议》',
+                          zhTW: '《使用者協議》',
+                          en: 'User Agreement',
+                        ),
+                        style: TextStyle(
+                          color: AppColors.linkFor(context),
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap =
+                              () => _openAgreement(AgreementType.userAgreement),
+                      ),
+                      TextSpan(
+                        text: _loginText(
+                          context,
+                          zhCN: '和',
+                          zhTW: '和',
+                          en: ' and ',
+                        ),
+                      ),
+                      TextSpan(
+                        text: _loginText(
+                          context,
+                          zhCN: '《隐私政策》',
+                          zhTW: '《隱私政策》',
+                          en: 'Privacy Policy',
+                        ),
+                        style: TextStyle(
+                          color: AppColors.linkFor(context),
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap =
+                              () => _openAgreement(AgreementType.privacyPolicy),
+                      ),
+                    ],
                   ),
-                  children: [
-                    TextSpan(text: l10n.agreeTermsPrefix),
-                    TextSpan(
-                      text: '《用户协议》',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                      ),
-                      recognizer: TapGestureRecognizer()
-                        ..onTap =
-                            () => _openAgreement(AgreementType.userAgreement),
-                    ),
-                    const TextSpan(text: '和'),
-                    TextSpan(
-                      text: '《隐私政策》',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                      ),
-                      recognizer: TapGestureRecognizer()
-                        ..onTap =
-                            () => _openAgreement(AgreementType.privacyPolicy),
-                    ),
-                  ],
                 ),
               ),
             ],
@@ -607,10 +831,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Widget _buildDesktopQrLoginSection(bool isDark, AppLocalizations l10n) {
     final cardColor =
-        isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100;
+        isDark ? AppColors.darkCard : AppColors.lightInputBackground;
     final borderColor =
         isDark ? Colors.white10 : Colors.black.withOpacity(0.06);
-    final secondaryTextColor = isDark ? Colors.white54 : Colors.black54;
+    final secondaryTextColor = AppColors.textSecondaryFor(context);
     final shouldShowAgreementError = !_agreedToTerms;
 
     return Column(
@@ -628,11 +852,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               Row(
                 children: [
                   Text(
-                    '扫码登录',
+                    _loginText(
+                      context,
+                      zhCN: '扫码登录',
+                      zhTW: '掃碼登入',
+                      en: 'QR Login',
+                    ),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                   const Spacer(),
@@ -640,14 +869,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     onPressed: (!_agreedToTerms || _isQrLoginLoading)
                         ? null
                         : _createDesktopQrLogin,
-                    tooltip: '刷新二维码',
+                    tooltip: _loginText(
+                      context,
+                      zhCN: '刷新二维码',
+                      zhTW: '重新整理 QR 碼',
+                      en: 'Refresh QR Code',
+                    ),
                     icon: const Icon(Icons.refresh_rounded),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
-                '打开手机应用，使用扫一扫确认登录这台桌面设备',
+                _loginText(
+                  context,
+                  zhCN: '打开手机应用，使用扫一扫确认登录这台桌面设备',
+                  zhTW: '打開手機應用，使用掃一掃確認登入這台桌面設備',
+                  en: 'Open the mobile app and scan to confirm login on this desktop device',
+                ),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -668,27 +907,42 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
               const SizedBox(height: 12),
               if (shouldShowAgreementError)
-                const Text(
-                  '请先阅读并同意用户协议和隐私政策',
+                Text(
+                  _loginText(
+                    context,
+                    zhCN: '请先阅读并同意用户协议和隐私政策',
+                    zhTW: '請先閱讀並同意使用者協議和隱私政策',
+                    en: 'Please read and agree to the Terms and Privacy Policy first',
+                  ),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: AppColors.error,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 )
               else if (_isQrLoginSigningIn)
-                const Text(
-                  '登录确认中...',
+                Text(
+                  _loginText(
+                    context,
+                    zhCN: '登录确认中...',
+                    zhTW: '登入確認中...',
+                    en: 'Signing in...',
+                  ),
                   style: TextStyle(
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                 )
               else if (_qrLoginStatus == 'expired')
                 Text(
-                  '二维码已过期，请点击右上角刷新',
+                  _loginText(
+                    context,
+                    zhCN: '二维码已过期，请点击右上角刷新',
+                    zhTW: 'QR 碼已過期，請點擊右上角重新整理',
+                    en: 'The QR code has expired. Tap refresh in the top-right corner.',
+                  ),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.error,
@@ -706,7 +960,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 )
               else
                 Text(
-                  '二维码有效期 2 分钟',
+                  _loginText(
+                    context,
+                    zhCN: '二维码有效期 2 分钟',
+                    zhTW: 'QR 碼有效期 2 分鐘',
+                    en: 'QR code valid for 2 minutes',
+                  ),
                   style: TextStyle(
                     fontSize: 12,
                     color: secondaryTextColor,
@@ -720,9 +979,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           onPressed: _closeDesktopQrLogin,
           child: Text(
             l10n.login,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: AppColors.primary,
+              color: AppColors.linkFor(context),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -765,7 +1024,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _createDesktopQrLogin() async {
-    if (!PlatformUtils.isDesktop) return;
+    if (!PlatformUtils.useDesktopLayout(context)) return;
 
     _qrLoginPollTimer?.cancel();
     setState(() {
@@ -812,15 +1071,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       setState(() {
         _isQrLoginLoading = false;
         _qrLoginStatus = 'error';
-        _qrLoginError =
-            response.message.isNotEmpty ? response.message : '二维码生成失败';
+        _qrLoginError = _serverMessage(
+          raw: response.message,
+          zhCN: '二维码生成失败',
+          zhTW: 'QR 碼生成失敗',
+          en: 'Failed to generate QR code',
+        );
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isQrLoginLoading = false;
         _qrLoginStatus = 'error';
-        _qrLoginError = '二维码生成失败';
+        _qrLoginError = _loginText(
+          context,
+          zhCN: '二维码生成失败',
+          zhTW: 'QR 碼生成失敗',
+          en: 'Failed to generate QR code',
+        );
       });
     }
   }
@@ -883,14 +1151,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (!mounted) return;
 
         if (success) {
-          context.go('/home');
+          _goAfterLogin();
           return;
         }
 
         setState(() {
           _isQrLoginSigningIn = false;
           _qrLoginStatus = 'error';
-          _qrLoginError = '二维码登录失败，请刷新后重试';
+          _qrLoginError = _loginText(
+            context,
+            zhCN: '二维码登录失败，请刷新后重试',
+            zhTW: 'QR 碼登入失敗，請重新整理後再試',
+            en: 'QR login failed. Please refresh and try again.',
+          );
         });
       }
     } catch (_) {
@@ -924,12 +1197,28 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     // 验证用户名格式（只允许英文、数字、下划线）
     if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
-      _showError(l10n.get('username_format_error') ?? '用户名只能包含英文、数字和下划线');
+      _showError(
+        l10n.get('username_format_error') ??
+            _loginText(
+              context,
+              zhCN: '用户名只能包含英文、数字和下划线',
+              zhTW: '使用者名稱只能包含英文、數字和底線',
+              en: 'Username can only contain letters, numbers, and underscores',
+            ),
+      );
       return;
     }
 
     if (username.length < 3) {
-      _showError(l10n.get('username_min_length') ?? '用户名至少3位');
+      _showError(
+        l10n.get('username_min_length') ??
+            _loginText(
+              context,
+              zhCN: '用户名至少 3 位',
+              zhTW: '使用者名稱至少 3 位',
+              en: 'Username must be at least 3 characters',
+            ),
+      );
       return;
     }
 
@@ -939,60 +1228,234 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     if (_passwordController.text.length < 6) {
-      _showError(l10n.get('password_min_length') ?? '密码至少6位');
+      _showError(
+        l10n.get('password_min_length') ??
+            _loginText(
+              context,
+              zhCN: '密码至少 6 位',
+              zhTW: '密碼至少 6 位',
+              en: 'Password must be at least 6 characters',
+            ),
+      );
       return;
     }
 
     HapticFeedback.mediumImpact();
     setState(() => _isLoading = true);
 
-    // 获取持久化设备信息
-    final deviceType = DeviceService.getDeviceType();
+    try {
+      // 获取持久化设备信息。DeviceService 内部会对首次启动存储异常降级。
+      final deviceType = DeviceService.getDeviceType();
+      final deviceResults = await Future.wait<String>([
+        DeviceService.getDeviceId(),
+        DeviceService.getDeviceName(),
+      ]);
+      final deviceId = deviceResults[0];
+      final deviceName = deviceResults[1];
+
+      // 调用后端 API 登录
+      final authService = ref.read(authServiceProvider.notifier);
+      final response = await authService.login(
+        username: username,
+        password: _passwordController.text.trim(),
+        deviceId: deviceId,
+        deviceType: deviceType,
+        deviceName: deviceName,
+      );
+
+      if (!mounted) return;
+      debugPrint('[Login] response.code: ${response.code}');
+      debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
+      debugPrint('[Login] response.message: ${response.message}');
+
+      if (response.isSuccess) {
+        _goAfterLogin();
+      } else if (response.code == 1001) {
+        await _handleDeviceLockChallenge(response);
+      } else if (response.code == 1007) {
+        await _handleTwoStepChallenge(response);
+      } else if (response.code == 1008) {
+        await _showAccountBannedDialog(response);
+      } else {
+        debugPrint('[Login] Login failed: ${response.message}');
+        _showError(
+          _serverMessage(
+            raw: response.message,
+            zhCN: '登录失败，请稍后重试',
+            zhTW: '登入失敗，請稍後重試',
+            en: 'Login failed. Please try again later.',
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Login] Unexpected login error: $e');
+      if (mounted) {
+        _showError(
+          _loginText(
+            context,
+            zhCN: '登录初始化失败，请直接重试',
+            zhTW: '登入初始化失敗，請直接重試',
+            en: 'Login initialization failed. Please try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _showAccountBannedDialog(ApiResponse response) async {
+    final rawData = response.data;
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : const <String, dynamic>{};
+    final reason = data['reason']?.toString().trim();
+    final settings = ref.read(systemSettingsProvider).valueOrNull;
+    final supportUrl = settings?.onlineSupportUrl ?? '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_loginText(
+          dialogContext,
+          zhCN: '账号已被封禁',
+          zhTW: '帳號已被封禁',
+          en: 'Account banned',
+        )),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_loginText(
+              dialogContext,
+              zhCN: '原因：${reason?.isNotEmpty == true ? reason : '违反平台使用规则'}',
+              zhTW: '原因：${reason?.isNotEmpty == true ? reason : '違反平台使用規則'}',
+              en: 'Reason: ${reason?.isNotEmpty == true ? reason : 'Policy violation'}',
+            )),
+            const SizedBox(height: 10),
+            Text(_loginText(
+              dialogContext,
+              zhCN: '期限：永久，直至管理员解除',
+              zhTW: '期限：永久，直至管理員解除',
+              en: 'Duration: Until an administrator lifts the ban',
+            )),
+            const SizedBox(height: 10),
+            Text(_loginText(
+              dialogContext,
+              zhCN: '如有异议，可联系在线客服提交申诉。',
+              zhTW: '如有異議，可聯絡線上客服提交申訴。',
+              en: 'Contact support to submit an appeal.',
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(_loginText(
+              dialogContext,
+              zhCN: '关闭',
+              zhTW: '關閉',
+              en: 'Close',
+            )),
+          ),
+          TextButton.icon(
+            key: const ValueKey('banned_account_appeal'),
+            onPressed: () async {
+              if (supportUrl.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(_loginText(
+                      context,
+                      zhCN: '客服信息暂未配置，请稍后重试',
+                      zhTW: '客服資訊暫未設定，請稍後重試',
+                      en: 'Support is not configured yet. Please try later.',
+                    )),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext);
+              await LinkUtils.openLink(context, supportUrl);
+            },
+            icon: const Icon(Icons.support_agent_rounded),
+            label: Text(_loginText(
+              dialogContext,
+              zhCN: '联系客服申诉',
+              zhTW: '聯絡客服申訴',
+              en: 'Contact support',
+            )),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _quickRegister() async {
+    if (!_agreedToTerms) {
+      _showError(AppLocalizations.of(context).pleaseAgreeTerms);
+      return;
+    }
+
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    _quickRegisterRequestId ??= const Uuid().v4();
     final deviceResults = await Future.wait<String>([
       DeviceService.getDeviceId(),
       DeviceService.getDeviceName(),
     ]);
-    final deviceId = deviceResults[0];
-    final deviceName = deviceResults[1];
-
-    // 调用后端 API 登录
-    final authService = ref.read(authServiceProvider.notifier);
-    final response = await authService.login(
-      username: username,
-      password: _passwordController.text.trim(),
-      deviceId: deviceId,
-      deviceType: deviceType,
-      deviceName: deviceName,
-    );
+    final response = await ref.read(authServiceProvider.notifier).quickRegister(
+          deviceId: deviceResults[0],
+          requestId: _quickRegisterRequestId!,
+          deviceType: DeviceService.getDeviceType(),
+          deviceName: deviceResults[1],
+        );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
-
-    if (kDebugMode) debugPrint('[Login] response.code: ${response.code}');
-    if (kDebugMode) debugPrint('[Login] response.isSuccess: ${response.isSuccess}');
-    if (kDebugMode) debugPrint('[Login] response.message: ${response.message}');
-
     if (response.isSuccess) {
-      if (kDebugMode) debugPrint('[Login] Navigating to /home');
-      context.go('/home');
-    } else if (response.code == 1001) {
-      await _handleDeviceLockChallenge(response);
-    } else {
-      if (kDebugMode) debugPrint('[Login] Login failed: ${response.message}');
-      _showError(response.message);
+      _goAfterLogin();
+      return;
     }
+    _showError(
+      _serverMessage(
+        raw: response.message,
+        zhCN: '一键注册失败，请稍后重试',
+        zhTW: '一鍵註冊失敗，請稍後重試',
+        en: 'Quick registration failed. Please try again later.',
+      ),
+    );
   }
 
   Future<void> _handleDeviceLockChallenge(ApiResponse response) async {
     final raw = response.data;
     if (raw is! Map) {
-      _showError('设备锁验证信息异常，请重试');
+      _showError(
+        _loginText(
+          context,
+          zhCN: '设备锁验证信息异常，请重试',
+          zhTW: '裝置鎖驗證資訊異常，請重試',
+          en: 'Device lock verification data is invalid. Please try again.',
+        ),
+      );
       return;
     }
     final data = Map<String, dynamic>.from(raw);
     final ticket = data['verify_ticket']?.toString() ?? '';
     if (ticket.isEmpty) {
-      _showError('设备锁验证信息异常，请重试');
+      _showError(
+        _loginText(
+          context,
+          zhCN: '设备锁验证信息异常，请重试',
+          zhTW: '裝置鎖驗證資訊異常，請重試',
+          en: 'Device lock verification data is invalid. Please try again.',
+        ),
+      );
       return;
     }
 
@@ -1007,18 +1470,37 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              title: const Text('新设备登录验证'),
+              title: Text(
+                _loginText(
+                  context,
+                  zhCN: '新设备登录验证',
+                  zhTW: '新裝置登入驗證',
+                  en: 'New Device Verification',
+                ),
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('请输入短信验证码完成设备验证'),
+                  Text(
+                    _loginText(
+                      context,
+                      zhCN: '请输入短信验证码完成设备验证',
+                      zhTW: '請輸入簡訊驗證碼完成裝置驗證',
+                      en: 'Enter the SMS verification code to complete device verification',
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: codeController,
                     keyboardType: TextInputType.number,
                     maxLength: 6,
-                    decoration: const InputDecoration(
-                      hintText: '6位验证码',
+                    decoration: InputDecoration(
+                      hintText: _loginText(
+                        context,
+                        zhCN: '6位验证码',
+                        zhTW: '6 位驗證碼',
+                        en: '6-digit code',
+                      ),
                       counterText: '',
                     ),
                   ),
@@ -1036,7 +1518,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 TextButton(
                   onPressed:
                       isSubmitting ? null : () => Navigator.pop(context, false),
-                  child: const Text('取消'),
+                  child: Text(
+                    _loginText(
+                      context,
+                      zhCN: '取消',
+                      zhTW: '取消',
+                      en: 'Cancel',
+                    ),
+                  ),
                 ),
                 TextButton(
                   onPressed: isSubmitting
@@ -1044,7 +1533,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       : () async {
                           final code = codeController.text.trim();
                           if (code.length < 4) {
-                            setStateDialog(() => localError = '请输入正确的验证码');
+                            setStateDialog(
+                              () => localError = _loginText(
+                                context,
+                                zhCN: '请输入正确的验证码',
+                                zhTW: '請輸入正確的驗證碼',
+                                en: 'Enter a valid verification code',
+                              ),
+                            );
                             return;
                           }
                           setStateDialog(() {
@@ -1063,9 +1559,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             Navigator.pop(context, true);
                             return;
                           }
+                          if (verifyResp.code == 1007) {
+                            Navigator.pop(context, false);
+                            await Future<void>.delayed(Duration.zero);
+                            if (mounted) {
+                              await _handleTwoStepChallenge(verifyResp);
+                            }
+                            return;
+                          }
                           setStateDialog(() {
                             isSubmitting = false;
-                            localError = verifyResp.message;
+                            localError = _serverMessage(
+                              raw: verifyResp.message,
+                              zhCN: '验证失败',
+                              zhTW: '驗證失敗',
+                              en: 'Verification failed.',
+                            );
                           });
                         },
                   child: isSubmitting
@@ -1074,7 +1583,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('验证'),
+                      : Text(
+                          _loginText(
+                            context,
+                            zhCN: '验证',
+                            zhTW: '驗證',
+                            en: 'Verify',
+                          ),
+                        ),
                 ),
               ],
             );
@@ -1085,7 +1601,193 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     codeController.dispose();
 
     if (verified == true && mounted) {
-      context.go('/home');
+      _goAfterLogin();
+    }
+  }
+
+  Future<void> _handleTwoStepChallenge(ApiResponse response) async {
+    final raw = response.data;
+    if (raw is! Map) {
+      _showError(
+        _loginText(
+          context,
+          zhCN: '两步验证信息异常，请重新登录',
+          zhTW: '兩步驗證資訊異常，請重新登入',
+          en: 'Two-step verification data is invalid. Please sign in again.',
+        ),
+      );
+      return;
+    }
+    final data = Map<String, dynamic>.from(raw);
+    final ticket = data['verify_ticket']?.toString() ?? '';
+    final hint = data['password_hint']?.toString().trim() ?? '';
+    if (ticket.isEmpty) {
+      _showError(
+        _loginText(
+          context,
+          zhCN: '两步验证已过期，请重新登录',
+          zhTW: '兩步驗證已過期，請重新登入',
+          en: 'Two-step verification expired. Please sign in again.',
+        ),
+      );
+      return;
+    }
+
+    final passwordController = TextEditingController();
+    bool isSubmitting = false;
+    bool obscurePassword = true;
+    String? localError;
+    final verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setStateDialog) => AlertDialog(
+          title: Text(
+            _loginText(
+              dialogContext,
+              zhCN: '两步验证',
+              zhTW: '兩步驗證',
+              en: 'Two-Step Verification',
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _loginText(
+                  dialogContext,
+                  zhCN: '请输入你设置的二次登录密码。验证成功前不会进入账号。',
+                  zhTW: '請輸入你設定的二次登入密碼。驗證成功前不會進入帳號。',
+                  en: 'Enter your secondary sign-in password. Your account stays locked until it is verified.',
+                ),
+              ),
+              if (hint.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _loginText(
+                    dialogContext,
+                    zhCN: '密码提示：$hint',
+                    zhTW: '密碼提示：$hint',
+                    en: 'Password hint: $hint',
+                  ),
+                  style: TextStyle(
+                    color: AppColors.textSecondaryFor(dialogContext),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  hintText: _loginText(
+                    dialogContext,
+                    zhCN: '二次登录密码',
+                    zhTW: '二次登入密碼',
+                    en: 'Secondary sign-in password',
+                  ),
+                  suffixIcon: IconButton(
+                    onPressed: () => setStateDialog(
+                      () => obscurePassword = !obscurePassword,
+                    ),
+                    icon: Icon(
+                      obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              if (localError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  localError!,
+                  style: const TextStyle(color: AppColors.error, fontSize: 13),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
+              child: Text(
+                _loginText(
+                  dialogContext,
+                  zhCN: '取消登录',
+                  zhTW: '取消登入',
+                  en: 'Cancel Sign-In',
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final password = passwordController.text;
+                      if (password.length < 6) {
+                        setStateDialog(
+                          () => localError = _loginText(
+                            dialogContext,
+                            zhCN: '请输入至少6位二次登录密码',
+                            zhTW: '請輸入至少 6 位二次登入密碼',
+                            en: 'Enter at least 6 characters.',
+                          ),
+                        );
+                        return;
+                      }
+                      setStateDialog(() {
+                        isSubmitting = true;
+                        localError = null;
+                      });
+                      final verifyResponse = await ref
+                          .read(authServiceProvider.notifier)
+                          .verifyTwoStepLogin(
+                            ticket: ticket,
+                            password: password,
+                          );
+                      if (!mounted || !dialogContext.mounted) return;
+                      if (verifyResponse.isSuccess) {
+                        Navigator.pop(dialogContext, true);
+                        return;
+                      }
+                      setStateDialog(() {
+                        isSubmitting = false;
+                        localError = _serverMessage(
+                          raw: verifyResponse.message,
+                          zhCN: '两步验证失败',
+                          zhTW: '兩步驗證失敗',
+                          en: 'Two-step verification failed.',
+                        );
+                      });
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      _loginText(
+                        dialogContext,
+                        zhCN: '验证并登录',
+                        zhTW: '驗證並登入',
+                        en: 'Verify and Sign In',
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+    passwordController.dispose();
+    if (verified == true && mounted) {
+      _goAfterLogin();
     }
   }
 

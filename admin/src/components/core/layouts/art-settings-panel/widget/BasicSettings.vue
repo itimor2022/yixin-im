@@ -42,6 +42,7 @@
   } = storeToRefs(settingStore)
 
   // 创建设置值映射
+  // 配置中的 key 通过该映射关联 Pinia ref，组件无需为每个设置项编写独立模板。
   const settingValueMap = {
     uniqueOpened,
     showMenuButton,
@@ -67,6 +68,7 @@
 
   // 统一的设置变更处理
   const handleSettingChange = (handlerName: string, value: any) => {
+    // handler 名称来自 useSettingsConfig，真正的 store/DOM 更新集中在公共 handlers 中。
     const handler = (basicHandlers as any)[handlerName]
     if (typeof handler === 'function') {
       handler(value)

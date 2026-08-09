@@ -1,8 +1,8 @@
+// 文件用途：提供 ColoredNameWidget 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 ColoredNameWidget，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 
-import '../../core/theme/premium_theme_tokens.dart';
-import 'premium_widgets.dart';
-
+// 关键声明：colored name widget 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 带颜色的名称显示组件
 class ColoredNameWidget extends StatelessWidget {
   final String name;
@@ -12,7 +12,6 @@ class ColoredNameWidget extends StatelessWidget {
   final Color? defaultColor;
   final int? maxLines;
   final TextOverflow? overflow;
-  final String? premiumType;
 
   const ColoredNameWidget({
     super.key,
@@ -23,7 +22,6 @@ class ColoredNameWidget extends StatelessWidget {
     this.defaultColor,
     this.maxLines,
     this.overflow,
-    this.premiumType,
   });
 
   // 昵称颜色列表（与 personalization_page.dart 保持一致）
@@ -62,24 +60,9 @@ class ColoredNameWidget extends StatelessWidget {
     return null;
   }
 
-  String? _normalizePremiumType() {
-    final type = premiumType?.trim();
-    if (type == null || type.isEmpty) return null;
-    if (PremiumThemeTokens.isPremium(type)) return type;
-
-    final normalized = type.toLowerCase();
-    if (normalized.contains('year') || normalized.contains('annual')) {
-      return 'yearly';
-    }
-    if (normalized.contains('quarter') || normalized.contains('season')) {
-      return 'quarterly';
-    }
-    return null;
-  }
-
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
-    final normalizedPremiumType = _normalizePremiumType();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorItem = _getNameColor();
     final fallbackColor =
@@ -128,21 +111,6 @@ class ColoredNameWidget extends StatelessWidget {
       }
     }
 
-    if (!PremiumThemeTokens.isPremium(normalizedPremiumType)) {
-      return nameWidget;
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(child: nameWidget),
-        const SizedBox(width: 4),
-        PremiumChip(
-          label: 'PRO',
-          premiumType: normalizedPremiumType,
-          fontSize: 10,
-        ),
-      ],
-    );
+    return nameWidget;
   }
 }

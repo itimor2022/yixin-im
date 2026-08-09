@@ -1,0 +1,22 @@
+# 文件用途：baota\generic-im.service 是一个systemd 服务单元文件。
+# 核心逻辑：按文件中的顺序执行配置加载、数据库变更、构建部署或维护操作，并保持可重复执行。
+
+[Unit]
+Description=通用 IM 后端服务
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/www/wwwroot/genericim
+ExecStart=/www/wwwroot/genericim/server
+Restart=always
+RestartSec=5
+StandardOutput=append:/www/wwwroot/genericim/server.log
+StandardError=append:/www/wwwroot/genericim/server.log
+
+# 环境变量
+Environment=GIN_MODE=release
+
+[Install]
+WantedBy=multi-user.target

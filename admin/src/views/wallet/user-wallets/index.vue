@@ -70,7 +70,7 @@
               <i class="ri-wallet-line mr-1"></i>管理
             </ElButton>
             <ElButton size="small" type="warning" link @click="showBalanceDialog(row)">
-              <i class="ri-subtract-line mr-1"></i>扣减
+              <i class="ri-exchange-dollar-line mr-1"></i>调整
             </ElButton>
           </template>
         </ElTableColumn>
@@ -95,7 +95,7 @@
       <div v-if="currentWallet" class="wallet-detail">
         <!-- 钱包卡片 -->
         <div
-          class="wallet-card bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-xl mb-6"
+          class="wallet-card bg-gradient-to-r from-gray-900 to-zinc-700 text-white p-6 rounded-xl mb-6"
         >
           <div class="flex justify-between items-start mb-4">
             <div class="flex items-center gap-3">
@@ -132,7 +132,7 @@
         <!-- 操作按钮 -->
         <div class="action-buttons mb-6 flex flex-wrap gap-3">
           <ElButton type="warning" @click="showBalanceDialogInner()">
-            <i class="ri-subtract-line mr-1"></i>扣减
+            <i class="ri-exchange-dollar-line mr-1"></i>调整余额
           </ElButton>
           <ElButton @click="showResetPayPwdDialog">
             <i class="ri-key-line mr-1"></i>重置支付密码
@@ -186,7 +186,7 @@
     </ElDialog>
 
     <!-- 余额调整弹窗 -->
-    <ElDialog v-model="balanceDialogVisible" title="扣减余额" width="400px">
+    <ElDialog v-model="balanceDialogVisible" title="调整余额" width="420px">
       <ElForm :model="balanceForm" label-width="80px">
         <ElFormItem label="用户">
           <span class="font-medium"
@@ -195,6 +195,12 @@
         </ElFormItem>
         <ElFormItem label="当前余额">
           <span class="text-green-600 font-bold">¥{{ balanceTargetUser?.balance.toFixed(2) }}</span>
+        </ElFormItem>
+        <ElFormItem label="操作">
+          <ElRadioGroup v-model="balanceForm.action">
+            <ElRadioButton value="add">增加余额</ElRadioButton>
+            <ElRadioButton value="deduct">扣减余额</ElRadioButton>
+          </ElRadioGroup>
         </ElFormItem>
         <ElFormItem label="金额">
           <ElInputNumber
@@ -270,6 +276,8 @@
 
   defineOptions({ name: 'UserWalletList' })
 
+  type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
   const loading = ref(false)
   const list = ref<UserWalletInfo[]>([])
   const searchKeyword = ref('')
@@ -291,6 +299,7 @@
   const balanceTargetUser = ref<UserWalletInfo | null>(null)
   const balanceForm = reactive({
     amount: 100,
+    action: 'add' as 'add' | 'deduct',
     remark: ''
   })
 
@@ -300,8 +309,8 @@
     password: ''
   })
 
-  const getTransTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
+  const getTransTypeColor = (type: string): TagType => {
+    const colors: Record<string, TagType> = {
       recharge: 'success',
       withdraw: 'warning',
       red_packet_send: 'danger',
@@ -370,6 +379,7 @@
   }
 
   const showWalletDetail = async (row: UserWalletInfo) => {
+    // 列表行只提供钱包摘要，详情弹窗的资金流水通过独立接口按用户加载。
     currentWallet.value = row
     detailVisible.value = true
     fetchTransactions()
@@ -394,6 +404,7 @@
   const showBalanceDialog = (row: UserWalletInfo) => {
     balanceTargetUser.value = row
     balanceForm.amount = 100
+    balanceForm.action = 'add'
     balanceForm.remark = ''
     balanceDialogVisible.value = true
   }
@@ -406,7 +417,7 @@
 
   const handleBalanceSubmit = async () => {
     if (!balanceTargetUser.value) return
-    const amount = -balanceForm.amount
+    const amount = balanceForm.action === 'deduct' ? -balanceForm.amount : balanceForm.amount
     try {
       await updateUserBalance(balanceTargetUser.value.user_id, amount, balanceForm.remark)
       ElMessage.success('操作成功')
@@ -414,6 +425,7 @@
       fetchData()
       // 如果详情弹窗打开，刷新当前钱包数据
       if (detailVisible.value && currentWallet.value) {
+        // 余额调整会同时改变列表摘要、详情余额和流水，三处状态需要保持一致。
         const res = await getUserWallet(currentWallet.value.user_id)
         currentWallet.value = res
         fetchTransactions()

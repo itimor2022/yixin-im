@@ -35,7 +35,7 @@
             <ElInput v-model="passwordForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />
           </ElFormItem>
           <div class="action-stack">
-            <ElButton type="success" :loading="savingPassword" @click="handleChangePassword">修改密码</ElButton>
+          <ElButton type="primary" :loading="savingPassword" @click="handleChangePassword">修改密码</ElButton>
           </div>
         </ElForm>
         <p class="security-tip">修改密码已接入真实接口；成功后将自动退出并要求重新登录。</p>
@@ -55,7 +55,7 @@
             </div>
           </ElFormItem>
           <div class="action-stack">
-            <ElButton type="success" :loading="bindingPhone" :disabled="Boolean(session.profile.phone)" @click="handleBindPhone">绑定手机号</ElButton>
+          <ElButton type="primary" :loading="bindingPhone" :disabled="Boolean(session.profile.phone)" @click="handleBindPhone">绑定手机号</ElButton>
             <ElButton type="danger" plain @click="handleLogout">退出当前登录</ElButton>
           </div>
         </ElForm>
@@ -103,6 +103,7 @@ const resetPasswordForm = () => {
 }
 
 const startCountdown = (seconds: number) => {
+  // 倒计时只限制当前页面重复发送，服务端仍负责短信频控和验证码有效期校验。
   countdown.value = seconds
   if (timer) clearInterval(timer)
   timer = setInterval(() => {
@@ -136,6 +137,7 @@ const handleChangePassword = async () => {
       oldPassword: passwordForm.oldPassword,
       newPassword: passwordForm.newPassword
     })
+    // 密码变更后立即销毁当前会话，避免旧 Token 继续访问客服数据。
     ElMessage.success('密码已修改，请重新登录')
     resetPasswordForm()
     await session.logout()
@@ -171,6 +173,7 @@ const handleBindPhone = async () => {
   bindingPhone.value = true
   try {
     await bindServiceAdminPhone({ phone: phoneForm.phone.trim(), code: phoneForm.code.trim() })
+    // 绑定结果通过重新拉取资料进入 Store，避免只在表单内维护一份临时手机号。
     await session.refreshProfile()
     ElMessage.success('手机号绑定成功')
   } catch (error) {
@@ -186,15 +189,16 @@ const handleLogout = async () => {
 }
 
 onBeforeUnmount(() => {
+  // 页面销毁时释放验证码计时器，避免组件离开后继续更新响应式状态。
   if (timer) clearInterval(timer)
 })
 </script>
 
 <style scoped lang="scss">
-.page-wrap { padding: 28px; }
+.page-wrap { padding: 24px; }
 .head-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
 .profile-grid { margin-top: 24px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px; }
-.profile-panel { padding: 22px; border-radius: 18px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.profile-panel { padding: 20px; border-radius: var(--kf-radius-md); background: var(--kf-surface); border: 1px solid var(--kf-border); }
 .action-stack { display: grid; gap: 12px; }
 .inline-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
 .security-tip { margin: 14px 0 0; color: var(--text-soft); line-height: 1.7; }

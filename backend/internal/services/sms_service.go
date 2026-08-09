@@ -1,3 +1,6 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
@@ -7,20 +10,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/dysmsapi"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+	sms "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111"
+	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
-
-	"gaoranim/internal/config"
-
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/dysmsapi"
-	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
-	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
-	sms "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111"
-	"gorm.io/gorm"
+	"genericim/internal/config"
 )
 
 // SMSService 短信发送（验证码），配置来自 yaml + DB 合并
@@ -45,7 +46,7 @@ func (s *SMSService) CanSend() bool {
 	if s == nil || s.cfg == nil {
 		return false
 	}
-	return SMSSendReady(s.db, s.cfg.SMS)
+	return SMSSendReady(s.db, s.cfg.SMS, s.cfg.Server.Mode)
 }
 
 // InvalidateSMSCache 管理后台保存短信配置后调用
@@ -84,6 +85,16 @@ func (s *SMSService) SendOTP(ctx context.Context, phone, code string) error {
 		return s.sendAliyun(ctx, c, phone, code)
 	case "tencent":
 		return s.sendTencent(ctx, c, phone, code)
+	case "console":
+		if !strings.EqualFold(strings.TrimSpace(s.cfg.Server.Mode), "debug") {
+			return fmt.Errorf("console 短信通道仅允许在 debug 模式使用")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
 	default:
 		return fmt.Errorf("不支持的短信渠道: %s", c.Provider)
 	}
@@ -217,7 +228,7 @@ func NormalizeCNMobile(s string) string {
 	if len(x) == 13 && strings.HasPrefix(x, "861") {
 		x = x[2:]
 	}
-	if len(x) == 11 && x[0] == '1' {
+	if len(x) == 11 && x[0] == '1' && x[1] >= '3' && x[1] <= '9' {
 		return x
 	}
 	return ""

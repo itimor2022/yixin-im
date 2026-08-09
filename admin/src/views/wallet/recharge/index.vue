@@ -10,11 +10,8 @@
           <el-table-column prop="name" label="名称" width="120" />
           <el-table-column label="类型" width="100">
             <template #default="{ row }">
-              <el-tag
-                :type="row.type === 'qrcode' ? 'success' : row.type === 'bank' ? '' : 'warning'"
-                size="small"
-              >
-                {{ { qrcode: '二维码', bank: '银行卡', manual: '人工' }[row.type] || row.type }}
+              <el-tag :type="methodTypeTag(row.type)" size="small">
+                {{ methodTypeText(row.type) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -94,14 +91,8 @@
           </el-table-column>
           <el-table-column label="状态" width="80">
             <template #default="{ row }">
-              <el-tag
-                :type="{ pending: 'warning', approved: 'success', rejected: 'danger' }[row.status]"
-                size="small"
-              >
-                {{
-                  { pending: '待审核', approved: '已通过', rejected: '已拒绝' }[row.status] ||
-                  row.status
-                }}
+              <el-tag :type="orderStatusTag(row.status)" size="small">
+                {{ orderStatusText(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -214,6 +205,44 @@
 
   defineOptions({ name: 'RechargeManage' })
 
+  type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
+  const methodTypeTag = (type: string): TagType => {
+    const tags: Record<string, TagType> = {
+      qrcode: 'success',
+      bank: 'primary',
+      manual: 'warning'
+    }
+    return tags[type] || 'info'
+  }
+
+  const methodTypeText = (type: string) => {
+    const texts: Record<string, string> = {
+      qrcode: '\u4e8c\u7ef4\u7801',
+      bank: '\u94f6\u884c\u5361',
+      manual: '\u4eba\u5de5'
+    }
+    return texts[type] || type
+  }
+
+  const orderStatusTag = (status: string): TagType => {
+    const tags: Record<string, TagType> = {
+      pending: 'warning',
+      approved: 'success',
+      rejected: 'danger'
+    }
+    return tags[status] || 'info'
+  }
+
+  const orderStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      pending: '\u5f85\u5ba1\u6838',
+      approved: '\u5df2\u901a\u8fc7',
+      rejected: '\u5df2\u62d2\u7edd'
+    }
+    return texts[status] || status
+  }
+
   const activeTab = ref('methods')
 
   // 充值方式
@@ -248,6 +277,7 @@
   const showMethodDialog = (row?: RechargeMethodInfo) => {
     editingMethod.value = row || null
     if (row) {
+      // 复制服务端记录到共享表单，保存时用 editingMethod 决定新增或更新接口。
       Object.assign(methodForm, row)
     } else {
       Object.assign(methodForm, {
@@ -321,6 +351,7 @@
   }
 
   const handleReview = async (row: RechargeOrderInfo, action: string) => {
+    // 审核结果会触发服务端入账或拒绝，备注随同动作一次提交，不在前端预改订单状态。
     const text = action === 'approve' ? '通过' : '拒绝'
     try {
       const { value: remark } = await ElMessageBox.prompt(`确认${text}该充值申请？`, '审核', {
@@ -331,6 +362,7 @@
       })
       await reviewRechargeOrder(row.id, action, remark)
       ElMessage.success(`${text}成功`)
+      // 以服务端处理后的余额及审核状态为准，成功后重新加载当前分页。
       fetchOrders()
     } catch (e: any) {
       if (e !== 'cancel') ElMessage.error(e?.message || `${text}失败`)

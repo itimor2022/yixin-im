@@ -1,14 +1,158 @@
+// 文件用途：实现 WithdrawMethodType 页面及其交互流程，属于钱包与支付。
+// 核心逻辑：维护 WithdrawMethodType 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/pay_password_input.dart';
 
+String _withdrawText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+bool _withdrawContainsHan(String value) {
+  return RegExp(r'[\u4e00-\u9fff]').hasMatch(value);
+}
+
+String _withdrawTitleFromKey(String key) {
+  final parts = key
+      .split(RegExp(r'[_\-\s]+'))
+      .where((part) => part.trim().isNotEmpty)
+      .map((part) {
+    final normalized = part.trim().toLowerCase();
+    return normalized.isEmpty
+        ? normalized
+        : normalized[0].toUpperCase() + normalized.substring(1);
+  }).toList();
+  return parts.isEmpty ? 'Field' : parts.join(' ');
+}
+
+String _localizedWithdrawMethodName(
+  BuildContext context,
+  WithdrawMethodConfig method,
+) {
+  if (AppLocalizations.of(context).language != AppLanguage.en) {
+    return method.name;
+  }
+  final rawName = method.name.trim();
+  final rawIcon = method.icon.trim().toLowerCase();
+  final fingerprint = '$rawName $rawIcon ${method.id}'.toLowerCase();
+  if (fingerprint.contains('alipay') || rawName.contains('支付宝')) {
+    return 'Alipay';
+  }
+  if (fingerprint.contains('wechat') ||
+      fingerprint.contains('weixin') ||
+      rawName.contains('微信')) {
+    return 'WeChat Pay';
+  }
+  if (fingerprint.contains('bank') ||
+      fingerprint.contains('card') ||
+      rawName.contains('银行卡') ||
+      rawName.contains('银行')) {
+    return 'Bank Card';
+  }
+  if (fingerprint.contains('usdt') ||
+      fingerprint.contains('trc20') ||
+      fingerprint.contains('erc20') ||
+      fingerprint.contains('crypto')) {
+    return 'USDT';
+  }
+  if (rawName.isNotEmpty && !_withdrawContainsHan(rawName)) {
+    return rawName;
+  }
+  return _withdrawTitleFromKey(method.id);
+}
+
+String _localizedWithdrawFieldLabel(
+    BuildContext context, FormFieldConfig field) {
+  if (AppLocalizations.of(context).language != AppLanguage.en) {
+    return field.label;
+  }
+  final key = field.key.trim().toLowerCase();
+  switch (key) {
+    case 'name':
+    case 'real_name':
+    case 'full_name':
+    case 'account_name':
+    case 'payee_name':
+      return 'Account Name';
+    case 'account':
+    case 'account_no':
+    case 'account_number':
+      return 'Account Number';
+    case 'bank_card':
+    case 'bank_card_no':
+    case 'bank_card_number':
+    case 'card_no':
+    case 'card_number':
+      return 'Bank Card Number';
+    case 'bank':
+    case 'bank_name':
+      return 'Bank Name';
+    case 'branch':
+    case 'branch_name':
+      return 'Branch Name';
+    case 'phone':
+    case 'mobile':
+    case 'phone_number':
+    case 'mobile_number':
+      return 'Phone Number';
+    case 'id_card':
+    case 'id_no':
+    case 'id_number':
+      return 'ID Number';
+    case 'wallet':
+    case 'wallet_address':
+    case 'address':
+      return 'Wallet Address';
+    case 'network':
+    case 'chain':
+      return 'Network';
+    case 'remark':
+    case 'note':
+      return 'Note';
+    case 'qrcode':
+    case 'qr_code':
+      return 'QR Code';
+    default:
+      if (field.label.trim().isNotEmpty && !_withdrawContainsHan(field.label)) {
+        return field.label.trim();
+      }
+      return _withdrawTitleFromKey(key);
+  }
+}
+
+String _localizedWithdrawFieldHint(
+    BuildContext context, FormFieldConfig field) {
+  final rawHint = field.hint?.trim() ?? '';
+  if (AppLocalizations.of(context).language != AppLanguage.en) {
+    return rawHint;
+  }
+  if (rawHint.isNotEmpty && !_withdrawContainsHan(rawHint)) {
+    return rawHint;
+  }
+  final label = _localizedWithdrawFieldLabel(context, field);
+  return field.type == FormFieldType.select ? 'Select $label' : 'Enter $label';
+}
+
+// 关键声明：withdraw page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 提现方式类型
 enum WithdrawMethodType {
   alipay,
@@ -84,6 +228,7 @@ class WithdrawPage extends ConsumerStatefulWidget {
 }
 
 class _WithdrawPageState extends ConsumerState<WithdrawPage> {
+  String get _currency => ref.read(walletCurrencyProvider);
   final _amountController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final Map<String, TextEditingController> _fieldControllers = {};
@@ -95,6 +240,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
   List<WithdrawMethodConfig> _withdrawMethods = [];
   bool _isLoadingMethods = true;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -127,7 +273,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 );
               }).toList();
             } catch (e) {
-              if (kDebugMode) debugPrint('[Withdraw] Parse form fields error: $e');
+              debugPrint('[Withdraw] Parse form fields error: $e');
             }
 
             return WithdrawMethodConfig(
@@ -138,7 +284,19 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
               fields: fields,
               minAmount: m.minAmount,
               maxAmount: m.maxAmount,
-              tips: m.fee > 0 ? '手续费 ${m.fee}%' : '免手续费',
+              tips: m.fee > 0
+                  ? _withdrawText(
+                      context,
+                      zhCN: '手续费 ${m.fee}%',
+                      zhTW: '手續費 ${m.fee}%',
+                      en: 'Fee ${m.fee}%',
+                    )
+                  : _withdrawText(
+                      context,
+                      zhCN: '免手续费',
+                      zhTW: '免手續費',
+                      en: 'No fee',
+                    ),
               enabled: m.status == 1,
             );
           }).toList();
@@ -151,19 +309,25 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
         if (mounted) setState(() => _isLoadingMethods = false);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Withdraw] Load methods error: $e');
+      debugPrint('[Withdraw] Load methods error: $e');
       if (mounted) setState(() => _isLoadingMethods = false);
     }
   }
 
   FormFieldType _parseFieldType(String type) {
     switch (type) {
-      case 'phone': return FormFieldType.phone;
-      case 'number': return FormFieldType.number;
-      case 'bankCard': return FormFieldType.bankCard;
-      case 'idCard': return FormFieldType.idCard;
-      case 'select': return FormFieldType.select;
-      default: return FormFieldType.text;
+      case 'phone':
+        return FormFieldType.phone;
+      case 'number':
+        return FormFieldType.number;
+      case 'bankCard':
+        return FormFieldType.bankCard;
+      case 'idCard':
+        return FormFieldType.idCard;
+      case 'select':
+        return FormFieldType.select;
+      default:
+        return FormFieldType.text;
     }
   }
 
@@ -234,9 +398,19 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
     // 显示密码输入
     final password = await showPayPasswordDialog(
       context: context,
-      title: '确认提现',
-      amount: '¥${_amount.toStringAsFixed(2)}',
-      subtitle: '提现至${_selectedMethod!.name}',
+      title: _withdrawText(
+        context,
+        zhCN: '确认提现',
+        zhTW: '確認提現',
+        en: 'Confirm Withdrawal',
+      ),
+      amount: '$_currency${_amount.toStringAsFixed(2)}',
+      subtitle: _withdrawText(
+        context,
+        zhCN: '提现至${_selectedMethod!.name}',
+        zhTW: '提現至${_selectedMethod!.name}',
+        en: 'Withdraw to ${_localizedWithdrawMethodName(context, _selectedMethod!)}',
+      ),
     );
 
     if (password == null) return;
@@ -252,12 +426,13 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
 
     try {
       // 调用提现API
-      final success = await ref.read(walletProvider.notifier).createWithdrawRequest(
-        methodId: int.tryParse(_selectedMethod!.id) ?? 0,
-        amount: _amount,
-        formData: jsonEncode(formData),
-        payPassword: password,
-      );
+      final success =
+          await ref.read(walletProvider.notifier).createWithdrawRequest(
+                methodId: int.tryParse(_selectedMethod!.id) ?? 0,
+                amount: _amount,
+                formData: jsonEncode(formData),
+                payPassword: password,
+              );
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -267,7 +442,15 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ref.read(walletProvider).error ?? '提现申请失败'),
+            content: Text(
+              ref.read(walletProvider).error ??
+                  _withdrawText(
+                    context,
+                    zhCN: '提现申请失败',
+                    zhTW: '提現申請失敗',
+                    en: 'Withdrawal request failed',
+                  ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -280,7 +463,14 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('提现申请失败: $e'),
+            content: Text(
+              _withdrawText(
+                context,
+                zhCN: '提现申请失败: $e',
+                zhTW: '提現申請失敗: $e',
+                en: 'Withdrawal request failed: $e',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -300,7 +490,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -321,19 +511,29 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                '提现申请已提交',
+                _withdrawText(
+                  context,
+                  zhCN: '提现申请已提交',
+                  zhTW: '提現申請已提交',
+                  en: 'Withdrawal request submitted',
+                ),
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                '预计${_selectedMethod?.tips ?? "1-3个工作日到账"}',
+                _withdrawText(
+                  context,
+                  zhCN: '预计${_selectedMethod?.tips ?? "1-3个工作日到账"}',
+                  zhTW: '預計${_selectedMethod?.tips ?? "1-3個工作日到帳"}',
+                  en: 'Estimated ${_selectedMethod?.tips ?? "1-3 business days"}',
+                ),
                 style: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ),
               const SizedBox(height: 24),
@@ -345,16 +545,21 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                     Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.primaryFor(context),
+                    foregroundColor: AppColors.onPrimaryFor(context),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    '完成',
+                  child: Text(
+                    _withdrawText(
+                      context,
+                      zhCN: '完成',
+                      zhTW: '完成',
+                      en: 'Done',
+                    ),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -371,21 +576,26 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(walletCurrencyProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final walletState = ref.watch(walletProvider);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        backgroundColor: AppColors.surfaceFor(context),
         elevation: 0,
         title: Text(
-          '提现',
+          _withdrawText(
+            context,
+            zhCN: '提现',
+            zhTW: '提現',
+            en: 'Withdraw',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         centerTitle: true,
@@ -393,7 +603,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
           icon: Icon(
             Icons.arrow_back_ios,
             size: 20,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -410,7 +620,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                    color: AppColors.cardFor(context),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -426,12 +636,12 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          color: AppColors.emphasisSoftFor(context),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
                           Icons.account_balance_wallet,
-                          color: AppColors.primary,
+                          color: AppColors.linkFor(context),
                           size: 22,
                         ),
                       ),
@@ -440,19 +650,24 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '可提现余额',
+                            _withdrawText(
+                              context,
+                              zhCN: '可提现余额',
+                              zhTW: '可提現餘額',
+                              en: 'Available Balance',
+                            ),
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white54 : Colors.grey[600],
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '¥${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                            '$_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
+                              color: AppColors.textPrimaryFor(context),
                             ),
                           ),
                         ],
@@ -466,10 +681,15 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                           setState(() {});
                         },
                         child: Text(
-                          '全部提现',
+                          _withdrawText(
+                            context,
+                            zhCN: '全部提现',
+                            zhTW: '全部提現',
+                            en: 'Withdraw All',
+                          ),
                           style: TextStyle(
                             fontSize: 14,
-                            color: AppColors.primary,
+                            color: AppColors.linkFor(context),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -484,7 +704,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                    color: AppColors.cardFor(context),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -498,10 +718,15 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '提现金额',
+                        _withdrawText(
+                          context,
+                          zhCN: '提现金额',
+                          zhTW: '提現金額',
+                          en: 'Withdrawal Amount',
+                        ),
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -509,11 +734,11 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
-                            '¥',
+                            _currency,
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
+                              color: AppColors.linkFor(context),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -526,7 +751,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                               style: TextStyle(
                                 fontSize: 32,
                                 fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: AppColors.textPrimaryFor(context),
                               ),
                               decoration: InputDecoration(
                                 border: InputBorder.none,
@@ -534,9 +759,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                                 hintStyle: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.w500,
-                                  color: isDark
-                                      ? Colors.white24
-                                      : Colors.grey[300],
+                                  color: AppColors.textTertiaryFor(context),
                                 ),
                               ),
                               inputFormatters: [
@@ -551,10 +774,17 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                       if (_selectedMethod != null) ...[
                         const SizedBox(height: 8),
                         Text(
-                          '单笔限额：¥${_selectedMethod!.minAmount?.toStringAsFixed(0) ?? '0'} - ¥${_selectedMethod!.maxAmount?.toStringAsFixed(0) ?? '无限制'}',
+                          _withdrawText(
+                            context,
+                            zhCN:
+                                '单笔限额：$_currency${_selectedMethod!.minAmount?.toStringAsFixed(0) ?? '0'} - $_currency${_selectedMethod!.maxAmount?.toStringAsFixed(0) ?? '无限制'}',
+                            zhTW:
+                                '單筆限額：$_currency${_selectedMethod!.minAmount?.toStringAsFixed(0) ?? '0'} - $_currency${_selectedMethod!.maxAmount?.toStringAsFixed(0) ?? '無限制'}',
+                            en: 'Per transaction limit: $_currency${_selectedMethod!.minAmount?.toStringAsFixed(0) ?? '0'} - $_currency${_selectedMethod!.maxAmount?.toStringAsFixed(0) ?? 'No limit'}',
+                          ),
                           style: TextStyle(
                             fontSize: 12,
-                            color: isDark ? Colors.white38 : Colors.grey[500],
+                            color: AppColors.textTertiaryFor(context),
                           ),
                         ),
                       ],
@@ -568,7 +798,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                    color: AppColors.cardFor(context),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -583,10 +813,15 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                     children: [
                       // 提现方式下拉选择
                       Text(
-                        '提现方式',
+                        _withdrawText(
+                          context,
+                          zhCN: '提现方式',
+                          zhTW: '提現方式',
+                          en: 'Withdrawal Method',
+                        ),
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -595,16 +830,21 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                       if (_selectedMethod != null) ...[
                         const SizedBox(height: 24),
                         Divider(
-                          color: isDark ? Colors.white10 : Colors.grey[100],
+                          color: AppColors.dividerFor(context),
                         ),
                         const SizedBox(height: 16),
 
                         // 提现信息表单
                         Text(
-                          '收款信息',
+                          _withdrawText(
+                            context,
+                            zhCN: '收款信息',
+                            zhTW: '收款資訊',
+                            en: 'Payout Info',
+                          ),
                           style: TextStyle(
                             fontSize: 13,
-                            color: isDark ? Colors.white54 : Colors.grey[600],
+                            color: AppColors.textSecondaryFor(context),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -625,28 +865,39 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                   child: ElevatedButton(
                     onPressed: _isLoading || !_canSubmit ? null : _submit,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          isDark ? Colors.white12 : Colors.grey[300],
+                      backgroundColor: AppColors.primaryFor(context),
+                      foregroundColor: AppColors.onPrimaryFor(context),
+                      disabledBackgroundColor: AppColors.dividerFor(context),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       elevation: 0,
                     ),
                     child: _isLoading
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 24,
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppColors.onPrimaryFor(context),
                             ),
                           )
                         : Text(
                             _amount > 0
-                                ? '提现 ¥${_amount.toStringAsFixed(2)}'
-                                : '提现',
+                                ? _withdrawText(
+                                    context,
+                                    zhCN:
+                                        '提现 $_currency${_amount.toStringAsFixed(2)}',
+                                    zhTW:
+                                        '提現 $_currency${_amount.toStringAsFixed(2)}',
+                                    en: 'Withdraw $_currency${_amount.toStringAsFixed(2)}',
+                                  )
+                                : _withdrawText(
+                                    context,
+                                    zhCN: '提现',
+                                    zhTW: '提現',
+                                    en: 'Withdraw',
+                                  ),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -664,14 +915,14 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                       Icon(
                         Icons.info_outline,
                         size: 14,
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: AppColors.textTertiaryFor(context),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         _selectedMethod!.tips!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ],
@@ -693,12 +944,12 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey[50],
+          color: AppColors.inputBackgroundFor(context),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: _selectedMethod != null
-                ? AppColors.primary.withOpacity(0.3)
-                : (isDark ? Colors.white12 : Colors.grey[200]!),
+                ? AppColors.controlActiveFor(context).withOpacity(0.3)
+                : AppColors.controlBorderFor(context),
             width: _selectedMethod != null ? 1.5 : 1,
           ),
         ),
@@ -712,11 +963,11 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _selectedMethod!.name,
+                      _localizedWithdrawMethodName(context, _selectedMethod!),
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                     if (_selectedMethod!.tips != null) ...[
@@ -725,7 +976,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                         _selectedMethod!.tips!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ],
@@ -736,22 +987,27 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
               Icon(
                 Icons.account_balance_wallet_outlined,
                 size: 22,
-                color: isDark ? Colors.white38 : Colors.grey[400],
+                color: AppColors.inputIconFor(context),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '请选择提现方式',
+                  _withdrawText(
+                    context,
+                    zhCN: '请选择提现方式',
+                    zhTW: '請選擇提現方式',
+                    en: 'Please select a withdrawal method',
+                  ),
                   style: TextStyle(
                     fontSize: 15,
-                    color: isDark ? Colors.white38 : Colors.grey[400],
+                    color: AppColors.inputHintFor(context),
                   ),
                 ),
               ),
             ],
             Icon(
               Icons.keyboard_arrow_down_rounded,
-              color: isDark ? Colors.white38 : Colors.grey[400],
+              color: AppColors.inputIconFor(context),
               size: 24,
             ),
           ],
@@ -768,7 +1024,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
             topRight: Radius.circular(20),
@@ -784,7 +1040,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -792,17 +1048,22 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '选择提现方式',
+                  _withdrawText(
+                    context,
+                    zhCN: '选择提现方式',
+                    zhTW: '選擇提現方式',
+                    en: 'Select Withdrawal Method',
+                  ),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
               ),
               Divider(
                 height: 1,
-                color: isDark ? Colors.white10 : Colors.grey[100],
+                color: AppColors.dividerFor(context),
               ),
               // 选项列表
               ...enabledMethods.map((method) {
@@ -829,11 +1090,11 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  method.name,
+                                  _localizedWithdrawMethodName(context, method),
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
-                                    color: isDark ? Colors.white : Colors.black87,
+                                    color: AppColors.textPrimaryFor(context),
                                   ),
                                 ),
                                 if (method.tips != null) ...[
@@ -842,9 +1103,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                                     method.tips!,
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: isDark
-                                          ? Colors.white38
-                                          : Colors.grey[500],
+                                      color: AppColors.textTertiaryFor(context),
                                     ),
                                   ),
                                 ],
@@ -854,7 +1113,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                           if (isSelected)
                             Icon(
                               Icons.check_circle,
-                              color: AppColors.primary,
+                              color: AppColors.controlActiveFor(context),
                               size: 22,
                             ),
                         ],
@@ -895,7 +1154,7 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
       default:
         iconData = Icons.payment;
         iconColor = Colors.white;
-        bgColor = AppColors.primary;
+        bgColor = AppColors.primaryFor(context);
     }
 
     return Container(
@@ -926,21 +1185,19 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              field.label,
+              _localizedWithdrawFieldLabel(context, field),
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withOpacity(0.05)
-                    : Colors.grey[50],
+                color: AppColors.inputBackgroundFor(context),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isDark ? Colors.white12 : Colors.grey[200]!,
+                  color: AppColors.controlBorderFor(context),
                 ),
               ),
               child: DropdownButtonFormField<String>(
@@ -951,19 +1208,19 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                     horizontal: 16,
                     vertical: 14,
                   ),
-                  hintText: field.hint,
+                  hintText: _localizedWithdrawFieldHint(context, field),
                   hintStyle: TextStyle(
-                    color: isDark ? Colors.white38 : Colors.grey[400],
+                    color: AppColors.inputHintFor(context),
                   ),
                 ),
-                dropdownColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                dropdownColor: AppColors.cardFor(context),
                 items: field.options?.map((option) {
                   return DropdownMenuItem(
                     value: option,
                     child: Text(
                       option,
                       style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                   );
@@ -977,7 +1234,12 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
                 validator: field.required
                     ? (value) {
                         if (value == null || value.isEmpty) {
-                          return '请选择${field.label}';
+                          return _withdrawText(
+                            context,
+                            zhCN: '请选择${field.label}',
+                            zhTW: '請選擇${field.label}',
+                            en: 'Please select ${_localizedWithdrawFieldLabel(context, field)}',
+                          );
                         }
                         return null;
                       }
@@ -995,10 +1257,10 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            field.label,
+            _localizedWithdrawFieldLabel(context, field),
             style: TextStyle(
               fontSize: 13,
-              color: isDark ? Colors.white54 : Colors.grey[600],
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
           const SizedBox(height: 8),
@@ -1008,31 +1270,33 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
             maxLength: field.maxLength,
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppColors.textPrimaryFor(context),
             ),
             decoration: InputDecoration(
-              hintText: field.hint,
+              hintText: _localizedWithdrawFieldHint(context, field),
               hintStyle: TextStyle(
-                color: isDark ? Colors.white38 : Colors.grey[400],
+                color: AppColors.inputHintFor(context),
               ),
               filled: true,
-              fillColor:
-                  isDark ? Colors.white.withOpacity(0.05) : Colors.grey[50],
+              fillColor: AppColors.inputBackgroundFor(context),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: isDark ? Colors.white12 : Colors.grey[200]!,
+                  color: AppColors.controlBorderFor(context),
                 ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: isDark ? Colors.white12 : Colors.grey[200]!,
+                  color: AppColors.controlBorderFor(context),
                 ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primary, width: 2),
+                borderSide: BorderSide(
+                  color: AppColors.controlActiveFor(context),
+                  width: 2,
+                ),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1047,12 +1311,22 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
             inputFormatters: _getInputFormatters(field.type),
             validator: (value) {
               if (field.required && (value == null || value.isEmpty)) {
-                return '请输入${field.label}';
+                return _withdrawText(
+                  context,
+                  zhCN: '请输入${field.label}',
+                  zhTW: '請輸入${field.label}',
+                  en: 'Please enter ${_localizedWithdrawFieldLabel(context, field)}',
+                );
               }
               if (value != null && value.isNotEmpty && field.regex != null) {
                 try {
                   if (!RegExp(field.regex!).hasMatch(value)) {
-                    return '${field.label}格式不正确';
+                    return _withdrawText(
+                      context,
+                      zhCN: '${field.label}格式不正确',
+                      zhTW: '${field.label}格式不正確',
+                      en: '${_localizedWithdrawFieldLabel(context, field)} format is invalid',
+                    );
                   }
                 } catch (_) {}
               }
@@ -1082,7 +1356,10 @@ class _WithdrawPageState extends ConsumerState<WithdrawPage> {
   List<TextInputFormatter> _getInputFormatters(FormFieldType type) {
     switch (type) {
       case FormFieldType.phone:
-        return [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(11)];
+        return [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(11)
+        ];
       case FormFieldType.number:
         return [FilteringTextInputFormatter.digitsOnly];
       case FormFieldType.bankCard:

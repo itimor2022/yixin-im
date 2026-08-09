@@ -1,3 +1,21 @@
+<#
+.SYNOPSIS
+检查 Android 厂商推送配置是否完整且来源符合预期。
+
+.DESCRIPTION
+按 gradle.properties、环境变量、gradle.vendor.local.properties 的优先级
+解析各厂商开关和凭据，只输出存在性与来源，不应打印完整密钥。可选 Compile
+会触发 Android 编译验证，但不会向设备发送推送。
+
+.PARAMETER Compile
+配置检查通过后继续执行 Android 编译验证。
+
+.PARAMETER ForceVendorEnabled
+即使配置未显式启用也按启用状态检查全部必需字段，用于上线前预检。
+
+.EXAMPLE
+pwsh -File scripts/android_vendor_push_preflight.ps1 -ForceVendorEnabled
+#>
 param(
     [switch]$Compile,
     [switch]$ForceVendorEnabled
@@ -34,6 +52,7 @@ function Read-PropertiesFile {
 }
 
 function Resolve-Prop {
+    # 优先级与 Gradle 集成保持一致，返回 Source 便于定位误用的本地配置。
     param(
         [string]$Name,
         [hashtable]$GradleProps,

@@ -1,30 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 
-    网络安全配置
-    - 开发环境: 允许 HTTP 明文流量 (localhost, 192.168.31.242, 局域网)
-    - 生产环境: 只需要删除 cleartextTrafficPermitted="true" 或整个 debug-overrides
-    -->
-    
-    <!-- 默认配置: 生产环境使用 HTTPS -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
-            <certificates src="system"/>
+            <certificates src="system" />
         </trust-anchors>
     </base-config>
-    
-    <!-- 开发环境允许的域名 -->
     <domain-config cleartextTrafficPermitted="true">
-        <!-- 本地开发 -->
         <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">192.168.31.242</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
-        <!-- 局域网 IP 段 -->
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <domain includeSubdomains="true">192.168.1.0</domain>
-        <domain includeSubdomains="true">192.168.10.0</domain>
-        <!-- 添加你的服务器域名（上线后可删除此行或改为 HTTPS） -->
-        <!-- <domain includeSubdomains="true">your-domain.com</domain> -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
     </domain-config>
 </network-security-config>

@@ -1,20 +1,21 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"context"
 	"errors"
-	"sort"
-	"strings"
-	"time"
-
-	"gaoranim/internal/models"
-	"gaoranim/internal/ws"
-	"gaoranim/pkg/response"
-
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
+	"sort"
+	"strings"
+	"time"
+	"genericim/internal/models"
+	"genericim/internal/ws"
+	"genericim/pkg/response"
 )
 
 type PinHandler struct {
@@ -46,7 +47,6 @@ func (h *PinHandler) PinMessage(c *gin.Context) {
 		response.NotFound(c, "会话不存在")
 		return
 	}
-
 	if chat.Status != models.ChatStatusNormal {
 		response.Forbidden(c, "会话已被封禁或解散")
 		return
@@ -79,7 +79,6 @@ func (h *PinHandler) PinMessage(c *gin.Context) {
 		response.ServerError(c, "置顶失败")
 		return
 	}
-
 	msgText := buildPinnedMessagePreview(msg)
 	now := time.Now()
 	if err := h.db.Model(&chat).Updates(map[string]interface{}{
@@ -92,16 +91,14 @@ func (h *PinHandler) PinMessage(c *gin.Context) {
 		response.ServerError(c, "置顶失败")
 		return
 	}
-
-	h.hub.SendToChatCluster(chatUUID, map[string]interface{}{
+	h.hub.SendToChat(chatUUID, map[string]interface{}{
 		"type":         "message_pinned",
 		"chat_id":      chatUUID,
 		"message_id":   req.MessageID,
 		"message_text": msgText,
 		"pinned_by":    userID,
 		"pinned_at":    now.Format("2006-01-02 15:04:05"),
-	})
-
+	}, "")
 	response.Success(c, map[string]interface{}{
 		"message_id":          req.MessageID,
 		"message_text":        msgText,
@@ -117,6 +114,10 @@ func (h *PinHandler) UnpinMessage(c *gin.Context) {
 	var chat models.Chat
 	if err := h.db.Where("uuid = ?", chatUUID).First(&chat).Error; err != nil {
 		response.NotFound(c, "会话不存在")
+		return
+	}
+	if chat.Status != models.ChatStatusNormal {
+		response.Forbidden(c, "会话已被封禁或解散")
 		return
 	}
 
@@ -137,7 +138,6 @@ func (h *PinHandler) UnpinMessage(c *gin.Context) {
 		response.Forbidden(c, "仅管理员可以取消置顶")
 		return
 	}
-
 	if err := h.db.Model(&chat).Updates(map[string]interface{}{
 		"pinned_message_id":   "",
 		"pinned_message_text": "",
@@ -148,13 +148,11 @@ func (h *PinHandler) UnpinMessage(c *gin.Context) {
 		response.ServerError(c, "取消置顶失败")
 		return
 	}
-
-	h.hub.SendToChatCluster(chatUUID, map[string]interface{}{
+	h.hub.SendToChat(chatUUID, map[string]interface{}{
 		"type":        "message_unpinned",
 		"chat_id":     chatUUID,
 		"unpinned_by": userID,
-	})
-
+	}, "")
 	response.SuccessWithMessage(c, "已取消置顶", nil)
 }
 
@@ -166,23 +164,21 @@ func (h *PinHandler) GetPinnedMessage(c *gin.Context) {
 		response.NotFound(c, "会话不存在")
 		return
 	}
-
 	if chat.PinnedMessageID == "" {
 		response.Success(c, nil)
 		return
 	}
-
 	pinnedText := strings.TrimSpace(chat.PinnedMessageText)
-	if pinnedText == "" && chat.PinnedMessageID != "" {
+	if chat.PinnedMessageID != "" {
 		msg, findErr := h.findMessageByMsgID(context.Background(), chatUUID, chat.PinnedMessageID)
 		if findErr == nil {
-			pinnedText = buildPinnedMessagePreview(msg)
-			if pinnedText != "" {
+			rebuiltText := buildPinnedMessagePreview(msg)
+			if rebuiltText != "" && rebuiltText != pinnedText {
+				pinnedText = rebuiltText
 				_ = h.db.Model(&chat).Update("pinned_message_text", pinnedText).Error
 			}
 		}
 	}
-
 	response.Success(c, map[string]interface{}{
 		"message_id":   chat.PinnedMessageID,
 		"message_text": pinnedText,
@@ -198,10 +194,8 @@ func (h *PinHandler) findMessageByMsgID(ctx context.Context, chatID string, msgI
 	if err != nil {
 		return nil, err
 	}
-
 	sort.Sort(sort.Reverse(sort.StringSlice(collections)))
 	collections = append(collections, "messages")
-
 	seen := make(map[string]struct{}, len(collections))
 	for _, name := range collections {
 		if _, ok := seen[name]; ok {
@@ -221,72 +215,5 @@ func (h *PinHandler) findMessageByMsgID(ctx context.Context, chatID string, msgI
 			return nil, err
 		}
 	}
-
 	return nil, mongo.ErrNoDocuments
-}
-
-func buildPinnedMessagePreview(msg *models.Message) string {
-	if msg == nil {
-		return ""
-	}
-
-	if text := strings.TrimSpace(msg.Content.Text); text != "" {
-		return truncatePinnedMessagePreview(text)
-	}
-
-	switch msg.Type {
-	case models.MsgTypeImage:
-		return "[图片]"
-	case models.MsgTypeVideo:
-		return "[视频]"
-	case models.MsgTypeVoice:
-		return "[语音]"
-	case models.MsgTypeFile:
-		if msg.Content.File != nil && strings.TrimSpace(msg.Content.File.Name) != "" {
-			return truncatePinnedMessagePreview("[文件] " + strings.TrimSpace(msg.Content.File.Name))
-		}
-		return "[文件]"
-	case models.MsgTypeLocation:
-		if msg.Content.Location != nil {
-			if title := strings.TrimSpace(msg.Content.Location.Title); title != "" {
-				return truncatePinnedMessagePreview("[位置] " + title)
-			}
-			if address := strings.TrimSpace(msg.Content.Location.Address); address != "" {
-				return truncatePinnedMessagePreview("[位置] " + address)
-			}
-		}
-		return "[位置]"
-	case models.MsgTypeSticker:
-		return "[表情]"
-	case models.MsgTypeContact:
-		if msg.Content.Contact != nil {
-			name := strings.TrimSpace(msg.Content.Contact.Nickname)
-			if name == "" {
-				name = strings.TrimSpace(msg.Content.Contact.Username)
-			}
-			if name != "" {
-				return truncatePinnedMessagePreview("[名片] " + name)
-			}
-		}
-		return "[名片]"
-	case models.MsgTypeCall:
-		return "[通话]"
-	case models.MsgTypeRedPacket:
-		return "[红包]"
-	case models.MsgTypeTransfer:
-		return "[转账]"
-	case models.MsgTypeSystem:
-		return "[系统消息]"
-	default:
-		return "[消息]"
-	}
-}
-
-func truncatePinnedMessagePreview(text string) string {
-	text = strings.TrimSpace(text)
-	runes := []rune(text)
-	if len(runes) <= 100 {
-		return text
-	}
-	return string(runes[:100]) + "..."
 }

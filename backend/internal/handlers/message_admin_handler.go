@@ -1,20 +1,22 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"context"
-	"gaoranim/pkg/response"
-	"math"
-	"regexp"
-	"sort"
-	"strconv"
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
+	"math"
+	"regexp"
+	"sort"
+	"strconv"
+	"time"
+	"genericim/pkg/response"
 )
 
 type MessageAdminHandler struct {
@@ -26,7 +28,8 @@ func NewMessageAdminHandler(db *gorm.DB, mongoDB *mongo.Database) *MessageAdminH
 	return &MessageAdminHandler{db: db, mongoDB: mongoDB}
 }
 
-// getMessageCollections 获取所有消息集合（包括分片集合），按名称倒序排列
+// getMessageCollections 获取
+
 func (h *MessageAdminHandler) getMessageCollections(ctx context.Context) []string {
 	collections, err := h.mongoDB.ListCollectionNames(ctx, bson.M{
 		"name": bson.M{"$regex": "^messages"},
@@ -58,16 +61,13 @@ func (h *MessageAdminHandler) SearchMessages(c *gin.Context) {
 	msgType := c.Query("type")
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
-
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-
 	filter := bson.M{}
-
 	if keyword != "" {
 		filter["content.text"] = bson.M{"$regex": regexp.QuoteMeta(keyword), "$options": "i"}
 	}
@@ -99,19 +99,17 @@ func (h *MessageAdminHandler) SearchMessages(c *gin.Context) {
 			filter["created_at"].(bson.M)["$lte"] = t.Add(24 * time.Hour)
 		}
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	collectionNames := h.getMessageCollections(ctx)
 
 	var total int64
+
 	for _, name := range collectionNames {
 		cnt, err := h.mongoDB.Collection(name).CountDocuments(ctx, filter)
 		if err == nil {
 			total += cnt
 		}
 	}
-
 	skip := int64((page - 1) * pageSize)
 	opts := options.Find().
 		SetSort(bson.D{{Key: "created_at", Value: -1}}).
@@ -130,13 +128,11 @@ func (h *MessageAdminHandler) SearchMessages(c *gin.Context) {
 			skipped += cnt
 			continue
 		}
-
 		localSkip := int64(0)
 		if skipped < skip {
 			localSkip = skip - skipped
 			skipped = skip
 		}
-
 		remaining := int64(pageSize) - int64(len(messages))
 		localOpts := options.Find().
 			SetSort(bson.D{{Key: "created_at", Value: -1}}).
@@ -167,7 +163,6 @@ func (h *MessageAdminHandler) SearchMessages(c *gin.Context) {
 			delete(messages[i], "_id")
 		}
 	}
-
 	response.Success(c, gin.H{
 		"list":        messages,
 		"total":       total,

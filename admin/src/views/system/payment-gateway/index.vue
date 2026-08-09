@@ -20,6 +20,7 @@
   }
 
   function getEffectiveNotifyBaseUrl() {
+    // 未显式配置时用当前后台来源生成预览地址，生产部署仍建议填写公网回调域名。
     return form.notify_base_url || getDefaultNotifyBaseUrl()
   }
 
@@ -135,6 +136,7 @@
     try {
       const res = (await getPaymentGatewayConfig()) as any
       if (res) {
+        // 嵌套渠道配置分别与默认值合并，兼容后端旧版本缺少新增字段的响应。
         Object.assign(form, {
           ...defaultForm(),
           ...res,
@@ -155,11 +157,15 @@
   }
 
   function validateForm() {
+    // 前端校验用于一次性汇总可见问题，密钥和回调地址仍由服务端做最终验证。
     if (!form.enabled) return true
 
     const errors: string[] = []
     const notifyBase = form.notify_base_url.trim()
     const alipayReturnUrl = (form.alipay.return_url || getDefaultAlipayReturnUrl()).trim()
+    const wechatPrivateKey = form.wechat.private_key_pem?.trim() || ''
+    const alipayPrivateKey = form.alipay.app_private_key_pem?.trim() || ''
+    const alipayPublicKey = form.alipay.alipay_public_key_pem?.trim() || ''
 
     if (form.min_amount <= 0) {
       errors.push('最小充值金额必须大于 0')
@@ -176,23 +182,23 @@
       if (!form.wechat.mch_id.trim()) errors.push('请填写微信支付商户号 MchID')
       if (!form.wechat.mch_api_v3_key.trim()) errors.push('请填写微信支付 API v3 密钥')
       if (!form.wechat.mch_certificate_serial.trim()) errors.push('请填写微信支付证书序列号')
-      if (!form.wechat.private_key_pem.trim()) {
+      if (!wechatPrivateKey) {
         errors.push('请填写微信支付商户私钥')
-      } else if (!looksLikePem(form.wechat.private_key_pem.trim())) {
+      } else if (!looksLikePem(wechatPrivateKey)) {
         errors.push('微信支付商户私钥内容格式不正确')
       }
     }
 
     if (form.alipay.enabled) {
       if (!form.alipay.app_id.trim()) errors.push('请填写支付宝 App ID')
-      if (!form.alipay.app_private_key_pem.trim()) {
+      if (!alipayPrivateKey) {
         errors.push('请填写支付宝应用私钥')
-      } else if (!looksLikePem(form.alipay.app_private_key_pem.trim())) {
+      } else if (!looksLikePem(alipayPrivateKey)) {
         errors.push('支付宝应用私钥内容格式不正确')
       }
-      if (!form.alipay.alipay_public_key_pem.trim()) {
+      if (!alipayPublicKey) {
         errors.push('请填写支付宝公钥')
-      } else if (!looksLikePem(form.alipay.alipay_public_key_pem.trim())) {
+      } else if (!looksLikePem(alipayPublicKey)) {
         errors.push('支付宝公钥内容格式不正确')
       }
       if (alipayReturnUrl && !isValidReturnUrl(alipayReturnUrl)) {
@@ -212,6 +218,7 @@
     if (!validateForm()) return
     saving.value = true
     try {
+      // 整体提交网关快照，渠道启用状态与对应凭据保持同一次更新。
       await savePaymentGatewayConfig(form)
       ElMessage.success('保存成功')
     } catch (error) {

@@ -1,14 +1,36 @@
+// 文件用途：实现 SendRedPacketPage 页面及其交互流程，属于钱包与支付。
+// 核心逻辑：维护 SendRedPacketPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/system_ui_styles.dart';
 import '../providers/wallet_provider.dart';
 import '../services/wallet_service.dart';
 import '../widgets/pay_password_input.dart';
 
 /// 发红包页面
+String _redPacketText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：send red packet page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class SendRedPacketPage extends ConsumerStatefulWidget {
-  final String chatId;  // 聊天会话 UUID
+  final String chatId; // 聊天会话 UUID
   final String receiverName;
   final String? receiverAvatar;
   final bool isGroup;
@@ -29,14 +51,17 @@ class SendRedPacketPage extends ConsumerStatefulWidget {
 
 class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
   final _amountController = TextEditingController();
-  final _greetingController = TextEditingController(text: '恭喜发财，大吉大利');
+  final _greetingController = TextEditingController();
   final _countController = TextEditingController(text: '1');
   bool _isRandom = true;
   bool _isLoading = false;
+  bool _greetingInitialized = false;
+  String get _currency => ref.read(walletCurrencyProvider);
 
   // 红包主题色
   static const _redPacketColor = Color(0xFFE74C3C);
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -44,6 +69,19 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(walletProvider.notifier).loadWallet();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_greetingInitialized) return;
+    _greetingInitialized = true;
+    _greetingController.text = _redPacketText(
+      context,
+      zhCN: '恭喜发财，大吉大利',
+      zhTW: '恭喜發財，大吉大利',
+      en: 'Best wishes and good luck',
+    );
   }
 
   @override
@@ -120,24 +158,30 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white24 : Colors.grey[300],
+                          color: AppColors.dividerFor(context),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
                     // 标题栏 - 取消/标题/确定
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 8),
                       child: Row(
                         children: [
                           // 取消按钮
                           TextButton(
                             onPressed: () => Navigator.pop(context),
                             child: Text(
-                              '取消',
+                              _redPacketText(
+                                context,
+                                zhCN: '取消',
+                                zhTW: '取消',
+                                en: 'Cancel',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
-                                color: isDark ? Colors.white60 : Colors.grey[600],
+                                color: AppColors.textSecondaryFor(context),
                               ),
                             ),
                           ),
@@ -145,11 +189,16 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                           Expanded(
                             child: Center(
                               child: Text(
-                                '红包金额',
+                                _redPacketText(
+                                  context,
+                                  zhCN: '红包金额',
+                                  zhTW: '紅包金額',
+                                  en: 'Red Packet Amount',
+                                ),
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
+                                  color: AppColors.textPrimaryFor(context),
                                 ),
                               ),
                             ),
@@ -163,7 +212,12 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                               Navigator.pop(context);
                             },
                             child: Text(
-                              '确定',
+                              _redPacketText(
+                                context,
+                                zhCN: '确定',
+                                zhTW: '確定',
+                                en: 'Confirm',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
@@ -183,7 +237,7 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Text(
-                            '¥',
+                            _currency,
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w600,
@@ -197,10 +251,8 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                               fontSize: 48,
                               fontWeight: FontWeight.w600,
                               color: inputAmount.isEmpty
-                                  ? (isDark
-                                      ? Colors.white24
-                                      : Colors.grey[300])
-                                  : (isDark ? Colors.white : Colors.black87),
+                                  ? AppColors.textTertiaryFor(context)
+                                  : AppColors.textPrimaryFor(context),
                               letterSpacing: -1,
                             ),
                           ),
@@ -274,14 +326,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                       ? Icon(
                           Icons.backspace_outlined,
                           size: 22,
-                          color: isDark ? Colors.white70 : Colors.black87,
+                          color: AppColors.textSecondaryFor(context),
                         )
                       : Text(
                           key,
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : Colors.black87,
+                            color: AppColors.textPrimaryFor(context),
                           ),
                         ),
                 ),
@@ -297,7 +349,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     if (_amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('请输入有效金额'),
+          content: Text(
+            _redPacketText(
+              context,
+              zhCN: '请输入有效金额',
+              zhTW: '請輸入有效金額',
+              en: 'Enter a valid amount',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -309,7 +368,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     if (widget.isGroup && _count <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('请输入红包个数'),
+          content: Text(
+            _redPacketText(
+              context,
+              zhCN: '请输入红包个数',
+              zhTW: '請輸入紅包個數',
+              en: 'Enter the number of red packets',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -324,7 +390,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     if (balance < _amount) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('余额不足'),
+          content: Text(
+            _redPacketText(
+              context,
+              zhCN: '余额不足',
+              zhTW: '餘額不足',
+              en: 'Insufficient balance',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -336,9 +409,26 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     // 显示密码输入
     final password = await showPayPasswordDialog(
       context: context,
-      title: '确认支付',
-      amount: '¥${_amount.toStringAsFixed(2)}',
-      subtitle: widget.isGroup ? '${_count}个红包' : '发给 ${widget.receiverName}',
+      title: _redPacketText(
+        context,
+        zhCN: '确认支付',
+        zhTW: '確認支付',
+        en: 'Confirm Payment',
+      ),
+      amount: '$_currency${_amount.toStringAsFixed(2)}',
+      subtitle: widget.isGroup
+          ? _redPacketText(
+              context,
+              zhCN: '${_count}个红包',
+              zhTW: '${_count}個紅包',
+              en: '$_count red packets',
+            )
+          : _redPacketText(
+              context,
+              zhCN: '发给 ${widget.receiverName}',
+              zhTW: '發給 ${widget.receiverName}',
+              en: 'Send to ${widget.receiverName}',
+            ),
     );
 
     if (password == null) return;
@@ -349,15 +439,22 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
     try {
       // 调用真实 API 发送红包
       final response = await ref.read(walletProvider.notifier).sendRedPacket(
-        chatId: widget.chatId,
-        type: widget.isGroup && _isRandom ? RedPacketType.lucky : RedPacketType.normal,
-        totalAmount: _amount,
-        totalCount: widget.isGroup ? _count : 1,
-        message: _greetingController.text.isEmpty
-            ? '恭喜发财，大吉大利'
-            : _greetingController.text,
-        payPassword: password,
-      );
+            chatId: widget.chatId,
+            type: widget.isGroup && _isRandom
+                ? RedPacketType.lucky
+                : RedPacketType.normal,
+            totalAmount: _amount,
+            totalCount: widget.isGroup ? _count : 1,
+            message: _greetingController.text.isEmpty
+                ? _redPacketText(
+                    context,
+                    zhCN: '恭喜发财，大吉大利',
+                    zhTW: '恭喜發財，大吉大利',
+                    en: 'Best wishes and good luck',
+                  )
+                : _greetingController.text,
+            payPassword: password,
+          );
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -367,7 +464,15 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ref.read(walletProvider).error ?? '发送失败'),
+            content: Text(
+              ref.read(walletProvider).error ??
+                  _redPacketText(
+                    context,
+                    zhCN: '发送失败',
+                    zhTW: '發送失敗',
+                    en: 'Send failed',
+                  ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -380,7 +485,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('发送失败: $e'),
+            content: Text(
+              _redPacketText(
+                context,
+                zhCN: '发送失败: $e',
+                zhTW: '發送失敗: $e',
+                en: 'Send failed: $e',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -392,6 +504,7 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(walletCurrencyProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final walletState = ref.watch(walletProvider);
 
@@ -400,9 +513,22 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
           isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
       appBar: AppBar(
         backgroundColor: _redPacketColor,
+        systemOverlayStyle: AppSystemUiStyles.onDarkBackground,
         elevation: 0,
         title: Text(
-          widget.isGroup ? '发群红包' : '发红包',
+          widget.isGroup
+              ? _redPacketText(
+                  context,
+                  zhCN: '发群红包',
+                  zhTW: '發群紅包',
+                  en: 'Group Red Packet',
+                )
+              : _redPacketText(
+                  context,
+                  zhCN: '发红包',
+                  zhTW: '發紅包',
+                  en: 'Send Red Packet',
+                ),
           style: const TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -441,9 +567,10 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                       CircleAvatar(
                         radius: 22,
                         backgroundColor: Colors.white24,
-                        backgroundImage: widget.receiverAvatar?.isNotEmpty == true
-                            ? NetworkImage(widget.receiverAvatar!)
-                            : null,
+                        backgroundImage:
+                            widget.receiverAvatar?.isNotEmpty == true
+                                ? NetworkImage(widget.receiverAvatar!)
+                                : null,
                         child: widget.receiverAvatar?.isNotEmpty != true
                             ? Text(
                                 widget.receiverName.isNotEmpty
@@ -463,7 +590,19 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.isGroup ? '群红包' : '发给',
+                              widget.isGroup
+                                  ? _redPacketText(
+                                      context,
+                                      zhCN: '群红包',
+                                      zhTW: '群紅包',
+                                      en: 'Group Packet',
+                                    )
+                                  : _redPacketText(
+                                      context,
+                                      zhCN: '发给',
+                                      zhTW: '發給',
+                                      en: 'Send to',
+                                    ),
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withOpacity(0.7),
@@ -491,7 +630,14 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '余额 ¥${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                          _redPacketText(
+                            context,
+                            zhCN:
+                                '余额 $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                            zhTW:
+                                '餘額 $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                            en: 'Balance $_currency${(walletState.wallet?.balance ?? 0).toStringAsFixed(2)}',
+                          ),
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.white,
@@ -529,10 +675,15 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                           child: Text(
-                            '红包金额',
+                            _redPacketText(
+                              context,
+                              zhCN: '红包金额',
+                              zhTW: '紅包金額',
+                              en: 'Red Packet Amount',
+                            ),
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white54 : Colors.grey[600],
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ),
@@ -546,7 +697,7 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                               textBaseline: TextBaseline.alphabetic,
                               children: [
                                 Text(
-                                  '¥',
+                                  _currency,
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w600,
@@ -562,12 +713,8 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                                     fontSize: 42,
                                     fontWeight: FontWeight.w600,
                                     color: _amountController.text.isEmpty
-                                        ? (isDark
-                                            ? Colors.white24
-                                            : Colors.grey[300])
-                                        : (isDark
-                                            ? Colors.white
-                                            : Colors.black87),
+                                        ? AppColors.textTertiaryFor(context)
+                                        : AppColors.textPrimaryFor(context),
                                     letterSpacing: -1,
                                   ),
                                 ),
@@ -587,7 +734,12 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                       _buildListTile(
                         isDark: isDark,
                         icon: Icons.people_outline,
-                        title: '红包个数',
+                        title: _redPacketText(
+                          context,
+                          zhCN: '红包个数',
+                          zhTW: '紅包個數',
+                          en: 'Packet Count',
+                        ),
                         trailing: SizedBox(
                           width: 80,
                           child: TextField(
@@ -603,14 +755,17 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                               border: InputBorder.none,
                               hintText: '1',
                               hintStyle: TextStyle(
-                                  color: isDark
-                                      ? Colors.white38
-                                      : Colors.grey[400]),
-                              suffixText: ' 个',
+                                color: AppColors.inputHintFor(context),
+                              ),
+                              suffixText: _redPacketText(
+                                context,
+                                zhCN: ' 个',
+                                zhTW: ' 個',
+                                en: '',
+                              ),
                               suffixStyle: TextStyle(
                                 fontSize: 14,
-                                color:
-                                    isDark ? Colors.white54 : Colors.grey[600],
+                                color: AppColors.textSecondaryFor(context),
                               ),
                             ),
                             inputFormatters: [
@@ -626,17 +781,40 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                       _buildListTile(
                         isDark: isDark,
                         icon: Icons.shuffle,
-                        title: '红包类型',
+                        title: _redPacketText(
+                          context,
+                          zhCN: '红包类型',
+                          zhTW: '紅包類型',
+                          en: 'Packet Type',
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _buildTypeButton('拼手气', _isRandom, () {
-                              setState(() => _isRandom = true);
-                            }),
+                            _buildTypeButton(
+                              _redPacketText(
+                                context,
+                                zhCN: '拼手气',
+                                zhTW: '拼手氣',
+                                en: 'Lucky',
+                              ),
+                              _isRandom,
+                              () {
+                                setState(() => _isRandom = true);
+                              },
+                            ),
                             const SizedBox(width: 8),
-                            _buildTypeButton('普通', !_isRandom, () {
-                              setState(() => _isRandom = false);
-                            }),
+                            _buildTypeButton(
+                              _redPacketText(
+                                context,
+                                zhCN: '普通',
+                                zhTW: '普通',
+                                en: 'Normal',
+                              ),
+                              !_isRandom,
+                              () {
+                                setState(() => _isRandom = false);
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -660,14 +838,21 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                           ),
                           decoration: InputDecoration(
                             border: InputBorder.none,
-                            hintText: '恭喜发财，大吉大利',
+                            hintText: _redPacketText(
+                              context,
+                              zhCN: '恭喜发财，大吉大利',
+                              zhTW: '恭喜發財，大吉大利',
+                              en: 'Best wishes and good luck',
+                            ),
                             hintStyle: TextStyle(
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[400]),
+                              color: AppColors.inputHintFor(context),
+                            ),
                           ),
                           maxLength: 20,
-                          buildCounter: (_, {required currentLength, required isFocused, required maxLength}) =>
+                          buildCounter: (_,
+                                  {required currentLength,
+                                  required isFocused,
+                                  required maxLength}) =>
                               null,
                         ),
                       ),
@@ -713,8 +898,20 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
                             const SizedBox(width: 8),
                             Text(
                               _amount > 0
-                                  ? '发 ¥${_amount.toStringAsFixed(2)} 红包'
-                                  : '塞钱进红包',
+                                  ? _redPacketText(
+                                      context,
+                                      zhCN:
+                                          '发 $_currency${_amount.toStringAsFixed(2)} 红包',
+                                      zhTW:
+                                          '發 $_currency${_amount.toStringAsFixed(2)} 紅包',
+                                      en: 'Send $_currency${_amount.toStringAsFixed(2)}',
+                                    )
+                                  : _redPacketText(
+                                      context,
+                                      zhCN: '塞钱进红包',
+                                      zhTW: '放錢進紅包',
+                                      en: 'Put Money in Packet',
+                                    ),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -746,7 +943,7 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
           Icon(
             icon,
             size: 20,
-            color: isDark ? Colors.white54 : Colors.grey[600],
+            color: AppColors.textSecondaryFor(context),
           ),
           if (title.isNotEmpty) ...[
             const SizedBox(width: 12),
@@ -787,9 +984,8 @@ class _SendRedPacketPageState extends ConsumerState<SendRedPacketPage> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: isSelected
-                ? Colors.white
-                : (isDark ? Colors.white60 : Colors.grey[600]),
+            color:
+                isSelected ? Colors.white : AppColors.textSecondaryFor(context),
           ),
         ),
       ),

@@ -1,0 +1,179 @@
+server:
+  port: 8080
+  mode: debug
+  read_timeout: 10s
+  write_timeout: 35m
+  base_url: "http://10.0.2.2:8080"
+  register_base_url: "http://10.0.2.2:18083/#"
+  upload_dir: "/app/uploads"
+  allowed_origins: []
+  external_cleanup_http_delete: false
+  external_cleanup_allowed_hosts: []
+
+storage:
+  provider: local
+  local:
+    base_url: "http://10.0.2.2:8080"
+  aliyun:
+    endpoint: ""
+    bucket: ""
+    access_key_id: ""
+    access_key_secret: ""
+    public_base_url: ""
+    use_https: true
+  qiniu:
+    upload_url: "https://upload.qiniup.com"
+    bucket: ""
+    access_key: ""
+    secret_key: ""
+    public_base_url: ""
+    use_https: true
+
+mysql:
+  host: mysql
+  port: 3306
+  user: genericim
+  password: genericim
+  database: genericim
+  # 500 并发群聊矩阵会在文本、上传和图片 ACK 三个阶段反复拉高连接数。
+  # 保留本轮实际峰值（约 350）以上的空闲连接，避免阶段切换时重复建连。
+  max_idle_conns: 400
+  max_open_conns: 500
+  conn_max_lifetime: 3600s
+
+mongodb:
+  uri: mongodb://genericim:genericim@mongodb:27017/?authSource=admin
+  database: genericim_messages
+  max_pool_size: 200
+  min_pool_size: 10
+
+redis:
+  addr: redis:6379
+  password: ""
+  db: 0
+  pool_size: 100
+  min_idle_conns: 10
+
+jwt:
+  secret: genericim-local-development-secret-change-before-release
+  expire: 720h
+  refresh_expire: 2160h
+
+websocket:
+  read_buffer_size: 4096
+  write_buffer_size: 4096
+  max_message_size: 65536
+  pong_wait: 60s
+  ping_period: 54s
+  write_wait: 10s
+  allowed_origins: []
+
+client_bootstrap:
+  enabled: true
+  version: 1
+  ttl_seconds: 300
+  api_endpoints:
+    - id: local-api
+      url: "http://10.0.2.2:8080"
+      priority: 10
+      region: local
+      health_path: "/api/v1/ping"
+  ws_endpoints:
+    - id: local-ws
+      url: "ws://10.0.2.2:8080/api/v1/ws"
+      priority: 10
+      region: local
+  media_base_urls:
+    - "http://10.0.2.2:8080"
+  strategy:
+    connect_timeout_ms: 5000
+    health_timeout_ms: 3000
+    fail_threshold: 1
+    cooldown_seconds: 60
+    prefer_last_success: true
+
+message_queue:
+  channel_buffer: 10000
+  workers: 20
+  batch_size: 100
+  flush_interval: 100ms
+
+message_storage:
+  retention_months: 120
+  idempotency_months: 120
+
+shard:
+  count: 64
+
+agora:
+  enabled: false
+  app_id: ""
+  app_certificate: ""
+  token_expire: 3600
+
+livekit:
+  enabled: false
+  server_url: ""
+  api_key: ""
+  api_secret: ""
+  token_expire: 3600
+
+payment:
+  enabled: false
+  notify_base_url: ""
+  min_amount: 0.01
+  max_amount: 50000
+  wechat:
+    enabled: false
+    mch_id: ""
+    mch_api_v3_key: ""
+    mch_certificate_serial: ""
+    app_id: ""
+    private_key_path: ""
+    h5_app_name: "通用IM"
+    h5_app_url: "http://10.0.2.2:8080"
+    h5_bundle_id: ""
+    h5_package_name: "com.genericim.app"
+  alipay:
+    enabled: false
+    app_id: ""
+    private_key_path: ""
+    alipay_public_key_path: ""
+    is_production: true
+    return_url: ""
+
+sms:
+  enabled: true
+  provider: console
+  runtime_override: true
+  message_template: "【通用IM】您的验证码是{code}，5分钟内有效。"
+  smsbao:
+    user: ""
+    password: ""
+  aliyun:
+    access_key_id: ""
+    access_key_secret: ""
+    region: cn-hangzhou
+    sign_name: ""
+    template_code: ""
+  tencent:
+    secret_id: ""
+    secret_key: ""
+    region: ap-guangzhou
+    sdk_app_id: ""
+    sign_name: ""
+    template_id: ""
+
+email:
+  enabled: true
+  provider: console
+  runtime_override: true
+  from_address: "noreply@local.example.invalid"
+  from_name: "通用IM"
+  subject_template: "通用IM注册验证码 {code}"
+  body_template: "您的通用IM注册验证码是 {code}，5 分钟内有效。"
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""

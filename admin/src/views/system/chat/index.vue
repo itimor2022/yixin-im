@@ -1,72 +1,6 @@
 <!-- 会话管理页面 -->
 <template>
   <div class="chat-page art-full-height">
-    <!-- 统计卡片 -->
-    <div class="grid grid-cols-4 gap-4 mb-4">
-      <ElCard shadow="never" class="stat-card">
-        <div class="flex items-center gap-3">
-          <div class="stat-icon bg-blue-100 dark:bg-blue-900">
-            <ArtSvgIcon icon="ri:group-line" class="text-blue-500" />
-          </div>
-          <div>
-            <p class="text-g-500 text-sm">群组总数</p>
-            <p class="text-2xl font-bold">{{ stats.group_count }}</p>
-          </div>
-        </div>
-      </ElCard>
-      <ElCard shadow="never" class="stat-card">
-        <div class="flex items-center gap-3">
-          <div class="stat-icon bg-orange-100 dark:bg-orange-900">
-            <ArtSvgIcon icon="ri:megaphone-line" class="text-orange-500" />
-          </div>
-          <div>
-            <p class="text-g-500 text-sm">频道总数</p>
-            <p class="text-2xl font-bold">{{ stats.channel_count }}</p>
-          </div>
-        </div>
-      </ElCard>
-      <ElCard shadow="never" class="stat-card">
-        <div class="flex items-center gap-3">
-          <div class="stat-icon bg-red-100 dark:bg-red-900">
-            <ArtSvgIcon icon="ri:forbid-line" class="text-red-500" />
-          </div>
-          <div>
-            <p class="text-g-500 text-sm">已封禁</p>
-            <p class="text-2xl font-bold">{{ stats.banned_count }}</p>
-          </div>
-        </div>
-      </ElCard>
-      <ElCard shadow="never" class="stat-card">
-        <div class="flex items-center gap-3">
-          <div class="stat-icon bg-green-100 dark:bg-green-900">
-            <ArtSvgIcon icon="ri:add-circle-line" class="text-green-500" />
-          </div>
-          <div>
-            <p class="text-g-500 text-sm">今日新增</p>
-            <p class="text-2xl font-bold">{{
-              stats.today_group_count + stats.today_channel_count
-            }}</p>
-          </div>
-        </div>
-      </ElCard>
-    </div>
-
-    <!-- 标签页切换 -->
-    <ElCard shadow="never" class="mb-4">
-      <div class="flex items-center justify-between">
-        <ElRadioGroup v-model="chatType" @change="handleTypeChange">
-          <ElRadioButton :value="0">全部</ElRadioButton>
-          <ElRadioButton :value="1">私聊</ElRadioButton>
-          <ElRadioButton :value="2">群组</ElRadioButton>
-          <ElRadioButton :value="3">频道</ElRadioButton>
-        </ElRadioGroup>
-        <ElButton type="primary" link @click="refreshData">
-          <ArtSvgIcon icon="ri:refresh-line" class="mr-1" />
-          刷新
-        </ElButton>
-      </div>
-    </ElCard>
-
     <ElCard class="art-table-card" shadow="never">
       <!-- 表格头部 -->
       <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="refreshData">
@@ -95,9 +29,7 @@
               <ElOption label="已解散" :value="2" />
             </ElSelect>
             <span class="text-g-500">
-              共 <span class="text-primary font-bold">{{ pagination.total }}</span> 个{{
-                chatTypeText
-              }}
+              共 <span class="text-primary font-bold">{{ pagination.total }}</span> 个私聊
             </span>
           </div>
         </template>
@@ -109,7 +41,6 @@
         :data="data"
         :columns="columns"
         :pagination="pagination"
-        tableLayout="auto"
         @pagination:size-change="handleSizeChange"
         @pagination:current-change="handleCurrentChange"
       >
@@ -125,16 +56,7 @@
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
   import ChatDetailDialog from './modules/chat-detail-dialog.vue'
   import { useTable } from '@/hooks/core/useTable'
-  import {
-    fetchGetChatList,
-    fetchGetGroupList,
-    fetchGetChannelList,
-    deleteChat,
-    banChat,
-    unbanChat,
-    ChatTableListItem
-  } from '@/api/system-manage'
-  import { getChatStats, ChatStatsResponse } from '@/api/admin'
+  import { fetchGetChatList, deleteChat, ChatTableListItem } from '@/api/system-manage'
   import {
     ElTag,
     ElMessageBox,
@@ -153,37 +75,16 @@
   const { isDemoAdmin } = usePermission()
   const router = useRouter()
 
-  // 会话类型
-  const chatType = ref(0) // 0: 全部, 1: 私聊, 2: 群组, 3: 频道
   const searchKeyword = ref('')
   const statusFilter = ref<number | undefined>(undefined)
-
-  // 统计数据
-  const stats = ref<ChatStatsResponse>({
-    group_count: 0,
-    channel_count: 0,
-    banned_count: 0,
-    today_group_count: 0,
-    today_channel_count: 0,
-    hot_groups: [],
-    hot_channels: []
-  })
 
   // 详情对话框
   const showDetailDialog = ref(false)
   const selectedChatId = ref<number | null>(null)
 
-  // 类型文字
-  const chatTypeText = computed(() => {
-    const texts: Record<number, string> = { 0: '会话', 1: '私聊', 2: '群组', 3: '频道' }
-    return texts[chatType.value] || '会话'
-  })
-
   // 类型标签配置
   const TYPE_CONFIG = {
-    1: { type: 'info' as const, text: '私聊', icon: 'ri:chat-private-line', color: '#64748b' },
-    2: { type: 'primary' as const, text: '群组', icon: 'ri:group-line', color: '#3b82f6' },
-    3: { type: 'warning' as const, text: '频道', icon: 'ri:megaphone-line', color: '#f59e0b' }
+    1: { type: 'info' as const, text: '私聊', icon: 'ri:chat-private-line', color: '#64748b' }
   } as const
 
   // 状态标签配置
@@ -192,13 +93,6 @@
     1: { type: 'danger' as const, text: '已封禁' },
     2: { type: 'warning' as const, text: '已解散' }
   } as const
-
-  // 获取API函数
-  const getApiFn = () => {
-    if (chatType.value === 2) return fetchGetGroupList
-    if (chatType.value === 3) return fetchGetChannelList
-    return fetchGetChatList
-  }
 
   const {
     columns,
@@ -211,14 +105,15 @@
     handleSizeChange,
     handleCurrentChange,
     refreshData
+  // useTable 统一接管加载状态、分页和查询参数，本页只提供会话接口与列定义。
   } = useTable({
     core: {
-      apiFn: getApiFn(),
+      apiFn: fetchGetChatList,
       apiParams: {
         current: 1,
         size: 20,
         keyword: '',
-        type: chatType.value || undefined
+        type: 1
       },
       columnsFactory: () => [
         { type: 'index', width: 60, label: '#', align: 'center' },
@@ -250,7 +145,7 @@
                     )
                   : h(ElAvatar, {
                       size: 44,
-                      src: getAvatarUrl(null, row.uuid),
+                      src: getAvatarUrl(undefined, row.uuid),
                       class: 'rounded-xl'
                     }),
                 h('div', { class: 'ml-4' }, [
@@ -333,42 +228,6 @@
           }
         },
         {
-          prop: 'onlineCount',
-          label: '在线',
-          width: 70,
-          align: 'center',
-          formatter: (row) => {
-            if (row.type === 1) return h('span', { class: 'text-g-300' }, '—')
-            if (!row.onlineCount) return h('span', { class: 'text-g-300' }, '0')
-            return h('span', { class: 'text-green-500 font-medium' }, String(row.onlineCount))
-          }
-        },
-        {
-          prop: 'ownerName',
-          label: '创建者',
-          width: 100,
-          formatter: (row) => {
-            if (row.type === 1) return h('span', { class: 'text-g-300' }, '—')
-            return h('span', { class: 'text-g-600' }, row.ownerName || '-')
-          }
-        },
-        {
-          prop: 'isPublic',
-          label: '公开',
-          width: 70,
-          align: 'center',
-          formatter: (row) => {
-            if (row.type === 1) return h('span', { class: 'text-g-300' }, '—')
-            return h(
-              'span',
-              {
-                class: row.isPublic ? 'text-green-500' : 'text-g-400'
-              },
-              row.isPublic ? '是' : '否'
-            )
-          }
-        },
-        {
           prop: 'createTime',
           label: '创建时间',
           width: 150,
@@ -424,31 +283,6 @@
                   },
                   () => '聊天记录'
                 ),
-                // 只对群组/频道显示封禁/解封按钮
-                row.type !== 1 &&
-                  row.status !== 1 &&
-                  h(
-                    ElButton,
-                    {
-                      type: 'warning',
-                      link: true,
-                      size: 'small',
-                      onClick: () => handleBan(row)
-                    },
-                    () => '封禁'
-                  ),
-                row.type !== 1 &&
-                  row.status === 1 &&
-                  h(
-                    ElButton,
-                    {
-                      type: 'success',
-                      link: true,
-                      size: 'small',
-                      onClick: () => handleUnban(row)
-                    },
-                    () => '解封'
-                  ),
                 h(ArtButtonTable, {
                   type: 'delete',
                   onClick: () => handleDelete(row)
@@ -474,32 +308,12 @@
     })
   }
 
-  // 加载统计数据
-  const loadStats = async () => {
-    try {
-      const res = await getChatStats()
-      stats.value = res
-    } catch (error) {
-      console.error('加载统计失败:', error)
-    }
-  }
-
-  // 切换类型
-  const handleTypeChange = () => {
-    searchKeyword.value = ''
-    statusFilter.value = undefined
-    Object.assign(searchParams, {
-      type: chatType.value || undefined
-    })
-    getData()
-  }
-
   // 搜索
   const handleSearch = () => {
     Object.assign(searchParams, {
       keyword: searchKeyword.value,
       status: statusFilter.value,
-      type: chatType.value || undefined
+      type: 1
     })
     getData()
   }
@@ -508,49 +322,6 @@
   const handleViewDetail = (row: ChatTableListItem) => {
     selectedChatId.value = row.id
     showDetailDialog.value = true
-  }
-
-  // 封禁
-  const handleBan = async (row: ChatTableListItem) => {
-    try {
-      const { value: reason } = await ElMessageBox.prompt(
-        `确定要封禁 "${row.name}" 吗？`,
-        '封禁确认',
-        {
-          confirmButtonText: '确定封禁',
-          cancelButtonText: '取消',
-          type: 'warning',
-          inputPlaceholder: '封禁原因（可选）...'
-        }
-      )
-      await banChat(row.id, reason)
-      ElMessage.success('已封禁')
-      refreshData()
-      loadStats()
-    } catch (error: any) {
-      if (error !== 'cancel') {
-        ElMessage.error('封禁失败')
-      }
-    }
-  }
-
-  // 解封
-  const handleUnban = async (row: ChatTableListItem) => {
-    try {
-      await ElMessageBox.confirm(`确定要解封 "${row.name}" 吗？`, '解封确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info'
-      })
-      await unbanChat(row.id)
-      ElMessage.success('已解封')
-      refreshData()
-      loadStats()
-    } catch (error: any) {
-      if (error !== 'cancel') {
-        ElMessage.error('解封失败')
-      }
-    }
   }
 
   // 删除会话
@@ -567,25 +338,17 @@
       try {
         await deleteChat(row.id)
         ElMessage.success('删除成功')
+        // 删除以服务端结果为准，成功后重新拉取当前分页数据。
         refreshData()
-        loadStats()
       } catch (error) {
         console.error('删除失败:', error)
       }
     })
   }
-
-  onMounted(() => {
-    loadStats()
-  })
 </script>
 
 <style lang="scss" scoped>
   .chat-page {
-    :deep(.el-radio-button__inner) {
-      padding: 8px 20px;
-    }
-
     :deep(.el-table) {
       .el-table__row {
         transition: background-color 0.2s;
@@ -595,21 +358,5 @@
         }
       }
     }
-  }
-
-  .stat-card {
-    :deep(.el-card__body) {
-      padding: 16px;
-    }
-  }
-
-  .stat-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
   }
 </style>

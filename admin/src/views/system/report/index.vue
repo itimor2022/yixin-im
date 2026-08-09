@@ -31,6 +31,7 @@
   const { isDemoAdmin } = usePermission()
 
   // 统计数据
+  // 汇总卡片与举报列表来自独立接口，筛选列表不会改变全局统计口径。
   const stats = ref<ReportStats | null>(null)
 
   // 筛选条件
@@ -142,6 +143,7 @@
       })
       ElMessage.success('处理成功')
       showProcessDialog.value = false
+      // 处理结果同时影响当前页状态和汇总数量，两类数据都需要刷新。
       refreshData()
       loadStats()
     } catch {
@@ -159,6 +161,7 @@
       })
       await deleteReport(report.id)
       ElMessage.success('删除成功')
+      // 删除后同步刷新列表分页和顶部统计，避免两个数据源口径不一致。
       refreshData()
       loadStats()
     } catch {

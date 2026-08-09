@@ -58,6 +58,7 @@ export function useSettingsPanel() {
 
     // 监听系统主题变化
     const listenerSystemTheme = () => {
+      // 自动主题依赖系统媒体查询，返回清理函数交由初始化器统一释放。
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       mediaQuery.addEventListener('change', initSystemTheme)
       return () => {
@@ -79,6 +80,7 @@ export function useSettingsPanel() {
       isMobile,
       (mobile: boolean) => {
         if (mobile) {
+          // 首次进入移动断点时保存桌面布局，避免响应式切换覆盖用户原始选择。
           // 切换到移动端布局
           if (!hasChangedMenu.value) {
             beforeMenuType.value = menuType.value
@@ -112,7 +114,7 @@ export function useSettingsPanel() {
       if (themeChangeTimer) {
         clearTimeout(themeChangeTimer)
       }
-      // 延迟添加 theme-change class，避免抽屉打开动画受影响
+      // 延迟添加 theme-change class，避免抽屉打开动画受影响；关闭时会取消未执行任务。
       themeChangeTimer = setTimeout(() => {
         domOperations.setBodyClass('theme-change', true)
         themeChangeTimer = null
@@ -182,6 +184,7 @@ export function useSettingsPanel() {
     }
 
     const cleanupSettings = () => {
+      // 停止断点监听、系统主题监听和节庆效果，避免设置面板卸载后继续改动全局 DOM。
       stopWatch()
       themeCleanup?.()
       cleanup()

@@ -1,12 +1,46 @@
+// 文件用途：管理 MomentVisibility 相关状态、异步加载与界面通知，属于朋友圈动态。
+// 核心逻辑：以 Riverpod 暴露 MomentVisibility 状态，串联 API、本地缓存和生命周期事件，统一处理加载、刷新、失败与重试。
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/websocket_service.dart';
+import '../../../core/services/account_session_coordinator.dart';
 import '../../../core/services/notification_sound_service.dart';
 
+String _momentText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _momentServerMessage(
+  String? raw, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  return localizeServerMessage(
+    raw,
+    fallbackZhCN: zhCN,
+    fallbackZhTW: zhTW,
+    fallbackEn: en,
+  );
+}
+
+// 关键声明：moment provider 是状态边界，统一管理加载、成功、失败和刷新状态，避免页面直接维护异步请求结果。
 /// 动态可见性
 enum MomentVisibility {
   public, // 完全公开（所有人可见）
@@ -19,13 +53,17 @@ extension MomentVisibilityX on MomentVisibility {
   String get label {
     switch (this) {
       case MomentVisibility.public:
-        return '公开';
+        return _momentText(zhCN: '公开', zhTW: '公開', en: 'Public');
       case MomentVisibility.contacts:
-        return '联系人';
+        return _momentText(zhCN: '联系人', zhTW: '聯絡人', en: 'Contacts');
       case MomentVisibility.selected:
-        return '部分可见';
+        return _momentText(
+          zhCN: '部分可见',
+          zhTW: '部分可見',
+          en: 'Selected Contacts',
+        );
       case MomentVisibility.private:
-        return '私密';
+        return _momentText(zhCN: '私密', zhTW: '私密', en: 'Private');
     }
   }
 
@@ -179,9 +217,8 @@ class Moment {
 
     // 转换媒体 URL
     final rawMediaUrls = List<String>.from(json['media_urls'] ?? []);
-    final mediaUrls = rawMediaUrls
-        .map((url) => ApiConfig.getMediaUrl(url) ?? url)
-        .toList();
+    final mediaUrls =
+        rawMediaUrls.map((url) => ApiConfig.getMediaUrl(url) ?? url).toList();
 
     // 转换视频缩略图
     String? videoThumb = json['video_thumbnail'];
@@ -239,12 +276,42 @@ class Moment {
     final now = DateTime.now();
     final diff = now.difference(createdAt);
 
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-    if (diff.inDays < 30) return '${diff.inDays ~/ 7}周前';
-    return '${createdAt.month}月${createdAt.day}日';
+    if (diff.inMinutes < 1) {
+      return _momentText(zhCN: '刚刚', zhTW: '剛剛', en: 'Just now');
+    }
+    if (diff.inMinutes < 60) {
+      return _momentText(
+        zhCN: '${diff.inMinutes}分钟前',
+        zhTW: '${diff.inMinutes}分鐘前',
+        en: '${diff.inMinutes}m ago',
+      );
+    }
+    if (diff.inHours < 24) {
+      return _momentText(
+        zhCN: '${diff.inHours}小时前',
+        zhTW: '${diff.inHours}小時前',
+        en: '${diff.inHours}h ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _momentText(
+        zhCN: '${diff.inDays}天前',
+        zhTW: '${diff.inDays}天前',
+        en: '${diff.inDays}d ago',
+      );
+    }
+    if (diff.inDays < 30) {
+      return _momentText(
+        zhCN: '${diff.inDays ~/ 7}周前',
+        zhTW: '${diff.inDays ~/ 7}週前',
+        en: '${diff.inDays ~/ 7}w ago',
+      );
+    }
+    return _momentText(
+      zhCN: '${createdAt.month}月${createdAt.day}日',
+      zhTW: '${createdAt.month}月${createdAt.day}日',
+      en: '${createdAt.month}/${createdAt.day}',
+    );
   }
 
   bool get isPendingReview => status == 0;
@@ -322,9 +389,8 @@ class MomentState {
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       error: clearError ? null : (error ?? this.error),
-      successMessage: clearSuccessMessage
-          ? null
-          : (successMessage ?? this.successMessage),
+      successMessage:
+          clearSuccessMessage ? null : (successMessage ?? this.successMessage),
       hasMore: hasMore ?? this.hasMore,
       isInitialized: isInitialized ?? this.isInitialized,
       unreadCount: unreadCount ?? this.unreadCount,
@@ -336,7 +402,9 @@ class MomentState {
 class MomentNotifier extends StateNotifier<MomentState> {
   final ApiClient _api;
   final Ref _ref;
+  // Notifier 统一持有页码、游标和话题条件，页面只负责触发加载动作。
   int _page = 1;
+  String? _nextCursor;
   bool _isDisposed = false;
 
   /// 当前话题过滤（null 表示全站）
@@ -379,10 +447,11 @@ class MomentNotifier extends StateNotifier<MomentState> {
         _handleMomentNotification(NotificationType.momentReply);
       });
     } catch (e) {
-      if (kDebugMode) debugPrint('设置动态 WebSocket 处理器失败: $e');
+      debugPrint('设置动态 WebSocket 处理器失败: $e');
     }
   }
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   @override
   void dispose() {
     _isDisposed = true;
@@ -407,6 +476,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
 
   /// 处理动态通知
   void _handleMomentNotification(NotificationType type) {
+    // WebSocket 事件只更新未读通知投影，不直接修改动态列表；Feed 仍以列表接口为准。
     // 增加未读计数
     incrementUnreadCount();
 
@@ -415,7 +485,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final soundService = _ref.read(notificationSoundServiceProvider.notifier);
       soundService.playNotification(type, isInApp: true);
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Play notification sound failed: $e');
+      debugPrint('[Moment] Play notification sound failed: $e');
     }
   }
 
@@ -436,6 +506,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
   /// 重置状态（登出时调用）
   void reset() {
     _page = 1;
+    _nextCursor = null;
     _currentTopic = null;
     _likingMoments.clear();
     state = const MomentState();
@@ -452,39 +523,56 @@ class MomentNotifier extends StateNotifier<MomentState> {
   Future<void> loadMoments() async {
     if (_isDisposed) return;
     state = state.copyWith(isLoading: true, error: null);
+    // 首屏请求会重置两套分页标记；后续优先使用服务端游标，
+    // 仅在旧接口未返回游标时回退到页码分页。
     _page = 1;
+    _nextCursor = null;
 
     try {
       final response = await _api.get(
         '/moment/list',
-        queryParameters: {'page': _page, 'page_size': 20},
+        queryParameters: {'page_size': 20},
       );
       if (_isDisposed) return;
 
       if (response.isSuccess && response.data != null) {
-        final list =
-            (response.data['list'] as List?)
+        final list = (response.data['list'] as List?)
                 ?.map((e) => Moment.fromJson(e))
                 .toList() ??
             [];
+        final data = response.data as Map;
+        _nextCursor = (data['next_cursor'] ?? '').toString();
+        if (_nextCursor != null && _nextCursor!.isEmpty) _nextCursor = null;
+        final hasMore = data.containsKey('has_more')
+            ? data['has_more'] == true
+            : list.length >= 20;
 
         state = state.copyWith(
           moments: list,
           isLoading: false,
-          hasMore: list.length >= 20,
+          hasMore: hasMore,
           isInitialized: true,
         );
       } else {
         state = state.copyWith(
           isLoading: false,
-          error: response.message,
+          error: _momentServerMessage(
+            response.message,
+            zhCN: '加载动态失败，请稍后重试',
+            zhTW: '載入動態失敗，請稍後重試',
+            en: 'Failed to load moments. Please try again later.',
+          ),
           isInitialized: true,
         );
       }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: _momentText(
+          zhCN: '加载动态失败，请检查网络后重试',
+          zhTW: '載入動態失敗，請檢查網路後重試',
+          en: 'Failed to load moments. Check your network and try again.',
+        ),
         isInitialized: true,
       );
     }
@@ -497,11 +585,16 @@ class MomentNotifier extends StateNotifier<MomentState> {
       return;
 
     state = state.copyWith(isLoadingMore: true);
-    _page++;
+    final nextPage = _page + 1;
 
     try {
-      final params = <String, dynamic>{'page': _page, 'page_size': 20};
-      // 保持当前话题过滤一致
+      final params = <String, dynamic>{'page_size': 20};
+      if (_nextCursor != null && _nextCursor!.isNotEmpty) {
+        params['cursor'] = _nextCursor;
+      } else {
+        params['page'] = nextPage;
+      }
+      // 话题条件必须贯穿后续分页，否则第二页会混入全站动态。
       if (_currentTopic != null) {
         params['topic'] = _currentTopic;
       }
@@ -509,23 +602,27 @@ class MomentNotifier extends StateNotifier<MomentState> {
       if (_isDisposed) return;
 
       if (response.isSuccess && response.data != null) {
-        final list =
-            (response.data['list'] as List?)
+        final list = (response.data['list'] as List?)
                 ?.map((e) => Moment.fromJson(e))
                 .toList() ??
             [];
+        final data = response.data as Map;
+        _nextCursor = (data['next_cursor'] ?? '').toString();
+        if (_nextCursor != null && _nextCursor!.isEmpty) _nextCursor = null;
+        final hasMore = data.containsKey('has_more')
+            ? data['has_more'] == true
+            : list.length >= 20;
+        _page = nextPage;
 
         state = state.copyWith(
           moments: [...state.moments, ...list],
           isLoadingMore: false,
-          hasMore: list.length >= 20,
+          hasMore: hasMore,
         );
       } else {
-        _page--;
         state = state.copyWith(isLoadingMore: false);
       }
     } catch (e) {
-      _page--;
       state = state.copyWith(isLoadingMore: false);
     }
   }
@@ -547,37 +644,52 @@ class MomentNotifier extends StateNotifier<MomentState> {
     _currentTopic = topicName;
     state = state.copyWith(isLoading: true, error: null);
     _page = 1;
+    _nextCursor = null;
 
     try {
       final response = await _api.get(
         '/moment/list',
-        queryParameters: {'page': _page, 'page_size': 20, 'topic': topicName},
+        queryParameters: {'page_size': 20, 'topic': topicName},
       );
       if (_isDisposed) return;
 
       if (response.isSuccess && response.data != null) {
-        final list =
-            (response.data['list'] as List?)
+        final list = (response.data['list'] as List?)
                 ?.map((e) => Moment.fromJson(e))
                 .toList() ??
             [];
+        final data = response.data as Map;
+        _nextCursor = (data['next_cursor'] ?? '').toString();
+        if (_nextCursor != null && _nextCursor!.isEmpty) _nextCursor = null;
+        final hasMore = data.containsKey('has_more')
+            ? data['has_more'] == true
+            : list.length >= 20;
         state = state.copyWith(
           moments: list,
           isLoading: false,
-          hasMore: list.length >= 20,
+          hasMore: hasMore,
           isInitialized: true,
         );
       } else {
         state = state.copyWith(
           isLoading: false,
-          error: response.message,
+          error: _momentServerMessage(
+            response.message,
+            zhCN: '加载动态失败，请稍后重试',
+            zhTW: '載入動態失敗，請稍後重試',
+            en: 'Failed to load moments. Please try again later.',
+          ),
           isInitialized: true,
         );
       }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: _momentText(
+          zhCN: '加载动态失败，请检查网络后重试',
+          zhTW: '載入動態失敗，請檢查網路後重試',
+          en: 'Failed to load moments. Check your network and try again.',
+        ),
         isInitialized: true,
       );
     }
@@ -589,8 +701,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final response = await _api.get('/moment/topics/hot');
 
       if (response.isSuccess && response.data != null) {
-        final list =
-            (response.data['list'] as List?)
+        final list = (response.data['list'] as List?)
                 ?.map((e) => Topic.fromJson(e))
                 .toList() ??
             [];
@@ -598,7 +709,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
         state = state.copyWith(hotTopics: list);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Load hot topics failed: $e');
+      debugPrint('[Moment] Load hot topics failed: $e');
     }
   }
 
@@ -620,7 +731,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
     }
 
     try {
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[Moment] Publishing: type=$contentTypeValue, urlCount=${mediaUrls?.length ?? 0}',
       );
 
@@ -637,21 +748,35 @@ class MomentNotifier extends StateNotifier<MomentState> {
         },
       );
 
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[Moment] Publish response: code=${response.code}, success=${response.isSuccess}',
       );
 
       if (response.isSuccess) {
         final data = response.data;
-        final publishedStatus = data is Map<String, dynamic>
-            ? (data['status'] as int? ?? 1)
-            : 1;
+        // 是否进入列表以服务端最终审核状态为准。待审核动态只反馈提交结果，
+        // 不能提前刷新进公开列表。
+        final publishedStatus =
+            data is Map<String, dynamic> ? (data['status'] as int? ?? 1) : 1;
         final isPendingReview = publishedStatus == 0;
         final successMessage = isPendingReview
             ? ((response.message.isNotEmpty && response.message != 'success')
-                  ? response.message
-                  : '动态已提交审核')
-            : '发布成功';
+                ? _momentServerMessage(
+                    response.message,
+                    zhCN: '动态已提交审核',
+                    zhTW: '動態已提交審核',
+                    en: 'Post submitted for review',
+                  )
+                : _momentText(
+                    zhCN: '动态已提交审核',
+                    zhTW: '動態已提交審核',
+                    en: 'Post submitted for review',
+                  ))
+            : _momentText(
+                zhCN: '发布成功',
+                zhTW: '發布成功',
+                en: 'Posted successfully',
+              );
 
         state = state.copyWith(
           clearError: true,
@@ -664,14 +789,29 @@ class MomentNotifier extends StateNotifier<MomentState> {
       }
 
       final errMsg = response.message.isNotEmpty
-          ? response.message
-          : '发布失败，请重试';
-      if (kDebugMode) debugPrint('[Moment] Publish failed: $errMsg');
+          ? _momentServerMessage(
+              response.message,
+              zhCN: '发布失败，请重试',
+              zhTW: '發布失敗，請重試',
+              en: 'Post failed. Please try again.',
+            )
+          : _momentText(
+              zhCN: '发布失败，请重试',
+              zhTW: '發布失敗，請重試',
+              en: 'Post failed, please try again',
+            );
+      debugPrint('[Moment] Publish failed: $errMsg');
       state = state.copyWith(error: errMsg);
       return false;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Publish error: $e');
-      state = state.copyWith(error: '发布失败，请检查网络连接');
+      debugPrint('[Moment] Publish error: $e');
+      state = state.copyWith(
+        error: _momentText(
+          zhCN: '发布失败，请检查网络连接',
+          zhTW: '發布失敗，請檢查網路連線',
+          en: 'Post failed. Check your network connection',
+        ),
+      );
       return false;
     }
   }
@@ -733,13 +873,13 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final response = await _api.post('/moment/$momentId/block');
 
       if (response.isSuccess) {
-        // 本地移除该动态
+        // 先等待服务端确认屏蔽成功，再从本地 Feed 投影移除，失败时保留原列表。
         removeMomentLocally(momentId);
         return true;
       }
       return false;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Block moment error: $e');
+      debugPrint('[Moment] Block moment error: $e');
       return false;
     }
   }
@@ -750,23 +890,23 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final response = await _api.post('/moment/block-user/$userId');
 
       if (response.isSuccess) {
-        // 本地移除该用户的所有动态
+        // 用户屏蔽成功后再批量清理本地投影，避免接口失败造成误隐藏。
         removeUserMomentsLocally(userId);
         return true;
       }
       return false;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Block user error: $e');
+      debugPrint('[Moment] Block user error: $e');
       return false;
     }
   }
 
-  // 防抖：正在处理的点赞请求
+  // 同一动态只允许一个点赞请求在途，避免连续点击让“当前状态”失去顺序。
   final Set<String> _likingMoments = {};
 
   /// 点赞（调用API）
   Future<void> toggleLike(String momentId) async {
-    // 防抖：如果正在处理该动态的点赞请求，直接返回
+    // 列表内先乐观更新以保证即时反馈；接口失败时必须按操作前状态回滚。
     if (_likingMoments.contains(momentId)) return;
     _likingMoments.add(momentId);
 
@@ -784,9 +924,8 @@ class MomentNotifier extends StateNotifier<MomentState> {
           }
           final momentData = detailResp.data as Map<String, dynamic>;
           final wasLiked = momentData['is_liked'] as bool? ?? false;
-          final endpoint = wasLiked
-              ? '/moment/$momentId/unlike'
-              : '/moment/$momentId/like';
+          final endpoint =
+              wasLiked ? '/moment/$momentId/unlike' : '/moment/$momentId/like';
           await _api.post(endpoint);
         } finally {
           _likingMoments.remove(momentId);
@@ -797,7 +936,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       final currentMoment = state.moments[momentIndex];
       final wasLiked = currentMoment.isLiked;
 
-      // 乐观更新
+      // 乐观更新：这里只改展示副本，服务端响应仍是最终结果。
       state = state.copyWith(
         moments: state.moments.map((m) {
           if (m.id == momentId) {
@@ -811,13 +950,12 @@ class MomentNotifier extends StateNotifier<MomentState> {
       );
 
       // 调用API
-      final endpoint = wasLiked
-          ? '/moment/$momentId/unlike'
-          : '/moment/$momentId/like';
+      final endpoint =
+          wasLiked ? '/moment/$momentId/unlike' : '/moment/$momentId/like';
 
       final response = await _api.post(endpoint);
 
-      // 如果失败，回滚
+      // 接口失败时同时恢复点赞标记和计数，避免两者不一致。
       if (!response.isSuccess) {
         state = state.copyWith(
           moments: state.moments.map((m) {
@@ -838,7 +976,8 @@ class MomentNotifier extends StateNotifier<MomentState> {
 
   /// 点赞（带当前状态参数，用于详情页）
   Future<bool> toggleLikeWithState(String momentId, bool currentIsLiked) async {
-    // 防抖
+    // 详情可能由通知等入口直接打开，不一定存在于主列表；调用方传入其展示状态，
+    // 返回服务端确认后的状态，并在能找到列表副本时同步更新。
     if (_likingMoments.contains(momentId)) return currentIsLiked;
     _likingMoments.add(momentId);
 
@@ -882,8 +1021,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       );
 
       if (response.isSuccess && response.data != null) {
-        final list =
-            (response.data['list'] as List?)
+        final list = (response.data['list'] as List?)
                 ?.map((e) => Comment.fromJson(e))
                 .toList() ??
             [];
@@ -891,7 +1029,7 @@ class MomentNotifier extends StateNotifier<MomentState> {
       }
       return [];
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Get comments error: $e');
+      debugPrint('[Moment] Get comments error: $e');
       return [];
     }
   }
@@ -926,12 +1064,25 @@ class MomentNotifier extends StateNotifier<MomentState> {
 
         return Comment.fromJson(response.data as Map<String, dynamic>);
       }
-      if (kDebugMode) debugPrint('[Moment] Add comment failed: ${response.message}');
-      state = state.copyWith(error: response.message ?? '评论失败');
+      debugPrint('[Moment] Add comment failed: ${response.message}');
+      state = state.copyWith(
+        error: _momentServerMessage(
+          response.message,
+          zhCN: '评论失败',
+          zhTW: '留言失敗',
+          en: 'Comment failed',
+        ),
+      );
       return null;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moment] Add comment error: $e');
-      state = state.copyWith(error: '评论失败，请检查网络连接');
+      debugPrint('[Moment] Add comment error: $e');
+      state = state.copyWith(
+        error: _momentText(
+          zhCN: '评论失败，请检查网络连接',
+          zhTW: '留言失敗，請檢查網路連線',
+          en: 'Comment failed. Check your network connection',
+        ),
+      );
       return null;
     }
   }
@@ -991,8 +1142,7 @@ class Comment {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at']).toLocal()
           : DateTime.now(),
-      replies:
-          (json['replies'] as List?)
+      replies: (json['replies'] as List?)
               ?.map((e) => Comment.fromJson(e))
               .toList() ??
           [],
@@ -1003,17 +1153,42 @@ class Comment {
     final now = DateTime.now();
     final diff = now.difference(createdAt);
 
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-    return '${createdAt.month}月${createdAt.day}日';
+    if (diff.inMinutes < 1) {
+      return _momentText(zhCN: '刚刚', zhTW: '剛剛', en: 'Just now');
+    }
+    if (diff.inMinutes < 60) {
+      return _momentText(
+        zhCN: '${diff.inMinutes}分钟前',
+        zhTW: '${diff.inMinutes}分鐘前',
+        en: '${diff.inMinutes}m ago',
+      );
+    }
+    if (diff.inHours < 24) {
+      return _momentText(
+        zhCN: '${diff.inHours}小时前',
+        zhTW: '${diff.inHours}小時前',
+        en: '${diff.inHours}h ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _momentText(
+        zhCN: '${diff.inDays}天前',
+        zhTW: '${diff.inDays}天前',
+        en: '${diff.inDays}d ago',
+      );
+    }
+    return _momentText(
+      zhCN: '${createdAt.month}月${createdAt.day}日',
+      zhTW: '${createdAt.month}月${createdAt.day}日',
+      en: '${createdAt.month}/${createdAt.day}',
+    );
   }
 }
 
 final momentProvider = StateNotifierProvider<MomentNotifier, MomentState>((
   ref,
 ) {
+  ref.watch(currentAccountIdProvider);
   final api = ref.watch(apiClientProvider);
   return MomentNotifier(api, ref);
 });

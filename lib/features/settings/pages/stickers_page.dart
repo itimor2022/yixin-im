@@ -1,14 +1,51 @@
+// 文件用途：实现 StickersPage 页面及其交互流程，属于应用设置。
+// 核心逻辑：维护 StickersPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/constants/emoji_animations.dart';
+import '../../../shared/widgets/sticker_image.dart';
 import '../../chat/pages/emoji_store_page.dart';
+import '../../chat/services/emoji_store_service.dart';
 
+String _stickersText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+Widget _stickerAssetPreview(
+  String path, {
+  double? width,
+  double? height,
+  BoxFit fit = BoxFit.contain,
+}) {
+  return StickerImage(
+    source: path,
+    width: width,
+    height: height,
+    fit: fit,
+    errorBuilder: (_, __) => const SizedBox.shrink(),
+  );
+}
+
+// 关键声明：stickers page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 贴纸和表情页面
 class StickersPage extends ConsumerStatefulWidget {
   final bool isDesktopPanel;
@@ -37,6 +74,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
   bool _autoPlayStickers = true;
   bool _emojiSuggestions = true;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -45,35 +83,31 @@ class _StickersPageState extends ConsumerState<StickersPage>
   }
 
   Future<void> _loadSettings() async {
+    final emojiData = await EmojiStoreService.loadAll();
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       // 加载已安装的贴纸包
-      final installed = prefs.getStringList('installed_sticker_packs') ?? [];
-      _installedPackIds = installed.toSet();
+      _installedPackIds = emojiData.installedPackIds.toSet();
 
-      // 如果没有安装过任何包，默认安装内置包
-      if (_installedPackIds.isEmpty) {
-        _installedPackIds = BuiltInStickerPacks.all.map((p) => p.id).toSet();
-        prefs.setStringList(
-            'installed_sticker_packs', _installedPackIds.toList());
-      }
-
+      // 默认安装正式内置包；老账号升级后也能立即看到新包。
       // 加载最近使用的表情(使用有动画的)
-      _recentEmojis = prefs.getStringList('recent_emojis') ??
-          [
-            '👋',
-            '😂',
-            '❤️',
-            '😎',
-            '🤔',
-            '👍',
-            '🔥',
-            '🎉',
-            '😍',
-            '✨',
-            '👏',
-            '🙏'
-          ];
+      _recentEmojis = emojiData.recentEmojis.isNotEmpty
+          ? [...emojiData.recentEmojis]
+          : [
+              '👋',
+              '😂',
+              '❤️',
+              '😎',
+              '🤔',
+              '👍',
+              '🔥',
+              '🎉',
+              '😍',
+              '✨',
+              '👏',
+              '🙏'
+            ];
 
       // 加载设置
       _showAnimationOnSend = prefs.getBool('show_animation_on_send') ?? true;
@@ -84,9 +118,8 @@ class _StickersPageState extends ConsumerState<StickersPage>
 
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-        'installed_sticker_packs', _installedPackIds.toList());
-    await prefs.setStringList('recent_emojis', _recentEmojis);
+    await EmojiStoreService.setInstalledPackIds(_installedPackIds.toList());
+    await EmojiStoreService.setRecentEmojis(_recentEmojis);
     await prefs.setBool('show_animation_on_send', _showAnimationOnSend);
     await prefs.setBool('auto_play_stickers', _autoPlayStickers);
     await prefs.setBool('emoji_suggestions', _emojiSuggestions);
@@ -164,7 +197,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
               indicatorPadding: const EdgeInsets.all(2),
               dividerColor: Colors.transparent,
               labelColor: isDark ? Colors.white : Colors.black,
-              unselectedLabelColor: isDark ? Colors.white54 : Colors.black54,
+              unselectedLabelColor: AppColors.textSecondaryFor(context),
               labelStyle:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               unselectedLabelStyle:
@@ -192,6 +225,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
   }
 
   Widget _buildInstalledTab(bool isDark, AppLocalizations l10n) {
+    final language = AppLocalizations.of(context).language;
     final installedPacks = BuiltInStickerPacks.all
         .where((p) => _installedPackIds.contains(p.id))
         .toList();
@@ -219,7 +253,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
                   width: 44,
                   height: 44,
                   child: animated != null
-                      ? Lottie.asset(animated.path, repeat: true)
+                      ? WebSafeLottie.asset(animated.path, repeat: true)
                       : Center(
                           child: Text(e, style: const TextStyle(fontSize: 28))),
                 ),
@@ -231,7 +265,15 @@ class _StickersPageState extends ConsumerState<StickersPage>
         const SizedBox(height: 24),
 
         // 已安装的贴纸包 - 动态头像
-        _SectionTitle(title: '已安装 (${installedPacks.length})', isDark: isDark),
+        _SectionTitle(
+          title: _stickersText(
+            context,
+            zhCN: '已安装 (${installedPacks.length})',
+            zhTW: '已安裝 (${installedPacks.length})',
+            en: 'Installed (${installedPacks.length})',
+          ),
+          isDark: isDark,
+        ),
         const SizedBox(height: 12),
         ...installedPacks.map((pack) => _AnimatedStickerPackCard(
               pack: pack,
@@ -253,17 +295,29 @@ class _StickersPageState extends ConsumerState<StickersPage>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '还没有安装贴纸包',
+                  _stickersText(
+                    context,
+                    zhCN: '还没有安装贴纸包',
+                    zhTW: '還沒有安裝貼紙包',
+                    en: 'No sticker packs installed yet',
+                  ),
                   style: TextStyle(
                     fontSize: 16,
-                    color: isDark ? Colors.white38 : Colors.black38,
+                    color: AppColors.textTertiaryFor(context),
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => _tabController.animateTo(1),
-                  child:
-                      Text('去发现更多', style: TextStyle(color: AppColors.primary)),
+                  child: Text(
+                    _stickersText(
+                      context,
+                      zhCN: '去发现更多',
+                      zhTW: '去發現更多',
+                      en: 'Discover More',
+                    ),
+                    style: TextStyle(color: AppColors.linkFor(context)),
+                  ),
                 ),
               ],
             ),
@@ -272,7 +326,15 @@ class _StickersPageState extends ConsumerState<StickersPage>
         const SizedBox(height: 24),
 
         // 设置
-        _SectionTitle(title: '设置', isDark: isDark),
+        _SectionTitle(
+          title: _stickersText(
+            context,
+            zhCN: '设置',
+            zhTW: '設定',
+            en: 'Settings',
+          ),
+          isDark: isDark,
+        ),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -282,7 +344,12 @@ class _StickersPageState extends ConsumerState<StickersPage>
           child: Column(
             children: [
               _SettingSwitch(
-                title: '发送贴纸时显示动画',
+                title: _stickersText(
+                  context,
+                  zhCN: '发送贴纸时显示动画',
+                  zhTW: '傳送貼紙時顯示動畫',
+                  en: 'Play animation when sending stickers',
+                ),
                 value: _showAnimationOnSend,
                 isDark: isDark,
                 onChanged: (v) {
@@ -296,7 +363,12 @@ class _StickersPageState extends ConsumerState<StickersPage>
                   color:
                       isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
               _SettingSwitch(
-                title: '自动播放动态贴纸',
+                title: _stickersText(
+                  context,
+                  zhCN: '自动播放动态贴纸',
+                  zhTW: '自動播放動態貼紙',
+                  en: 'Auto-play animated stickers',
+                ),
                 value: _autoPlayStickers,
                 isDark: isDark,
                 onChanged: (v) {
@@ -310,7 +382,12 @@ class _StickersPageState extends ConsumerState<StickersPage>
                   color:
                       isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
               _SettingSwitch(
-                title: '表情包建议',
+                title: _stickersText(
+                  context,
+                  zhCN: '表情包建议',
+                  zhTW: '表情包建議',
+                  en: 'Emoji suggestions',
+                ),
                 value: _emojiSuggestions,
                 isDark: isDark,
                 onChanged: (v) {
@@ -326,9 +403,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
   }
 
   Widget _buildDiscoverTab(bool isDark, AppLocalizations l10n) {
-    final availablePacks = BuiltInStickerPacks.all
-        .where((p) => !_installedPackIds.contains(p.id))
-        .toList();
+    final availablePacks = BuiltInStickerPacks.all;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -340,9 +415,11 @@ class _StickersPageState extends ConsumerState<StickersPage>
           ...availablePacks.map((pack) => _AnimatedStickerPackCard(
                 pack: pack,
                 isDark: isDark,
-                isInstalled: false,
+                isInstalled: _installedPackIds.contains(pack.id),
                 onTap: () => _showPackDetail(pack),
-                onAction: () => _installPack(pack),
+                onAction: _installedPackIds.contains(pack.id)
+                    ? () => _showPackOptions(pack)
+                    : () => _installPack(pack),
               )),
         ],
 
@@ -355,14 +432,14 @@ class _StickersPageState extends ConsumerState<StickersPage>
                 Icon(
                   Icons.check_circle_outline,
                   size: 64,
-                  color: AppColors.primary.withOpacity(0.5),
+                  color: AppColors.linkFor(context).withOpacity(0.5),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   l10n.allPacksInstalled,
                   style: TextStyle(
                     fontSize: 16,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
               ],
@@ -389,11 +466,14 @@ class _StickersPageState extends ConsumerState<StickersPage>
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: AppColors.emphasisSoftFor(context),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(Icons.add_rounded,
-                        color: AppColors.primary, size: 28),
+                    child: Icon(
+                      Icons.add_rounded,
+                      color: AppColors.linkFor(context),
+                      size: 28,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -401,7 +481,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '新建贴纸包',
+                          l10n.createStickerPack,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
@@ -410,10 +490,15 @@ class _StickersPageState extends ConsumerState<StickersPage>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '使用照片创建专属贴纸',
+                          _stickersText(
+                            context,
+                            zhCN: '使用照片创建专属贴纸',
+                            zhTW: '使用照片建立專屬貼圖',
+                            en: 'Create a custom sticker pack from photos',
+                          ),
                           style: TextStyle(
                             fontSize: 13,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            color: AppColors.textTertiaryFor(context),
                           ),
                         ),
                       ],
@@ -458,6 +543,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
   void _showPackDetail(StickerPack pack) {
     HapticFeedback.selectionClick();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final language = AppLocalizations.of(context).language;
 
     showModalBottomSheet(
       context: context,
@@ -493,7 +579,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
                     SizedBox(
                       width: 48,
                       height: 48,
-                      child: Lottie.asset(pack.previewPath, repeat: true),
+                      child: _stickerAssetPreview(pack.previewPath),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -501,7 +587,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            pack.name,
+                            pack.localizedName(language),
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -509,10 +595,15 @@ class _StickersPageState extends ConsumerState<StickersPage>
                             ),
                           ),
                           Text(
-                            '${pack.count} 个贴纸',
+                            _stickersText(
+                              context,
+                              zhCN: '${pack.count} 个贴纸',
+                              zhTW: '${pack.count} 個貼圖',
+                              en: '${pack.count} stickers',
+                            ),
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white54 : Colors.black54,
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ],
@@ -525,16 +616,25 @@ class _StickersPageState extends ConsumerState<StickersPage>
                           Navigator.pop(context);
                         },
                         style: TextButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                          backgroundColor: AppColors.primaryFor(context),
+                          foregroundColor: AppColors.onPrimaryFor(context),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 20, vertical: 10),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8)),
                         ),
-                        child: const Text('安装',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600)),
+                        child: Text(
+                          _stickersText(
+                            context,
+                            zhCN: '安装',
+                            zhTW: '安裝',
+                            en: 'Install',
+                          ),
+                          style: TextStyle(
+                            color: AppColors.onPrimaryFor(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -555,10 +655,8 @@ class _StickersPageState extends ConsumerState<StickersPage>
                     final file = pack.stickerFiles[index];
                     return GestureDetector(
                       onTap: () => HapticFeedback.selectionClick(),
-                      child: Lottie.asset(
-                        EmojiAnimations.getPath(file),
-                        repeat: true,
-                      ),
+                      child:
+                          _stickerAssetPreview(EmojiAnimations.getPath(file)),
                     );
                   },
                 ),
@@ -590,11 +688,11 @@ class _StickersPageState extends ConsumerState<StickersPage>
               SizedBox(
                 width: 48,
                 height: 48,
-                child: Lottie.asset(pack.previewPath, repeat: true),
+                child: _stickerAssetPreview(pack.previewPath),
               ),
               const SizedBox(height: 8),
               Text(
-                pack.name,
+                pack.localizedName(AppLocalizations.of(context).language),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -604,7 +702,14 @@ class _StickersPageState extends ConsumerState<StickersPage>
               const SizedBox(height: 16),
               ListTile(
                 leading: const Icon(Icons.visibility_outlined),
-                title: const Text('预览'),
+                title: Text(
+                  _stickersText(
+                    context,
+                    zhCN: '预览',
+                    zhTW: '預覽',
+                    en: 'Preview',
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showPackDetail(pack);
@@ -612,13 +717,28 @@ class _StickersPageState extends ConsumerState<StickersPage>
               ),
               ListTile(
                 leading: const Icon(Icons.share_outlined),
-                title: const Text('分享'),
+                title: Text(
+                  _stickersText(
+                    context,
+                    zhCN: '分享',
+                    zhTW: '分享',
+                    en: 'Share',
+                  ),
+                ),
                 onTap: () => Navigator.pop(context),
               ),
               ListTile(
                 leading:
                     Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                title: Text('卸载', style: TextStyle(color: AppColors.error)),
+                title: Text(
+                  _stickersText(
+                    context,
+                    zhCN: '卸载',
+                    zhTW: '卸載',
+                    en: 'Uninstall',
+                  ),
+                  style: TextStyle(color: AppColors.error),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _uninstallPack(pack);
@@ -662,7 +782,7 @@ class _SectionTitle extends StatelessWidget {
       style: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
-        color: isDark ? Colors.white54 : Colors.black54,
+        color: AppColors.textSecondaryFor(context),
       ),
     );
   }
@@ -701,7 +821,7 @@ class _AnimatedStickerPackCard extends StatelessWidget {
             SizedBox(
               width: 52,
               height: 52,
-              child: Lottie.asset(pack.previewPath, repeat: true),
+              child: _stickerAssetPreview(pack.previewPath),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -711,7 +831,8 @@ class _AnimatedStickerPackCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        pack.name,
+                        pack.localizedName(
+                            AppLocalizations.of(context).language),
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -724,15 +845,20 @@ class _AnimatedStickerPackCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
+                            color: AppColors.emphasisSoftFor(context),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '内置',
+                            _stickersText(
+                              context,
+                              zhCN: '内置',
+                              zhTW: '內建',
+                              en: 'Built-in',
+                            ),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w500,
-                              color: AppColors.primary,
+                              color: AppColors.linkFor(context),
                             ),
                           ),
                         ),
@@ -741,37 +867,65 @@ class _AnimatedStickerPackCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${pack.count} 个贴纸',
+                    _stickersText(
+                      context,
+                      zhCN: '${pack.count} 个贴纸',
+                      zhTW: '${pack.count} 個貼圖',
+                      en: '${pack.count} stickers',
+                    ),
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ],
               ),
             ),
             if (isInstalled)
-              IconButton(
-                icon: Icon(
-                  Icons.more_horiz,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
+              TextButton(
                 onPressed: onAction,
+                style: TextButton.styleFrom(
+                  backgroundColor:
+                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: Text(
+                  _stickersText(
+                    context,
+                    zhCN: '已添加',
+                    zhTW: '已加入',
+                    en: 'Added',
+                  ),
+                  style: TextStyle(
+                    color: AppColors.textSecondaryFor(context),
+                  ),
+                ),
               )
             else
               TextButton(
                 onPressed: onAction,
                 style: TextButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primaryFor(context),
+                  foregroundColor: AppColors.onPrimaryFor(context),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
-                child: const Text(
-                  '安装',
+                child: Text(
+                  _stickersText(
+                    context,
+                    zhCN: '安装',
+                    zhTW: '安裝',
+                    en: 'Install',
+                  ),
                   style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w500),
+                    color: AppColors.onPrimaryFor(context),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
           ],
@@ -812,7 +966,7 @@ class _SettingSwitch extends StatelessWidget {
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.primary,
+            activeColor: AppColors.controlActiveFor(context),
           ),
         ],
       ),

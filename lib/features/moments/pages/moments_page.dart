@@ -1,5 +1,7 @@
+// 文件用途：实现 MomentsPage 页面及其交互流程，属于朋友圈动态。
+// 核心逻辑：维护 MomentsPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
 import 'package:universal_io/io.dart';
 import 'dart:typed_data';
 import 'dart:ui';
@@ -11,16 +13,23 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/system_ui_styles.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/services/api/auth_service.dart';
+import '../../../core/services/account_session_coordinator.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../home/pages/home_desktop_page.dart';
 import '../../../core/services/api/api_client.dart';
@@ -31,6 +40,129 @@ import '../../../shared/widgets/animated_emoji_text.dart';
 import '../../chat/widgets/emoji_picker.dart';
 import '../providers/moment_provider.dart';
 
+String _momentsText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _momentsServerMessage(
+  String? raw, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  return localizeServerMessage(
+    raw,
+    fallbackZhCN: zhCN,
+    fallbackZhTW: zhTW,
+    fallbackEn: en,
+  );
+}
+
+List<String> _momentReportReasons(BuildContext context) {
+  return [
+    _momentsText(
+      context,
+      zhCN: '垃圾广告',
+      zhTW: '垃圾廣告',
+      en: 'Spam or Ads',
+    ),
+    _momentsText(
+      context,
+      zhCN: '色情低俗',
+      zhTW: '色情低俗',
+      en: 'Explicit or Inappropriate',
+    ),
+    _momentsText(
+      context,
+      zhCN: '政治敏感',
+      zhTW: '政治敏感',
+      en: 'Sensitive Political Content',
+    ),
+    _momentsText(
+      context,
+      zhCN: '违法信息',
+      zhTW: '違法資訊',
+      en: 'Illegal Content',
+    ),
+    _momentsText(
+      context,
+      zhCN: '人身攻击',
+      zhTW: '人身攻擊',
+      en: 'Harassment or Abuse',
+    ),
+    _momentsText(
+      context,
+      zhCN: '其他',
+      zhTW: '其他',
+      en: 'Other',
+    ),
+  ];
+}
+
+String _momentRelativeTime(BuildContext context, String dateStr) {
+  if (dateStr.isEmpty) return '';
+  try {
+    final date = DateTime.parse(dateStr).toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 1) {
+      return _momentsText(context, zhCN: '刚刚', zhTW: '剛剛', en: 'Just now');
+    }
+    if (diff.inMinutes < 60) {
+      return _momentsText(
+        context,
+        zhCN: '${diff.inMinutes}分钟前',
+        zhTW: '${diff.inMinutes}分鐘前',
+        en: '${diff.inMinutes}m ago',
+      );
+    }
+    if (diff.inHours < 24) {
+      return _momentsText(
+        context,
+        zhCN: '${diff.inHours}小时前',
+        zhTW: '${diff.inHours}小時前',
+        en: '${diff.inHours}h ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _momentsText(
+        context,
+        zhCN: '${diff.inDays}天前',
+        zhTW: '${diff.inDays}天前',
+        en: '${diff.inDays}d ago',
+      );
+    }
+    return '${date.month}-${date.day}';
+  } catch (_) {
+    return dateStr;
+  }
+}
+
+List<String> _defaultMomentSearchKeywords(BuildContext context) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return ['Tech', 'Life', 'Music', 'Travel', 'Food', 'Photo'];
+    case AppLanguage.zhTW:
+      return ['科技', '生活', '音樂', '旅行', '美食', '攝影'];
+    case AppLanguage.zhCN:
+      return ['科技', '生活', '音乐', '旅行', '美食', '摄影'];
+  }
+}
+
+// 关键声明：moments page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 动态广场 - 公共社交动态
 class MomentsPage extends ConsumerStatefulWidget {
   /// 是否作为桌面端侧边栏使用
@@ -57,6 +189,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
   @override
   bool get wantKeepAlive => true;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -85,7 +218,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 500) {
       // 距离底部 500px 时触发加载更多
-      // 防止重复加载
+      // 页面标记防止滚动监听重复派发；Provider 仍负责分页状态和接口级防重入。
       if (_isLoadingMore) return;
       final momentState = ref.read(momentProvider);
       if (momentState.isLoadingMore || !momentState.hasMore) return;
@@ -100,27 +233,40 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
   /// 加载上次查看通知的时间
   Future<void> _loadLastReadTime() async {
     try {
+      final accountId = ref.read(currentAccountIdProvider);
+      if (accountId.isEmpty) return;
+      // 账号 ID 先哈希再进入本地键名，既隔离多账号已读时间，也避免明文落盘。
+      final key =
+          'acct_v1_${sha256.convert(utf8.encode(accountId))}_moment_notification_last_read';
       final prefs = await SharedPreferences.getInstance();
-      final timestamp = prefs.getInt('moment_notification_last_read');
+      // 获取 SharedPreferences 期间可能已经切号，旧账号结果不能写入当前页面状态。
+      if (ref.read(currentAccountIdProvider) != accountId) return;
+      final timestamp = prefs.getInt(key);
       if (timestamp != null) {
         _lastReadTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('加载上次查看时间失败: $e');
+      debugPrint('加载上次查看时间失败: $e');
     }
   }
 
   /// 保存当前时间为上次查看时间
   Future<void> _markNotificationsAsRead() async {
     try {
+      final accountId = ref.read(currentAccountIdProvider);
+      if (accountId.isEmpty) return;
+      final key =
+          'acct_v1_${sha256.convert(utf8.encode(accountId))}_moment_notification_last_read';
       final prefs = await SharedPreferences.getInstance();
+      // 异步返回后再次核对账号，防止切号竞态污染另一个账号的已读游标。
+      if (ref.read(currentAccountIdProvider) != accountId) return;
       await prefs.setInt(
-        'moment_notification_last_read',
+        key,
         DateTime.now().millisecondsSinceEpoch,
       );
       _lastReadTime = DateTime.now();
     } catch (e) {
-      if (kDebugMode) debugPrint('保存查看时间失败: $e');
+      debugPrint('保存查看时间失败: $e');
     }
   }
 
@@ -131,7 +277,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
           .getSettings(forceRefresh: true);
       return settings.enableMomentPost;
     } catch (e) {
-      if (kDebugMode) debugPrint('[Moments] Load settings failed: $e');
+      debugPrint('[Moments] Load settings failed: $e');
       return true;
     }
   }
@@ -178,7 +324,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('加载通知数量失败: $e');
+      debugPrint('加载通知数量失败: $e');
     }
   }
 
@@ -193,7 +339,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     final isLoading = ref.watch(momentProvider.select((s) => s.isLoading));
 
     final topPadding = MediaQuery.of(context).padding.top;
-    final floatingBottomSpace = FloatingNavLayout.isEnabled
+    final floatingBottomSpace = FloatingNavLayout.isEnabledForContext(context)
         ? FloatingNavLayout.reservedSpace(context, extra: 8)
         : 100.0;
 
@@ -226,14 +372,19 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                           Icon(
                             Icons.article_outlined,
                             size: 64,
-                            color: isDark ? Colors.white24 : Colors.black26,
+                            color: AppColors.textTertiaryFor(context),
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            '暂无动态',
+                            _momentsText(
+                              context,
+                              zhCN: '暂无动态',
+                              zhTW: '暫無動態',
+                              en: 'No moments yet',
+                            ),
                             style: TextStyle(
                               fontSize: 16,
-                              color: isDark ? Colors.white54 : Colors.black45,
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ],
@@ -340,16 +491,21 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    isDark ? Colors.white54 : Colors.black45,
+                    AppColors.textSecondaryFor(context),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Text(
-                '加载中...',
+                _momentsText(
+                  context,
+                  zhCN: '加载中...',
+                  zhTW: '載入中...',
+                  en: 'Loading...',
+                ),
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white54 : Colors.black45,
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ),
             ],
@@ -363,10 +519,15 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         padding: const EdgeInsets.symmetric(vertical: 20),
         child: Center(
           child: Text(
-            '— 已加载全部动态 —',
+            _momentsText(
+              context,
+              zhCN: '— 已加载全部动态 —',
+              zhTW: '— 已載入全部動態 —',
+              en: '— All moments loaded —',
+            ),
             style: TextStyle(
               fontSize: 13,
-              color: isDark ? Colors.white30 : Colors.black26,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
         ),
@@ -419,8 +580,15 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               if (!mounted) return;
               if (!canPublish) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('广场发布功能已关闭，仅支持浏览'),
+                  SnackBar(
+                    content: Text(
+                      _momentsText(
+                        context,
+                        zhCN: '广场发布功能已关闭，仅支持浏览',
+                        zhTW: '廣場發佈功能已關閉，僅支援瀏覽',
+                        en: 'Posting is disabled. Browse only.',
+                      ),
+                    ),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -441,7 +609,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
@@ -487,14 +655,14 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                   height: 40,
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Colors.white.withOpacity(0.08)
+                        ? AppColors.darkControlBackgroundStrong
                         : Colors.black.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     Icons.notifications_outlined,
                     size: 22,
-                    color: isDark ? Colors.white70 : Colors.black54,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
                 // 小红点
@@ -545,14 +713,14 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               height: 40,
               decoration: BoxDecoration(
                 color: isDark
-                    ? Colors.white.withOpacity(0.08)
+                    ? AppColors.darkControlBackgroundStrong
                     : Colors.black.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 Icons.search_rounded,
                 size: 22,
-                color: isDark ? Colors.white70 : Colors.black54,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
           ),
@@ -567,10 +735,10 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     return Container(
       height: 44,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        color: AppColors.surfaceFor(context),
         border: Border(
           bottom: BorderSide(
-            color: isDark ? const Color(0xFF30363D) : const Color(0xFFE8EAED),
+            color: AppColors.dividerFor(context),
             width: 0.5,
           ),
         ),
@@ -604,7 +772,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                   if (topic.isHot) ...[
@@ -619,7 +787,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '热',
+                        _momentsText(
+                          context,
+                          zhCN: '热',
+                          zhTW: '熱',
+                          en: 'Hot',
+                        ),
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
@@ -652,11 +825,23 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已筛选话题 #${topic.name}，下拉刷新可恢复全部'),
+        content: Text(
+          _momentsText(
+            context,
+            zhCN: '已筛选话题 #${topic.name}，下拉刷新可恢复全部',
+            zhTW: '已篩選話題 #${topic.name}，下拉重新整理可恢復全部',
+            en: 'Filtered by #${topic.name}. Pull to refresh to restore all.',
+          ),
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         action: SnackBarAction(
-          label: '清除筛选',
+          label: _momentsText(
+            context,
+            zhCN: '清除筛选',
+            zhTW: '清除篩選',
+            en: 'Clear',
+          ),
           onPressed: () => ref.read(momentProvider.notifier).clearTopicFilter(),
         ),
       ),
@@ -753,9 +938,25 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         final success =
             await ref.read(momentProvider.notifier).setPrivate(moment.id);
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(success ? '已设为私密' : '操作失败')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已设为私密',
+                        zhTW: '已設為私密',
+                        en: 'Set to private',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Operation failed',
+                      ),
+              ),
+            ),
+          );
         }
         break;
       case 'delete':
@@ -765,9 +966,25 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         final success =
             await ref.read(momentProvider.notifier).blockMoment(moment.id);
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(success ? '已屏蔽该动态' : '操作失败')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已屏蔽该动态',
+                        zhTW: '已封鎖此動態',
+                        en: 'Blocked this moment',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Operation failed',
+                      ),
+              ),
+            ),
+          );
         }
         break;
       case 'block':
@@ -776,7 +993,21 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(success ? '已屏蔽 ${moment.userName} 的动态' : '操作失败'),
+              content: Text(
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已屏蔽 ${moment.userName} 的动态',
+                        zhTW: '已封鎖 ${moment.userName} 的動態',
+                        en: 'Blocked ${moment.userName}\'s moments',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Operation failed',
+                      ),
+              ),
             ),
           );
         }
@@ -792,39 +1023,109 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        backgroundColor: AppColors.cardFor(context),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '举报动态',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '举报动态',
+            zhTW: '檢舉動態',
+            en: 'Report Moment',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             _ReportOption(
-              title: '色情低俗',
+              title: _momentsText(
+                context,
+                zhCN: '色情低俗',
+                zhTW: '色情低俗',
+                en: 'Explicit or Inappropriate',
+              ),
               isDark: isDark,
-              onTap: () => _submitReport(moment, '色情低俗'),
+              onTap: () => _submitReport(
+                moment,
+                _momentsText(
+                  context,
+                  zhCN: '色情低俗',
+                  zhTW: '色情低俗',
+                  en: 'Explicit or Inappropriate',
+                ),
+              ),
             ),
             _ReportOption(
-              title: '违法违规',
+              title: _momentsText(
+                context,
+                zhCN: '违法违规',
+                zhTW: '違法違規',
+                en: 'Illegal or Violating Rules',
+              ),
               isDark: isDark,
-              onTap: () => _submitReport(moment, '违法违规'),
+              onTap: () => _submitReport(
+                moment,
+                _momentsText(
+                  context,
+                  zhCN: '违法违规',
+                  zhTW: '違法違規',
+                  en: 'Illegal or Violating Rules',
+                ),
+              ),
             ),
             _ReportOption(
-              title: '诈骗信息',
+              title: _momentsText(
+                context,
+                zhCN: '诈骗信息',
+                zhTW: '詐騙資訊',
+                en: 'Scam or Fraud',
+              ),
               isDark: isDark,
-              onTap: () => _submitReport(moment, '诈骗信息'),
+              onTap: () => _submitReport(
+                moment,
+                _momentsText(
+                  context,
+                  zhCN: '诈骗信息',
+                  zhTW: '詐騙資訊',
+                  en: 'Scam or Fraud',
+                ),
+              ),
             ),
             _ReportOption(
-              title: '人身攻击',
+              title: _momentsText(
+                context,
+                zhCN: '人身攻击',
+                zhTW: '人身攻擊',
+                en: 'Harassment or Abuse',
+              ),
               isDark: isDark,
-              onTap: () => _submitReport(moment, '人身攻击'),
+              onTap: () => _submitReport(
+                moment,
+                _momentsText(
+                  context,
+                  zhCN: '人身攻击',
+                  zhTW: '人身攻擊',
+                  en: 'Harassment or Abuse',
+                ),
+              ),
             ),
             _ReportOption(
-              title: '其他',
+              title: _momentsText(
+                context,
+                zhCN: '其他',
+                zhTW: '其他',
+                en: 'Other',
+              ),
               isDark: isDark,
-              onTap: () => _submitReport(moment, '其他'),
+              onTap: () => _submitReport(
+                moment,
+                _momentsText(
+                  context,
+                  zhCN: '其他',
+                  zhTW: '其他',
+                  en: 'Other',
+                ),
+              ),
             ),
           ],
         ),
@@ -832,8 +1133,13 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
         ],
@@ -845,9 +1151,18 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     Navigator.pop(context);
     // 举报后屏蔽该动态
     ref.read(momentProvider.notifier).blockMoment(moment.id);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('举报已提交，感谢您的反馈')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _momentsText(
+            context,
+            zhCN: '举报已提交，感谢您的反馈',
+            zhTW: '檢舉已提交，感謝您的回饋',
+            en: 'Report submitted. Thanks for your feedback.',
+          ),
+        ),
+      ),
+    );
   }
 
   void _confirmDeleteMoment(Moment moment) {
@@ -855,33 +1170,65 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        backgroundColor: AppColors.cardFor(context),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '确认删除',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '确认删除',
+            zhTW: '確認刪除',
+            en: 'Delete Moment',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Text(
-          '删除后将无法恢复，确定要删除这条动态吗？',
-          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          _momentsText(
+            context,
+            zhCN: '删除后将无法恢复，确定要删除这条动态吗？',
+            zhTW: '刪除後將無法恢復，確定要刪除此動態嗎？',
+            en: 'This cannot be undone. Delete this moment?',
+          ),
+          style: TextStyle(color: AppColors.textSecondaryFor(context)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               ref.read(momentProvider.notifier).deleteMoment(moment.id);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('动态已删除')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _momentsText(
+                      context,
+                      zhCN: '动态已删除',
+                      zhTW: '動態已刪除',
+                      en: 'Moment deleted',
+                    ),
+                  ),
+                ),
+              );
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -899,7 +1246,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SafeArea(
@@ -911,7 +1258,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -919,7 +1266,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               if (isMyMoment) ...[
                 _OptionTile(
                   icon: Icons.lock_outline,
-                  title: '设为私密',
+                  title: _momentsText(
+                    context,
+                    zhCN: '设为私密',
+                    zhTW: '設為私密',
+                    en: 'Set Private',
+                  ),
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
@@ -928,7 +1280,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 ),
                 _OptionTile(
                   icon: Icons.delete_outline,
-                  title: '删除',
+                  title: _momentsText(
+                    context,
+                    zhCN: '删除',
+                    zhTW: '刪除',
+                    en: 'Delete',
+                  ),
                   isDark: isDark,
                   isDestructive: true,
                   onTap: () {
@@ -939,7 +1296,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               ] else ...[
                 _OptionTile(
                   icon: Icons.visibility_off_outlined,
-                  title: '屏蔽此动态',
+                  title: _momentsText(
+                    context,
+                    zhCN: '屏蔽此动态',
+                    zhTW: '封鎖此動態',
+                    en: 'Block This Moment',
+                  ),
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
@@ -948,7 +1310,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 ),
                 _OptionTile(
                   icon: Icons.person_off_outlined,
-                  title: '屏蔽此人动态',
+                  title: _momentsText(
+                    context,
+                    zhCN: '屏蔽此人动态',
+                    zhTW: '封鎖此人的動態',
+                    en: 'Block This User\'s Moments',
+                  ),
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
@@ -957,7 +1324,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 ),
                 _OptionTile(
                   icon: Icons.report_outlined,
-                  title: '举报',
+                  title: _momentsText(
+                    context,
+                    zhCN: '举报',
+                    zhTW: '檢舉',
+                    en: 'Report',
+                  ),
                   isDark: isDark,
                   isDestructive: true,
                   onTap: () {
@@ -978,26 +1350,54 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除动态'),
-        content: const Text('确定要删除这条动态吗？删除后无法恢复。'),
+        title: Text(
+          _momentsText(
+            context,
+            zhCN: '删除动态',
+            zhTW: '刪除動態',
+            en: 'Delete Moment',
+          ),
+        ),
+        content: Text(
+          _momentsText(
+            context,
+            zhCN: '确定要删除这条动态吗？删除后无法恢复。',
+            zhTW: '確定要刪除此動態嗎？刪除後無法恢復。',
+            en: 'Delete this moment? This action cannot be undone.',
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+            ),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               ref.read(momentProvider.notifier).deleteMoment(moment.id);
             },
-            child: Text('删除', style: TextStyle(color: AppColors.error)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: TextStyle(color: AppColors.error),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 屏蔽此动态
   Future<void> _blockMoment(Moment moment) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
@@ -1007,19 +1407,34 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
             isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          '屏蔽动态',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '屏蔽动态',
+            zhTW: '封鎖動態',
+            en: 'Block Moment',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Text(
-          '屏蔽后将不再看到此动态，确定要屏蔽吗？',
-          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          _momentsText(
+            context,
+            zhCN: '屏蔽后将不再看到此动态，确定要屏蔽吗？',
+            zhTW: '封鎖後將不再看到此動態，確定要封鎖嗎？',
+            en: 'You will no longer see this moment. Block it?',
+          ),
+          style: TextStyle(color: AppColors.textSecondaryFor(context)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -1029,38 +1444,71 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 final api = ref.read(apiClientProvider);
                 final response = await api.post('/moment/${moment.id}/block');
                 if (response.isSuccess) {
-                  // 从列表中移除此动态
                   ref
                       .read(momentProvider.notifier)
                       .removeMomentLocally(moment.id);
                   if (mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('已屏蔽此动态')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          _momentsText(
+                            context,
+                            zhCN: '已屏蔽此动态',
+                            zhTW: '已封鎖此動態',
+                            en: 'Blocked this moment',
+                          ),
+                        ),
+                      ),
+                    );
                   }
                 } else {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(response.message ?? '屏蔽失败')),
+                      SnackBar(
+                        content: Text(
+                          _momentsServerMessage(
+                            response.message,
+                            zhCN: '屏蔽失败',
+                            zhTW: '封鎖失敗',
+                            en: 'Failed to block',
+                          ),
+                        ),
+                      ),
                     );
                   }
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('屏蔽失败: $e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${_momentsText(
+                          context,
+                          zhCN: '屏蔽失败',
+                          zhTW: '封鎖失敗',
+                          en: 'Failed to block',
+                        )}: $e',
+                      ),
+                    ),
+                  );
                 }
               }
             },
-            child: const Text('屏蔽', style: TextStyle(color: Colors.orange)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '屏蔽',
+                zhTW: '封鎖',
+                en: 'Block',
+              ),
+              style: const TextStyle(color: Colors.orange),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 屏蔽此人动态
   Future<void> _blockUserMoments(Moment moment) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
@@ -1070,19 +1518,34 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
             isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          '屏蔽此人动态',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '屏蔽此人动态',
+            zhTW: '封鎖此人的動態',
+            en: 'Block This User\'s Moments',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Text(
-          '屏蔽后将不再看到 ${moment.userName} 的所有动态，确定要屏蔽吗？',
-          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          _momentsText(
+            context,
+            zhCN: '屏蔽后将不再看到 ${moment.userName} 的所有动态，确定要屏蔽吗？',
+            zhTW: '封鎖後將不再看到 ${moment.userName} 的所有動態，確定要封鎖嗎？',
+            en: 'You will no longer see any moments from ${moment.userName}. Block this user?',
+          ),
+          style: TextStyle(color: AppColors.textSecondaryFor(context)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -1094,41 +1557,74 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                   '/moment/block-user/${moment.userId}',
                 );
                 if (response.isSuccess) {
-                  // 从列表中移除此人的所有动态
                   ref
                       .read(momentProvider.notifier)
                       .removeUserMomentsLocally(moment.userId);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已屏蔽 ${moment.userName} 的动态')),
+                      SnackBar(
+                        content: Text(
+                          _momentsText(
+                            context,
+                            zhCN: '已屏蔽 ${moment.userName} 的动态',
+                            zhTW: '已封鎖 ${moment.userName} 的動態',
+                            en: 'Blocked ${moment.userName}\'s moments',
+                          ),
+                        ),
+                      ),
                     );
                   }
                 } else {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(response.message ?? '屏蔽失败')),
+                      SnackBar(
+                        content: Text(
+                          _momentsServerMessage(
+                            response.message,
+                            zhCN: '屏蔽失败',
+                            zhTW: '封鎖失敗',
+                            en: 'Failed to block',
+                          ),
+                        ),
+                      ),
                     );
                   }
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('屏蔽失败: $e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${_momentsText(
+                          context,
+                          zhCN: '屏蔽失败',
+                          zhTW: '封鎖失敗',
+                          en: 'Failed to block',
+                        )}: $e',
+                      ),
+                    ),
+                  );
                 }
               }
             },
-            child: const Text('屏蔽', style: TextStyle(color: Colors.orange)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '屏蔽',
+                zhTW: '封鎖',
+                en: 'Block',
+              ),
+              style: const TextStyle(color: Colors.orange),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 举报动态
   Future<void> _reportMoment(Moment moment) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final reasons = ['垃圾广告', '色情低俗', '政治敏感', '违法信息', '人身攻击', '其他'];
+    final reasons = _momentReportReasons(context);
     String? selectedReason;
 
     showModalBottomSheet(
@@ -1149,7 +1645,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1159,11 +1655,16 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                   vertical: 8,
                 ),
                 child: Text(
-                  '举报动态',
+                  _momentsText(
+                    context,
+                    zhCN: '举报动态',
+                    zhTW: '檢舉動態',
+                    en: 'Report Moment',
+                  ),
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
               ),
@@ -1173,13 +1674,12 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                   title: Text(
                     reason,
                     style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                   onTap: () async {
                     Navigator.pop(ctx);
                     selectedReason = reason;
-                    // 调用举报API
                     try {
                       final api = ref.read(apiClientProvider);
                       final response = await api.post(
@@ -1192,18 +1692,45 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                       );
                       if (response.isSuccess && mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('举报成功，我们会尽快处理')),
+                          SnackBar(
+                            content: Text(
+                              _momentsText(
+                                context,
+                                zhCN: '举报成功，我们会尽快处理',
+                                zhTW: '檢舉成功，我們會盡快處理',
+                                en: 'Report submitted. We will review it soon.',
+                              ),
+                            ),
+                          ),
                         );
                       } else if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(response.message ?? '举报失败')),
+                          SnackBar(
+                            content: Text(
+                              _momentsServerMessage(
+                                response.message,
+                                zhCN: '举报失败',
+                                zhTW: '檢舉失敗',
+                                en: 'Failed to report',
+                              ),
+                            ),
+                          ),
                         );
                       }
                     } catch (e) {
                       if (mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('举报失败: $e')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '${_momentsText(
+                                context,
+                                zhCN: '举报失败',
+                                zhTW: '檢舉失敗',
+                                en: 'Failed to report',
+                              )}: $e',
+                            ),
+                          ),
+                        );
                       }
                     }
                   },
@@ -1213,9 +1740,14 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
               ListTile(
                 title: Center(
                   child: Text(
-                    '取消',
+                    _momentsText(
+                      context,
+                      zhCN: '取消',
+                      zhTW: '取消',
+                      en: 'Cancel',
+                    ),
                     style: TextStyle(
-                      color: isDark ? Colors.white54 : Colors.black54,
+                      color: AppColors.textSecondaryFor(context),
                     ),
                   ),
                 ),
@@ -1306,7 +1838,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
         children: [
           Container(
             decoration: BoxDecoration(
-              color: widget.isDark ? const Color(0xFF1C1C1E) : Colors.white,
+              color: AppColors.cardFor(context),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -1343,8 +1875,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                               height: 1.3,
-                              color:
-                                  widget.isDark ? Colors.white : Colors.black87,
+                              color: AppColors.textPrimaryFor(context),
                             ),
                           ),
                         ),
@@ -1371,9 +1902,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: widget.isDark
-                                    ? Colors.white60
-                                    : Colors.black54,
+                                color: AppColors.textSecondaryFor(context),
                               ),
                             ),
                           ),
@@ -1390,9 +1919,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
                                   size: 16,
                                   color: widget.moment.isLiked
                                       ? Colors.redAccent
-                                      : (widget.isDark
-                                          ? Colors.white38
-                                          : Colors.black38),
+                                      : AppColors.textTertiaryFor(context),
                                 ),
                                 if (widget.moment.likeCount > 0) ...[
                                   const SizedBox(width: 2),
@@ -1400,9 +1927,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
                                     _formatCount(widget.moment.likeCount),
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: widget.isDark
-                                          ? Colors.white38
-                                          : Colors.black38,
+                                      color: AppColors.textTertiaryFor(context),
                                     ),
                                   ),
                                 ],
@@ -1436,7 +1961,7 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
                         child: SizedBox(
                           width: 80,
                           height: 80,
-                          child: Lottie.asset(
+                          child: WebSafeLottie.asset(
                             'assets/emoji/lottie/heart_eyes.json',
                             repeat: false,
                             animate: true,
@@ -1603,6 +2128,95 @@ class _WaterfallMomentCardState extends State<_WaterfallMomentCard>
   }
 }
 
+String _momentShareContentTypeText(BuildContext context, Moment moment) {
+  switch (moment.contentType) {
+    case MomentContentType.image:
+      return _momentsText(
+        context,
+        zhCN: '分享了一组图片动态',
+        zhTW: '分享了一組圖片動態',
+        en: 'shared a photo moment',
+      );
+    case MomentContentType.video:
+      return _momentsText(
+        context,
+        zhCN: '分享了一条视频动态',
+        zhTW: '分享了一則影片動態',
+        en: 'shared a video moment',
+      );
+    case MomentContentType.text:
+      return _momentsText(
+        context,
+        zhCN: '分享了一条动态',
+        zhTW: '分享了一則動態',
+        en: 'shared a moment',
+      );
+  }
+}
+
+String _buildMomentShareText(BuildContext context, Moment moment) {
+  final lines = <String>[
+    _momentsText(
+      context,
+      zhCN: '${moment.userName}${_momentShareContentTypeText(context, moment)}',
+      zhTW: '${moment.userName}${_momentShareContentTypeText(context, moment)}',
+      en: '${moment.userName} ${_momentShareContentTypeText(context, moment)}',
+    ),
+  ];
+
+  final content = moment.content.trim();
+  if (content.isNotEmpty) {
+    lines.add(content);
+  }
+  if (moment.topics.isNotEmpty) {
+    lines.add(moment.topics.map((topic) => '#$topic').join(' '));
+  }
+  lines.add(
+    _momentsText(
+      context,
+      zhCN: '动态ID：${moment.id}',
+      zhTW: '動態ID：${moment.id}',
+      en: 'Moment ID: ${moment.id}',
+    ),
+  );
+
+  return lines.join('\n');
+}
+
+Future<void> _shareMoment(BuildContext context, Moment moment) async {
+  final renderObject = context.findRenderObject();
+  final shareOrigin = renderObject is RenderBox
+      ? renderObject.localToGlobal(Offset.zero) & renderObject.size
+      : null;
+
+  try {
+    await Share.share(
+      _buildMomentShareText(context, moment),
+      subject: _momentsText(
+        context,
+        zhCN: '分享动态',
+        zhTW: '分享動態',
+        en: 'Share Moment',
+      ),
+      sharePositionOrigin: shareOrigin,
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _momentsText(
+            context,
+            zhCN: '分享失败，请稍后重试',
+            zhTW: '分享失敗，請稍後重試',
+            en: 'Unable to share. Please try again later.',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 动态卡片
 class _MomentCard extends StatelessWidget {
   final Moment moment;
@@ -1628,11 +2242,9 @@ class _MomentCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDark ? const Color(0xFF30363D) : const Color(0xFFE8EAED),
-          ),
+          border: Border.all(color: AppColors.dividerFor(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1667,8 +2279,7 @@ class _MomentCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
+                                    color: AppColors.textPrimaryFor(context),
                                   ),
                                 ),
                               ),
@@ -1676,7 +2287,7 @@ class _MomentCard extends StatelessWidget {
                               Icon(
                                 moment.visibility.icon,
                                 size: 14,
-                                color: isDark ? Colors.white38 : Colors.black38,
+                                color: AppColors.textTertiaryFor(context),
                               ),
                               if (showModerationBadge &&
                                   (moment.isPendingReview ||
@@ -1692,7 +2303,7 @@ class _MomentCard extends StatelessWidget {
                             moment.timeAgo,
                             style: TextStyle(
                               fontSize: 12,
-                              color: isDark ? Colors.white38 : Colors.black38,
+                              color: AppColors.textTertiaryFor(context),
                             ),
                           ),
                         ],
@@ -1702,7 +2313,7 @@ class _MomentCard extends StatelessWidget {
                   IconButton(
                     icon: Icon(
                       Icons.more_horiz,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                     onPressed: onMore,
                   ),
@@ -1738,7 +2349,7 @@ class _MomentCard extends StatelessWidget {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primaryWithOpacity(context, 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -1746,7 +2357,7 @@ class _MomentCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.primary,
+                          color: AppColors.linkFor(context),
                         ),
                       ),
                     );
@@ -1784,8 +2395,7 @@ class _MomentCard extends StatelessWidget {
                         : null,
                     isDark: isDark,
                     onTap: () {
-                      HapticFeedback.mediumImpact();
-                      // TODO: 分享
+                      _shareMoment(context, moment);
                     },
                   ),
                 ],
@@ -1965,7 +2575,7 @@ class _MomentCard extends StatelessWidget {
   }
 
   String _formatCount(int count) {
-    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
+    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}w';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
   }
@@ -2006,118 +2616,121 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 图片轮播
-          PageView.builder(
-            controller: _pageController,
-            onPageChanged: (index) => setState(() => _currentIndex = index),
-            itemCount: widget.images.length,
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: Center(
-                    child: Hero(
-                      tag: 'media_${widget.momentId}_$index',
-                      child: CachedNetworkImage(
-                        imageUrl: ApiConfig.getMediaUrl(widget.images[index]),
-                        fit: BoxFit.contain,
-                        placeholder: (_, __) => const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
-                        errorWidget: (_, __, ___) => const Center(
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            size: 48,
-                            color: Colors.white54,
+    return DarkSystemUiScope(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 图片轮播
+            PageView.builder(
+              controller: _pageController,
+              onPageChanged: (index) => setState(() => _currentIndex = index),
+              itemCount: widget.images.length,
+              itemBuilder: (context, index) {
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: Hero(
+                        tag: 'media_${widget.momentId}_$index',
+                        child: CachedNetworkImage(
+                          imageUrl: ApiConfig.getMediaUrl(widget.images[index]),
+                          fit: BoxFit.contain,
+                          placeholder: (_, __) => const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.white),
                           ),
+                          errorWidget: (_, __, ___) => const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              size: 48,
+                              color: Colors.white54,
+                            ),
+                          ),
+                          fadeInDuration: const Duration(milliseconds: 200),
                         ),
-                        fadeInDuration: const Duration(milliseconds: 200),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-
-          // 顶部栏
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                right: 8,
-                bottom: 8,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black54, Colors.transparent],
-                ),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Spacer(),
-                  if (widget.images.length > 1)
-                    Text(
-                      '${_currentIndex + 1} / ${widget.images.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.more_horiz, color: Colors.white),
-                    onPressed: () {
-                      // TODO: 更多操作（保存、分享等）
-                    },
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-          ),
 
-          // 底部指示器
-          if (widget.images.length > 1)
+            // 顶部栏
             Positioned(
-              bottom: MediaQuery.of(context).padding.bottom + 24,
+              top: 0,
               left: 0,
               right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  widget.images.length,
-                  (index) => Container(
-                    width: index == _currentIndex ? 20 : 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: index == _currentIndex
-                          ? Colors.white
-                          : Colors.white38,
-                      borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black54, Colors.transparent],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const Spacer(),
+                    if (widget.images.length > 1)
+                      Text(
+                        '${_currentIndex + 1} / ${widget.images.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.more_horiz, color: Colors.white),
+                      onPressed: () {
+                        // TODO: 更多操作（保存、分享等）
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 底部指示器
+            if (widget.images.length > 1)
+              Positioned(
+                bottom: MediaQuery.of(context).padding.bottom + 24,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    widget.images.length,
+                    (index) => Container(
+                      width: index == _currentIndex ? 20 : 8,
+                      height: 8,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: index == _currentIndex
+                            ? Colors.white
+                            : Colors.white38,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2148,7 +2761,8 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
   bool _isSendingComment = false;
   bool _showEmojiPicker = false;
 
-  // 本地点赞状态（用于动态不在主列表的情况）
+  // 详情可脱离主列表打开，因此保留一份展示状态；若主列表中存在同一动态，
+  // 构建时始终以 Provider 中的最新状态为准。
   late bool _isLiked;
   late int _likeCount;
   bool _isLiking = false;
@@ -2266,9 +2880,25 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
             .read(momentProvider.notifier)
             .setPrivate(widget.moment.id);
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(success ? '已设为私密' : '操作失败')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已设为私密',
+                        zhTW: '已設為私密',
+                        en: 'Set to private',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Action failed',
+                      ),
+              ),
+            ),
+          );
           if (success) _closePage();
         }
         break;
@@ -2280,9 +2910,25 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
             .read(momentProvider.notifier)
             .blockMoment(widget.moment.id);
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(success ? '已屏蔽该动态' : '操作失败')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已屏蔽该动态',
+                        zhTW: '已封鎖此動態',
+                        en: 'Blocked this moment',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Action failed',
+                      ),
+              ),
+            ),
+          );
           if (success) _closePage();
         }
         break;
@@ -2294,7 +2940,19 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                success ? '已屏蔽 ${widget.moment.userName} 的动态' : '操作失败',
+                success
+                    ? _momentsText(
+                        context,
+                        zhCN: '已屏蔽 ${widget.moment.userName} 的动态',
+                        zhTW: '已封鎖 ${widget.moment.userName} 的動態',
+                        en: 'Blocked ${widget.moment.userName}\'s moments',
+                      )
+                    : _momentsText(
+                        context,
+                        zhCN: '操作失败',
+                        zhTW: '操作失敗',
+                        en: 'Action failed',
+                      ),
               ),
             ),
           );
@@ -2315,19 +2973,34 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
         backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '确认删除',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '确认删除',
+            zhTW: '確認刪除',
+            en: 'Confirm Delete',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Text(
-          '删除后将无法恢复，确定要删除这条动态吗？',
-          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          _momentsText(
+            context,
+            zhCN: '删除后将无法恢复，确定要删除这条动态吗？',
+            zhTW: '刪除後將無法恢復，確定要刪除這條動態嗎？',
+            en: 'This moment cannot be restored after deletion. Delete it?',
+          ),
+          style: TextStyle(color: AppColors.textSecondaryFor(context)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -2338,12 +3011,36 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                   .deleteMoment(widget.moment.id);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(success ? '动态已删除' : '删除失败')),
+                  SnackBar(
+                    content: Text(
+                      success
+                          ? _momentsText(
+                              context,
+                              zhCN: '动态已删除',
+                              zhTW: '動態已刪除',
+                              en: 'Moment deleted',
+                            )
+                          : _momentsText(
+                              context,
+                              zhCN: '删除失败',
+                              zhTW: '刪除失敗',
+                              en: 'Delete failed',
+                            ),
+                    ),
+                  ),
                 );
                 if (success) _closePage();
               }
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -2352,51 +3049,44 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
 
   void _showDetailReportDialog() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final reasons = _momentReportReasons(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '举报动态',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '举报动态',
+            zhTW: '檢舉動態',
+            en: 'Report Moment',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            _ReportOption(
-              title: '色情低俗',
-              isDark: isDark,
-              onTap: () => _submitDetailReport(ctx, '色情低俗'),
-            ),
-            _ReportOption(
-              title: '违法违规',
-              isDark: isDark,
-              onTap: () => _submitDetailReport(ctx, '违法违规'),
-            ),
-            _ReportOption(
-              title: '诈骗信息',
-              isDark: isDark,
-              onTap: () => _submitDetailReport(ctx, '诈骗信息'),
-            ),
-            _ReportOption(
-              title: '人身攻击',
-              isDark: isDark,
-              onTap: () => _submitDetailReport(ctx, '人身攻击'),
-            ),
-            _ReportOption(
-              title: '其他',
-              isDark: isDark,
-              onTap: () => _submitDetailReport(ctx, '其他'),
-            ),
-          ],
+          children: reasons
+              .map(
+                (reason) => _ReportOption(
+                  title: reason,
+                  isDark: isDark,
+                  onTap: () => _submitDetailReport(ctx, reason),
+                ),
+              )
+              .toList(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
         ],
@@ -2408,9 +3098,18 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
     Navigator.pop(ctx);
     await ref.read(momentProvider.notifier).blockMoment(widget.moment.id);
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('举报已提交，感谢您的反馈')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _momentsText(
+              context,
+              zhCN: '举报已提交，感谢您的反馈',
+              zhTW: '檢舉已提交，感謝您的回饋',
+              en: 'Report submitted. Thanks for your feedback.',
+            ),
+          ),
+        ),
+      );
       _closePage();
     }
   }
@@ -2444,18 +3143,21 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
     }
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
-        backgroundColor:
-            isDark ? AppColors.darkBackground : AppColors.lightBackground,
+        backgroundColor: AppColors.backgroundFor(context),
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '动态详情',
+          _momentsText(
+            context,
+            zhCN: '动态详情',
+            zhTW: '動態詳情',
+            en: 'Moment Details',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -2522,7 +3224,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                       opacity: opacity,
                       child: Transform.scale(
                         scale: value.clamp(0.0, 1.2),
-                        child: Lottie.asset(
+                        child: WebSafeLottie.asset(
                           'assets/emoji/lottie/heart_eyes.json',
                           width: 120,
                           height: 120,
@@ -2570,9 +3272,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? AppColors.darkTextPrimary
-                              : AppColors.lightTextPrimary,
+                          color: AppColors.textPrimaryFor(context),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -2580,9 +3280,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                         widget.moment.timeAgo,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : AppColors.lightTextTertiary,
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ],
@@ -2598,7 +3296,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                   padding: const EdgeInsets.all(8),
                   child: Icon(
                     Icons.more_horiz,
-                    color: isDark ? Colors.white38 : Colors.black38,
+                    color: AppColors.textTertiaryFor(context),
                   ),
                 ),
               ),
@@ -2614,9 +3312,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
               style: TextStyle(
                 fontSize: 16,
                 height: 1.6,
-                color: isDark
-                    ? AppColors.darkTextPrimary
-                    : AppColors.lightTextPrimary,
+                color: AppColors.textPrimaryFor(context),
               ),
             ),
           ],
@@ -2640,7 +3336,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primaryWithOpacity(context, 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -2648,7 +3344,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: AppColors.primary,
+                      color: AppColors.primaryFor(context),
                     ),
                   ),
                 );
@@ -2661,13 +3357,13 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
           Consumer(
             builder: (context, ref, _) {
               final momentState = ref.watch(momentProvider);
-              // 优先从主列表获取最新状态
+              // 主列表是共享状态源；本地字段只是在通知直达等无列表场景下兜底。
               final listMoment = momentState.moments.cast<Moment?>().firstWhere(
                     (m) => m?.id == widget.moment.id,
                     orElse: () => null,
                   );
 
-              // 使用主列表状态或本地状态
+              // 列表副本存在时跟随其乐观更新/回滚，否则使用详情页展示副本。
               final isLiked = listMoment?.isLiked ?? _isLiked;
               final likeCount = listMoment?.likeCount ?? _likeCount;
               final commentCount =
@@ -2706,7 +3402,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                                 );
                               }
                             } else {
-                              // 动态不在主列表，使用带状态的方法
+                              // 通知或外链可直达详情，此时点赞状态由详情页本地副本维护。
                               final newIsLiked = await ref
                                   .read(momentProvider.notifier)
                                   .toggleLikeWithState(
@@ -2741,14 +3437,44 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     child: _buildStatItem(
                       isLiked ? Icons.favorite : Icons.favorite_border,
                       likeCount,
-                      '赞',
+                      _momentsText(
+                        context,
+                        zhCN: '赞',
+                        zhTW: '讚',
+                        en: 'Likes',
+                      ),
                       isActive: isLiked,
                     ),
                   ),
                   const SizedBox(width: 24),
-                  _buildStatItem(Icons.chat_bubble_outline, commentCount, '评论'),
+                  _buildStatItem(
+                    Icons.chat_bubble_outline,
+                    commentCount,
+                    _momentsText(
+                      context,
+                      zhCN: '评论',
+                      zhTW: '評論',
+                      en: 'Comments',
+                    ),
+                  ),
                   const SizedBox(width: 24),
-                  _buildStatItem(Icons.share_outlined, shareCount, '分享'),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      _shareMoment(context, widget.moment);
+                    },
+                    child: _buildStatItem(
+                      Icons.share_outlined,
+                      shareCount,
+                      _momentsText(
+                        context,
+                        zhCN: '分享',
+                        zhTW: '分享',
+                        en: 'Shares',
+                      ),
+                    ),
+                  ),
                 ],
               );
             },
@@ -2851,9 +3577,8 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
     String label, {
     bool isActive = false,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final color =
-        isActive ? AppColors.error : (isDark ? Colors.white54 : Colors.black45);
+        isActive ? AppColors.error : AppColors.textSecondaryFor(context);
     return Row(
       children: [
         Icon(icon, size: 18, color: color),
@@ -2883,15 +3608,20 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                 Icon(
                   Icons.chat_bubble_outline,
                   size: 18,
-                  color: isDark ? Colors.white54 : Colors.black45,
+                  color: AppColors.textSecondaryFor(context),
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '评论',
+                  _momentsText(
+                    context,
+                    zhCN: '评论',
+                    zhTW: '評論',
+                    en: 'Comments',
+                  ),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -2902,8 +3632,8 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                   ),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? AppColors.primary.withOpacity(0.2)
-                        : AppColors.primary.withOpacity(0.1),
+                        ? AppColors.primaryWithOpacity(context, 0.2)
+                        : AppColors.primaryWithOpacity(context, 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -2911,7 +3641,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
+                      color: AppColors.primaryFor(context),
                     ),
                   ),
                 ),
@@ -2936,22 +3666,32 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     Icon(
                       Icons.chat_bubble_outline,
                       size: 40,
-                      color: isDark ? Colors.white24 : Colors.black12,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '暂无评论',
+                      _momentsText(
+                        context,
+                        zhCN: '暂无评论',
+                        zhTW: '暫無評論',
+                        en: 'No comments yet',
+                      ),
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark ? Colors.white38 : Colors.black38,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '快来抢沙发~',
+                      _momentsText(
+                        context,
+                        zhCN: '快来抢沙发~',
+                        zhTW: '快來搶沙發~',
+                        en: 'Be the first to comment',
+                      ),
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white24 : Colors.black26,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                     ),
                   ],
@@ -3016,7 +3756,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                   height: 38,
                   decoration: BoxDecoration(
                     color: _showEmojiPicker
-                        ? AppColors.primary.withOpacity(0.15)
+                        ? AppColors.primaryWithOpacity(context, 0.15)
                         : (isDark
                             ? AppColors.darkInputBackground
                             : AppColors.lightInputBackground),
@@ -3028,10 +3768,8 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                         : Icons.emoji_emotions_outlined,
                     size: 22,
                     color: _showEmojiPicker
-                        ? AppColors.primary
-                        : (isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary),
+                        ? AppColors.primaryFor(context)
+                        : (AppColors.textSecondaryFor(context)),
                   ),
                 ),
               ),
@@ -3056,9 +3794,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                     focusNode: _commentFocusNode,
                     style: TextStyle(
                       fontSize: 15,
-                      color: isDark
-                          ? AppColors.darkTextPrimary
-                          : AppColors.lightTextPrimary,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                     onTap: () {
                       if (_showEmojiPicker) {
@@ -3066,11 +3802,14 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                       }
                     },
                     decoration: InputDecoration(
-                      hintText: '写评论...',
+                      hintText: _momentsText(
+                        context,
+                        zhCN: '写评论...',
+                        zhTW: '寫評論...',
+                        en: 'Write a comment...',
+                      ),
                       hintStyle: TextStyle(
-                        color: isDark
-                            ? AppColors.darkTextTertiary
-                            : AppColors.lightTextTertiary,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -3090,21 +3829,21 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                         ? null
                         : LinearGradient(
                             colors: [
-                              AppColors.primary,
-                              AppColors.primary.withBlue(220),
+                              AppColors.primaryFor(context),
+                              AppColors.primaryFor(context).withBlue(220),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                     color: _isSendingComment
-                        ? AppColors.primary.withOpacity(0.5)
+                        ? AppColors.primaryWithOpacity(context, 0.5)
                         : null,
                     shape: BoxShape.circle,
                     boxShadow: _isSendingComment
                         ? null
                         : [
                             BoxShadow(
-                              color: AppColors.primary.withOpacity(0.3),
+                              color: AppColors.primaryWithOpacity(context, 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -3206,6 +3945,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
       setState(() => _isSendingComment = false);
 
       if (comment != null) {
+        // 仅插入服务端确认并返回的评论，避免失败请求留下无法追踪的本地假数据。
         setState(() {
           _comments.insert(0, comment);
         });
@@ -3213,7 +3953,13 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
       } else {
         // 恢复文本
         _commentController.text = content;
-        final errMsg = ref.read(momentProvider).error ?? '评论失败，请重试';
+        final errMsg = ref.read(momentProvider).error ??
+            _momentsText(
+              context,
+              zhCN: '评论失败，请重试',
+              zhTW: '評論失敗，請重試',
+              en: 'Failed to comment. Please try again.',
+            );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(errMsg), behavior: SnackBarBehavior.floating),
         );
@@ -3279,9 +4025,7 @@ class _CommentTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? AppColors.darkTextPrimary
-                              : AppColors.lightTextPrimary,
+                          color: AppColors.textPrimaryFor(context),
                         ),
                       ),
                     ),
@@ -3290,9 +4034,7 @@ class _CommentTile extends StatelessWidget {
                       comment.timeAgo,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark
-                            ? AppColors.darkTextTertiary
-                            : AppColors.lightTextTertiary,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                     ),
                   ],
@@ -3303,9 +4045,7 @@ class _CommentTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     height: 1.4,
-                    color: isDark
-                        ? AppColors.darkTextPrimary
-                        : AppColors.lightTextPrimary,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                   emojiSize: 20,
                 ),
@@ -3321,7 +4061,7 @@ class _CommentTile extends StatelessWidget {
                           Icon(
                             Icons.favorite_border,
                             size: 16,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            color: AppColors.textTertiaryFor(context),
                           ),
                           if (comment.likeCount > 0) ...[
                             const SizedBox(width: 4),
@@ -3329,7 +4069,7 @@ class _CommentTile extends StatelessWidget {
                               '${comment.likeCount}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark ? Colors.white38 : Colors.black38,
+                                color: AppColors.textTertiaryFor(context),
                               ),
                             ),
                           ],
@@ -3340,10 +4080,15 @@ class _CommentTile extends StatelessWidget {
                     GestureDetector(
                       onTap: () {},
                       child: Text(
-                        '回复',
+                        _momentsText(
+                          context,
+                          zhCN: '回复',
+                          zhTW: '回覆',
+                          en: 'Reply',
+                        ),
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.black38,
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ),
@@ -3377,7 +4122,7 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color =
-        isActive ? AppColors.error : (isDark ? Colors.white54 : Colors.black45);
+        isActive ? AppColors.error : AppColors.textSecondaryFor(context);
 
     return InkWell(
       onTap: () {
@@ -3444,27 +4189,65 @@ class _GlassPopupMenu extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: isMyMoment
                 ? [
-                    _buildMenuItem(Icons.lock_outline, '设为私密', 'private'),
-                    _buildDivider(),
                     _buildMenuItem(
+                      context,
+                      Icons.lock_outline,
+                      _momentsText(
+                        context,
+                        zhCN: '设为私密',
+                        zhTW: '設為私密',
+                        en: 'Set Private',
+                      ),
+                      'private',
+                    ),
+                    _buildDivider(context),
+                    _buildMenuItem(
+                      context,
                       Icons.delete_outline,
-                      '删除',
+                      _momentsText(
+                        context,
+                        zhCN: '删除',
+                        zhTW: '刪除',
+                        en: 'Delete',
+                      ),
                       'delete',
                       isDestructive: true,
                     ),
                   ]
                 : [
                     _buildMenuItem(
+                      context,
                       Icons.visibility_off_outlined,
-                      '屏蔽此动态',
+                      _momentsText(
+                        context,
+                        zhCN: '屏蔽此动态',
+                        zhTW: '封鎖此動態',
+                        en: 'Block This Moment',
+                      ),
                       'hide',
                     ),
-                    _buildDivider(),
-                    _buildMenuItem(Icons.block, '屏蔽此人动态', 'block'),
-                    _buildDivider(),
+                    _buildDivider(context),
                     _buildMenuItem(
+                      context,
+                      Icons.block,
+                      _momentsText(
+                        context,
+                        zhCN: '屏蔽此人动态',
+                        zhTW: '封鎖此人的動態',
+                        en: 'Block This User\'s Moments',
+                      ),
+                      'block',
+                    ),
+                    _buildDivider(context),
+                    _buildMenuItem(
+                      context,
                       Icons.flag_outlined,
-                      '举报',
+                      _momentsText(
+                        context,
+                        zhCN: '举报',
+                        zhTW: '檢舉',
+                        en: 'Report',
+                      ),
                       'report',
                       isDestructive: true,
                     ),
@@ -3476,6 +4259,7 @@ class _GlassPopupMenu extends StatelessWidget {
   }
 
   Widget _buildMenuItem(
+    BuildContext context,
     IconData icon,
     String text,
     String action, {
@@ -3497,7 +4281,7 @@ class _GlassPopupMenu extends StatelessWidget {
                 size: 20,
                 color: isDestructive
                     ? Colors.red
-                    : (isDark ? Colors.white70 : Colors.black87),
+                    : AppColors.textSecondaryFor(context),
               ),
               const SizedBox(width: 12),
               Text(
@@ -3507,7 +4291,7 @@ class _GlassPopupMenu extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                   color: isDestructive
                       ? Colors.red
-                      : (isDark ? Colors.white : Colors.black87),
+                      : AppColors.textPrimaryFor(context),
                 ),
               ),
             ],
@@ -3517,11 +4301,11 @@ class _GlassPopupMenu extends StatelessWidget {
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(BuildContext context) {
     return Container(
       height: 0.5,
       margin: const EdgeInsets.symmetric(horizontal: 12),
-      color: isDark ? Colors.white12 : Colors.black12,
+      color: AppColors.dividerFor(context),
     );
   }
 }
@@ -3681,7 +4465,14 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
         // 达到最大数量，显示提示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('最多选择 ${widget.maxCount} 个'),
+            content: Text(
+              _momentsText(
+                context,
+                zhCN: '最多选择 ${widget.maxCount} 个',
+                zhTW: '最多選擇 ${widget.maxCount} 個',
+                en: 'You can select up to ${widget.maxCount}',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 1),
           ),
@@ -3726,7 +4517,7 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
               final videoFile = File(videoPath);
               if (await videoFile.exists()) {
                 liveVideoPath = videoPath;
-                if (kDebugMode) debugPrint('[MediaPicker] Live Photo video found: $videoPath');
+                debugPrint('[MediaPicker] Live Photo video found: $videoPath');
                 break;
               }
             }
@@ -3737,12 +4528,12 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
         final file = await asset.file;
         if (file != null && await file.exists()) {
           filePath = file.path;
-          if (kDebugMode) debugPrint('[MediaPicker] File path: $filePath');
+          debugPrint('[MediaPicker] File path: $filePath');
         }
 
         // 如果仍然没有文件路径，尝试获取原始数据并保存
         if (filePath == null) {
-          if (kDebugMode) debugPrint(
+          debugPrint(
             '[MediaPicker] Warning: Could not get file for asset ${asset.id}, trying originBytes...',
           );
           final bytes = await asset.originBytes;
@@ -3752,12 +4543,12 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
             final tempFile = File('${tempDir.path}/${asset.id}.jpg');
             await tempFile.writeAsBytes(bytes);
             filePath = tempFile.path;
-            if (kDebugMode) debugPrint('[MediaPicker] Saved to temp file: $filePath');
+            debugPrint('[MediaPicker] Saved to temp file: $filePath');
           }
         }
 
         if (filePath == null) {
-          if (kDebugMode) debugPrint(
+          debugPrint(
             '[MediaPicker] Error: Failed to get file for asset ${asset.id}',
           );
           continue;
@@ -3772,11 +4563,11 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
           ),
         );
       } catch (e) {
-        if (kDebugMode) debugPrint('[MediaPicker] Error processing asset ${asset.id}: $e');
+        debugPrint('[MediaPicker] Error processing asset ${asset.id}: $e');
       }
     }
 
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[MediaPicker] Confirm completed: ${results.length} files selected',
     );
 
@@ -3814,18 +4605,24 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _currentAlbum?.name ?? '相册',
+                  _currentAlbum?.name ??
+                      _momentsText(
+                        context,
+                        zhCN: '相册',
+                        zhTW: '相簿',
+                        en: 'Album',
+                      ),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: widget.isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
                 const SizedBox(width: 4),
                 Icon(
                   Icons.keyboard_arrow_down_rounded,
                   size: 20,
-                  color: widget.isDark ? Colors.white60 : Colors.black54,
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ],
             ),
@@ -3841,7 +4638,8 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                     child: TextButton(
                       onPressed: _isConfirming ? null : _confirm,
                       style: TextButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: AppColors.primaryFor(context),
+                        foregroundColor: AppColors.onPrimaryFor(context),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 8,
@@ -3860,7 +4658,12 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                               ),
                             )
                           : Text(
-                              '完成 (${_selectedAssets.length})',
+                              _momentsText(
+                                context,
+                                zhCN: '完成 (${_selectedAssets.length})',
+                                zhTW: '完成 (${_selectedAssets.length})',
+                                en: 'Done (${_selectedAssets.length})',
+                              ),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
@@ -3881,9 +4684,14 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
                   Text(
-                    '加载中...',
+                    _momentsText(
+                      context,
+                      zhCN: '加载中...',
+                      zhTW: '載入中...',
+                      en: 'Loading...',
+                    ),
                     style: TextStyle(
-                      color: widget.isDark ? Colors.white54 : Colors.black45,
+                      color: AppColors.textSecondaryFor(context),
                     ),
                   ),
                 ],
@@ -3899,15 +4707,26 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                             ? Icons.videocam_off_outlined
                             : Icons.photo_library_outlined,
                         size: 64,
-                        color: widget.isDark ? Colors.white24 : Colors.black12,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        widget.videoOnly ? '暂无视频' : '暂无照片',
+                        widget.videoOnly
+                            ? _momentsText(
+                                context,
+                                zhCN: '暂无视频',
+                                zhTW: '暫無影片',
+                                en: 'No videos',
+                              )
+                            : _momentsText(
+                                context,
+                                zhCN: '暂无照片',
+                                zhTW: '暫無照片',
+                                en: 'No photos',
+                              ),
                         style: TextStyle(
                           fontSize: 16,
-                          color:
-                              widget.isDark ? Colors.white54 : Colors.black45,
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                     ],
@@ -3952,7 +4771,7 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
           maxHeight: MediaQuery.of(context).size.height * 0.7,
         ),
         decoration: BoxDecoration(
-          color: widget.isDark ? const Color(0xFF2C2C2E) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
@@ -3963,18 +4782,23 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: widget.isDark ? Colors.white24 : Colors.black12,
+                color: AppColors.dividerFor(context),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                '选择相册',
+                _momentsText(
+                  context,
+                  zhCN: '选择相册',
+                  zhTW: '選擇相簿',
+                  en: 'Choose Album',
+                ),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
-                  color: widget.isDark ? Colors.white : Colors.black87,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
             ),
@@ -4021,8 +4845,7 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                           }
                           return Icon(
                             Icons.photo_library_outlined,
-                            color:
-                                widget.isDark ? Colors.white38 : Colors.black26,
+                            color: AppColors.textTertiaryFor(context),
                           );
                         },
                       ),
@@ -4030,7 +4853,7 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                     title: Text(
                       album.name,
                       style: TextStyle(
-                        color: widget.isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
@@ -4040,19 +4863,23 @@ class _MediaPickerPageState extends State<_MediaPickerPage> {
                       builder: (context, snapshot) {
                         final count = snapshot.data ?? 0;
                         return Text(
-                          '$count 项',
+                          _momentsText(
+                            context,
+                            zhCN: '$count 项',
+                            zhTW: '$count 項',
+                            en: '$count items',
+                          ),
                           style: TextStyle(
-                            color:
-                                widget.isDark ? Colors.white54 : Colors.black45,
+                            color: AppColors.textSecondaryFor(context),
                             fontSize: 13,
                           ),
                         );
                       },
                     ),
                     trailing: isSelected
-                        ? const Icon(
+                        ? Icon(
                             Icons.check_circle,
-                            color: AppColors.primary,
+                            color: AppColors.primaryFor(context),
                           )
                         : null,
                     onTap: () {
@@ -4167,14 +4994,23 @@ class _MediaThumbnailTileState extends State<_MediaThumbnailTile> {
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.motion_photos_on, size: 12, color: Colors.white),
-                    SizedBox(width: 2),
+                    const Icon(
+                      Icons.motion_photos_on,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 2),
                     Text(
-                      '实况',
-                      style: TextStyle(color: Colors.white, fontSize: 9),
+                      _momentsText(
+                        context,
+                        zhCN: '实况',
+                        zhTW: '實況',
+                        en: 'Live',
+                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 9),
                     ),
                   ],
                 ),
@@ -4217,13 +5053,13 @@ class _MediaThumbnailTileState extends State<_MediaThumbnailTile> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.isSelected
-                    ? AppColors.primary
+                    ? AppColors.primaryFor(context)
                     : Colors.black.withOpacity(0.3),
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: widget.isSelected
                     ? [
                         BoxShadow(
-                          color: AppColors.primary.withOpacity(0.4),
+                          color: AppColors.primaryWithOpacity(context, 0.4),
                           blurRadius: 8,
                         ),
                       ]
@@ -4287,85 +5123,87 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 图片滑动
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.images.length,
-            onPageChanged: (index) => setState(() => _currentIndex = index),
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: Center(
-                    child: CachedNetworkImage(
-                      imageUrl: ApiConfig.getMediaUrl(widget.images[index]),
-                      fit: BoxFit.contain,
-                      placeholder: (_, __) => const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      ),
-                      errorWidget: (_, __, ___) => const Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          size: 48,
-                          color: Colors.white54,
+    return DarkSystemUiScope(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 图片滑动
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.images.length,
+              onPageChanged: (index) => setState(() => _currentIndex = index),
+              itemBuilder: (context, index) {
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: CachedNetworkImage(
+                        imageUrl: ApiConfig.getMediaUrl(widget.images[index]),
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
                         ),
+                        errorWidget: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 48,
+                            color: Colors.white54,
+                          ),
+                        ),
+                        fadeInDuration: const Duration(milliseconds: 200),
                       ),
-                      fadeInDuration: const Duration(milliseconds: 200),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // 关闭按钮
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+
+            // 页码指示器
+            if (widget.images.length > 1)
+              Positioned(
+                bottom: MediaQuery.of(context).padding.bottom + 40,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_currentIndex + 1} / ${widget.images.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-
-          // 关闭按钮
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
-            right: 16,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.close, color: Colors.white, size: 20),
               ),
-            ),
-          ),
-
-          // 页码指示器
-          if (widget.images.length > 1)
-            Positioned(
-              bottom: MediaQuery.of(context).padding.bottom + 40,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${_currentIndex + 1} / ${widget.images.length}',
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -4410,7 +5248,7 @@ class _LivePhotoPreviewState extends State<_LivePhotoPreview> {
         setState(() => _isInitialized = true);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[LivePhoto] Video init error: $e');
+      debugPrint('[LivePhoto] Video init error: $e');
     }
   }
 
@@ -4487,10 +5325,18 @@ class _LivePhotoPreviewState extends State<_LivePhotoPreview> {
                       ],
                     ),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      '长按查看',
-                      style: TextStyle(color: Colors.white70, fontSize: 10),
+                      _momentsText(
+                        context,
+                        zhCN: '长按查看',
+                        zhTW: '長按查看',
+                        en: 'Press and hold to preview',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                      ),
                     ),
                   ),
                 ),
@@ -4503,6 +5349,23 @@ class _LivePhotoPreviewState extends State<_LivePhotoPreview> {
 }
 
 /// 视频播放器组件
+class _MomentVideoPlaybackCoordinator {
+  static _VideoPlayerWidgetState? _activePlayer;
+
+  static void activate(_VideoPlayerWidgetState player) {
+    if (identical(_activePlayer, player)) return;
+    final previous = _activePlayer;
+    _activePlayer = player;
+    previous?._releaseFromCoordinator();
+  }
+
+  static void release(_VideoPlayerWidgetState player) {
+    if (identical(_activePlayer, player)) {
+      _activePlayer = null;
+    }
+  }
+}
+
 class _VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String? thumbnailUrl;
@@ -4514,57 +5377,140 @@ class _VideoPlayerWidget extends StatefulWidget {
 }
 
 class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
-  late VideoPlayerController _controller;
+  final Key _visibilityKey = UniqueKey();
+  VideoPlayerController? _controller;
   bool _isInitialized = false;
+  bool _isInitializing = false;
   bool _isPlaying = false;
   bool _showControls = true;
   bool _hasError = false;
+  bool _listenerAttached = false;
+  int _controllerGeneration = 0;
 
   @override
-  void initState() {
-    super.initState();
-    _initializePlayer();
+  void didUpdateWidget(covariant _VideoPlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoUrl != widget.videoUrl) {
+      _releaseController(notify: false);
+    }
   }
 
-  Future<void> _initializePlayer() async {
+  Future<void> _initializeAndPlay() async {
+    if (_isInitializing) return;
+    final current = _controller;
+    if (_isInitialized && current != null) {
+      await _togglePlay();
+      return;
+    }
+
+    _MomentVideoPlaybackCoordinator.activate(this);
+    final generation = ++_controllerGeneration;
+    setState(() {
+      _isInitializing = true;
+      _hasError = false;
+    });
+
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.videoUrl),
+    );
+    _controller = controller;
     try {
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-      );
-      await _controller.initialize();
-      _controller.addListener(_onPlayerStateChanged);
-      if (mounted) {
-        setState(() => _isInitialized = true);
+      await controller.initialize();
+      if (!mounted ||
+          _controller != controller ||
+          generation != _controllerGeneration) {
+        return;
       }
+      controller.addListener(_onPlayerStateChanged);
+      _listenerAttached = true;
+      setState(() {
+        _isInitialized = true;
+        _isInitializing = false;
+      });
+      await controller.play();
     } catch (e) {
-      if (kDebugMode) debugPrint('[Video] Initialize error: $e');
-      if (mounted) {
-        setState(() => _hasError = true);
+      debugPrint('[Video] Initialize error: $e');
+      if (_controller == controller) {
+        _controller = null;
+        unawaited(controller.dispose());
+        _MomentVideoPlaybackCoordinator.release(this);
+        if (mounted) {
+          setState(() {
+            _isInitializing = false;
+            _isInitialized = false;
+            _hasError = true;
+          });
+        }
       }
     }
   }
 
   void _onPlayerStateChanged() {
-    if (mounted) {
+    final controller = _controller;
+    if (mounted && controller != null) {
       setState(() {
-        _isPlaying = _controller.value.isPlaying;
+        _isPlaying = controller.value.isPlaying;
       });
     }
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onPlayerStateChanged);
-    _controller.dispose();
+    _MomentVideoPlaybackCoordinator.release(this);
+    _releaseController(notify: false);
     super.dispose();
   }
 
-  void _togglePlay() {
+  Future<void> _togglePlay() async {
+    final controller = _controller;
+    if (controller == null || !_isInitialized) return;
     HapticFeedback.selectionClick();
-    if (_controller.value.isPlaying) {
-      _controller.pause();
+    if (controller.value.isPlaying) {
+      await controller.pause();
     } else {
-      _controller.play();
+      _MomentVideoPlaybackCoordinator.activate(this);
+      await controller.play();
+    }
+  }
+
+  void _releaseFromCoordinator() {
+    _releaseController();
+  }
+
+  void _releaseController({bool notify = true}) {
+    _controllerGeneration++;
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      if (_listenerAttached) {
+        controller.removeListener(_onPlayerStateChanged);
+      }
+      unawaited(_pauseAndDispose(controller));
+    }
+    _listenerAttached = false;
+    _isInitialized = false;
+    _isInitializing = false;
+    _isPlaying = false;
+    _showControls = true;
+    if (notify && mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _pauseAndDispose(VideoPlayerController controller) async {
+    try {
+      await controller.pause();
+    } catch (_) {
+      // The controller may still be initializing when it leaves the viewport.
+    }
+    await controller.dispose();
+  }
+
+  void _handleVisibilityChanged(VisibilityInfo info) {
+    if (info.visibleFraction <= 0.01 &&
+        (_controller != null || _isInitializing)) {
+      _MomentVideoPlaybackCoordinator.release(this);
+      _releaseController();
     }
   }
 
@@ -4574,157 +5520,181 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError) {
-      return Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.black12,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline, size: 40, color: Colors.grey),
-              SizedBox(height: 8),
-              Text('视频加载失败', style: TextStyle(color: Colors.grey)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (!_isInitialized) {
-      return Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (widget.thumbnailUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(
-                  imageUrl: widget.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: 200,
-                  memCacheWidth: 400,
-                  memCacheHeight: 400,
-                  placeholder: (_, __) => Container(
-                    color: Colors.black26,
-                    child: const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
+    final controller = _controller;
+    final Widget content;
+    if (!_isInitialized || controller == null) {
+      content = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _initializeAndPlay,
+          child: Container(
+            height: 200,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (widget.thumbnailUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: widget.thumbnailUrl!,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: 200,
+                      memCacheWidth: 400,
+                      memCacheHeight: 400,
+                      placeholder: (_, __) => Container(
+                        color: Colors.black26,
+                        child: const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: Colors.black26,
+                        child: const Icon(
+                          Icons.videocam_off,
+                          color: Colors.white54,
+                          size: 40,
+                        ),
+                      ),
+                      fadeInDuration: const Duration(milliseconds: 200),
                     ),
                   ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: Colors.black26,
-                    child: const Icon(
-                      Icons.videocam_off,
-                      color: Colors.white54,
-                      size: 40,
-                    ),
-                  ),
-                  fadeInDuration: const Duration(milliseconds: 200),
-                ),
-              ),
-            const CircularProgressIndicator(color: Colors.white),
-          ],
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: _toggleControls,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: _controller.value.aspectRatio,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // 视频画面
-              VideoPlayer(_controller),
-
-              // 播放/暂停按钮
-              if (_showControls || !_isPlaying)
-                GestureDetector(
-                  onTap: _togglePlay,
-                  child: Container(
+                if (_isInitializing)
+                  const CircularProgressIndicator(color: Colors.white)
+                else
+                  Container(
                     width: 60,
                     height: 60,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: Colors.black54,
-                      borderRadius: BorderRadius.circular(30),
+                      shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _isPlaying ? Icons.pause : Icons.play_arrow,
-                      size: 36,
+                      _hasError
+                          ? Icons.refresh_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 38,
                       color: Colors.white,
                     ),
                   ),
-                ),
-
-              // 进度条
-              if (_showControls)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Colors.black54, Colors.transparent],
+                if (_hasError)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Text(
+                      _momentsText(
+                        context,
+                        zhCN: '视频加载失败，点击重试',
+                        zhTW: '影片載入失敗，點擊重試',
+                        en: 'Failed to load. Tap to retry.',
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          _formatDuration(_controller.value.position),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: _controller.value.position.inMilliseconds
-                                .toDouble(),
-                            max: _controller.value.duration.inMilliseconds
-                                .toDouble(),
-                            activeColor: AppColors.primary,
-                            inactiveColor: Colors.white38,
-                            onChanged: (value) {
-                              _controller.seekTo(
-                                Duration(milliseconds: value.toInt()),
-                              );
-                            },
-                          ),
-                        ),
-                        Text(
-                          _formatDuration(_controller.value.duration),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
+          ));
+    } else {
+      content = GestureDetector(
+        onTap: _toggleControls,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: AspectRatio(
+            aspectRatio: controller.value.aspectRatio,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // 视频画面
+                VideoPlayer(controller),
+
+                // 播放/暂停按钮
+                if (_showControls || !_isPlaying)
+                  GestureDetector(
+                    onTap: () => _togglePlay(),
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Icon(
+                        _isPlaying ? Icons.pause : Icons.play_arrow,
+                        size: 36,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+
+                // 进度条
+                if (_showControls)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Colors.black54, Colors.transparent],
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            _formatDuration(controller.value.position),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: controller.value.position.inMilliseconds
+                                  .toDouble(),
+                              max: controller.value.duration.inMilliseconds
+                                  .toDouble(),
+                              activeColor: AppColors.primaryFor(context),
+                              inactiveColor: Colors.white38,
+                              onChanged: (value) {
+                                controller.seekTo(
+                                  Duration(milliseconds: value.toInt()),
+                                );
+                              },
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(controller.value.duration),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-      ),
+      );
+    }
+
+    return VisibilityDetector(
+      key: _visibilityKey,
+      onVisibilityChanged: _handleVisibilityChanged,
+      child: content,
     );
   }
 
@@ -4757,7 +5727,7 @@ class _ReportOption extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: isDark ? Colors.white12 : Colors.black12,
+              color: AppColors.dividerFor(context),
               width: 0.5,
             ),
           ),
@@ -4766,7 +5736,7 @@ class _ReportOption extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: 16,
-            color: isDark ? Colors.white : Colors.black87,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
       ),
@@ -4792,9 +5762,8 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive
-        ? AppColors.error
-        : (isDark ? Colors.white : Colors.black87);
+    final color =
+        isDestructive ? AppColors.error : AppColors.textPrimaryFor(context);
 
     return ListTile(
       leading: Icon(icon, color: color),
@@ -4876,7 +5845,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         _publishReviewEnabled = settings.momentPostReviewEnabled;
       });
     } catch (e) {
-      if (kDebugMode) debugPrint('[Publish] Load publish settings failed: $e');
+      debugPrint('[Publish] Load publish settings failed: $e');
     }
   }
 
@@ -4898,9 +5867,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.isAuth) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('需要相册权限才能选择图片')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _momentsText(
+                context,
+                zhCN: '需要相册权限才能选择图片',
+                zhTW: '需要相簿權限才能選擇圖片',
+                en: 'Photo library permission is required to select images',
+              ),
+            ),
+          ),
+        );
       }
       return;
     }
@@ -4936,9 +5914,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     }
 
     if (_localImages.length >= 9) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('最多只能添加9张图片')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _momentsText(
+              context,
+              zhCN: '最多只能添加9张图片',
+              zhTW: '最多只能新增 9 張圖片',
+              en: 'You can add up to 9 images',
+            ),
+          ),
+        ),
+      );
       return;
     }
 
@@ -4957,12 +5944,19 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         HapticFeedback.mediumImpact();
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Publish] Take photo error: $e');
+      debugPrint('[Publish] Take photo error: $e');
     }
   }
 
   // 选择视频（直接从相册选择）
   Future<void> _pickVideo() async {
+    final settings = ref.read(systemSettingsProvider).valueOrNull;
+    final videoAllowed =
+        !Platform.isIOS || (settings?.iosCompliance.allowsMomentVideo ?? false);
+    if (!videoAllowed) {
+      return;
+    }
+
     if (_localImages.isNotEmpty) {
       _showMediaTypeTip();
       return;
@@ -4972,9 +5966,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.isAuth) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('需要相册权限才能选择视频')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _momentsText(
+                context,
+                zhCN: '需要相册权限才能选择视频',
+                zhTW: '需要相簿權限才能選擇影片',
+                en: 'Photo library permission is required to select videos',
+              ),
+            ),
+          ),
+        );
       }
       return;
     }
@@ -5019,14 +6022,28 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Publish] Generate thumbnail error: $e');
+      debugPrint('[Publish] Generate thumbnail error: $e');
     }
   }
 
   void _showMediaTypeTip() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_localVideo != null ? '已选择视频，不能添加图片' : '已选择图片，不能添加视频'),
+        content: Text(
+          _localVideo != null
+              ? _momentsText(
+                  context,
+                  zhCN: '已选择视频，不能添加图片',
+                  zhTW: '已選擇影片，不能新增圖片',
+                  en: 'A video is already selected. You cannot add images',
+                )
+              : _momentsText(
+                  context,
+                  zhCN: '已选择图片，不能添加视频',
+                  zhTW: '已選擇圖片，不能新增影片',
+                  en: 'Images are already selected. You cannot add a video',
+                ),
+        ),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -5055,12 +6072,14 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final authState = ref.watch(authServiceProvider);
     final user = authState.user;
-    final displayName =
-        user?.nickname ?? user?.username ?? l10n.get('me') ?? '我';
+    final displayName = user?.nickname ??
+        user?.username ??
+        l10n.get('me') ??
+        _momentsText(context, zhCN: '我', zhTW: '我', en: 'Me');
     final avatar = user?.avatar;
 
     return Scaffold(
-      backgroundColor: widget.isDark ? const Color(0xFF17212B) : Colors.white,
+      backgroundColor: AppColors.backgroundFor(context),
       body: Column(
         children: [
           // 顶部栏（含安全区）
@@ -5168,7 +6187,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
   Widget _buildTelegramHeader(String displayName, String? avatar) {
     return Container(
       decoration: BoxDecoration(
-        color: widget.isDark ? const Color(0xFF17212B) : Colors.white,
+        color: AppColors.backgroundFor(context),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -5199,7 +6218,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                     },
                     icon: Icon(
                       Icons.arrow_back_ios_new_rounded,
-                      color: widget.isDark ? Colors.white70 : Colors.black87,
+                      color: AppColors.textSecondaryFor(context),
                       size: 22,
                     ),
                   ),
@@ -5207,11 +6226,16 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                   // 标题
                   Expanded(
                     child: Text(
-                      '发布动态',
+                      _momentsText(
+                        context,
+                        zhCN: '发布动态',
+                        zhTW: '發佈動態',
+                        en: 'Post Moment',
+                      ),
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
-                        color: widget.isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                   ),
@@ -5227,9 +6251,9 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                       ),
                       decoration: BoxDecoration(
                         color: _canPublish
-                            ? AppColors.primary
+                            ? AppColors.primaryFor(context)
                             : (widget.isDark
-                                ? Colors.white10
+                                ? AppColors.darkControlBackground
                                 : Colors.black.withOpacity(0.05)),
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -5245,14 +6269,19 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                               ),
                             )
                           : Text(
-                              '发布',
+                              _momentsText(
+                                context,
+                                zhCN: '发布',
+                                zhTW: '發佈',
+                                en: 'Post',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: _canPublish
-                                    ? Colors.white
+                                    ? AppColors.onPrimaryFor(context)
                                     : (widget.isDark
-                                        ? Colors.white30
+                                        ? AppColors.textTertiaryFor(context)
                                         : Colors.black26),
                               ),
                             ),
@@ -5281,8 +6310,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color:
-                                widget.isDark ? Colors.white : Colors.black87,
+                            color: AppColors.textPrimaryFor(context),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -5294,7 +6322,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
+                              color: AppColors.primaryWithOpacity(context, 0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Row(
@@ -5303,7 +6331,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                 Icon(
                                   _visibility.icon,
                                   size: 14,
-                                  color: AppColors.primary,
+                                  color: AppColors.linkFor(context),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -5311,13 +6339,13 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
+                                    color: AppColors.linkFor(context),
                                   ),
                                 ),
                                 Icon(
                                   Icons.keyboard_arrow_down_rounded,
                                   size: 16,
-                                  color: AppColors.primary,
+                                  color: AppColors.linkFor(context),
                                 ),
                               ],
                             ),
@@ -5358,8 +6386,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                 const SizedBox(width: 6),
                                 Text(
                                   _publishReviewEnabled == true
-                                      ? '当前发布后需要审核'
-                                      : '当前发布后将直接显示',
+                                      ? _momentsText(
+                                          context,
+                                          zhCN: '当前发布后需要审核',
+                                          zhTW: '目前發佈後需要審核',
+                                          en: 'Posts currently require review',
+                                        )
+                                      : _momentsText(
+                                          context,
+                                          zhCN: '当前发布后将直接显示',
+                                          zhTW: '目前發佈後將直接顯示',
+                                          en: 'Posts will appear immediately',
+                                        ),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
@@ -5405,13 +6443,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         style: TextStyle(
           fontSize: 16,
           height: 1.5,
-          color: widget.isDark ? Colors.white : Colors.black87,
+          color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
-          hintText: '分享你的想法...',
+          hintText: _momentsText(
+            context,
+            zhCN: '分享你的想法...',
+            zhTW: '分享你的想法...',
+            en: 'Share your thoughts...',
+          ),
           hintStyle: TextStyle(
             fontSize: 16,
-            color: widget.isDark ? Colors.white38 : Colors.black38,
+            color: AppColors.textTertiaryFor(context),
           ),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
@@ -5501,17 +6544,22 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.motion_photos_on,
                           size: 12,
                           color: Colors.white,
                         ),
-                        SizedBox(width: 3),
+                        const SizedBox(width: 3),
                         Text(
-                          '实况',
+                          _momentsText(
+                            context,
+                            zhCN: '实况',
+                            zhTW: '實況',
+                            en: 'Live',
+                          ),
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -5635,21 +6683,26 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
+                        color: AppColors.primaryFor(context),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.videocam_rounded,
                             size: 16,
                             color: Colors.white,
                           ),
-                          SizedBox(width: 4),
+                          const SizedBox(width: 4),
                           Text(
-                            '视频',
-                            style: TextStyle(
+                            _momentsText(
+                              context,
+                              zhCN: '视频',
+                              zhTW: '影片',
+                              en: 'Video',
+                            ),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -5693,7 +6746,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primaryWithOpacity(context, 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -5703,14 +6756,25 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
               height: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                valueColor: AlwaysStoppedAnimation(
+                  AppColors.primaryFor(context),
+                ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                _uploadingStatus ?? '正在上传...',
-                style: TextStyle(fontSize: 14, color: AppColors.primary),
+                _uploadingStatus ??
+                    _momentsText(
+                      context,
+                      zhCN: '正在上传...',
+                      zhTW: '上傳中...',
+                      en: 'Uploading...',
+                    ),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.linkFor(context),
+                ),
               ),
             ),
           ],
@@ -5729,7 +6793,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
+              color: AppColors.primaryWithOpacity(context, 0.1),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -5740,7 +6804,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -5749,7 +6813,11 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                     HapticFeedback.selectionClick();
                     setState(() => _selectedTopics.remove(topic));
                   },
-                  child: Icon(Icons.close, size: 16, color: AppColors.primary),
+                  child: Icon(
+                    Icons.close,
+                    size: 16,
+                    color: AppColors.linkFor(context),
+                  ),
                 ),
               ],
             ),
@@ -5762,16 +6830,15 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
   Widget _buildTelegramToolbar(double bottomInset) {
     final hasImages = _localImages.isNotEmpty;
     final hasVideo = _localVideo != null;
+    final settings = ref.watch(systemSettingsProvider).valueOrNull;
+    final videoAllowed =
+        !Platform.isIOS || (settings?.iosCompliance.allowsMomentVideo ?? false);
 
     return Container(
       decoration: BoxDecoration(
-        color: widget.isDark ? const Color(0xFF17212B) : Colors.white,
+        color: AppColors.backgroundFor(context),
         border: Border(
-          top: BorderSide(
-            color: widget.isDark
-                ? Colors.white.withOpacity(0.08)
-                : Colors.black.withOpacity(0.06),
-          ),
+          top: BorderSide(color: AppColors.dividerFor(context)),
         ),
       ),
       padding: EdgeInsets.only(
@@ -5789,7 +6856,12 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
             icon: _showEmojiPicker
                 ? Icons.keyboard_rounded
                 : Icons.emoji_emotions_outlined,
-            label: '表情',
+            label: _momentsText(
+              context,
+              zhCN: '表情',
+              zhTW: '表情',
+              en: 'Emoji',
+            ),
             isDark: widget.isDark,
             isSelected: _showEmojiPicker,
             onTap: () {
@@ -5804,7 +6876,14 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           // 相册（选图片）
           _TelegramToolButton(
             icon: Icons.photo_library_rounded,
-            label: hasImages ? '${_localImages.length}/9' : '相册',
+            label: hasImages
+                ? '${_localImages.length}/9'
+                : _momentsText(
+                    context,
+                    zhCN: '相册',
+                    zhTW: '相簿',
+                    en: 'Album',
+                  ),
             isDark: widget.isDark,
             disabled: hasVideo,
             onTap: _pickImages,
@@ -5813,25 +6892,48 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           // 相机
           _TelegramToolButton(
             icon: Icons.camera_alt_rounded,
-            label: '拍照',
+            label: _momentsText(
+              context,
+              zhCN: '拍照',
+              zhTW: '拍照',
+              en: 'Camera',
+            ),
             isDark: widget.isDark,
             disabled: hasVideo || _localImages.length >= 9,
             onTap: _takePhoto,
           ),
 
           // 视频
-          _TelegramToolButton(
-            icon: Icons.videocam_rounded,
-            label: hasVideo ? '已选' : '视频',
-            isDark: widget.isDark,
-            disabled: hasImages,
-            onTap: _pickVideo,
-          ),
+          if (videoAllowed)
+            _TelegramToolButton(
+              icon: Icons.videocam_rounded,
+              label: hasVideo
+                  ? _momentsText(
+                      context,
+                      zhCN: '已选',
+                      zhTW: '已選',
+                      en: 'Selected',
+                    )
+                  : _momentsText(
+                      context,
+                      zhCN: '视频',
+                      zhTW: '影片',
+                      en: 'Video',
+                    ),
+              isDark: widget.isDark,
+              disabled: hasImages,
+              onTap: _pickVideo,
+            ),
 
           // 话题
           _TelegramToolButton(
             icon: Icons.tag_rounded,
-            label: '话题',
+            label: _momentsText(
+              context,
+              zhCN: '话题',
+              zhTW: '話題',
+              en: 'Topic',
+            ),
             isDark: widget.isDark,
             onTap: _showTopicPicker,
           ),
@@ -5866,7 +6968,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.15),
+                color: AppColors.primaryWithOpacity(context, 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -5875,7 +6977,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                   Icon(
                     hasVideo ? Icons.videocam : Icons.photo,
                     size: 16,
-                    color: AppColors.primary,
+                    color: AppColors.primaryFor(context),
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -5883,7 +6985,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
+                      color: AppColors.primaryFor(context),
                     ),
                   ),
                 ],
@@ -5906,7 +7008,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: widget.isDark ? Colors.white54 : Colors.black45,
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ),
             ),
@@ -5923,8 +7025,15 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     if (!mounted) return;
     if (!canPublishMoment) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('广场发布功能已关闭，仅支持浏览'),
+        SnackBar(
+          content: Text(
+            _momentsText(
+              context,
+              zhCN: '广场发布功能已关闭，仅支持浏览',
+              zhTW: '廣場發佈功能已關閉，僅支援瀏覽',
+              en: 'Posting is disabled. Browse only.',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -5941,7 +7050,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
     MomentContentType contentType = MomentContentType.text;
     String? videoThumbnailUrl;
 
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[Publish] Starting publish: images=${_localImages.length}, video=${_localVideo != null}',
     );
 
@@ -5952,29 +7061,38 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
       // 上传图片
       if (_localImages.isNotEmpty) {
         setState(
-          () => _uploadingStatus = '正在上传图片 (0/${_localImages.length})...',
+          () => _uploadingStatus = _momentsText(
+            context,
+            zhCN: '正在上传图片 (0/${_localImages.length})...',
+            zhTW: '正在上傳圖片 (0/${_localImages.length})...',
+            en: 'Uploading images (0/${_localImages.length})...',
+          ),
         );
-        if (kDebugMode) debugPrint('[Publish] Uploading ${_localImages.length} images...');
+        debugPrint('[Publish] Uploading ${_localImages.length} images...');
 
         for (int i = 0; i < _localImages.length; i++) {
           if (!mounted) return;
           setState(
-            () => _uploadingStatus =
-                '正在上传图片 (${i + 1}/${_localImages.length})...',
+            () => _uploadingStatus = _momentsText(
+              context,
+              zhCN: '正在上传图片 (${i + 1}/${_localImages.length})...',
+              zhTW: '正在上傳圖片 (${i + 1}/${_localImages.length})...',
+              en: 'Uploading images (${i + 1}/${_localImages.length})...',
+            ),
           );
 
           final url = await uploadService.uploadImage(_localImages[i]);
-          if (kDebugMode) debugPrint('[Publish] Image ${i + 1} upload result: $url');
+          debugPrint('[Publish] Image ${i + 1} upload result: $url');
           if (url != null) {
             uploadedUrls.add(url);
           } else {
-            if (kDebugMode) debugPrint(
+            debugPrint(
               '[Publish] Warning: Image ${i + 1} upload returned null',
             );
           }
         }
         contentType = MomentContentType.image;
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[Publish] All images uploaded: ${uploadedUrls.length} successful',
         );
       }
@@ -5983,14 +7101,28 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
       if (_localVideo != null) {
         // 先上传缩略图
         if (_videoThumbnail != null) {
-          setState(() => _uploadingStatus = '正在上传缩略图...');
+          setState(
+            () => _uploadingStatus = _momentsText(
+              context,
+              zhCN: '正在上传缩略图...',
+              zhTW: '正在上傳縮圖...',
+              en: 'Uploading thumbnail...',
+            ),
+          );
           videoThumbnailUrl = await uploadService.uploadImageData(
             _videoThumbnail!,
             'video_thumb.jpg',
           );
         }
 
-        setState(() => _uploadingStatus = '正在上传视频...');
+        setState(
+          () => _uploadingStatus = _momentsText(
+            context,
+            zhCN: '正在上传视频...',
+            zhTW: '正在上傳影片...',
+            en: 'Uploading video...',
+          ),
+        );
 
         final url = await uploadService.uploadVideo(_localVideo!);
         if (url != null) {
@@ -6004,7 +7136,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         _uploadingStatus = null;
       });
     } catch (e) {
-      if (kDebugMode) debugPrint('[Publish] Upload error: $e');
+      debugPrint('[Publish] Upload error: $e');
       setState(() {
         _isPublishing = false;
         _isUploading = false;
@@ -6014,7 +7146,14 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('上传失败，请重试'),
+            content: Text(
+              _momentsText(
+                context,
+                zhCN: '上传失败，请重试',
+                zhTW: '上傳失敗，請重試',
+                en: 'Upload failed. Please try again.',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.redAccent,
             shape: RoundedRectangleBorder(
@@ -6033,7 +7172,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
         .map((m) => m.group(1)!)
         .toList();
 
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[Publish] Calling publishMoment: contentType=$contentType, urlCount=${uploadedUrls.length}',
     );
 
@@ -6094,7 +7233,13 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           );
         }
       } else {
-        final errMsg = ref.read(momentProvider).error ?? '发布失败，请重试';
+        final errMsg = ref.read(momentProvider).error ??
+            _momentsText(
+              context,
+              zhCN: '发布失败，请重试',
+              zhTW: '發布失敗，請重試',
+              en: 'Failed to publish. Please try again.',
+            );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errMsg),
@@ -6127,7 +7272,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: widget.isDark ? const Color(0xFF232E3C) : Colors.white,
+          color: AppColors.cardFor(context),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: SafeArea(
@@ -6140,7 +7285,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: widget.isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -6149,11 +7294,16 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '谁可以看',
+                  _momentsText(
+                    context,
+                    zhCN: '谁可以看',
+                    zhTW: '誰可以看',
+                    en: 'Who can view this',
+                  ),
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
-                    color: widget.isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
               ),
@@ -6196,7 +7346,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
           child: Container(
             height: MediaQuery.of(ctx).size.height * 0.6,
             decoration: BoxDecoration(
-              color: widget.isDark ? const Color(0xFF232E3C) : Colors.white,
+              color: AppColors.cardFor(context),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
               ),
@@ -6209,7 +7359,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: widget.isDark ? Colors.white24 : Colors.black12,
+                    color: AppColors.dividerFor(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -6220,11 +7370,16 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                   child: Row(
                     children: [
                       Text(
-                        '添加话题',
+                        _momentsText(
+                          context,
+                          zhCN: '添加话题',
+                          zhTW: '新增話題',
+                          en: 'Add Topic',
+                        ),
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: widget.isDark ? Colors.white : Colors.black87,
+                          color: AppColors.textPrimaryFor(context),
                         ),
                       ),
                       const Spacer(),
@@ -6235,15 +7390,14 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           height: 32,
                           decoration: BoxDecoration(
                             color: widget.isDark
-                                ? Colors.white.withOpacity(0.1)
+                                ? AppColors.darkControlBackgroundStrong
                                 : Colors.black.withOpacity(0.05),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             Icons.close,
                             size: 18,
-                            color:
-                                widget.isDark ? Colors.white70 : Colors.black54,
+                            color: AppColors.textSecondaryFor(context),
                           ),
                         ),
                       ),
@@ -6261,7 +7415,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           height: 44,
                           decoration: BoxDecoration(
                             color: widget.isDark
-                                ? Colors.white.withOpacity(0.08)
+                                ? AppColors.darkControlBackground
                                 : Colors.black.withOpacity(0.04),
                             borderRadius: BorderRadius.circular(22),
                           ),
@@ -6269,23 +7423,23 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                             controller: customTopicController,
                             style: TextStyle(
                               fontSize: 15,
-                              color:
-                                  widget.isDark ? Colors.white : Colors.black87,
+                              color: AppColors.textPrimaryFor(context),
                             ),
                             decoration: InputDecoration(
-                              hintText: '输入自定义话题',
+                              hintText: _momentsText(
+                                context,
+                                zhCN: '输入自定义话题',
+                                zhTW: '輸入自訂話題',
+                                en: 'Enter a custom topic',
+                              ),
                               hintStyle: TextStyle(
                                 fontSize: 15,
-                                color: widget.isDark
-                                    ? Colors.white38
-                                    : Colors.black38,
+                                color: AppColors.textTertiaryFor(context),
                               ),
                               prefixIcon: Icon(
                                 Icons.tag,
                                 size: 20,
-                                color: widget.isDark
-                                    ? Colors.white38
-                                    : Colors.black38,
+                                color: AppColors.textTertiaryFor(context),
                               ),
                               border: InputBorder.none,
                               contentPadding: const EdgeInsets.symmetric(
@@ -6326,16 +7480,21 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           height: 44,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           decoration: BoxDecoration(
-                            color: AppColors.primary,
+                            color: AppColors.primaryFor(context),
                             borderRadius: BorderRadius.circular(22),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Text(
-                              '添加',
+                              _momentsText(
+                                context,
+                                zhCN: '添加',
+                                zhTW: '新增',
+                                en: 'Add',
+                              ),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: AppColors.onPrimaryFor(context),
                               ),
                             ),
                           ),
@@ -6349,9 +7508,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
 
                 Divider(
                   height: 1,
-                  color: widget.isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.06),
+                  color: AppColors.dividerFor(context),
                 ),
 
                 // 热门话题
@@ -6368,13 +7525,16 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '热门话题',
+                            _momentsText(
+                              context,
+                              zhCN: '热门话题',
+                              zhTW: '熱門話題',
+                              en: 'Trending Topics',
+                            ),
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: widget.isDark
-                                  ? Colors.white70
-                                  : Colors.black54,
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ],
@@ -6385,12 +7545,15 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                           padding: const EdgeInsets.symmetric(vertical: 20),
                           child: Center(
                             child: Text(
-                              '暂无热门话题，快来创建吧！',
+                              _momentsText(
+                                context,
+                                zhCN: '暂无热门话题，快来创建吧！',
+                                zhTW: '暫無熱門話題，快來建立吧！',
+                                en: 'No trending topics yet. Create one now.',
+                              ),
                               style: TextStyle(
                                 fontSize: 14,
-                                color: widget.isDark
-                                    ? Colors.white38
-                                    : Colors.black38,
+                                color: AppColors.textTertiaryFor(context),
                               ),
                             ),
                           ),
@@ -6420,14 +7583,18 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? AppColors.primary.withOpacity(0.15)
+                                      ? AppColors.primaryWithOpacity(
+                                          context,
+                                          0.15,
+                                        )
                                       : (widget.isDark
-                                          ? Colors.white.withOpacity(0.08)
+                                          ? AppColors.darkControlBackground
                                           : Colors.black.withOpacity(0.04)),
                                   borderRadius: BorderRadius.circular(20),
                                   border: isSelected
                                       ? Border.all(
-                                          color: AppColors.primary.withOpacity(
+                                          color: AppColors.primaryWithOpacity(
+                                            context,
                                             0.5,
                                           ),
                                           width: 1.5,
@@ -6443,10 +7610,10 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                         fontSize: 14,
                                         fontWeight: FontWeight.w500,
                                         color: isSelected
-                                            ? AppColors.primary
-                                            : (widget.isDark
-                                                ? Colors.white
-                                                : Colors.black87),
+                                            ? AppColors.linkFor(context)
+                                            : AppColors.textPrimaryFor(
+                                                context,
+                                              ),
                                       ),
                                     ),
                                     if (topic.isHot) ...[
@@ -6462,9 +7629,8 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
                                         '${topic.postCount}',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: widget.isDark
-                                              ? Colors.white38
-                                              : Colors.black38,
+                                          color: AppColors.textTertiaryFor(
+                                              context),
                                         ),
                                       ),
                                     ],
@@ -6561,7 +7727,7 @@ class _SuccessOverlayState extends State<_SuccessOverlay>
               SizedBox(
                 width: 120,
                 height: 120,
-                child: Lottie.asset(
+                child: WebSafeLottie.asset(
                   'assets/emoji/lottie/sparkles.json',
                   repeat: true,
                   animate: true,
@@ -6577,8 +7743,13 @@ class _SuccessOverlayState extends State<_SuccessOverlay>
                   color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  '发布成功',
+                child: Text(
+                  _momentsText(
+                    context,
+                    zhCN: '发布成功',
+                    zhTW: '發佈成功',
+                    en: 'Posted successfully',
+                  ),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -6615,15 +7786,15 @@ class _TelegramToolButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = disabled
-        ? (isDark ? Colors.white24 : Colors.black26)
+        ? AppColors.textTertiaryFor(context)
         : isSelected
-            ? AppColors.primary
-            : (isDark ? Colors.white70 : Colors.black54);
+            ? AppColors.linkFor(context)
+            : AppColors.textSecondaryFor(context);
     final labelColor = disabled
-        ? (isDark ? Colors.white24 : Colors.black26)
+        ? AppColors.textTertiaryFor(context)
         : isSelected
-            ? AppColors.primary
-            : (isDark ? Colors.white54 : Colors.black45);
+            ? AppColors.linkFor(context)
+            : AppColors.textTertiaryFor(context);
 
     return GestureDetector(
       onTap: disabled ? null : onTap,
@@ -6660,16 +7831,36 @@ class _TelegramVisibilityOption extends StatelessWidget {
     required this.onTap,
   });
 
-  String get _description {
+  String _description(BuildContext context) {
     switch (visibility) {
       case MomentVisibility.public:
-        return '所有人都能看到';
+        return _momentsText(
+          context,
+          zhCN: '所有人都能看到',
+          zhTW: '所有人都能看到',
+          en: 'Visible to everyone',
+        );
       case MomentVisibility.contacts:
-        return '仅你的联系人可见';
+        return _momentsText(
+          context,
+          zhCN: '仅你的联系人可见',
+          zhTW: '僅你的聯絡人可見',
+          en: 'Visible to your contacts only',
+        );
       case MomentVisibility.selected:
-        return '选择可见的人';
+        return _momentsText(
+          context,
+          zhCN: '选择可见的人',
+          zhTW: '選擇可見的人',
+          en: 'Choose who can view this',
+        );
       case MomentVisibility.private:
-        return '仅自己可见';
+        return _momentsText(
+          context,
+          zhCN: '仅自己可见',
+          zhTW: '僅自己可見',
+          en: 'Visible to yourself only',
+        );
     }
   }
 
@@ -6682,7 +7873,7 @@ class _TelegramVisibilityOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primary.withOpacity(0.12)
+              ? AppColors.primaryWithOpacity(context, 0.12)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -6694,9 +7885,9 @@ class _TelegramVisibilityOption extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? AppColors.primary.withOpacity(0.15)
+                    ? AppColors.primaryWithOpacity(context, 0.15)
                     : (isDark
-                        ? Colors.white.withOpacity(0.08)
+                        ? AppColors.darkControlBackground
                         : Colors.black.withOpacity(0.04)),
                 shape: BoxShape.circle,
               ),
@@ -6704,8 +7895,8 @@ class _TelegramVisibilityOption extends StatelessWidget {
                 visibility.icon,
                 size: 22,
                 color: isSelected
-                    ? AppColors.primary
-                    : (isDark ? Colors.white60 : Colors.black45),
+                    ? AppColors.linkFor(context)
+                    : AppColors.textTertiaryFor(context),
               ),
             ),
             const SizedBox(width: 14),
@@ -6721,16 +7912,16 @@ class _TelegramVisibilityOption extends StatelessWidget {
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: isSelected
-                          ? AppColors.primary
-                          : (isDark ? Colors.white : Colors.black87),
+                          ? AppColors.linkFor(context)
+                          : AppColors.textPrimaryFor(context),
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    _description,
+                    _description(context),
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ],
@@ -6743,10 +7934,14 @@ class _TelegramVisibilityOption extends StatelessWidget {
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
-                  color: AppColors.primary,
+                  color: AppColors.primaryFor(context),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check, size: 16, color: Colors.white),
+                child: Icon(
+                  Icons.check,
+                  size: 16,
+                  color: AppColors.onPrimaryFor(context),
+                ),
               ),
           ],
         ),
@@ -6783,9 +7978,7 @@ class _MyReplyTile extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               height: 1.4,
-              color: isDark
-                  ? AppColors.darkTextPrimary
-                  : AppColors.lightTextPrimary,
+              color: AppColors.textPrimaryFor(context),
             ),
           ),
           const SizedBox(height: 10),
@@ -6795,18 +7988,14 @@ class _MyReplyTile extends StatelessWidget {
               Icon(
                 Icons.access_time,
                 size: 14,
-                color: isDark
-                    ? AppColors.darkTextTertiary
-                    : AppColors.lightTextTertiary,
+                color: AppColors.textTertiaryFor(context),
               ),
               const SizedBox(width: 4),
               Text(
                 comment.timeAgo,
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark
-                      ? AppColors.darkTextTertiary
-                      : AppColors.lightTextTertiary,
+                  color: AppColors.textTertiaryFor(context),
                 ),
               ),
               const Spacer(),
@@ -6814,20 +8003,21 @@ class _MyReplyTile extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isDark
-                      ? AppColors.primary.withOpacity(0.15)
-                      : AppColors.primary.withOpacity(0.1),
+                      ? AppColors.primaryWithOpacity(context, 0.15)
+                      : AppColors.primaryWithOpacity(context, 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                    Icon(Icons.favorite,
+                        size: 12, color: AppColors.primaryFor(context)),
                     const SizedBox(width: 4),
                     Text(
                       '${comment.likeCount}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.primary,
+                        color: AppColors.primaryFor(context),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -6877,13 +8067,33 @@ class _MyMomentsTabState extends ConsumerState<_MyMomentsTab>
   String get _emptyText {
     switch (widget.type) {
       case 'moments':
-        return '还没有发布任何动态';
+        return _momentsText(
+          context,
+          zhCN: '还没有发布任何动态',
+          zhTW: '還沒有發佈任何動態',
+          en: 'No moments published yet',
+        );
       case 'likes':
-        return '还没有点赞任何动态';
+        return _momentsText(
+          context,
+          zhCN: '还没有点赞任何动态',
+          zhTW: '還沒有按讚任何動態',
+          en: 'No liked moments yet',
+        );
       case 'replies':
-        return '还没有回复任何评论';
+        return _momentsText(
+          context,
+          zhCN: '还没有回复任何评论',
+          zhTW: '還沒有回覆任何評論',
+          en: 'No replies yet',
+        );
       default:
-        return '暂无内容';
+        return _momentsText(
+          context,
+          zhCN: '暂无内容',
+          zhTW: '暫無內容',
+          en: 'No content yet',
+        );
     }
   }
 
@@ -6926,7 +8136,7 @@ class _MyMomentsTabState extends ConsumerState<_MyMomentsTab>
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('加载数据失败: $e');
+      debugPrint('加载数据失败: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -6992,7 +8202,7 @@ class _MyMomentsTabState extends ConsumerState<_MyMomentsTab>
             child: Icon(
               _emptyIcon,
               size: 36,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
           const SizedBox(height: 20),
@@ -7000,7 +8210,7 @@ class _MyMomentsTabState extends ConsumerState<_MyMomentsTab>
             _emptyText,
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white54 : Colors.black45,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ],
@@ -7021,7 +8231,19 @@ class _MomentStatusBadge extends StatelessWidget {
     final bgColor =
         isPending ? const Color(0xFFFFA726) : const Color(0xFFE5484D);
     final icon = isPending ? Icons.schedule_rounded : Icons.block_rounded;
-    final label = isPending ? '审核中' : '未通过';
+    final label = isPending
+        ? _momentsText(
+            context,
+            zhCN: '审核中',
+            zhTW: '審核中',
+            en: 'Under Review',
+          )
+        : _momentsText(
+            context,
+            zhCN: '未通过',
+            zhTW: '未通過',
+            en: 'Rejected',
+          );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -7073,9 +8295,33 @@ class _MomentModerationFooter extends StatelessWidget {
         : (isDark ? const Color(0xFFFFB4B4) : const Color(0xFFB42318));
     final icon =
         isPending ? Icons.schedule_rounded : Icons.report_gmailerrorred;
-    final title = isPending ? '审核中' : '未通过审核';
-    final detail =
-        isPending ? '内容审核通过后才会展示到广场' : (moment.moderationHint ?? '请修改内容后重新发布');
+    final title = isPending
+        ? _momentsText(
+            context,
+            zhCN: '审核中',
+            zhTW: '審核中',
+            en: 'Under Review',
+          )
+        : _momentsText(
+            context,
+            zhCN: '未通过审核',
+            zhTW: '未通過審核',
+            en: 'Review Rejected',
+          );
+    final detail = isPending
+        ? _momentsText(
+            context,
+            zhCN: '内容审核通过后才会展示到广场',
+            zhTW: '內容審核通過後才會顯示到廣場',
+            en: 'This post will appear after review approval',
+          )
+        : (moment.moderationHint ??
+            _momentsText(
+              context,
+              zhCN: '请修改内容后重新发布',
+              zhTW: '請修改內容後重新發佈',
+              en: 'Please revise the content and publish again',
+            ));
 
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
@@ -7139,7 +8385,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   List<Moment> _searchResults = [];
-  List<String> _hotKeywords = ['科技', '生活', '音乐', '旅行', '美食', '摄影'];
+  List<String> get _hotKeywords => _defaultMomentSearchKeywords(context);
   bool _isSearching = false;
   bool _hasSearched = false;
   Timer? _debounceTimer;
@@ -7193,7 +8439,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('搜索失败: $e');
+      debugPrint('搜索失败: $e');
     } finally {
       if (mounted) {
         setState(() => _isSearching = false);
@@ -7216,7 +8462,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
             size: 20,
           ),
           onPressed: () {
@@ -7233,9 +8479,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
           height: 40,
           margin: const EdgeInsets.only(right: 16),
           decoration: BoxDecoration(
-            color: isDark
-                ? AppColors.darkInputBackground
-                : AppColors.lightInputBackground,
+            color: AppColors.inputBackgroundFor(context),
             borderRadius: BorderRadius.circular(20),
           ),
           child: TextField(
@@ -7243,17 +8487,22 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
             focusNode: _focusNode,
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppColors.textPrimaryFor(context),
             ),
             decoration: InputDecoration(
-              hintText: '搜索动态、话题...',
+              hintText: _momentsText(
+                context,
+                zhCN: '搜索动态、话题...',
+                zhTW: '搜尋動態、話題...',
+                en: 'Search moments or topics...',
+              ),
               hintStyle: TextStyle(
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
               prefixIcon: Icon(
                 Icons.search,
                 size: 20,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
               suffixIcon: _searchController.text.isNotEmpty
                   ? Row(
@@ -7263,7 +8512,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
                           icon: Icon(
                             Icons.clear,
                             size: 18,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            color: AppColors.textTertiaryFor(context),
                           ),
                           onPressed: () {
                             _debounceTimer?.cancel();
@@ -7278,7 +8527,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
                           icon: Icon(
                             Icons.search,
                             size: 18,
-                            color: isDark ? Colors.white70 : AppColors.primary,
+                            color: AppColors.linkFor(context),
                           ),
                           onPressed: () => _search(_searchController.text),
                         ),
@@ -7349,11 +8598,16 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
               ),
               const SizedBox(width: 8),
               Text(
-                '热门搜索',
+                _momentsText(
+                  context,
+                  zhCN: '热门搜索',
+                  zhTW: '熱門搜尋',
+                  en: 'Trending Searches',
+                ),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
             ],
@@ -7374,20 +8628,15 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                    color: AppColors.surfaceFor(context),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.darkDivider
-                          : AppColors.lightDivider,
-                    ),
+                    border: Border.all(color: AppColors.dividerFor(context)),
                   ),
                   child: Text(
                     '#$keyword',
                     style: TextStyle(
                       fontSize: 14,
-                      color: isDark ? Colors.white70 : Colors.black54,
+                      color: AppColors.textSecondaryFor(context),
                     ),
                   ),
                 ),
@@ -7400,15 +8649,20 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
               Icon(
                 Icons.history_rounded,
                 size: 20,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textTertiaryFor(context),
               ),
               const SizedBox(width: 8),
               Text(
-                '搜索历史',
+                _momentsText(
+                  context,
+                  zhCN: '搜索历史',
+                  zhTW: '搜尋歷史',
+                  en: 'Search History',
+                ),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
             ],
@@ -7416,10 +8670,15 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              '暂无搜索历史',
+              _momentsText(
+                context,
+                zhCN: '暂无搜索历史',
+                zhTW: '暫無搜尋歷史',
+                en: 'No search history',
+              ),
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
           ),
@@ -7445,23 +8704,33 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
             child: Icon(
               Icons.search_off_rounded,
               size: 36,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
           const SizedBox(height: 20),
           Text(
-            '未找到相关动态',
+            _momentsText(
+              context,
+              zhCN: '未找到相关动态',
+              zhTW: '未找到相關動態',
+              en: 'No matching moments found',
+            ),
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white54 : Colors.black45,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            '换个关键词试试吧',
+            _momentsText(
+              context,
+              zhCN: '换个关键词试试吧',
+              zhTW: '換個關鍵詞試試吧',
+              en: 'Try a different keyword',
+            ),
             style: TextStyle(
               fontSize: 13,
-              color: isDark ? Colors.white38 : Colors.black38,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
         ],
@@ -7546,7 +8815,7 @@ class _MomentNotificationsPageState
       });
       _receivedNotifications = allNotifications;
     } catch (e) {
-      if (kDebugMode) debugPrint('加载失败: $e');
+      debugPrint('加载失败: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -7558,7 +8827,12 @@ class _MomentNotificationsPageState
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '清除通知',
+      barrierLabel: _momentsText(
+        context,
+        zhCN: '清除通知',
+        zhTW: '清除通知',
+        en: 'Clear notifications',
+      ),
       barrierColor: Colors.black.withOpacity(0.3),
       transitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -7615,22 +8889,32 @@ class _MomentNotificationsPageState
                         const SizedBox(height: 16),
                         // 标题
                         Text(
-                          '清除全部通知',
+                          _momentsText(
+                            context,
+                            zhCN: '清除全部通知',
+                            zhTW: '清除全部通知',
+                            en: 'Clear All Notifications',
+                          ),
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white : Colors.black87,
+                            color: AppColors.textPrimaryFor(context),
                           ),
                         ),
                         const SizedBox(height: 8),
                         // 内容
                         Text(
-                          '确定要清除所有收到的通知吗？\n此操作不可撤销。',
+                          _momentsText(
+                            context,
+                            zhCN: '确定要清除所有收到的通知吗？\n此操作不可撤销。',
+                            zhTW: '確定要清除所有收到的通知嗎？\n此操作不可撤銷。',
+                            en: 'Clear all received notifications?\nThis action cannot be undone.',
+                          ),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
                             height: 1.5,
-                            color: isDark ? Colors.white60 : Colors.black54,
+                            color: AppColors.textSecondaryFor(context),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -7654,13 +8938,16 @@ class _MomentNotificationsPageState
                                   ),
                                 ),
                                 child: Text(
-                                  '取消',
+                                  _momentsText(
+                                    context,
+                                    zhCN: '取消',
+                                    zhTW: '取消',
+                                    en: 'Cancel',
+                                  ),
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black54,
+                                    color: AppColors.textSecondaryFor(context),
                                   ),
                                 ),
                               ),
@@ -7681,8 +8968,13 @@ class _MomentNotificationsPageState
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: const Text(
-                                  '清除',
+                                child: Text(
+                                  _momentsText(
+                                    context,
+                                    zhCN: '清除',
+                                    zhTW: '清除',
+                                    en: 'Clear',
+                                  ),
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
@@ -7741,7 +9033,12 @@ class _MomentNotificationsPageState
           },
         ),
         title: Text(
-          '动态通知',
+          _momentsText(
+            context,
+            zhCN: '动态通知',
+            zhTW: '動態通知',
+            en: 'Moment Notifications',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -7754,11 +9051,16 @@ class _MomentNotificationsPageState
           if (_receivedNotifications.isNotEmpty)
             IconButton(
               onPressed: _showClearConfirmDialog,
-              tooltip: '清除全部',
+              tooltip: _momentsText(
+                context,
+                zhCN: '清除全部',
+                zhTW: '清除全部',
+                en: 'Clear all',
+              ),
               icon: Icon(
                 Icons.cleaning_services_outlined,
                 size: 22,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
         ],
@@ -7780,21 +9082,15 @@ class _MomentNotificationsPageState
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.04),
+                  color: AppColors.surfaceFor(context),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.1)
-                        : Colors.black.withOpacity(0.05),
-                  ),
+                  border: Border.all(color: AppColors.dividerFor(context)),
                 ),
                 child: TabBar(
                   controller: _tabController,
                   indicator: BoxDecoration(
                     color: isDark
-                        ? Colors.white.withOpacity(0.15)
+                        ? AppColors.darkControlBackgroundStrong
                         : Colors.white.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
@@ -7807,9 +9103,8 @@ class _MomentNotificationsPageState
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   dividerColor: Colors.transparent,
-                  labelColor: isDark ? Colors.white : Colors.black87,
-                  unselectedLabelColor:
-                      isDark ? Colors.white54 : Colors.black45,
+                  labelColor: AppColors.textPrimaryFor(context),
+                  unselectedLabelColor: AppColors.textTertiaryFor(context),
                   labelStyle: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -7820,10 +9115,31 @@ class _MomentNotificationsPageState
                   ),
                   splashFactory: NoSplash.splashFactory,
                   overlayColor: WidgetStateProperty.all(Colors.transparent),
-                  tabs: const [
-                    Tab(text: '我的动态'),
-                    Tab(text: '我的点赞'),
-                    Tab(text: '收到的'),
+                  tabs: [
+                    Tab(
+                      text: _momentsText(
+                        context,
+                        zhCN: '我的动态',
+                        zhTW: '我的動態',
+                        en: 'My Moments',
+                      ),
+                    ),
+                    Tab(
+                      text: _momentsText(
+                        context,
+                        zhCN: '我的点赞',
+                        zhTW: '我的按讚',
+                        en: 'My Likes',
+                      ),
+                    ),
+                    Tab(
+                      text: _momentsText(
+                        context,
+                        zhCN: '收到的',
+                        zhTW: '收到的',
+                        en: 'Received',
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -7840,14 +9156,33 @@ class _MomentNotificationsPageState
                     _buildMomentList(
                       _myMoments,
                       isDark,
-                      '暂无动态',
+                      _momentsText(
+                        context,
+                        zhCN: '暂无动态',
+                        zhTW: '暫無動態',
+                        en: 'No moments yet',
+                      ),
                       isMyMoments: true,
                     ),
-                    _buildMomentList(_myLikes, isDark, '暂无点赞'),
+                    _buildMomentList(
+                      _myLikes,
+                      isDark,
+                      _momentsText(
+                        context,
+                        zhCN: '暂无点赞',
+                        zhTW: '暫無按讚',
+                        en: 'No likes yet',
+                      ),
+                    ),
                     _buildNotificationList(
                       _receivedNotifications,
                       isDark,
-                      '暂无通知',
+                      _momentsText(
+                        context,
+                        zhCN: '暂无通知',
+                        zhTW: '暫無通知',
+                        en: 'No notifications yet',
+                      ),
                     ),
                   ],
                 ),
@@ -7870,14 +9205,14 @@ class _MomentNotificationsPageState
             Icon(
               Icons.article_outlined,
               size: 64,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
             const SizedBox(height: 16),
             Text(
               emptyText,
               style: TextStyle(
                 fontSize: 16,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
           ],
@@ -7917,7 +9252,7 @@ class _MomentNotificationsPageState
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          color: AppColors.surfaceFor(context),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SafeArea(
@@ -7929,7 +9264,7 @@ class _MomentNotificationsPageState
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -7937,12 +9272,24 @@ class _MomentNotificationsPageState
               ListTile(
                 leading: Icon(
                   isPrivate ? Icons.public : Icons.lock_outline,
-                  color: AppColors.primary,
+                  color: AppColors.linkFor(context),
                 ),
                 title: Text(
-                  isPrivate ? '设为公开' : '设为私密',
+                  isPrivate
+                      ? _momentsText(
+                          context,
+                          zhCN: '设为公开',
+                          zhTW: '設為公開',
+                          en: 'Set Public',
+                        )
+                      : _momentsText(
+                          context,
+                          zhCN: '设为私密',
+                          zhTW: '設為私密',
+                          en: 'Set Private',
+                        ),
                   style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
                 onTap: () {
@@ -7953,7 +9300,15 @@ class _MomentNotificationsPageState
               // 删除
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('删除动态', style: TextStyle(color: Colors.red)),
+                title: Text(
+                  _momentsText(
+                    context,
+                    zhCN: '删除动态',
+                    zhTW: '刪除動態',
+                    en: 'Delete Moment',
+                  ),
+                  style: const TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _confirmDeleteMoment(momentId, isDark);
@@ -7964,9 +9319,14 @@ class _MomentNotificationsPageState
               ListTile(
                 title: Center(
                   child: Text(
-                    '取消',
+                    _momentsText(
+                      context,
+                      zhCN: '取消',
+                      zhTW: '取消',
+                      en: 'Cancel',
+                    ),
                     style: TextStyle(
-                      color: isDark ? Colors.white54 : Colors.black54,
+                      color: AppColors.textSecondaryFor(context),
                     ),
                   ),
                 ),
@@ -7994,18 +9354,56 @@ class _MomentNotificationsPageState
 
       if (response.isSuccess) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(isCurrentlyPrivate ? '已设为公开' : '已设为私密')),
+          SnackBar(
+            content: Text(
+              isCurrentlyPrivate
+                  ? _momentsText(
+                      context,
+                      zhCN: '已设为公开',
+                      zhTW: '已設為公開',
+                      en: 'Set to public',
+                    )
+                  : _momentsText(
+                      context,
+                      zhCN: '已设为私密',
+                      zhTW: '已設為私密',
+                      en: 'Set to private',
+                    ),
+            ),
+          ),
         );
         _loadData();
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(response.message ?? '操作失败')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _momentsServerMessage(
+                response.message,
+                zhCN: '操作失败',
+                zhTW: '操作失敗',
+                en: 'Action failed',
+              ),
+            ),
+          ),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('操作失败: $e')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_momentsText(
+              context,
+              zhCN: '操作失败',
+              zhTW: '操作失敗',
+              en: 'Action failed',
+            )}: $e',
+          ),
+        ),
+      );
     }
   }
 
@@ -8017,19 +9415,34 @@ class _MomentNotificationsPageState
             isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          '确认删除',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          _momentsText(
+            context,
+            zhCN: '确认删除',
+            zhTW: '確認刪除',
+            en: 'Confirm Delete',
+          ),
+          style: TextStyle(color: AppColors.textPrimaryFor(context)),
         ),
         content: Text(
-          '删除后无法恢复，确定要删除吗？',
-          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          _momentsText(
+            context,
+            zhCN: '删除后无法恢复，确定要删除吗？',
+            zhTW: '刪除後無法恢復，確定要刪除嗎？',
+            en: 'This item cannot be restored after deletion. Delete it?',
+          ),
+          style: TextStyle(color: AppColors.textSecondaryFor(context)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+              _momentsText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -8037,7 +9450,15 @@ class _MomentNotificationsPageState
               Navigator.pop(context);
               _deleteMoment(momentId);
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              _momentsText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -8050,21 +9471,52 @@ class _MomentNotificationsPageState
       final response = await api.delete('/moment/$momentId');
 
       if (response.isSuccess) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('删除成功')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _momentsText(
+                context,
+                zhCN: '删除成功',
+                zhTW: '刪除成功',
+                en: 'Deleted successfully',
+              ),
+            ),
+          ),
+        );
         _loadData();
         // 同时刷新广场列表
         ref.read(momentProvider.notifier).refresh();
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(response.message ?? '删除失败')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _momentsServerMessage(
+                response.message,
+                zhCN: '删除失败',
+                zhTW: '刪除失敗',
+                en: 'Delete failed',
+              ),
+            ),
+          ),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_momentsText(
+              context,
+              zhCN: '删除失败',
+              zhTW: '刪除失敗',
+              en: 'Delete failed',
+            )}: $e',
+          ),
+        ),
+      );
     }
   }
 
@@ -8081,14 +9533,14 @@ class _MomentNotificationsPageState
             Icon(
               Icons.chat_bubble_outline,
               size: 64,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
             const SizedBox(height: 16),
             Text(
               emptyText,
               style: TextStyle(
                 fontSize: 16,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
           ],
@@ -8127,14 +9579,14 @@ class _MomentNotificationsPageState
             Icon(
               Icons.notifications_none,
               size: 64,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
             const SizedBox(height: 16),
             Text(
               emptyText,
               style: TextStyle(
                 fontSize: 16,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
           ],
@@ -8206,7 +9658,7 @@ class _MomentNotificationsPageState
         );
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('打开动态失败: $e');
+      debugPrint('打开动态失败: $e');
     }
   }
 }
@@ -8230,7 +9682,8 @@ class _NotificationMomentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = moment['content'] ?? '';
-    final userName = moment['user_name'] ?? '用户';
+    final userName = moment['user_name'] ??
+        _momentsText(context, zhCN: '用户', zhTW: '使用者', en: 'User');
     final rawAvatar = moment['user_avatar'] ?? '';
     // 转换头像 URL
     final userAvatar = rawAvatar.isNotEmpty
@@ -8299,16 +9752,16 @@ class _NotificationMomentTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87,
+                          color: AppColors.textPrimaryFor(context),
                         ),
                       ),
                       Row(
                         children: [
                           Text(
-                            _formatTime(createdAt),
+                            _formatTime(context, createdAt),
                             style: TextStyle(
                               fontSize: 11,
-                              color: isDark ? Colors.white38 : Colors.black38,
+                              color: AppColors.textTertiaryFor(context),
                             ),
                           ),
                           // 私密标签
@@ -8333,7 +9786,12 @@ class _NotificationMomentTile extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 2),
                                   Text(
-                                    '私密',
+                                    _momentsText(
+                                      context,
+                                      zhCN: '私密',
+                                      zhTW: '私密',
+                                      en: 'Private',
+                                    ),
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.orange.shade700,
@@ -8358,7 +9816,7 @@ class _NotificationMomentTile extends StatelessWidget {
                       child: Icon(
                         Icons.more_horiz,
                         size: 20,
-                        color: isDark ? Colors.white38 : Colors.black38,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                     ),
                   ),
@@ -8441,21 +9899,26 @@ class _NotificationMomentTile extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.primary,
+                            color: AppColors.primaryFor(context),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.videocam,
                                 size: 10,
                                 color: Colors.white,
                               ),
-                              SizedBox(width: 2),
+                              const SizedBox(width: 2),
                               Text(
-                                '视频',
-                                style: TextStyle(
+                                _momentsText(
+                                  context,
+                                  zhCN: '视频',
+                                  zhTW: '影片',
+                                  en: 'Video',
+                                ),
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 9,
                                   fontWeight: FontWeight.w500,
@@ -8499,7 +9962,7 @@ class _NotificationMomentTile extends StatelessWidget {
                             child: Icon(
                               Icons.image,
                               size: 20,
-                              color: isDark ? Colors.white24 : Colors.black12,
+                              color: AppColors.textTertiaryFor(context),
                             ),
                           ),
                           fadeInDuration: const Duration(milliseconds: 150),
@@ -8525,21 +9988,21 @@ class _NotificationMomentTile extends StatelessWidget {
                   '$likeCount',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.black45,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
                 const SizedBox(width: 14),
                 Icon(
                   Icons.chat_bubble_outline,
                   size: 13,
-                  color: isDark ? Colors.white38 : Colors.black38,
+                  color: AppColors.textTertiaryFor(context),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '$commentCount',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.black45,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
               ],
@@ -8550,13 +10013,21 @@ class _NotificationMomentTile extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar(String name, String avatar, double size) {
+  Widget _buildAvatar(
+    BuildContext context,
+    String name,
+    String avatar,
+    double size,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final avatarColor =
+        isDark ? AppColors.primaryDarkMode : AppColors.primaryLight;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.primary.withOpacity(0.1),
+        color: avatarColor.withOpacity(0.1),
       ),
       child: avatar.isNotEmpty
           ? ClipOval(
@@ -8565,23 +10036,23 @@ class _NotificationMomentTile extends StatelessWidget {
                 fit: BoxFit.cover,
                 memCacheWidth: 96,
                 memCacheHeight: 96,
-                placeholder: (_, __) => _avatarText(name),
-                errorWidget: (_, __, ___) => _avatarText(name),
+                placeholder: (_, __) => _avatarText(name, avatarColor),
+                errorWidget: (_, __, ___) => _avatarText(name, avatarColor),
                 fadeInDuration: const Duration(milliseconds: 150),
               ),
             )
-          : _avatarText(name),
+          : _avatarText(name, avatarColor),
     );
   }
 
-  Widget _avatarText(String name) {
+  Widget _avatarText(String name, Color color) {
     return Center(
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: AppColors.primary,
+          color: color,
         ),
       ),
     );
@@ -8598,9 +10069,32 @@ class _NotificationMomentTile extends StatelessWidget {
           if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
             url = '$serverUrl$url';
           }
-          // 替换 localhost 为实际服务器地址
-          if (url.contains('localhost')) {
-            url = url.replaceAll('http://localhost:8080', serverUrl);
+          // 替换本地开发地址为实际服务器地址
+          final localDevUrl = String.fromCharCodes(const [
+            104,
+            116,
+            116,
+            112,
+            58,
+            47,
+            47,
+            108,
+            111,
+            99,
+            97,
+            108,
+            104,
+            111,
+            115,
+            116,
+            58,
+            56,
+            48,
+            56,
+            48,
+          ]);
+          if (url.contains(localDevUrl)) {
+            url = url.replaceAll(localDevUrl, serverUrl);
           }
           return url;
         })
@@ -8608,20 +10102,8 @@ class _NotificationMomentTile extends StatelessWidget {
         .toList();
   }
 
-  String _formatTime(String dateStr) {
-    if (dateStr.isEmpty) return '';
-    try {
-      final date = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
-      final diff = now.difference(date);
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-      if (diff.inHours < 24) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
-      return '${date.month}-${date.day}';
-    } catch (e) {
-      return dateStr;
-    }
+  String _formatTime(BuildContext context, String dateStr) {
+    return _momentRelativeTime(context, dateStr);
   }
 }
 
@@ -8715,7 +10197,12 @@ class _NotificationLikeTile extends StatelessWidget {
                           ),
                         ),
                         TextSpan(
-                          text: ' 赞了你的动态',
+                          text: _momentsText(
+                            context,
+                            zhCN: ' 赞了你的动态',
+                            zhTW: ' 讚了你的動態',
+                            en: ' liked your moment',
+                          ),
                           style: TextStyle(
                             fontSize: 14,
                             color: isDark ? Colors.white70 : Colors.black54,
@@ -8740,7 +10227,7 @@ class _NotificationLikeTile extends StatelessWidget {
             ),
             // 时间
             Text(
-              _formatTime(createdAt),
+              _formatTime(context, createdAt),
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.white38 : Colors.black38,
@@ -8752,21 +10239,8 @@ class _NotificationLikeTile extends StatelessWidget {
     );
   }
 
-  String _formatTime(String dateStr) {
-    if (dateStr.isEmpty) return '';
-    try {
-      final date = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
-      final diff = now.difference(date);
-
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-      if (diff.inHours < 24) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
-      return '${date.month}-${date.day}';
-    } catch (e) {
-      return dateStr;
-    }
+  String _formatTime(BuildContext context, String dateStr) {
+    return _momentRelativeTime(context, dateStr);
   }
 }
 
@@ -8797,12 +10271,22 @@ class _NotificationCommentTile extends StatelessWidget {
     final type = comment['type'] ?? '';
 
     String typeLabel = '';
-    Color typeColor = AppColors.primary;
+    Color typeColor = AppColors.primaryFor(context);
     if (type == 'received_comment') {
-      typeLabel = '评论了你的动态';
+      typeLabel = _momentsText(
+        context,
+        zhCN: '评论了你的动态',
+        zhTW: '評論了你的動態',
+        en: 'commented on your moment',
+      );
       typeColor = const Color(0xFF34C759);
     } else if (type == 'received_reply') {
-      typeLabel = '回复了你';
+      typeLabel = _momentsText(
+        context,
+        zhCN: '回复了你',
+        zhTW: '回覆了你',
+        en: 'replied to you',
+      );
       typeColor = const Color(0xFF5856D6);
     }
 
@@ -8874,7 +10358,7 @@ class _NotificationCommentTile extends StatelessWidget {
                         ],
                       ),
                       Text(
-                        _formatTime(createdAt),
+                        _formatTime(context, createdAt),
                         style: TextStyle(
                           fontSize: 11,
                           color: isDark ? Colors.white38 : Colors.black38,
@@ -8909,7 +10393,7 @@ class _NotificationCommentTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border(
                     left: BorderSide(
-                      color: AppColors.primary.withOpacity(0.5),
+                      color: AppColors.primaryWithOpacity(context, 0.5),
                       width: 3,
                     ),
                   ),
@@ -8931,19 +10415,7 @@ class _NotificationCommentTile extends StatelessWidget {
     );
   }
 
-  String _formatTime(String dateStr) {
-    if (dateStr.isEmpty) return '';
-    try {
-      final date = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
-      final diff = now.difference(date);
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-      if (diff.inHours < 24) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
-      return '${date.month}-${date.day}';
-    } catch (e) {
-      return dateStr;
-    }
+  String _formatTime(BuildContext context, String dateStr) {
+    return _momentRelativeTime(context, dateStr);
   }
 }

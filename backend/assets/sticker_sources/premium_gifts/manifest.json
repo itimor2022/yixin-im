@@ -1,0 +1,212 @@
+[
+  {
+    "name": "premium_gifts_01",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_01.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_01.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_01.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_01.tgs"
+  },
+  {
+    "name": "premium_gifts_02",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_02.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_02.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_02.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_02.tgs"
+  },
+  {
+    "name": "premium_gifts_03",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_03.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_03.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_03.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_03.tgs"
+  },
+  {
+    "name": "premium_gifts_04",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_04.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_04.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_04.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_04.tgs"
+  },
+  {
+    "name": "premium_gifts_05",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_05.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_05.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_05.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_05.tgs"
+  },
+  {
+    "name": "premium_gifts_06",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_06.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_06.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_06.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_06.tgs"
+  },
+  {
+    "name": "premium_gifts_07",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_07.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_07.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_07.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_07.tgs"
+  },
+  {
+    "name": "premium_gifts_08",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_08.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_08.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_08.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_08.tgs"
+  },
+  {
+    "name": "premium_gifts_09",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_09.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_09.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_09.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_09.tgs"
+  },
+  {
+    "name": "premium_gifts_10",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_10.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_10.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_10.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_10.tgs"
+  },
+  {
+    "name": "premium_gifts_11",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_11.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_11.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_11.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_11.tgs"
+  },
+  {
+    "name": "premium_gifts_12",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_12.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_12.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_12.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_12.tgs"
+  },
+  {
+    "name": "premium_gifts_13",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_13.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_13.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_13.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_13.tgs"
+  },
+  {
+    "name": "premium_gifts_14",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_14.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_14.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_14.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_14.tgs"
+  },
+  {
+    "name": "premium_gifts_15",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_15.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_15.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_15.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_15.tgs"
+  },
+  {
+    "name": "premium_gifts_16",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_16.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_16.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_16.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_16.tgs"
+  },
+  {
+    "name": "premium_gifts_17",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_17.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_17.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_17.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_17.tgs"
+  },
+  {
+    "name": "premium_gifts_18",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_18.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_18.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_18.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_18.tgs"
+  },
+  {
+    "name": "premium_gifts_19",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_19.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_19.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_19.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_19.tgs"
+  },
+  {
+    "name": "premium_gifts_20",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_20.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_20.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_20.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_20.tgs"
+  },
+  {
+    "name": "premium_gifts_21",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_21.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_21.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_21.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_21.tgs"
+  },
+  {
+    "name": "premium_gifts_22",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_22.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_22.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_22.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_22.tgs"
+  },
+  {
+    "name": "premium_gifts_23",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_23.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_23.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_23.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_23.tgs"
+  },
+  {
+    "name": "premium_gifts_24",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_24.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_24.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_24.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_24.tgs"
+  },
+  {
+    "name": "premium_gifts_25",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_25.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_25.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_25.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_25.tgs"
+  },
+  {
+    "name": "premium_gifts_26",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_26.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_26.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_26.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_26.tgs"
+  },
+  {
+    "name": "premium_gifts_27",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_27.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_27.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_27.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_27.tgs"
+  },
+  {
+    "name": "premium_gifts_28",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_28.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_28.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_28.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_28.tgs"
+  },
+  {
+    "name": "premium_gifts_29",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_29.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_29.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_29.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_29.tgs"
+  },
+  {
+    "name": "premium_gifts_30",
+    "path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_30.json",
+    "tgs_path": "backend/assets/sticker_sources/premium_gifts/premium_gifts_30.tgs",
+    "upload_path": "backend/uploads/stickers/premium_gifts/premium_gifts_30.json",
+    "source": "/uploads/stickers/premium_gifts/premium_gifts_30.tgs"
+  }
+]

@@ -1,3 +1,7 @@
+// 文件用途：实现 DiscoverEntry 页面及其交互流程，属于发现页。
+// 核心逻辑：维护 DiscoverEntry 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
+import 'dart:async';
+
 import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
@@ -5,12 +9,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/services/api/api_client.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/services/api/api_client.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../home/pages/home_desktop_page.dart';
+import '../../../shared/widgets/fancy_refresh_indicator.dart';
 import '../../../shared/widgets/in_app_browser.dart';
+import '../../home/pages/home_desktop_page.dart';
 
+String _discoverText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：discover page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class DiscoverEntry {
   final String id;
   final String title;
@@ -37,7 +58,13 @@ class DiscoverEntry {
 
     return DiscoverEntry(
       id: rawId.isNotEmpty ? rawId : title,
-      title: title.isNotEmpty ? title : '发现入口',
+      title: title.isNotEmpty
+          ? title
+          : _discoverText(
+              zhCN: '发现入口',
+              zhTW: '發現入口',
+              en: 'Discover Entry',
+            ),
       url: (json['url'] ?? '').toString().trim(),
       iconUrl: rawIconUrl.isEmpty ? null : ApiConfig.getMediaUrl(rawIconUrl),
       openMode: (json['open_mode'] ?? 'webview').toString(),
@@ -48,16 +75,51 @@ class DiscoverEntry {
   }
 }
 
+class DiscoverBanner {
+  final String id;
+  final String title;
+  final String url;
+  final String imageUrl;
+
+  const DiscoverBanner({
+    required this.id,
+    required this.title,
+    required this.url,
+    required this.imageUrl,
+  });
+
+  factory DiscoverBanner.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id']?.toString() ?? '';
+    final title = (json['title'] ?? '').toString().trim();
+    final rawImageUrl = (json['image_url'] ?? '').toString().trim();
+
+    return DiscoverBanner(
+      id: rawId.isNotEmpty ? rawId : title,
+      title: title.isNotEmpty
+          ? title
+          : _discoverText(
+              zhCN: '发现轮播图',
+              zhTW: '發現輪播圖',
+              en: 'Discover Banner',
+            ),
+      url: (json['url'] ?? '').toString().trim(),
+      imageUrl: ApiConfig.getMediaUrl(rawImageUrl),
+    );
+  }
+}
+
 const _accentColors = <Color>[
-  Color(0xFF2D6CDF),
-  Color(0xFF0F9D58),
-  Color(0xFFE67E22),
-  Color(0xFF8E44AD),
-  Color(0xFF0097A7),
+  Color(0xFF5E6DF6),
+  Color(0xFF00A6B4),
+  Color(0xFF11A66A),
+  Color(0xFF3B73F6),
+  Color(0xFF9B5DE5),
 ];
 
 Future<void> refreshDiscoverEntries(WidgetRef ref) async {
-  final _ = await ref.refresh(discoverEntriesProvider.future);
+  final entriesFuture = ref.refresh(discoverEntriesProvider.future);
+  final bannersFuture = ref.refresh(discoverBannersProvider.future);
+  await Future.wait([entriesFuture, bannersFuture]);
 }
 
 final discoverEntriesProvider =
@@ -77,9 +139,29 @@ final discoverEntriesProvider =
           .where((entry) => entry.url.isNotEmpty)
           .toList();
     }
-  } catch (_) {
-    // 交给下方空列表兜底
-  }
+  } catch (_) {}
+
+  return [];
+});
+
+final discoverBannersProvider =
+    FutureProvider<List<DiscoverBanner>>((ref) async {
+  final api = ref.watch(apiClientProvider);
+
+  try {
+    final response = await api.get<List<dynamic>>(
+      '/app/discovery/banners',
+      fromJson: (data) => (data as List<dynamic>? ?? const []),
+    );
+
+    if (response.isSuccess && response.data != null) {
+      return response.data!
+          .whereType<Map<String, dynamic>>()
+          .map(DiscoverBanner.fromJson)
+          .where((banner) => banner.imageUrl.isNotEmpty)
+          .toList();
+    }
+  } catch (_) {}
 
   return [];
 });
@@ -94,119 +176,413 @@ class DiscoverPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final entries = ref.watch(discoverEntriesProvider);
+    final banners = ref.watch(discoverBannersProvider);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 0,
-            floating: true,
-            pinned: true,
-            backgroundColor:
-                isDark ? AppColors.darkBackground : AppColors.lightBackground,
-            surfaceTintColor: Colors.transparent,
-            title: Text(
-              l10n.get('discover_title'),
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-            ),
-            centerTitle: true,
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              isDesktopSidebar ? 12 : 16,
-              16,
-              12,
-            ),
-            sliver: SliverToBoxAdapter(
-              child: _SquareHeaderCard(
-                onTap: () {
-                  if (isDesktopSidebar) {
-                    ref.read(desktopNavIndexProvider.notifier).state =
-                        kDesktopNavMoments;
-                    return;
-                  }
-                  context.push('/discover/square');
-                },
-              ),
-            ),
-          ),
-          entries.when(
-            data: (items) {
-              if (items.isEmpty) {
-                return const SliverToBoxAdapter(
-                  child: SizedBox.shrink(),
-                );
-              }
-
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                sliver: SliverList.separated(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final entry = items[index];
-                    return _DiscoverCard(
-                      entry: entry,
-                      onTap: () => _openDiscoverEntry(context, entry),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+      backgroundColor: AppColors.backgroundFor(context),
+      body: FancyRefreshIndicator(
+        topOffset: MediaQuery.of(context).padding.top + 52,
+        onRefresh: () => refreshDiscoverEntries(ref),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              expandedHeight: 0,
+              floating: true,
+              pinned: true,
+              backgroundColor: AppColors.backgroundFor(context),
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              title: Text(
+                l10n.get('discover_title'),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimaryFor(context),
                 ),
-              );
-            },
-            loading: () => const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
+              ),
+              centerTitle: true,
             ),
-            error: (_, __) => const SliverToBoxAdapter(
-              child: SizedBox.shrink(),
+            entries.when(
+              data: (items) {
+                final bannerItems = banners.maybeWhen(
+                  data: (value) => value,
+                  orElse: () => const <DiscoverBanner>[],
+                );
+                return SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    0,
+                    isDesktopSidebar ? 8 : 8,
+                    0,
+                    24,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: _DiscoverGroupCard(
+                      entries: items,
+                      banners: bannerItems,
+                      squareTap: () {
+                        if (isDesktopSidebar) {
+                          ref.read(desktopNavIndexProvider.notifier).state =
+                              kDesktopNavMoments;
+                          return;
+                        }
+                        context.push('/discover/square');
+                      },
+                      onBannerTap: (banner) => _openDiscoverUrl(
+                        context,
+                        title: banner.title,
+                        rawUrl: banner.url,
+                      ),
+                      onEntryTap: (entry) => _openDiscoverEntry(context, entry),
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (_, __) =>
+                  const SliverToBoxAdapter(child: SizedBox.shrink()),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Future<void> _openDiscoverEntry(
-      BuildContext context, DiscoverEntry entry) async {
-    final uri = Uri.tryParse(entry.url);
+    BuildContext context,
+    DiscoverEntry entry,
+  ) async {
+    await _openDiscoverUrl(
+      context,
+      title: entry.title,
+      rawUrl: entry.url,
+      openExternally: entry.openExternally,
+    );
+  }
 
-    if (Platform.isWindows) {
-      if (uri != null) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openDiscoverUrl(
+    BuildContext context, {
+    required String title,
+    required String rawUrl,
+    bool openExternally = false,
+  }) async {
+    final uri = _parseDiscoverUri(rawUrl);
+    if (uri == null) {
+      _showDiscoverOpenError(context);
+      return;
+    }
+
+    if (Platform.isWindows || openExternally || !_isWebUri(uri)) {
+      final launched = await _launchDiscoverUri(uri);
+      if (!launched && context.mounted) {
+        _showDiscoverOpenError(context);
       }
       return;
     }
 
-    if (entry.openExternally) {
-      if (uri != null) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        return;
+    try {
+      await InAppBrowser.open(
+        context,
+        uri.toString(),
+        title: title,
+        hideAddressBar: true,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      final launched = await _launchDiscoverUri(uri);
+      if (!launched && context.mounted) {
+        _showDiscoverOpenError(context);
       }
     }
+  }
 
-    await InAppBrowser.open(
-      context,
-      entry.url,
-      title: entry.title,
-      hideAddressBar: true,
+  Uri? _parseDiscoverUri(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return null;
+
+    final parsed = Uri.tryParse(trimmed);
+    if (parsed != null && parsed.hasScheme) {
+      return parsed;
+    }
+
+    return Uri.tryParse('https://$trimmed');
+  }
+
+  bool _isWebUri(Uri uri) => uri.scheme == 'http' || uri.scheme == 'https';
+
+  Future<bool> _launchDiscoverUri(Uri uri) async {
+    try {
+      return launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showDiscoverOpenError(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _discoverText(
+            zhCN:
+                '\u8be5\u5165\u53e3\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u5728\u540e\u53f0\u914d\u7f6e\u6709\u6548\u94fe\u63a5',
+            zhTW:
+                '\u8a72\u5165\u53e3\u66ab\u4e0d\u53ef\u7528\uff0c\u8acb\u5728\u5f8c\u53f0\u914d\u7f6e\u6709\u6548\u9023\u7d50',
+            en: 'This entry is unavailable. Configure a valid link in the admin console.',
+          ),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 }
 
-class _SquareHeaderCard extends StatelessWidget {
+class _DiscoverGroupCard extends StatelessWidget {
+  final List<DiscoverEntry> entries;
+  final List<DiscoverBanner> banners;
+  final VoidCallback squareTap;
+  final ValueChanged<DiscoverBanner> onBannerTap;
+  final ValueChanged<DiscoverEntry> onEntryTap;
+
+  const _DiscoverGroupCard({
+    required this.entries,
+    required this.banners,
+    required this.squareTap,
+    required this.onBannerTap,
+    required this.onEntryTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tiles = <Widget>[
+      _DiscoverTile(
+        title: _discoverText(zhCN: '广场', zhTW: '廣場', en: 'Square'),
+        accentColor: AppColors.linkFor(context),
+        iconAsset: 'assets/icons/tab_moments_active.png',
+        onTap: squareTap,
+      ),
+      for (final entry in entries)
+        _DiscoverTile(
+          title: entry.title,
+          accentColor: isDark && entry.iconUrl == null
+              ? AppColors.linkFor(context)
+              : entry.accentColor,
+          iconUrl: entry.iconUrl,
+          onTap: () => onEntryTap(entry),
+        ),
+    ];
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceFor(context),
+        border: Border.symmetric(
+          horizontal: BorderSide(
+            color: AppColors.dividerFor(context),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (banners.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: _DiscoverBannerCarousel(
+                banners: banners,
+                onTap: onBannerTap,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Divider(
+                height: 1,
+                thickness: 0.5,
+                color: AppColors.dividerFor(context),
+              ),
+            ),
+          ],
+          for (var index = 0; index < tiles.length; index++) ...[
+            tiles[index],
+            if (index < tiles.length - 1)
+              Padding(
+                padding: const EdgeInsets.only(left: 62),
+                child: Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: AppColors.dividerFor(context),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscoverBannerCarousel extends StatefulWidget {
+  final List<DiscoverBanner> banners;
+  final ValueChanged<DiscoverBanner> onTap;
+
+  const _DiscoverBannerCarousel({
+    required this.banners,
+    required this.onTap,
+  });
+
+  @override
+  State<_DiscoverBannerCarousel> createState() =>
+      _DiscoverBannerCarouselState();
+}
+
+class _DiscoverBannerCarouselState extends State<_DiscoverBannerCarousel> {
+  late final PageController _controller;
+  Timer? _timer;
+  int _index = 0;
+
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiscoverBannerCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.banners.length != widget.banners.length) {
+      _index = 0;
+      if (_controller.hasClients) {
+        _controller.jumpToPage(0);
+      }
+      _startTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    if (widget.banners.length <= 1) return;
+
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients || widget.banners.isEmpty) {
+        return;
+      }
+      final next = (_index + 1) % widget.banners.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AspectRatio(
+      aspectRatio: 2.7,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF24242A) : const Color(0xFFF1F2F5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              PageView.builder(
+                controller: _controller,
+                itemCount: widget.banners.length,
+                onPageChanged: (value) => setState(() => _index = value),
+                itemBuilder: (context, index) {
+                  final banner = widget.banners[index];
+                  final canOpen = banner.url.trim().isNotEmpty;
+
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: canOpen ? () => widget.onTap(banner) : null,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            banner.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: isDark
+                                  ? const Color(0xFF24242A)
+                                  : const Color(0xFFF1F2F5),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 30,
+                                color: AppColors.textTertiaryFor(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (widget.banners.length > 1)
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < widget.banners.length; i++)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: i == _index ? 16 : 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(left: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(
+                              i == _index ? 0.95 : 0.55,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoverTile extends StatelessWidget {
+  final String title;
+  final Color accentColor;
+  final String? iconAsset;
+  final String? iconUrl;
   final VoidCallback onTap;
 
-  const _SquareHeaderCard({
+  const _DiscoverTile({
+    required this.title,
+    required this.accentColor,
+    this.iconAsset,
+    this.iconUrl,
     required this.onTap,
   });
 
@@ -218,66 +594,37 @@ class _SquareHeaderCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withOpacity(0.05)
-                  : AppColors.lightDivider,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.16 : 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+        child: SizedBox(
+          height: 56,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Image.asset(
-                      'assets/icons/tab_moments_active.png',
-                      width: 24,
-                      height: 24,
-                      color: AppColors.primary,
-                    ),
-                  ),
+                _DiscoverIcon(
+                  accentColor: accentColor,
+                  iconAsset: iconAsset,
+                  iconUrl: iconUrl,
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    '广场',
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? AppColors.darkTextPrimary
-                          : AppColors.lightTextPrimary,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 22,
                   color: isDark
-                      ? AppColors.darkTextSecondary
-                      : AppColors.lightTextSecondary,
+                      ? AppColors.darkTextTertiary
+                      : const Color(0xFF9A9AA2),
                 ),
               ],
             ),
@@ -288,98 +635,60 @@ class _SquareHeaderCard extends StatelessWidget {
   }
 }
 
-class _DiscoverCard extends StatelessWidget {
-  final DiscoverEntry entry;
-  final VoidCallback onTap;
+class _DiscoverIcon extends StatelessWidget {
+  final Color accentColor;
+  final String? iconAsset;
+  final String? iconUrl;
 
-  const _DiscoverCard({
-    required this.entry,
-    required this.onTap,
+  const _DiscoverIcon({
+    required this.accentColor,
+    this.iconAsset,
+    this.iconUrl,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withOpacity(0.05)
-                  : AppColors.lightDivider,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.16 : 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: entry.accentColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: entry.iconUrl != null && entry.iconUrl!.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Image.network(
-                            entry.iconUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.explore_rounded,
-                              color: entry.accentColor,
-                              size: 24,
-                            ),
-                          ),
-                        )
-                      : Icon(
-                          Icons.explore_rounded,
-                          color: entry.accentColor,
-                          size: 24,
-                        ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    entry.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? AppColors.darkTextPrimary
-                          : AppColors.lightTextPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 22,
-                  color: isDark
-                      ? AppColors.darkTextSecondary
-                      : AppColors.lightTextSecondary,
-                ),
-              ],
-            ),
+    if (iconAsset != null) {
+      return SizedBox(
+        width: 30,
+        height: 30,
+        child: Center(
+          child: Image.asset(
+            iconAsset!,
+            width: 26,
+            height: 26,
+            color: accentColor,
           ),
         ),
+      );
+    }
+
+    if (iconUrl != null && iconUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.network(
+          iconUrl!,
+          width: 30,
+          height: 30,
+          fit: BoxFit.cover,
+          cacheWidth: 80,
+          cacheHeight: 80,
+          errorBuilder: (_, __, ___) => Icon(
+            Icons.explore_rounded,
+            color: accentColor,
+            size: 28,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Icon(
+        Icons.explore_rounded,
+        color: accentColor,
+        size: 28,
       ),
     );
   }

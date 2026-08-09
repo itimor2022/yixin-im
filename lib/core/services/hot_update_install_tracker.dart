@@ -1,3 +1,5 @@
+// 文件用途：封装 PendingHotUpdateInstall 相关业务流程与外部能力调用，属于业务服务。
+// 核心逻辑：封装 PendingHotUpdateInstall 的外部能力调用，先校验输入和会话，再转换响应结果并向上层返回可处理的错误状态。
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/hot_update_service.dart';
 
+// 关键声明：hot update install tracker 是业务副作用入口，负责校验参数、调用外部资源并把异常转换为上层可处理结果。
 class PendingHotUpdateInstall {
   final HotUpdatePatch patch;
   final String previousAppVersion;
@@ -24,6 +27,7 @@ class PendingHotUpdateInstall {
     required this.createdAt,
   });
 
+  // 流程逻辑：`fromJson` 集中处理输入规范化、空值和兼容字段，输出稳定的数据结构，避免调用方重复实现边界判断。
   factory PendingHotUpdateInstall.fromJson(Map<String, dynamic> json) {
     final patchJson = json['patch'];
     if (patchJson is! Map<String, dynamic>) {
@@ -71,6 +75,8 @@ class PendingHotUpdateInstall {
     required String currentBuildNumber,
     int? currentShorebirdPatchNumber,
   }) {
+    // “开始安装”标记不是成功证据；必须在后续启动中观察到目标补丁号
+    // 或更高的应用版本，才能确认更新真正生效。
     if (patch.deliveryMode.trim().toLowerCase() == 'shorebird') {
       if (currentShorebirdPatchNumber == null ||
           currentShorebirdPatchNumber <= 0) {
@@ -167,6 +173,7 @@ class HotUpdateInstallTracker {
       final isExpired = !isInvalidTimestamp &&
           now.difference(createdAt) > _maxPendingInstallAge;
       if (isInvalidTimestamp || isExpired) {
+        // 损坏或过期标记无法可靠归因本次启动，清除后不再上报安装结果。
         await clearPendingInstall();
         return null;
       }
@@ -185,6 +192,7 @@ class HotUpdateInstallTracker {
     int expectedShorebirdPatchNumber = 0,
     String userUUID = '',
   }) async {
+    // 在启动外部安装流程前持久化快照，应用被系统终止后仍可在下次启动核验。
     final prefs = await SharedPreferences.getInstance();
     final pending = PendingHotUpdateInstall(
       patch: patch,

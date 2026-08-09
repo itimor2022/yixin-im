@@ -203,7 +203,7 @@ function useTableImpl<TApiFn extends (params: any) => Promise<any>>(
   // 表格数据
   const data = ref<TRecord[]>([])
 
-  // 请求取消控制器
+  // 请求代次标记：apiFn 未必支持传入 signal，但完成后仍可拦截已经过期的响应。
   let abortController: AbortController | null = null
   // 最近一次请求时间（用于激活时防抖）
   let lastFetchAt = 0
@@ -292,7 +292,7 @@ function useTableImpl<TApiFn extends (params: any) => Promise<any>>(
     useCache = enableCache
   ): Promise<ApiResponse<TRecord>> => {
     lastFetchAt = Date.now()
-    // 取消上一个请求
+    // 标记上一轮为过期，避免较慢的旧响应覆盖本轮查询结果。
     if (abortController) {
       abortController.abort()
     }
@@ -327,6 +327,7 @@ function useTableImpl<TApiFn extends (params: any) => Promise<any>>(
 
       // 检查缓存
       if (useCache && cache) {
+        // 缓存键由最终请求参数生成，因此不同搜索条件和分页不会相互污染。
         const cachedItem = cache.get(requestParams)
         if (cachedItem) {
           data.value = cachedItem.data
@@ -434,6 +435,7 @@ function useTableImpl<TApiFn extends (params: any) => Promise<any>>(
 
   // 分页获取数据 (重置到第一页) - 专门用于搜索场景
   const getDataByPage = async (params?: Partial<TParams>): Promise<ApiResponse<TRecord> | void> => {
+    // 搜索条件变化必须回到第一页，并绕过旧缓存读取服务端最新结果。
     pagination.current = 1
     ;(searchParams as Record<string, unknown>)[pageKey] = 1
 
@@ -568,7 +570,7 @@ function useTableImpl<TApiFn extends (params: any) => Promise<any>>(
     clearCache(CacheInvalidationStrategy.CLEAR_CURRENT, '删除数据')
     await getData()
 
-    // 如果当前页为空且不是第一页，回到上一页
+    // 删除当前页最后一条记录后回退一页，避免用户停留在空白分页。
     if (data.value.length === 0 && current > 1) {
       pagination.current = current - 1
       ;(searchParams as Record<string, unknown>)[pageKey] = current - 1

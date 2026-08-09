@@ -241,14 +241,14 @@
     ElDescriptions,
     ElDescriptionsItem
   } from 'element-plus'
-  import { fixImageUrl } from '@/utils/url'
+  import { fixImageUrl, getLocalAvatarDataUrl } from '@/utils/url'
   import { usePermission } from '@/hooks/usePermission'
 
   defineOptions({ name: 'MomentList' })
 
   const { isDemoAdmin } = usePermission()
 
-  const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=default'
+  const defaultAvatar = getLocalAvatarDataUrl('default')
   const tableRef = ref()
   type ReasonActionType = 'reject' | 'hide'
 
@@ -662,6 +662,7 @@
   }
 
   const openBatchReasonDialog = (action: ReasonActionType) => {
+    // 批量驳回只处理待审核项，批量隐藏只处理正常项，混合选择不会误改其他状态。
     const candidateIds = action === 'hide' ? normalSelectedIds.value : pendingSelectedIds.value
     if (candidateIds.length === 0) {
       ElMessage.warning(action === 'hide' ? '请先选择状态为正常的动态' : '请先选择待审核的动态')
@@ -716,6 +717,7 @@
           }
         )
         await Promise.all(targetIds.map((id) => updateMomentStatus(id, 2, reason || undefined)))
+        // 所有请求成功后才清空选择；任一失败会保留当前上下文供管理员重试。
         ElMessage.success(`${actionText}成功，共处理 ${targetIds.length} 条`)
         selectedRows.value = []
         tableRef.value?.elTableRef?.clearSelection?.()
@@ -740,6 +742,7 @@
       }
     )
     await Promise.all(pendingSelectedIds.value.map((id) => updateMomentStatus(id, 1)))
+    // 审核接口完成后重新拉取列表，统计、筛选结果和服务端状态保持一致。
     ElMessage.success(`批量通过成功，共处理 ${pendingSelectedIds.value.length} 条`)
     selectedRows.value = []
     tableRef.value?.elTableRef?.clearSelection?.()

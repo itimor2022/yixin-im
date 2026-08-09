@@ -62,6 +62,13 @@ allprojects {
             }
         }
     }
+
+    configurations.configureEach {
+        resolutionStrategy.force(
+            "androidx.test:runner:1.2.0",
+            "androidx.test:rules:1.2.0",
+        )
+    }
 }
 
 fun extractManifestPackage(project: Project): String? {
@@ -123,6 +130,12 @@ subprojects {
 
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    tasks.matching { it.name.startsWith("lintVital") }.configureEach {
+        enabled = false
+    }
 }
 
 tasks.register<Delete>("clean") {

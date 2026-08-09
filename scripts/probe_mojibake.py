@@ -4,8 +4,19 @@ import heapq
 import re
 from pathlib import Path
 
-SUSPICIOUS = set("闂鏆妗瑙鍒鐢缂鎴顫閲鍙娑璇鎺娆欐堕瀹绛锛銆鈥鑱绾鍚鐣娼閫鏁鐗鐧灏钃绗鐝澧鍐顕妫娲焽瀣鍎樀鍦鐑濮炲")
+SUSPICIOUS = set(
+    chr(c)
+    for c in [
+        0x3006, 0x5987, 0x6b06, 0x6b39, 0x6d32, 0x6f7c, 0x6fee, 0x7023,
+        0x7029, 0x704f, 0x708a, 0x713d, 0x7459, 0x7487, 0x7b17, 0x7b1b,
+        0x7efe, 0x837b, 0x9225, 0x9286, 0x9350, 0x9352, 0x9359, 0x935a,
+        0x9366, 0x93b4, 0x93ba, 0x93c1, 0x93c6, 0x9411, 0x9417, 0x941d,
+        0x9422, 0x9423, 0x9427, 0x9471, 0x9483, 0x95ab, 0x95b2, 0x95c2,
+        0x986b,
+    ]
+)
 ENCODINGS = ["utf-8", "gb18030", "gbk", "cp936", "latin1", "cp1252"]
+LATIN_MOJIBAKE_MARKERS = "".join(chr(c) for c in [0x00C3, 0x00C2, 0x00D0, 0x00D1, 0x00D8, 0x00DE])
 
 
 def score(text: str) -> float:
@@ -13,7 +24,7 @@ def score(text: str) -> float:
     ascii_ok = sum(1 for ch in text if 32 <= ord(ch) <= 126)
     suspicious = sum(1 for ch in text if ch in SUSPICIOUS)
     replacement = text.count("\ufffd") + text.count("?")
-    weird = len(re.findall(r"[ÃÂÐÑØÞ]", text))
+    weird = len(re.findall(f"[{re.escape(LATIN_MOJIBAKE_MARKERS)}]", text))
     return cjk * 3 + ascii_ok * 0.05 - suspicious * 4 - replacement * 2 - weird * 2
 
 

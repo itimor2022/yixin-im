@@ -41,12 +41,14 @@
     useChartComponent({
       props,
       checkEmpty: () => {
+        // 所有扇区均为零时按空数据处理，避免显示无意义的百分比。
         return !props.data?.length || props.data.every((item) => item.value === 0)
       },
       watchSources: [() => props.data, () => props.centerText],
       generateOptions: (): EChartsOption => {
         // 根据图例位置计算环形图中心位置
         const getCenterPosition = (): [string, string] => {
+          // 为图例预留空间时同步移动圆心，中心文字复用同一坐标。
           if (!props.showLegend) return ['50%', '50%']
 
           switch (props.legendPosition) {

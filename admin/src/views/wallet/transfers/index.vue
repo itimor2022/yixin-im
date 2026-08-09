@@ -194,6 +194,7 @@
   const fetchData = async () => {
     loading.value = true
     try {
+      // total 与当前筛选条件共享同一口径，页码和每页数量由本地分页状态传入。
       const res = await getTransferList({
         page: pagination.page,
         page_size: pagination.page_size,
@@ -235,6 +236,7 @@
       )
       await refundTransfer(row.id)
       ElMessage.success('退回成功')
+      // 退回会改变当前记录状态，服务端确认后重新读取本页。
       fetchData()
     } catch (e: any) {
       if (e !== 'cancel') {

@@ -63,6 +63,7 @@
 
 <script setup lang="ts">
   import { useFastEnter } from '@/hooks/core/useFastEnter'
+  import { openExternalLink } from '@/utils/navigation'
   import type { FastEnterApplication, FastEnterQuickLink } from '@/types/config'
 
   defineOptions({ name: 'ArtFastEnter' })
@@ -86,8 +87,8 @@
       return
     }
 
-    if (targetPath.startsWith('http')) {
-      window.open(targetPath, '_blank')
+    if (!routeName && link) {
+      openExternalLink(link)
     } else {
       router.push({ name: targetPath })
     }

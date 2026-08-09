@@ -1,9 +1,11 @@
+// 文件用途：定义业务实体的 ORM 字段、关联关系和持久化约束。
+// 核心逻辑：统一描述字段映射、状态值、索引和表名，作为各层共享数据契约。
+
 package models
 
 import (
-	"time"
-
 	"gorm.io/gorm"
+	"time"
 )
 
 // 举报状态
@@ -28,6 +30,7 @@ type Report struct {
 	ReporterID  uint64         `gorm:"index;not null" json:"reporter_id"`
 	TargetID    string         `gorm:"type:varchar(36);index;not null" json:"target_id"`
 	TargetType  string         `gorm:"type:varchar(20);not null" json:"target_type"` // user, group, channel, message
+	ChatID      string         `gorm:"type:varchar(36);index;not null;default:''" json:"chat_id,omitempty"`
 	Reason      string         `gorm:"type:varchar(50);not null" json:"reason"`
 	Description string         `gorm:"type:text" json:"description"`
 	Status      int8           `gorm:"default:0" json:"status"` // 0-待处理, 1-已处理, 2-已驳回

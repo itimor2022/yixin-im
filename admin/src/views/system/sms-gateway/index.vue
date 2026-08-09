@@ -39,6 +39,7 @@
     try {
       const res = (await getSmsGatewayConfig()) as any
       if (res) {
+        // 各供应商字段独立补齐默认值，切换 provider 时不会丢失其他渠道已保存的配置。
         Object.assign(form, {
           ...defaultForm(),
           ...res,
@@ -56,6 +57,7 @@
   async function save() {
     saving.value = true
     try {
+      // 保存完整配置快照，由服务端只启用 provider 指定的渠道并校验其凭据。
       await saveSmsGatewayConfig(form)
       ElMessage.success('保存成功')
     } catch {

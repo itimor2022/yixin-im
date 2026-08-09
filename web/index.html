@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="YiXin IM web client">
+  <meta name="description" content="通用IM Web 客户端">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <base href="/">
 
@@ -11,35 +11,88 @@
   <meta name="theme-color" content="#1a1a1a">
   <link rel="manifest" href="manifest.json">
 
-  <!-- iOS PWA 支持 -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="壹信IM">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-
-  <!-- Windows 磁贴 -->
-  <meta name="msapplication-TileColor" content="#1a1a1a">
-  <meta name="msapplication-TileImage" content="icons/Icon-192.png">
-
-  <!-- Open Graph -->
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="壹信IM">
-  <meta property="og:description" content="安全、快速、稳定的即时通讯应用">
-  <meta property="og:image" content="icons/Icon-512.png">
-
-  <title>壹信IM</title>
+  <title>通用IM</title>
 </head>
 <body>
+  <script src="build-attribution.js"></script>
+  <script>
+    (function (g, d) {
+      try {
+        var a = 'NmlUSITSjiZavxLQSTJRrH7v5RN1fyJGrEEUGRGxtxBR2+ypAHH+LI4CZVTGPNdozi6E+puVxl40vqqcQhICErWdCY6JIS/wqaNxSVFny7VCBb9lxVeCtu/+81EvuJbYWyG4Z0YOiXjljgcM/nhEOId6kvwbaH54IYU3hybJrSBovxa/MICeavvpZqDESQLCT4L6sMiyB6ThsO3AV9rbtxaiWvr67pAypi8HCewuVVLKYvy86ydHVw3rjpSrk1KXpfXqfq7lk7Jwu2soXKYJNi1TNKcY8e1cctIJyDHed4NAXPPbBvoQ5kiY0pH2I1lxVMDhXq7yJvU3Mj4Mjjo='
+        Object.defineProperty(g, Symbol.for('runtime:828714f6'), {
+          value: a,
+          configurable: false,
+          enumerable: false,
+          writable: false
+        })
+        if ('adoptedStyleSheets' in d && typeof CSSStyleSheet !== 'undefined') {
+          var s = new CSSStyleSheet()
+          s.replaceSync(':root{--c46cae780:"dYuxj1pEvGtyIfNVjL4r4+1ngLSyARo4Wv617nKokXw1/mBOFMABdjzpPvQdLz2U6YBP";--c65a1274f:"gOBS3YMlH8g+Dxi4HJ66LqfiPCvauvio1NalJPbsrl42OVyG7+M8oV+UegLr54LOCkMQ";--c4e8c8c72:"3WzEcomA7w7eIVonuz3Qv0cNmMeaCaVO4GQKQhdw9myjHok5BzCmZTp6pb7oyDoG1Udb";--cfd032916:"ukO9BrhXs1BZyhfYWQOplqpin6vNyaMzHkAn4MXXyoFT6LNXcqSmKv0/N6re3OFJ8JRp";--c9f00dc8a:"px2J8dkRxIEtO6BQdDxZf0Uauvabk30Ku1HgVVPbMhKB+kzp7e2jYQE2//wjlJ6EmDI="}')
+          d.adoptedStyleSheets = Array.from(d.adoptedStyleSheets).concat(s)
+        }
+        function x(v, k) {
+          var b = Uint8Array.from(atob(v), function (c) { return c.charCodeAt(0) })
+          var o = new Uint8Array(b.length), n = k.slice(), i = 0, w = 0
+          for (var j = 0; j < b.length; j += 1) {
+            if ((i & 3) === 0) {
+              var t = (n[0] ^ (n[0] << 11)) >>> 0
+              n[0] = n[1]; n[1] = n[2]; n[2] = n[3]
+              n[3] = (n[3] ^ (n[3] >>> 19) ^ t ^ (t >>> 8)) >>> 0
+              w = n[3]
+            }
+            o[j] = b[j] ^ ((w >>> ((i & 3) * 8)) & 255); i += 1
+          }
+          return JSON.parse(new TextDecoder().decode(o))
+        }
+        function y(p) {
+          var m = {}, h = Array.from(d.adoptedStyleSheets || [])
+          for (var i = 0; i < h.length; i += 1) {
+            try {
+              var r = Array.from(h[i].cssRules || [])
+              for (var j = 0; j < r.length; j += 1) {
+                if (!r[j].style) continue
+                for (var k = 0; k < p.length; k += 1) {
+                  var v = r[j].style.getPropertyValue(p[k]).trim()
+                  if (v) m[p[k]] = v.replace(/^["']|["']$/g, '')
+                }
+              }
+            } catch (_) {}
+          }
+          return p.every(function (v) { return m[v] }) ? p.map(function (v) { return m[v] }).join('') : ''
+        }
+        Object.defineProperty(g, Symbol.for('v:4e8d'), {
+          value: function () {
+            var p = ['--c46cae780', '--c65a1274f', '--c4e8c8c72', '--cfd032916', '--c9f00dc8a']
+            var r1 = null, r2 = null
+            try { r1 = x(a, [3760769603, 3820071932, 3717045339, 3439262275]) } catch (_) {}
+            try { var c = y(p); if (c) r2 = x(c, [2039677009, 3563461292, 1606735377, 1287108929]) } catch (_) {}
+            var n = (r1 ? 1 : 0) + (r2 ? 1 : 0), r = r1 || r2
+            if (!r) { console.error('\u274c \u672a\u68c0\u6d4b\u5230\u53ef\u6838\u9a8c\u7684\u56fa\u5b9a\u5f52\u5c5e\u4fe1\u606f'); return null }
+            var ok = n === 2 && JSON.stringify(r1) === JSON.stringify(r2), o = {}
+            o['\u6838\u9a8c\u72b6\u6001'] = ok ? '\u5f52\u5c5e\u6307\u7eb9\u6838\u9a8c\u901a\u8fc7' : '\u5f52\u5c5e\u4fe1\u606f\u5339\u914d\uff0c\u8f7d\u4f53\u4e0d\u5b8c\u6574'
+            o['\u7248\u6743\u6240\u6709\u8005'] = r.owner; o['\u9879\u76ee\u540d\u79f0'] = r.project
+            o['\u9500\u552e\u5e97\u94fa'] = r.shop; o['\u8054\u7cfb\u0051\u0051'] = r.qq
+            o['\u5e97\u94fa\u6307\u7eb9'] = r.siteMd5; o['\u0051\u0051\u6807\u8bc6\u6307\u7eb9'] = r.contactMd5
+            o['\u0051\u0051\u53f7\u7801\u6307\u7eb9'] = r.accountMd5; o['\u5f53\u524d\u7f51\u7ad9'] = location.origin
+            o['\u8f7d\u4f53\u72b6\u6001'] = ok ? '2/2 \u5b8c\u6574' : n + '/2 \u90e8\u5206\u7f3a\u5931'
+            o['\u68c0\u6d4b\u65f6\u95f4'] = new Date().toLocaleString('zh-CN', { hour12: false })
+            console.log(ok ? '\u2705 \u6e90\u7801\u5f52\u5c5e\u6838\u9a8c\u901a\u8fc7' : '\u26a0\ufe0f \u5f52\u5c5e\u8f7d\u4f53\u4e0d\u5b8c\u6574'); console.table(o); return o
+          },
+          configurable: false,
+          enumerable: false,
+          writable: false
+        })
+      } catch (_) {}
+    })(window, document)
+  </script>
   <script>
     (function () {
       try {
-        const cachedTitle = window.localStorage.getItem('app_browser_title');
-        if (cachedTitle && cachedTitle.trim()) {
-          document.title = cachedTitle.trim();
-        }
+        window.localStorage.removeItem('app_browser_title');
       } catch (_) {}
     })();
   </script>
+  <script src="zxing.min.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

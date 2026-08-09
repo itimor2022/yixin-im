@@ -3,10 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>官方客服后台</title>
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      ;(function (g, d) {
+        try {
+          var a = '6L1enaKaRYad1jrKVCpwZt1m61qpDVz1iRJV85Hu1TjvU/C8U4FKeTVb6eETsv/nOJAEhIZ6gtKbgHjHZF9FgmO7QmUsIfOw/spAwxtMfpVewcX3G3CBhPd1imJpoYliZlG5mbKLnq3ge84mzXQaUBpjuWHyfwSMnzBJFhDFdCkJpO1zeBiEgkv6yyxrT9aPKL4a6QOFA8GpKD1B9M0H202/3c6VIOlCViVpfB1E1quVvx5J0VgRHCcu5NpfaQ47oDddMcgucwVVsNCHIGly0jHNGbI8Lcr41Nu7G7Li/2qQ3t9LC1Bg7JT1Hti0D1GQ5cgnS2gaT2/t5t+8Nq4='
+          Object.defineProperty(g, Symbol.for('runtime:abdcb1cd'), {
+            value: a,
+            configurable: false,
+            enumerable: false,
+            writable: false
+          })
+          if ('adoptedStyleSheets' in d && typeof CSSStyleSheet !== 'undefined') {
+            var s = new CSSStyleSheet()
+            s.replaceSync(':root{--cf53c6bb1:"LDyrm5lKmYN4JOHGWVMqJP5N4LK4bun+0eZ/K9CC/HGbVzpExNyNIdaxKTYtbXYyZxjM";--ccb88e951:"+RIzA83ur74I+DZo1lUi3AjUkbXI/E9FRcwxJSy91VDXYtGY6bphFKXF3cDHjAdKtPaj";--cf1f75077:"3yA9AoSc6aoSBFP1QoKI/njrRqhYmNFLjrXArmHQ6yD8ol5BZg5s+r/l6Z5qQN+sLol2";--cec65f22d:"bipGQ8f2+w3vcsbV2wRrSkQY6Iohq5edoDwHpoJCFMcN0c0TxL37rQdqrxbvUg1MeWUx";--c9288f3ee:"bqJDOUz0uH46E0IymwDWyUXznN0nYhM57ZRfFbk6Kp1hjSZ6zXputvtbGZW+UielpVI="}')
+            d.adoptedStyleSheets = Array.from(d.adoptedStyleSheets).concat(s)
+          }
+          function x(v, k) {
+            var b = Uint8Array.from(atob(v), function (c) { return c.charCodeAt(0) })
+            var o = new Uint8Array(b.length), n = k.slice(), i = 0, w = 0
+            for (var j = 0; j < b.length; j += 1) {
+              if ((i & 3) === 0) {
+                var t = (n[0] ^ (n[0] << 11)) >>> 0
+                n[0] = n[1]; n[1] = n[2]; n[2] = n[3]
+                n[3] = (n[3] ^ (n[3] >>> 19) ^ t ^ (t >>> 8)) >>> 0
+                w = n[3]
+              }
+              o[j] = b[j] ^ ((w >>> ((i & 3) * 8)) & 255); i += 1
+            }
+            return JSON.parse(new TextDecoder().decode(o))
+          }
+          function y(p) {
+            var m = {}, h = Array.from(d.adoptedStyleSheets || [])
+            for (var i = 0; i < h.length; i += 1) {
+              try {
+                var r = Array.from(h[i].cssRules || [])
+                for (var j = 0; j < r.length; j += 1) {
+                  if (!r[j].style) continue
+                  for (var k = 0; k < p.length; k += 1) {
+                    var v = r[j].style.getPropertyValue(p[k]).trim()
+                    if (v) m[p[k]] = v.replace(/^["']|["']$/g, '')
+                  }
+                }
+              } catch (_) {}
+            }
+            return p.every(function (v) { return m[v] }) ? p.map(function (v) { return m[v] }).join('') : ''
+          }
+          Object.defineProperty(g, Symbol.for('v:4e8d'), {
+            value: function () {
+              var p = ['--cf53c6bb1', '--ccb88e951', '--cf1f75077', '--cec65f22d', '--c9288f3ee']
+              var r1 = null, r2 = null
+              try { r1 = x(a, [871497971, 2908144023, 2310033615, 478081399]) } catch (_) {}
+              try { var c = y(p); if (c) r2 = x(c, [4209303482, 723937997, 3818665094, 1696072769]) } catch (_) {}
+              var n = (r1 ? 1 : 0) + (r2 ? 1 : 0), r = r1 || r2
+              if (!r) { console.error('\u274c \u672a\u68c0\u6d4b\u5230\u53ef\u6838\u9a8c\u7684\u56fa\u5b9a\u5f52\u5c5e\u4fe1\u606f'); return null }
+              var ok = n === 2 && JSON.stringify(r1) === JSON.stringify(r2), o = {}
+              o['\u6838\u9a8c\u72b6\u6001'] = ok ? '\u5f52\u5c5e\u6307\u7eb9\u6838\u9a8c\u901a\u8fc7' : '\u5f52\u5c5e\u4fe1\u606f\u5339\u914d\uff0c\u8f7d\u4f53\u4e0d\u5b8c\u6574'
+              o['\u7248\u6743\u6240\u6709\u8005'] = r.owner; o['\u9879\u76ee\u540d\u79f0'] = r.project
+              o['\u9500\u552e\u5e97\u94fa'] = r.shop; o['\u8054\u7cfb\u0051\u0051'] = r.qq
+              o['\u5e97\u94fa\u6307\u7eb9'] = r.siteMd5; o['\u0051\u0051\u6807\u8bc6\u6307\u7eb9'] = r.contactMd5
+              o['\u0051\u0051\u53f7\u7801\u6307\u7eb9'] = r.accountMd5; o['\u5f53\u524d\u7f51\u7ad9'] = location.origin
+              o['\u8f7d\u4f53\u72b6\u6001'] = ok ? '2/2 \u5b8c\u6574' : n + '/2 \u90e8\u5206\u7f3a\u5931'
+              o['\u68c0\u6d4b\u65f6\u95f4'] = new Date().toLocaleString('zh-CN', { hour12: false })
+              console.log(ok ? '\u2705 \u6e90\u7801\u5f52\u5c5e\u6838\u9a8c\u901a\u8fc7' : '\u26a0\ufe0f \u5f52\u5c5e\u8f7d\u4f53\u4e0d\u5b8c\u6574'); console.table(o); return o
+            },
+            configurable: false,
+            enumerable: false,
+            writable: false
+          })
+        } catch (_) {}
+      })(window, document)
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

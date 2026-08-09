@@ -216,12 +216,14 @@
 
   const emit = defineEmits<FormEmits>()
 
+  // 字段值通过 v-model 受控，submit/reset 事件只表达用户操作意图。
   const modelValue = defineModel<Record<string, any>>({ default: {} })
 
   const rootProps = ['label', 'labelWidth', 'key', 'type', 'hidden', 'span', 'slots']
 
   const getProps = (item: FormItem) => {
     if (item.props) return item.props
+    // 未提供独立 props 时，将表单布局元数据剔除后透传给具体控件。
     const props = { ...item }
     rootProps.forEach((key) => delete (props as Record<string, any>)[key])
     return props
@@ -283,7 +285,7 @@
     // 重置表单字段（UI 层）
     formInstance.value?.resetFields()
 
-    // 清空所有表单项值（包含隐藏项）
+    // 隐藏项也属于当前表单模型，重置时一并清空，避免旧筛选条件残留。
     Object.assign(
       modelValue.value,
       Object.fromEntries(props.items.map(({ key }) => [key, undefined]))

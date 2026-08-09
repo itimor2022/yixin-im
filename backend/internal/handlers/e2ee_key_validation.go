@@ -1,3 +1,6 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
@@ -19,7 +22,6 @@ func validateE2EEPublicJWK(jwkText string) error {
 	if err := json.Unmarshal([]byte(jwkText), &data); err != nil {
 		return err
 	}
-
 	if strings.ToUpper(strings.TrimSpace(toString(data["kty"]))) != "RSA" {
 		return errors.New("unsupported jwk kty")
 	}
@@ -32,7 +34,6 @@ func validateE2EEPublicJWK(jwkText string) error {
 	if err != nil {
 		return err
 	}
-
 	if modulus.Sign() <= 0 || exponent.Sign() <= 0 {
 		return errors.New("invalid rsa key")
 	}
@@ -42,7 +43,6 @@ func validateE2EEPublicJWK(jwkText string) error {
 	if exponent.Cmp(big.NewInt(1)) <= 0 {
 		return errors.New("invalid rsa exponent")
 	}
-
 	return nil
 }
 
@@ -55,7 +55,6 @@ func decodeJWKBigInt(value string) (*big.Int, error) {
 	if value == "" {
 		return nil, errors.New("missing jwk field")
 	}
-
 	padding := len(value) % 4
 	if padding > 0 {
 		value += strings.Repeat("=", 4-padding)
@@ -65,7 +64,6 @@ func decodeJWKBigInt(value string) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	result := new(big.Int).SetBytes(bytes)
 	if result.Sign() <= 0 {
 		return nil, errors.New("invalid jwk integer")

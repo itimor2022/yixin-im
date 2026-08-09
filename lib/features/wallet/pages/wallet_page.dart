@@ -1,9 +1,15 @@
+// 文件用途：实现 WalletPage 页面及其交互流程，属于钱包与支付。
+// 核心逻辑：维护 WalletPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/system_ui_styles.dart';
+import '../../../core/services/api/system_settings_service.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../providers/wallet_provider.dart';
 import '../services/wallet_service.dart';
 import 'set_pay_password_page.dart';
@@ -11,6 +17,23 @@ import 'recharge_page.dart';
 import 'withdraw_page.dart';
 import 'transaction_list_page.dart';
 
+String _walletText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：wallet page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 钱包主页
 class WalletPage extends ConsumerStatefulWidget {
   const WalletPage({super.key});
@@ -26,6 +49,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   Set<String> _dismissedOrderIds = {};
   static const _dismissedKey = 'wallet_dismissed_order_ids';
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -38,11 +62,18 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
   /// 先加载已删除的 ID，再加载订单（加载后自动过滤）
   Future<void> _loadDismissedThenOrders() async {
+    if (!_walletRechargeAllowed()) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       _dismissedOrderIds = (prefs.getStringList(_dismissedKey) ?? []).toSet();
     } catch (_) {}
     _loadOrders();
+  }
+
+  bool _walletRechargeAllowed() {
+    if (!PlatformUtils.isIOS) return true;
+    final settings = ref.read(systemSettingsProvider).valueOrNull;
+    return settings?.iosCompliance.allowsWalletRecharge ?? false;
   }
 
   /// 永久记住已删除的订单 ID
@@ -60,14 +91,14 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   String _getOrderId(Map<String, dynamic> o) =>
       o['id']?.toString() ??
       o['order_id']?.toString() ??
-      o['uuid']?.toString() ?? '';
+      o['uuid']?.toString() ??
+      '';
 
   Future<void> _loadSettings() async {
     try {
-      final svc = ref.read(walletServiceProvider);
-      final resp = await svc.getWalletSettings();
-      if (resp.isSuccess && resp.data != null && mounted) {
-        setState(() => _walletNotice = resp.data!.walletNotice);
+      final settings = await ref.read(walletSettingsProvider.future);
+      if (mounted) {
+        setState(() => _walletNotice = settings.walletNotice);
       }
     } catch (_) {}
   }
@@ -88,19 +119,44 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = ref.watch(walletCurrencyProvider);
+    final rechargeAllowed = !PlatformUtils.isIOS ||
+        (ref
+                .watch(systemSettingsProvider)
+                .valueOrNull
+                ?.iosCompliance
+                .allowsWalletRecharge ??
+            false);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final walletState = ref.watch(walletProvider);
     final wallet = walletState.wallet;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF1C1C1E)
-          : const Color(0xFFF5F5F7),
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.primaryFor(context),
+        systemOverlayStyle: AppSystemUiStyles.onWalletBackground,
+        flexibleSpace: Column(
+          children: [
+            SizedBox(
+              height: MediaQuery.paddingOf(context).top,
+              child: const ColoredBox(
+                color: AppSystemUiStyles.walletStatusBarColor,
+              ),
+            ),
+            Expanded(
+              child: ColoredBox(color: AppColors.primaryFor(context)),
+            ),
+          ],
+        ),
         elevation: 0,
-        title: const Text(
-          '钱包',
+        title: Text(
+          _walletText(
+            context,
+            zhCN: '钱包',
+            zhTW: '錢包',
+            en: 'Wallet',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -115,7 +171,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(walletProvider.notifier).refresh(),
-        color: AppColors.primary,
+        color: AppColors.controlActiveFor(context),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
@@ -125,7 +181,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
                 decoration: BoxDecoration(
-                  color: AppColors.primary,
+                  color: AppColors.primaryFor(context),
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(32),
                     bottomRight: Radius.circular(32),
@@ -138,7 +194,12 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                     Row(
                       children: [
                         Text(
-                          '账户余额',
+                          _walletText(
+                            context,
+                            zhCN: '账户余额',
+                            zhTW: '帳戶餘額',
+                            en: 'Balance',
+                          ),
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.white.withOpacity(0.8),
@@ -181,7 +242,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                             textBaseline: TextBaseline.alphabetic,
                             children: [
                               Text(
-                                '¥',
+                                currency,
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.w500,
@@ -208,18 +269,30 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                     // 操作按钮
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildActionButton(
-                            icon: Icons.add,
-                            label: '充值',
-                            onTap: () => _navigateToRecharge(context),
+                        if (rechargeAllowed) ...[
+                          Expanded(
+                            child: _buildActionButton(
+                              icon: Icons.add,
+                              label: _walletText(
+                                context,
+                                zhCN: '充值',
+                                zhTW: '充值',
+                                en: 'Top Up',
+                              ),
+                              onTap: () => _navigateToRecharge(context),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                          const SizedBox(width: 12),
+                        ],
                         Expanded(
                           child: _buildActionButton(
                             icon: Icons.arrow_upward,
-                            label: '提现',
+                            label: _walletText(
+                              context,
+                              zhCN: '提现',
+                              zhTW: '提現',
+                              en: 'Withdraw',
+                            ),
                             onTap: () => _navigateToWithdraw(context),
                           ),
                         ),
@@ -227,7 +300,12 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                         Expanded(
                           child: _buildActionButton(
                             icon: Icons.receipt_long,
-                            label: '账单',
+                            label: _walletText(
+                              context,
+                              zhCN: '账单',
+                              zhTW: '帳單',
+                              en: 'Transactions',
+                            ),
                             onTap: () => _navigateToTransactions(context),
                           ),
                         ),
@@ -245,10 +323,10 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                      color: AppColors.cardFor(context),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: AppColors.primary.withOpacity(0.2),
+                        color: AppColors.controlBorderFor(context),
                       ),
                     ),
                     child: Row(
@@ -256,7 +334,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                       children: [
                         Icon(
                           Icons.campaign_outlined,
-                          color: AppColors.primary,
+                          color: AppColors.linkFor(context),
                           size: 18,
                         ),
                         const SizedBox(width: 10),
@@ -265,7 +343,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                             _walletNotice,
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white70 : Colors.black87,
+                              color: AppColors.textSecondaryFor(context),
                               height: 1.5,
                             ),
                           ),
@@ -277,159 +355,202 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ],
 
               // 充值/提现进度
-              ..._rechargeOrders
-                  .where((o) {
-                    final s = o['status'] as String? ?? '';
-                    return s == 'pending' || s == 'approved' || s == 'rejected';
-                  })
-                  .take(3)
-                  .map((o) {
-                    final status = o['status'] as String? ?? '';
-                    final amount = (o['amount'] as num?)?.toDouble() ?? 0;
-                    final method = o['method_name'] as String? ?? '充值';
-                    final remark = o['remark'] as String? ?? '';
-                    final createdAt = o['created_at']?.toString() ?? '';
+              if (rechargeAllowed)
+                ..._rechargeOrders
+                    .where((o) {
+                      final s = o['status'] as String? ?? '';
+                      return s == 'pending' ||
+                          s == 'approved' ||
+                          s == 'rejected';
+                    })
+                    .take(3)
+                    .map((o) {
+                      final status = o['status'] as String? ?? '';
+                      final amount = (o['amount'] as num?)?.toDouble() ?? 0;
+                      final method = o['method_name'] as String? ??
+                          _walletText(
+                            context,
+                            zhCN: '充值',
+                            zhTW: '充值',
+                            en: 'Top Up',
+                          );
+                      final remark = o['remark'] as String? ?? '';
+                      final createdAt = o['created_at']?.toString() ?? '';
 
-                    Color statusColor;
-                    IconData statusIcon;
-                    String statusText;
-                    String subtitle;
+                      Color statusColor;
+                      IconData statusIcon;
+                      String statusText;
+                      String subtitle;
 
-                    if (status == 'pending') {
-                      statusColor = const Color(0xFFE6A23C);
-                      statusIcon = Icons.schedule;
-                      statusText = '审核中';
-                      subtitle = '等待管理员审核';
-                    } else if (status == 'approved') {
-                      statusColor = const Color(0xFF67C23A);
-                      statusIcon = Icons.check_circle;
-                      statusText = '已到账';
-                      subtitle = '充值成功';
-                    } else {
-                      statusColor = const Color(0xFFF56C6C);
-                      statusIcon = Icons.cancel;
-                      statusText = '已拒绝';
-                      subtitle = remark.isNotEmpty ? remark : '充值被拒绝';
-                    }
+                      if (status == 'pending') {
+                        statusColor = const Color(0xFFE6A23C);
+                        statusIcon = Icons.schedule;
+                        statusText = _walletText(
+                          context,
+                          zhCN: '审核中',
+                          zhTW: '審核中',
+                          en: 'Pending',
+                        );
+                        subtitle = _walletText(
+                          context,
+                          zhCN: '等待管理员审核',
+                          zhTW: '等待管理員審核',
+                          en: 'Waiting for admin review',
+                        );
+                      } else if (status == 'approved') {
+                        statusColor = const Color(0xFF67C23A);
+                        statusIcon = Icons.check_circle;
+                        statusText = _walletText(
+                          context,
+                          zhCN: '已到账',
+                          zhTW: '已到帳',
+                          en: 'Completed',
+                        );
+                        subtitle = _walletText(
+                          context,
+                          zhCN: '充值成功',
+                          zhTW: '充值成功',
+                          en: 'Top-up completed',
+                        );
+                      } else {
+                        statusColor = const Color(0xFFF56C6C);
+                        statusIcon = Icons.cancel;
+                        statusText = _walletText(
+                          context,
+                          zhCN: '已拒绝',
+                          zhTW: '已拒絕',
+                          en: 'Rejected',
+                        );
+                        subtitle = remark.isNotEmpty
+                            ? remark
+                            : _walletText(
+                                context,
+                                zhCN: '充值被拒绝',
+                                zhTW: '充值被拒絕',
+                                en: 'Top-up rejected',
+                              );
+                      }
 
-                    final orderId = _getOrderId(o);
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                      child: Dismissible(
-                        key: ValueKey('order_$orderId'),
-                        direction: DismissDirection.endToStart,
-                        movementDuration: const Duration(milliseconds: 200),
-                        resizeDuration: const Duration(milliseconds: 250),
-                        dismissThresholds: const {
-                          DismissDirection.endToStart: 0.3,
-                        },
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 24),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                      final orderId = _getOrderId(o);
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                        child: Dismissible(
+                          key: ValueKey('order_$orderId'),
+                          direction: DismissDirection.endToStart,
+                          movementDuration: const Duration(milliseconds: 200),
+                          resizeDuration: const Duration(milliseconds: 250),
+                          dismissThresholds: const {
+                            DismissDirection.endToStart: 0.3,
+                          },
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 24),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.delete_outline,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                '删除',
-                                style: TextStyle(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
                                   color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        onDismissed: (_) => _dismissOrder(orderId),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF2C2C2E)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  statusIcon,
-                                  color: statusColor,
                                   size: 20,
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '$method · ¥${amount.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      subtitle,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark
-                                            ? Colors.white38
-                                            : Colors.grey,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  statusText,
+                                SizedBox(width: 4),
+                                Text(
+                                  _walletText(
+                                    context,
+                                    zhCN: '删除',
+                                    zhTW: '刪除',
+                                    en: 'Delete',
+                                  ),
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: statusColor,
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          ),
+                          onDismissed: (_) => _dismissOrder(orderId),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardFor(context),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    statusIcon,
+                                    color: statusColor,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '$method · $currency${amount.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color:
+                                              AppColors.textPrimaryFor(context),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        subtitle,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textTertiaryFor(
+                                              context),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }),
+                      );
+                    }),
 
               const SizedBox(height: 20),
 
@@ -485,7 +606,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        color: AppColors.cardFor(context),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -501,8 +622,25 @@ class _WalletPageState extends ConsumerState<WalletPage> {
           _buildSettingTile(
             context,
             icon: Icons.lock_outline,
-            title: '支付密码',
-            subtitle: wallet?.hasPayPassword == true ? '已设置' : '未设置',
+            title: _walletText(
+              context,
+              zhCN: '支付密码',
+              zhTW: '支付密碼',
+              en: 'Payment Password',
+            ),
+            subtitle: wallet?.hasPayPassword == true
+                ? _walletText(
+                    context,
+                    zhCN: '已设置',
+                    zhTW: '已設置',
+                    en: 'Set',
+                  )
+                : _walletText(
+                    context,
+                    zhCN: '未设置',
+                    zhTW: '未設置',
+                    en: 'Not Set',
+                  ),
             subtitleColor: wallet?.hasPayPassword == true
                 ? const Color(0xFF34C759)
                 : Colors.orange,
@@ -517,14 +655,19 @@ class _WalletPageState extends ConsumerState<WalletPage> {
             height: 1,
             indent: 56,
             endIndent: 16,
-            color: isDark ? Colors.white10 : Colors.grey[100],
+            color: AppColors.dividerFor(context),
           ),
 
           // 关于钱包
           _buildSettingTile(
             context,
             icon: Icons.info_outline,
-            title: '关于钱包',
+            title: _walletText(
+              context,
+              zhCN: '关于钱包',
+              zhTW: '關於錢包',
+              en: 'About Wallet',
+            ),
             subtitle: '',
             isDark: isDark,
             onTap: () => _showAboutDialog(context, isDark),
@@ -559,10 +702,14 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.emphasisSoftFor(context),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 18, color: AppColors.primary),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: AppColors.linkFor(context),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -570,7 +717,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   title,
                   style: TextStyle(
                     fontSize: 15,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
               ),
@@ -579,9 +726,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   subtitle,
                   style: TextStyle(
                     fontSize: 13,
-                    color:
-                        subtitleColor ??
-                        (isDark ? Colors.white54 : Colors.grey[500]),
+                    color: subtitleColor ?? AppColors.textSecondaryFor(context),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -589,7 +734,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               Icon(
                 Icons.arrow_forward_ios,
                 size: 14,
-                color: isDark ? Colors.white24 : Colors.grey[400],
+                color: AppColors.textTertiaryFor(context),
               ),
             ],
           ),
@@ -636,7 +781,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -646,22 +791,27 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.emphasisSoftFor(context),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
                   Icons.account_balance_wallet,
                   size: 32,
-                  color: AppColors.primary,
+                  color: AppColors.linkFor(context),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                '壹信钱包',
+                _walletText(
+                  context,
+                  zhCN: '通用IM钱包',
+                  zhTW: '通用IM錢包',
+                  en: '通用IM Wallet',
+                ),
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppColors.textPrimaryFor(context),
                 ),
               ),
               const SizedBox(height: 4),
@@ -669,15 +819,20 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 'v1.0.0',
                 style: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white54 : Colors.grey[500],
+                  color: AppColors.textSecondaryFor(context),
                 ),
               ),
               const SizedBox(height: 20),
               Text(
-                '本钱包仅用于应用内虚拟积分收发，不涉及真实资金交易。',
+                _walletText(
+                  context,
+                  zhCN: '本钱包仅用于应用内虚拟积分收发，不涉及真实资金交易。',
+                  zhTW: '本錢包僅用於應用內虛擬積分收發，不涉及真實資金交易。',
+                  en: 'This wallet is only for in-app virtual points and does not involve real-money transactions.',
+                ),
                 style: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
+                  color: AppColors.textSecondaryFor(context),
                   height: 1.5,
                 ),
                 textAlign: TextAlign.center,
@@ -688,16 +843,21 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.primaryFor(context),
+                    foregroundColor: AppColors.onPrimaryFor(context),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    '我知道了',
+                  child: Text(
+                    _walletText(
+                      context,
+                      zhCN: '我知道了',
+                      zhTW: '我知道了',
+                      en: 'Got It',
+                    ),
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),

@@ -1,48 +1,41 @@
 <!-- 快速操作 -->
 <template>
-  <div class="art-card p-5 mb-5 max-sm:mb-4">
-    <h4 class="text-base font-medium mb-4">快速操作</h4>
+  <div class="art-card action-panel">
+    <div class="panel-head">
+      <div>
+        <h4>常用入口</h4>
+        <p>高频配置与运营操作</p>
+      </div>
+    </div>
 
-    <div class="space-y-3">
+    <div class="action-list">
       <RouterLink
         v-for="item in actions"
         :key="item.path"
         :to="item.path"
-        class="flex items-center p-4 rounded-xl hover:bg-g-100 dark:hover:bg-g-800 transition-colors group"
+        class="action-item"
       >
-        <div
-          class="size-10 rounded-lg flex-cc transition-transform group-hover:scale-110"
-          :class="item.bgClass"
-        >
-          <ArtSvgIcon :icon="item.icon" class="text-xl text-white" />
+        <ArtSvgIcon :icon="item.icon" class="action-icon" />
+        <div class="action-copy">
+          <div>{{ item.title }}</div>
+          <p>{{ item.desc }}</p>
         </div>
-        <div class="ml-3 flex-1">
-          <div class="font-medium">{{ item.title }}</div>
-          <p class="text-xs text-g-400 mt-0.5">{{ item.desc }}</p>
-        </div>
-        <ArtSvgIcon icon="ri:arrow-right-s-line" class="text-xl text-g-400" />
+        <ArtSvgIcon icon="ri:arrow-right-s-line" class="action-arrow" />
       </RouterLink>
     </div>
 
-    <!-- 系统信息 -->
-    <div class="mt-6 pt-4 border-t border-g-200 dark:border-g-700">
-      <h5 class="text-sm font-medium text-g-500 mb-3">系统信息</h5>
-      <div class="space-y-2 text-sm">
-        <div class="flex-cb">
-          <span class="text-g-400">系统版本</span>
-          <span class="font-medium">{{ systemVersionText }}</span>
-        </div>
-        <div class="flex-cb">
-          <span class="text-g-400">后端状态</span>
-          <span class="flex items-center gap-1">
-            <span class="size-2 rounded-full bg-green-500"></span>
-            <span class="text-green-500">运行中</span>
-          </span>
-        </div>
-        <div class="flex-cb">
-          <span class="text-g-400">当前时间</span>
-          <span class="font-medium">{{ currentTime }}</span>
-        </div>
+    <div class="system-strip">
+      <div>
+        <span>系统版本</span>
+        <strong>{{ systemVersionText }}</strong>
+      </div>
+      <div>
+        <span>后端状态</span>
+        <strong class="success">运行中</strong>
+      </div>
+      <div>
+        <span>当前时间</span>
+        <strong>{{ currentTime }}</strong>
       </div>
     </div>
   </div>
@@ -56,15 +49,25 @@
       title: '用户管理',
       desc: '查看和管理所有用户',
       icon: 'ri:user-line',
-      path: '/user/list',
-      bgClass: 'bg-primary'
+      path: '/user/list'
     },
     {
       title: '会话管理',
       desc: '管理群组和频道',
       icon: 'ri:chat-3-line',
-      path: '/chat/list',
-      bgClass: 'bg-success'
+      path: '/chat/list'
+    },
+    {
+      title: '系统设置',
+      desc: '基础信息、入口和开关',
+      icon: 'ri:settings-3-line',
+      path: '/system/settings'
+    },
+    {
+      title: '推送配置',
+      desc: '客户端通知与厂商通道',
+      icon: 'ri:notification-3-line',
+      path: '/system/push'
     }
   ]
 
@@ -103,3 +106,121 @@
     onUnmounted(() => clearInterval(timer))
   })
 </script>
+
+<style scoped lang="scss">
+  .action-panel {
+    padding: 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .panel-head {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+
+    h4 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      color: var(--el-text-color-primary);
+    }
+
+    p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .action-list {
+    padding: 6px 0;
+  }
+
+  .action-item {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 9px 18px;
+    color: inherit;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    &:hover {
+      background: var(--el-fill-color-extra-light);
+    }
+  }
+
+  .action-icon {
+    font-size: 17px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .action-copy {
+    min-width: 0;
+
+    div {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    p {
+      margin: 3px 0 0;
+      overflow: hidden;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .action-arrow {
+    color: var(--el-text-color-placeholder);
+  }
+
+  .system-strip {
+    display: grid;
+    grid-template-columns: 1fr;
+    border-top: 1px solid var(--el-border-color-lighter);
+    background: var(--el-fill-color-extra-light);
+
+    > div {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--el-border-color-lighter);
+
+      &:last-child {
+        border-bottom: 0;
+      }
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    strong {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .success {
+      color: var(--el-color-success);
+    }
+  }
+</style>

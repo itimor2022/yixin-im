@@ -1,6 +1,9 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
-import "gaoranim/internal/models"
+import "genericim/internal/models"
 
 func hasEncryptedPayload(payload *models.EncryptedMessagePayload) bool {
 	return payload != nil && payload.Ciphertext != "" && len(payload.Envelopes) > 0

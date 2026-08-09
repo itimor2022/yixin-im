@@ -1,13 +1,47 @@
+// 文件用途：实现 EmojiStorePage 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 EmojiStorePage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lottie/lottie.dart';
-import 'package:universal_io/io.dart';
 
 import '../../../core/constants/emoji_animations.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/sticker_image.dart';
 import '../services/emoji_store_service.dart';
 
+String _emojiStoreText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+Widget _stickerAssetPreview(
+  String file, {
+  BoxFit fit = BoxFit.contain,
+  bool repeat = true,
+}) {
+  return StickerImage(
+    source: file,
+    fit: fit,
+    repeat: repeat,
+    animate: repeat,
+    errorBuilder: (_, __) => const SizedBox.shrink(),
+  );
+}
+
+// 关键声明：emoji store page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class EmojiStorePage extends StatefulWidget {
   final int initialTab;
 
@@ -43,6 +77,7 @@ class _EmojiStorePageState extends State<EmojiStorePage>
         .toList();
   }
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -106,7 +141,16 @@ class _EmojiStorePageState extends State<EmojiStorePage>
     await _loadData();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('自定义表情已保存')),
+      SnackBar(
+        content: Text(
+          _emojiStoreText(
+            context,
+            zhCN: '自定义表情已保存',
+            zhTW: '自訂表情已儲存',
+            en: 'Custom emoji saved',
+          ),
+        ),
+      ),
     );
   }
 
@@ -172,10 +216,19 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                   leading: SizedBox(
                     width: 42,
                     height: 42,
-                    child: Lottie.asset(pack.previewPath, repeat: true),
+                    child: _stickerAssetPreview(pack.previewFile),
                   ),
-                  title: Text(pack.name),
-                  subtitle: Text('${pack.count} 个表情'),
+                  title: Text(
+                    pack.localizedName(AppLocalizations.of(context).language),
+                  ),
+                  subtitle: Text(
+                    _emojiStoreText(
+                      context,
+                      zhCN: '${pack.count} 个表情',
+                      zhTW: '${pack.count} 個表情',
+                      en: '${pack.count} stickers',
+                    ),
+                  ),
                   trailing: IconButton(
                     icon: Icon(
                       _isFavoriteEmoji(pack.previewEmoji)
@@ -191,7 +244,9 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    pack.description,
+                    pack.localizedDescription(
+                      AppLocalizations.of(context).language,
+                    ),
                     style: TextStyle(
                       color: isDark ? Colors.white70 : Colors.black54,
                     ),
@@ -210,10 +265,7 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                     itemCount: pack.stickerFiles.length,
                     itemBuilder: (_, index) {
                       final file = pack.stickerFiles[index];
-                      return Lottie.asset(
-                        EmojiAnimations.getPath(file),
-                        repeat: true,
-                      );
+                      return _stickerAssetPreview(file);
                     },
                   ),
                 ),
@@ -231,7 +283,21 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                         if (!mounted) return;
                         Navigator.of(this.context).pop();
                       },
-                      child: Text(installed ? '移除' : '添加'),
+                      child: Text(
+                        installed
+                            ? _emojiStoreText(
+                                context,
+                                zhCN: '移除',
+                                zhTW: '移除',
+                                en: 'Remove',
+                              )
+                            : _emojiStoreText(
+                                context,
+                                zhCN: '添加',
+                                zhTW: '新增',
+                                en: 'Add',
+                              ),
+                      ),
                     ),
                   ),
                 ),
@@ -262,13 +328,41 @@ class _EmojiStorePageState extends State<EmojiStorePage>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('表情商店'),
+        title: Text(
+          _emojiStoreText(
+            context,
+            zhCN: '表情商店',
+            zhTW: '表情商店',
+            en: 'Sticker Store',
+          ),
+        ),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '商店'),
-            Tab(text: '我的表情'),
-            Tab(text: '制作表情'),
+          tabs: [
+            Tab(
+              text: _emojiStoreText(
+                context,
+                zhCN: '商店',
+                zhTW: '商店',
+                en: 'Store',
+              ),
+            ),
+            Tab(
+              text: _emojiStoreText(
+                context,
+                zhCN: '我的表情',
+                zhTW: '我的表情',
+                en: 'My Stickers',
+              ),
+            ),
+            Tab(
+              text: _emojiStoreText(
+                context,
+                zhCN: '制作表情',
+                zhTW: '製作表情',
+                en: 'Create',
+              ),
+            ),
           ],
         ),
       ),
@@ -294,7 +388,12 @@ class _EmojiStorePageState extends State<EmojiStorePage>
             controller: _searchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: '搜索表情包',
+              hintText: _emojiStoreText(
+                context,
+                zhCN: '搜索表情包',
+                zhTW: '搜尋表情包',
+                en: 'Search sticker packs',
+              ),
               prefixIcon: const Icon(Icons.search),
               isDense: true,
               filled: true,
@@ -322,10 +421,19 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                   leading: SizedBox(
                     width: 40,
                     height: 40,
-                    child: Lottie.asset(pack.previewPath, repeat: true),
+                    child: _stickerAssetPreview(pack.previewFile),
                   ),
-                  title: Text(pack.name),
-                  subtitle: Text('${pack.count} 个表情'),
+                  title: Text(
+                    pack.localizedName(AppLocalizations.of(context).language),
+                  ),
+                  subtitle: Text(
+                    _emojiStoreText(
+                      context,
+                      zhCN: '${pack.count} 个表情',
+                      zhTW: '${pack.count} 個表情',
+                      en: '${pack.count} stickers',
+                    ),
+                  ),
                   trailing: FilledButton.tonal(
                     onPressed: () async {
                       HapticFeedback.selectionClick();
@@ -335,7 +443,21 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                         await _addPack(pack);
                       }
                     },
-                    child: Text(installed ? '已添加' : '添加'),
+                    child: Text(
+                      installed
+                          ? _emojiStoreText(
+                              context,
+                              zhCN: '已添加',
+                              zhTW: '已新增',
+                              en: 'Added',
+                            )
+                          : _emojiStoreText(
+                              context,
+                              zhCN: '添加',
+                              zhTW: '新增',
+                              en: 'Add',
+                            ),
+                    ),
                   ),
                 ),
               );
@@ -348,8 +470,15 @@ class _EmojiStorePageState extends State<EmojiStorePage>
 
   Widget _buildMyPacksTab(bool isDark) {
     if (_installedPacks.isEmpty) {
-      return const Center(
-        child: Text('还没有添加表情包，请到商店添加'),
+      return Center(
+        child: Text(
+          _emojiStoreText(
+            context,
+            zhCN: '还没有添加表情包，请到商店添加',
+            zhTW: '還沒有新增表情包，請到商店新增',
+            en: 'No sticker packs added yet. Open the store to add one.',
+          ),
+        ),
       );
     }
 
@@ -366,10 +495,19 @@ class _EmojiStorePageState extends State<EmojiStorePage>
             leading: SizedBox(
               width: 40,
               height: 40,
-              child: Lottie.asset(pack.previewPath, repeat: true),
+              child: _stickerAssetPreview(pack.previewFile),
             ),
-            title: Text(pack.name),
-            subtitle: const Text('长按右侧拖动可排序'),
+            title: Text(
+              pack.localizedName(AppLocalizations.of(context).language),
+            ),
+            subtitle: Text(
+              _emojiStoreText(
+                context,
+                zhCN: '长按右侧拖动可排序',
+                zhTW: '長按右側拖動可排序',
+                en: 'Long press and drag on the right to reorder',
+              ),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -399,7 +537,14 @@ class _EmojiStorePageState extends State<EmojiStorePage>
               FilledButton.icon(
                 onPressed: _pickCustomEmoji,
                 icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('从相册制作'),
+                label: Text(
+                  _emojiStoreText(
+                    context,
+                    zhCN: '从相册制作',
+                    zhTW: '從相簿製作',
+                    en: 'Create from Album',
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
               OutlinedButton(
@@ -409,21 +554,51 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                     _selectedCustomIds.clear();
                   });
                 },
-                child: Text(_customEditMode ? '完成' : '整理'),
+                child: Text(
+                  _customEditMode
+                      ? _emojiStoreText(
+                          context,
+                          zhCN: '完成',
+                          zhTW: '完成',
+                          en: 'Done',
+                        )
+                      : _emojiStoreText(
+                          context,
+                          zhCN: '整理',
+                          zhTW: '整理',
+                          en: 'Organize',
+                        ),
+                ),
               ),
               const Spacer(),
               if (_customEditMode)
                 TextButton.icon(
                   onPressed: hasSelection ? _deleteSelectedCustom : null,
                   icon: const Icon(Icons.delete_outline),
-                  label: const Text('删除选中'),
+                  label: Text(
+                    _emojiStoreText(
+                      context,
+                      zhCN: '删除选中',
+                      zhTW: '刪除選取',
+                      en: 'Delete Selected',
+                    ),
+                  ),
                 ),
             ],
           ),
         ),
         Expanded(
           child: _customEmojis.isEmpty
-              ? const Center(child: Text('暂无自定义表情'))
+              ? Center(
+                  child: Text(
+                    _emojiStoreText(
+                      context,
+                      zhCN: '暂无自定义表情',
+                      zhTW: '暫無自訂表情',
+                      en: 'No custom emoji yet',
+                    ),
+                  ),
+                )
               : ReorderableListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   itemCount: _customEmojis.length,
@@ -451,50 +626,38 @@ class _EmojiStorePageState extends State<EmojiStorePage>
                             : null,
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: EmojiStoreService.isHttpUrl(item.path)
-                              ? Image.network(
-                                  item.path,
-                                  width: 42,
-                                  height: 42,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) {
-                                    return Container(
-                                      width: 42,
-                                      height: 42,
-                                      color: isDark
-                                          ? Colors.white10
-                                          : Colors.black12,
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                          Icons.broken_image_outlined),
-                                    );
-                                  },
-                                )
-                              : Image.file(
-                                  File(item.path),
-                                  width: 42,
-                                  height: 42,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) {
-                                    return Container(
-                                      width: 42,
-                                      height: 42,
-                                      color: isDark
-                                          ? Colors.white10
-                                          : Colors.black12,
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                          Icons.broken_image_outlined),
-                                    );
-                                  },
-                                ),
+                          child: StickerImage(
+                            source: item.displayPath ?? item.path,
+                            width: 42,
+                            height: 42,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __) {
+                              return Container(
+                                width: 42,
+                                height: 42,
+                                color: isDark ? Colors.white10 : Colors.black12,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.broken_image_outlined),
+                              );
+                            },
+                          ),
                         ),
                         title: Text(
-                          '自定义表情 ${index + 1}',
+                          _emojiStoreText(
+                            context,
+                            zhCN: '自定义表情 ${index + 1}',
+                            zhTW: '自訂表情 ${index + 1}',
+                            en: 'Custom Emoji ${index + 1}',
+                          ),
                           style: const TextStyle(fontSize: 14),
                         ),
                         subtitle: Text(
-                          '长按右侧拖动排序',
+                          _emojiStoreText(
+                            context,
+                            zhCN: '长按右侧拖动排序',
+                            zhTW: '長按右側拖動排序',
+                            en: 'Long press and drag on the right to reorder',
+                          ),
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white54 : Colors.black45,

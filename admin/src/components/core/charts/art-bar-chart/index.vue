@@ -38,6 +38,7 @@
 
   // 判断是否为多数据
   const isMultipleData = computed(() => {
+    // 数字数组表示单系列，对象数组表示带名称和独立配置的多系列。
     return (
       Array.isArray(props.data) &&
       props.data.length > 0 &&
@@ -124,6 +125,7 @@
   } = useChartComponent({
     props,
     checkEmpty: () => {
+      // 单系列或所有系列均为零时进入统一空态，不渲染无信息量的柱体。
       // 检查单数据情况
       if (Array.isArray(props.data) && typeof props.data[0] === 'number') {
         const singleData = props.data as number[]
@@ -181,6 +183,7 @@
             data: item.data,
             color: computedColor,
             barWidth: item.barWidth,
+            // 开启堆叠但未指定分组时统一归入 total，确保系列落在同一堆栈。
             stack: props.stack ? item.stack || 'total' : undefined
           })
         })

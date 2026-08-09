@@ -37,6 +37,7 @@
  */
 import type { Router, RouteLocationNormalized, NavigationGuardNext } from 'vue-router'
 import { nextTick } from 'vue'
+import type { AppRouteRecord } from '@/types/router'
 import NProgress from 'nprogress'
 import { useSettingStore } from '@/store/modules/setting'
 import { useUserStore } from '@/store/modules/user'
@@ -167,10 +168,21 @@ async function handleRouteGuard(
     return
   }
 
+  if (userStore.isLogin && shouldRefreshRequiredMenus()) {
+    routeRegistry?.unregister()
+    routeInitFailed = false
+    routeInitInProgress = false
+    const menuStore = useMenuStore()
+    menuStore.removeAllDynamicRoutes()
+    menuStore.setMenuList([])
+    await handleDynamicRoutes(to, next, router)
+    return
+  }
+
   // 2. 检查路由初始化是否已失败（防止死循环）
   if (routeInitFailed) {
     // 已经失败过，直接放行到错误页面，不再重试
-    if (to.matched.length > 0) {
+    if (hasMatchedRoute(to)) {
       next()
     } else {
       // 未匹配到路由，跳转到 500 页面
@@ -201,20 +213,25 @@ async function handleRouteGuard(
     return
   }
 
-  // 4. 处理根路径重定向
+  // 4. 动态路由已注册但当前解析到了 404，尝试用菜单数据自恢复
+  if (tryRecoverDynamicRoute(to, next, router)) {
+    return
+  }
+
+  // 5. 处理根路径重定向
   if (handleRootPathRedirect(to, next)) {
     return
   }
 
-  // 5. 处理已匹配的路由
-  if (to.matched.length > 0) {
+  // 6. 处理已匹配的路由
+  if (hasMatchedRoute(to)) {
     setWorktab(to)
     setPageTitle(to)
     next()
     return
   }
 
-  // 6. 未匹配到路由，跳转到 404
+  // 7. 未匹配到路由，跳转到 404
   next({ name: 'Exception404' })
 }
 
@@ -247,6 +264,10 @@ function handleLoginStatus(
 function isStaticRoute(path: string): boolean {
   const checkRoute = (routes: any[], targetPath: string): boolean => {
     return routes.some((route) => {
+      if (isNotFoundRouteRecord(route)) {
+        return false
+      }
+
       // 处理动态路由参数匹配
       const routePath = route.path
       const pattern = routePath.replace(/:[^/]+/g, '[^/]+').replace(/\*/g, '.*')
@@ -263,6 +284,94 @@ function isStaticRoute(path: string): boolean {
   }
 
   return checkRoute(staticRoutes, path)
+}
+
+function isNotFoundRouteRecord(route: { name?: unknown; path?: string }): boolean {
+  return route.name === 'Exception404' || !!route.path?.includes(':pathMatch')
+}
+
+function isFallbackNotFoundRoute(route: RouteLocationNormalized): boolean {
+  return route.matched.some((record) => isNotFoundRouteRecord(record))
+}
+
+function hasMatchedRoute(route: RouteLocationNormalized): boolean {
+  return route.matched.length > 0 && !isFallbackNotFoundRoute(route)
+}
+
+function shouldRefreshRequiredMenus(): boolean {
+  const menuStore = useMenuStore()
+  if (!routeRegistry?.isRegistered() || menuStore.menuList.length === 0) {
+    return false
+  }
+
+  return ![
+    '/user-permission/admins',
+    '/user-permission/role-permissions',
+    '/system/push-report',
+    '/system/push-config',
+    '/system/feature-settings',
+    '/system/ai-config',
+    '/system/storage-config',
+    '/system/health',
+    '/system/security',
+    '/system/multi-line-entry'
+  ].every((path) => menuContainsPath(menuStore.menuList, path))
+}
+
+function menuContainsPath(menuList: AppRouteRecord[], targetPath: string): boolean {
+  return menuList.some((item) => {
+    if (item.path === targetPath) {
+      return true
+    }
+    return item.children ? menuContainsPath(item.children, targetPath) : false
+  })
+}
+
+function hasResolvedRoute(router: Router, route: RouteLocationNormalized): boolean {
+  const resolved = router.resolve({
+    path: route.path,
+    query: route.query,
+    hash: route.hash
+  })
+
+  return resolved.matched.length > 0 && !resolved.matched.some(isNotFoundRouteRecord)
+}
+
+function tryRecoverDynamicRoute(
+  to: RouteLocationNormalized,
+  next: NavigationGuardNext,
+  router: Router
+): boolean {
+  if (!userCanRecoverDynamicRoute(to)) {
+    return false
+  }
+
+  const menuStore = useMenuStore()
+  routeRegistry?.register(menuStore.menuList)
+
+  menuStore.clearRemoveRouteFns()
+  menuStore.addRemoveRouteFns(routeRegistry?.getRemoveRouteFns() || [])
+
+  if (!hasResolvedRoute(router, to)) {
+    return false
+  }
+
+  next({
+    path: to.path,
+    query: to.query,
+    hash: to.hash,
+    replace: true
+  })
+  return true
+}
+
+function userCanRecoverDynamicRoute(to: RouteLocationNormalized): boolean {
+  if (!routeRegistry?.isRegistered() || !isFallbackNotFoundRoute(to)) {
+    return false
+  }
+
+  const menuList = useMenuStore().menuList
+  return menuList.length > 0 && RoutePermissionValidator.hasPermission(to.path, menuList)
 }
 
 /**

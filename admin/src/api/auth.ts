@@ -4,6 +4,7 @@
  * 管理员登录、获取用户信息等
  */
 import { adminLogin, getAdminMe, AdminLoginParams, AdminInfo } from './admin'
+import type { AdminRoleKey } from './admin'
 
 /** 登录参数 */
 export interface LoginParams {
@@ -24,6 +25,7 @@ export interface UserInfo {
   nickName: string
   email: string
   avatar: string
+  role: AdminRoleKey
   roles: string[]
   buttons: string[]
 }
@@ -66,6 +68,7 @@ export async function fetchGetUserInfo(): Promise<UserInfo> {
     nickName: admin.nickname,
     email: admin.email,
     avatar: admin.avatar,
+    role: admin.role,
     roles: [getRoleCode(admin.role)],
     buttons: [] // 管理后台暂不使用按钮权限
   }

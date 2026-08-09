@@ -1,35 +1,45 @@
+// 文件用途：定义业务实体的 ORM 字段、关联关系和持久化约束。
+// 核心逻辑：统一描述字段映射、状态值、索引和表名，作为各层共享数据契约。
+
 package models
 
 import (
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
-// User stores basic account information.
+// User
 type User struct {
-	ID            uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
-	UUID          string         `gorm:"type:char(36);uniqueIndex;not null" json:"uuid"`
-	ShortID       *uint64        `gorm:"uniqueIndex" json:"short_id,omitempty"`
-	Username      string         `gorm:"type:varchar(50);uniqueIndex;not null" json:"username"`
-	Password      string         `gorm:"type:varchar(100);not null" json:"-"`
-	Phone         *string        `gorm:"type:varchar(20);uniqueIndex" json:"phone"`
-	Nickname      string         `gorm:"type:varchar(100);not null" json:"nickname"`
-	Avatar        string         `gorm:"type:varchar(500)" json:"avatar"`
-	Bio           string         `gorm:"type:varchar(500)" json:"bio"`
-	EmojiAvatar   string         `gorm:"type:varchar(100)" json:"emoji_avatar"`
-	NicknameColor string         `gorm:"type:varchar(20)" json:"nickname_color"`
-	PremiumType   string         `gorm:"type:varchar(20)" json:"premium_type"`
-	Status        int8           `gorm:"type:tinyint;default:1" json:"status"`
-	BanReason     string         `gorm:"type:varchar(500)" json:"ban_reason"`
-	BannedAt      *time.Time     `gorm:"type:datetime" json:"banned_at"`
-	LastSeen      time.Time      `gorm:"type:datetime" json:"last_seen"`
-	CreatedAt     time.Time      `gorm:"type:datetime;not null" json:"created_at"`
-	UpdatedAt     time.Time      `gorm:"type:datetime;not null" json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                       uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
+	UUID                     string         `gorm:"type:char(36);uniqueIndex;not null" json:"uuid"`
+	ShortID                  *uint64        `gorm:"uniqueIndex" json:"short_id,omitempty"`
+	Username                 string         `gorm:"type:varchar(50);uniqueIndex;not null" json:"username"`
+	Password                 string         `gorm:"type:varchar(100);not null" json:"-"`
+	Phone                    *string        `gorm:"type:varchar(20);uniqueIndex" json:"phone"`
+	Email                    *string        `gorm:"type:varchar(254);uniqueIndex" json:"email"`
+	Nickname                 string         `gorm:"type:varchar(100);not null" json:"nickname"`
+	Avatar                   string         `gorm:"type:varchar(500)" json:"avatar"`
+	Bio                      string         `gorm:"type:varchar(500)" json:"bio"`
+	Gender                   string         `gorm:"type:varchar(16);default:'unknown';index" json:"gender"`
+	RegisterSource           string         `gorm:"type:varchar(16);not null;default:'manual';index" json:"register_source"`
+	CredentialsInitialized   bool           `gorm:"type:tinyint(1);not null;default:1;index" json:"credentials_initialized"`
+	CredentialsInitializedAt *time.Time     `gorm:"type:datetime" json:"credentials_initialized_at,omitempty"`
+	EmojiAvatar              string         `gorm:"type:varchar(500)" json:"emoji_avatar"`
+	NicknameColor            string         `gorm:"type:varchar(20)" json:"nickname_color"`
+	Latitude                 *float64       `gorm:"type:double;index" json:"latitude,omitempty"`
+	Longitude                *float64       `gorm:"type:double;index" json:"longitude,omitempty"`
+	LocationAt               *time.Time     `gorm:"type:datetime;index" json:"location_at,omitempty"`
+	NearbyVisible            bool           `gorm:"type:tinyint(1);default:0;index" json:"nearby_visible"`
+	Status                   int8           `gorm:"type:tinyint;default:1" json:"status"`
+	BanReason                string         `gorm:"type:varchar(500)" json:"ban_reason"`
+	BannedAt                 *time.Time     `gorm:"type:datetime" json:"banned_at"`
+	LastSeen                 time.Time      `gorm:"type:datetime" json:"last_seen"`
+	CreatedAt                time.Time      `gorm:"type:datetime;not null" json:"created_at"`
+	UpdatedAt                time.Time      `gorm:"type:datetime;not null" json:"updated_at"`
+	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 const (
@@ -37,6 +47,11 @@ const (
 	UserStatusNormal   = 1
 	UserStatusPending  = 2
 	UserStatusBanned   = 3
+)
+
+const (
+	UserRegisterSourceManual = "manual"
+	UserRegisterSourceQuick  = "quick"
 )
 
 const UserShortIDBase uint64 = 100000000
@@ -67,7 +82,7 @@ func (User) TableName() string {
 }
 
 func (u *User) SetPassword(password string) error {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
@@ -79,35 +94,58 @@ func (u *User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
 }
 
-// UserDevice stores user login devices.
+// UserDevice
 type UserDevice struct {
-	ID                     uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID                 uint64     `gorm:"index;not null" json:"user_id"`
-	DeviceID               string     `gorm:"type:varchar(100);not null" json:"device_id"`
-	DeviceType             string     `gorm:"type:varchar(20);not null" json:"device_type"`
-	PushChannel            string     `gorm:"type:varchar(20);default:'';index" json:"push_channel"`
-	DeviceName             string     `gorm:"type:varchar(100)" json:"device_name"`
-	PushToken              string     `gorm:"type:varchar(2048)" json:"push_token"`
-	E2EEPublicKey          string     `gorm:"column:e2ee_public_key;type:text" json:"e2ee_public_key"`
-	E2EEPublicKeyAlgo      string     `gorm:"column:e2ee_public_key_algo;type:varchar(64)" json:"e2ee_public_key_algo"`
-	E2EEPublicKeyUpdatedAt *time.Time `gorm:"column:e2ee_public_key_updated_at;type:datetime" json:"e2ee_public_key_updated_at"`
-	IP                     string     `gorm:"type:varchar(50)" json:"ip"`
-	Location               string     `gorm:"type:varchar(100)" json:"location"`
-	LastActive             time.Time  `gorm:"type:datetime" json:"last_active"`
-	CreatedAt              time.Time  `gorm:"type:datetime;not null" json:"created_at"`
+	ID                       uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID                   uint64     `gorm:"index;not null" json:"user_id"`
+	DeviceID                 string     `gorm:"type:varchar(100);not null" json:"device_id"`
+	DeviceType               string     `gorm:"type:varchar(20);not null" json:"device_type"`
+	Brand                    string     `gorm:"type:varchar(50);default:'';index" json:"brand"`
+	Model                    string     `gorm:"type:varchar(100);default:''" json:"model"`
+	PushChannel              string     `gorm:"type:varchar(20);default:'';index" json:"push_channel"`
+	DeviceName               string     `gorm:"type:varchar(100)" json:"device_name"`
+	PushToken                string     `gorm:"type:text" json:"push_token"`
+	PushTokenHash            *string    `gorm:"type:char(64);index" json:"-"`
+	AppVersion               string     `gorm:"type:varchar(50);default:''" json:"app_version"`
+	PushTokenUpdatedAt       *time.Time `gorm:"type:datetime" json:"push_token_updated_at"`
+	E2EEPublicKey            string     `gorm:"column:e2ee_public_key;type:text" json:"e2ee_public_key"`
+	E2EEPublicKeyAlgo        string     `gorm:"column:e2ee_public_key_algo;type:varchar(64)" json:"e2ee_public_key_algo"`
+	E2EEPublicKeyFingerprint string     `gorm:"column:e2ee_public_key_fingerprint;type:char(64);default:'';index" json:"e2ee_public_key_fingerprint"`
+	E2EEKeyVersion           uint64     `gorm:"column:e2ee_key_version;not null;default:0" json:"e2ee_key_version"`
+	E2EEPublicKeyUpdatedAt   *time.Time `gorm:"column:e2ee_public_key_updated_at;type:datetime" json:"e2ee_public_key_updated_at"`
+	IP                       string     `gorm:"type:varchar(50)" json:"ip"`
+	Location                 string     `gorm:"type:varchar(100)" json:"location"`
+	LastActive               time.Time  `gorm:"type:datetime" json:"last_active"`
+	CreatedAt                time.Time  `gorm:"type:datetime;not null" json:"created_at"`
 }
 
 func (UserDevice) TableName() string {
 	return "user_devices"
 }
 
-// PushDeliveryLog records push outcomes for admin diagnostics.
+// QuickRegistration
+type QuickRegistration struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	RequestID  string    `gorm:"type:char(36);uniqueIndex;not null" json:"request_id"`
+	DeviceHash string    `gorm:"type:char(64);index;not null" json:"-"`
+	UserID     uint64    `gorm:"uniqueIndex;not null" json:"user_id"`
+	CreatedAt  time.Time `gorm:"type:datetime;not null" json:"created_at"`
+}
+
+func (QuickRegistration) TableName() string {
+	return "quick_registrations"
+}
+
+// PushDeliveryLog
 type PushDeliveryLog struct {
 	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID     uint64    `gorm:"index;not null" json:"user_id"`
 	DeviceID   uint64    `gorm:"index;not null" json:"device_id"`
 	DeviceKey  string    `gorm:"type:varchar(100);index" json:"device_key"`
 	Channel    string    `gorm:"type:varchar(20);index" json:"channel"`
+	Provider   string    `gorm:"type:varchar(20);index" json:"provider"`
+	Scene      string    `gorm:"type:varchar(50);index" json:"scene"`
+	RequestID  string    `gorm:"type:varchar(100)" json:"request_id"`
 	Success    bool      `gorm:"type:tinyint(1);not null;default:0;index" json:"success"`
 	Error      string    `gorm:"type:varchar(512)" json:"error"`
 	Title      string    `gorm:"type:varchar(120)" json:"title"`
@@ -124,6 +162,7 @@ func (PushDeliveryLog) TableName() string {
 type UserPushSetting struct {
 	ID          uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID      uint64    `gorm:"uniqueIndex;not null" json:"user_id"`
+	Enabled     bool      `gorm:"type:tinyint(1);not null;default:1" json:"enabled"`
 	ShowPreview bool      `gorm:"type:tinyint(1);default:1" json:"show_preview"`
 	CreatedAt   time.Time `gorm:"type:datetime;not null" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"type:datetime;not null" json:"updated_at"`
@@ -163,7 +202,7 @@ func (Contact) TableName() string {
 	return "contacts"
 }
 
-// UserPrivacySetting stores privacy and security options.
+// UserPrivacySetting
 type UserPrivacySetting struct {
 	ID                    uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID                uint64    `gorm:"uniqueIndex;not null" json:"user_id"`
@@ -172,6 +211,8 @@ type UserPrivacySetting struct {
 	GroupInvitePermission string    `gorm:"type:varchar(20);default:'所有人'" json:"group_invite_permission"`
 	AllowPhoneSearch      bool      `gorm:"type:tinyint(1);default:1" json:"allow_phone_search"`
 	AllowShortIDSearch    bool      `gorm:"type:tinyint(1);default:1" json:"allow_short_id_search"`
+	SendReadReceipts      bool      `gorm:"type:tinyint(1);default:1" json:"send_read_receipts"`
+	ShowTypingStatus      bool      `gorm:"type:tinyint(1);default:1" json:"show_typing_status"`
 	DeviceLockEnabled     bool      `gorm:"type:tinyint(1);default:0" json:"device_lock_enabled"`
 	TwoStepEnabled        bool      `gorm:"type:tinyint(1);default:0" json:"two_step_enabled"`
 	TwoStepPasswordHash   string    `gorm:"type:varchar(255)" json:"-"`
@@ -232,7 +273,7 @@ func (UserBlock) TableName() string {
 	return "user_blocks"
 }
 
-// UserSession stores active user sessions.
+// UserSession
 type UserSession struct {
 	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID     uint64    `gorm:"index;not null" json:"user_id"`

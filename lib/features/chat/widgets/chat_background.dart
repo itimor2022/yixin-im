@@ -1,9 +1,12 @@
+// 文件用途：提供 ChatBackgroundWidget 可复用界面组件，服务于聊天与消息。
+// 核心逻辑：根据输入模型和状态渲染 ChatBackgroundWidget，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/theme_provider.dart';
 
+// 关键声明：chat background 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 聊天背景组件
 class ChatBackgroundWidget extends StatelessWidget {
   final ChatBackground background;
@@ -15,6 +18,7 @@ class ChatBackgroundWidget extends StatelessWidget {
     required this.isDark,
   });
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     switch (background.type) {
@@ -31,8 +35,10 @@ class ChatBackgroundWidget extends StatelessWidget {
 
   Widget _buildSolidBackground() {
     return Container(
-      color: background.solidColor ?? 
-          (isDark ? AppColors.darkChatBackground : AppColors.lightChatBackground),
+      color: background.solidColor ??
+          (isDark
+              ? AppColors.darkChatBackground
+              : AppColors.lightChatBackground),
     );
   }
 
@@ -59,30 +65,36 @@ class ChatBackgroundWidget extends StatelessWidget {
             ),
           ),
         ),
+        if (isDark)
+          Positioned.fill(
+            child: Container(
+              color: AppColors.darkChatBackground.withOpacity(0.62),
+            ),
+          ),
       ],
     );
   }
-  
+
   LinearGradient get _defaultGradient => LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: isDark 
-        ? [
-            const Color(0xFF1A1A2E),
-            const Color(0xFF16213E),
-          ]
-        : [
-            const Color(0xFFE8D5E0),
-            const Color(0xFFD4C5E0),
-            const Color(0xFFC5D0E8),
-          ],
-  );
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: isDark
+            ? [
+                const Color(0xFF1A1A2E),
+                const Color(0xFF16213E),
+              ]
+            : [
+                const Color(0xFFE8D5E0),
+                const Color(0xFFD4C5E0),
+                const Color(0xFFC5D0E8),
+              ],
+      );
 
   Widget _buildImageBackground() {
     if (background.imagePath == null) {
       return _buildGradientBackground();
     }
-    
+
     return Stack(
       children: [
         Container(
@@ -111,6 +123,12 @@ class ChatBackgroundWidget extends StatelessWidget {
               ),
             ),
           ),
+        if (isDark)
+          Positioned.fill(
+            child: Container(
+              color: AppColors.darkChatBackground.withOpacity(0.58),
+            ),
+          ),
       ],
     );
   }
@@ -136,6 +154,12 @@ class ChatBackgroundWidget extends StatelessWidget {
             ),
           ),
         ),
+        if (isDark)
+          Positioned.fill(
+            child: Container(
+              color: AppColors.darkChatBackground.withOpacity(0.50),
+            ),
+          ),
       ],
     );
   }
@@ -155,7 +179,7 @@ class ChatBackgroundPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     // TG 风格的背景渐变选项
     final gradientOptions = [
       // 紫粉渐变（默认）
@@ -195,8 +219,10 @@ class ChatBackgroundPicker extends StatelessWidget {
             itemCount: gradientOptions.length,
             itemBuilder: (context, index) {
               final gradient = gradientOptions[index];
-              final isSelected = currentBackground.type == ChatBackgroundType.gradient && index == 0;
-              
+              final isSelected =
+                  currentBackground.type == ChatBackgroundType.gradient &&
+                      index == 0;
+
               return GestureDetector(
                 onTap: () => onSelect(ChatBackground(
                   type: ChatBackgroundType.gradient,
@@ -209,7 +235,8 @@ class ChatBackgroundPicker extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     border: isSelected
-                        ? Border.all(color: AppColors.primary, width: 2.5)
+                        ? Border.all(
+                            color: AppColors.primaryFor(context), width: 2.5)
                         : null,
                     boxShadow: [
                       BoxShadow(
@@ -246,8 +273,8 @@ class ChatBackgroundPicker extends StatelessWidget {
                             child: Container(
                               width: 18,
                               height: 18,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryFor(context),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(

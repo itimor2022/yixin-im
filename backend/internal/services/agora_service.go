@@ -1,10 +1,12 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
 	"fmt"
-	"time"
-
 	rtctokenbuilder2 "github.com/AgoraIO/Tools/DynamicKey/AgoraDynamicKey/go/src/rtctokenbuilder2"
+	"time"
 )
 
 // AgoraService 声网服务
@@ -41,7 +43,6 @@ func (s *AgoraService) GenerateRTCToken(channelName string, uid uint32, role int
 	if !s.IsConfigured() {
 		return "", fmt.Errorf("agora not configured")
 	}
-
 	tokenExpireInSeconds := uint32(s.TokenExpire)
 	privilegeExpireInSeconds := uint32(s.TokenExpire)
 
@@ -58,7 +59,6 @@ func (s *AgoraService) GenerateRTCToken(channelName string, uid uint32, role int
 	if err != nil {
 		return "", fmt.Errorf("生成Token失败: %v", err)
 	}
-
 	return token, nil
 }
 
@@ -67,7 +67,6 @@ func (s *AgoraService) GenerateRTCTokenWithAccount(channelName string, account s
 	if !s.IsConfigured() {
 		return "", fmt.Errorf("agora not configured")
 	}
-
 	tokenExpireInSeconds := uint32(s.TokenExpire)
 	privilegeExpireInSeconds := uint32(s.TokenExpire)
 
@@ -83,7 +82,6 @@ func (s *AgoraService) GenerateRTCTokenWithAccount(channelName string, account s
 	if err != nil {
 		return "", fmt.Errorf("生成Token失败: %v", err)
 	}
-
 	return token, nil
 }
 

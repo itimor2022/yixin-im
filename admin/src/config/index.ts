@@ -38,7 +38,7 @@ import { headerBarConfig } from './modules/headerBar'
 const appConfig: SystemConfig = {
   // 系统信息
   systemInfo: {
-    name: '壹信即时通讯管理后台' // 系统名称
+    name: '通用即时通讯管理后台' // 系统名称
   },
   // 系统主题
   systemThemeStyles: {
@@ -118,13 +118,13 @@ const appConfig: SystemConfig = {
   ],
   // 系统主色
   systemMainColor: [
-    '#5D87FF',
-    '#B48DF3',
-    '#1D84FF',
-    '#60C041',
-    '#38C0FC',
-    '#F9901F',
-    '#FF80C8'
+    '#111827',
+    '#374151',
+    '#52525B',
+    '#2563EB',
+    '#22C55E',
+    '#F59E0B',
+    '#EF4444'
   ] as const,
   // 快速入口配置
   fastEnter: fastEnterConfig,

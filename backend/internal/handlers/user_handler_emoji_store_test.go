@@ -1,3 +1,6 @@
+// 文件用途：验证 user_handler_emoji_store_test.go 对应模块的正常流程、异常处理和回归行为。
+// 核心逻辑：覆盖输入校验、状态变化、错误返回、边界条件和并发幸命。
+
 package handlers
 
 import (
@@ -18,12 +21,10 @@ func TestSanitizeStringList_DedupeTrimClampAndLimit(t *testing.T) {
 		"gamma",
 		"delta",
 	}
-
 	out := sanitizeStringList(input, 3, 5, nil)
 	if len(out) != 3 {
-		t.Fatalf("expected 3 items, got %d (%v)", len(out), out)
+		t.Fatalf("expected 3 items, got %d(%v)", len(out), out)
 	}
-
 	want := []string{"alpha", "beta", "gamma"}
 	for i := range want {
 		if out[i] != want[i] {
@@ -37,10 +38,9 @@ func TestSanitizeStringList_AllowFilter(t *testing.T) {
 	out := sanitizeStringList(input, 10, 64, func(v string) bool {
 		return strings.HasPrefix(v, "emoji:") || strings.HasPrefix(v, "custom:")
 	})
-
 	want := []string{"emoji:😀", "custom:1"}
 	if len(out) != len(want) {
-		t.Fatalf("expected %d items, got %d (%v)", len(want), len(out), out)
+		t.Fatalf("expected %d items, got %d(%v)", len(want), len(out), out)
 	}
 	for i := range want {
 		if out[i] != want[i] {
@@ -78,12 +78,10 @@ func TestSanitizeCustomEmojiList_FiltersAndNormalizes(t *testing.T) {
 			"path": "/tmp/empty-id.png",
 		},
 	}
-
 	out := sanitizeCustomEmojiList(input)
 	if len(out) != 2 {
-		t.Fatalf("expected 2 items, got %d (%v)", len(out), out)
+		t.Fatalf("expected 2 items, got %d(%v)", len(out), out)
 	}
-
 	first := out[0]
 	if first["id"] != "one" {
 		t.Fatalf("first id expected one, got %v", first["id"])
@@ -94,7 +92,6 @@ func TestSanitizeCustomEmojiList_FiltersAndNormalizes(t *testing.T) {
 	if _, ok := first["created_at"].(string); !ok {
 		t.Fatalf("first created_at should be string, got %T", first["created_at"])
 	}
-
 	second := out[1]
 	if second["id"] != "two" {
 		t.Fatalf("second id expected two, got %v", second["id"])
@@ -116,7 +113,6 @@ func TestSanitizeCustomEmojiList_HardLimit(t *testing.T) {
 			"created_at": "2026-04-21T10:30:00Z",
 		})
 	}
-
 	out := sanitizeCustomEmojiList(input)
 	if len(out) != emojiStoreMaxCustomEmojis {
 		t.Fatalf("expected %d items, got %d", emojiStoreMaxCustomEmojis, len(out))
@@ -136,7 +132,6 @@ func TestNormalizeTimeString(t *testing.T) {
 	if valid != "2026-04-21T02:30:00Z" {
 		t.Fatalf("unexpected normalized time: %s", valid)
 	}
-
 	invalid := normalizeTimeString("not-a-time")
 	if invalid == "" {
 		t.Fatalf("invalid time should fallback to current RFC3339 time")
@@ -151,12 +146,10 @@ func TestInterfaceSliceConverters(t *testing.T) {
 		map[string]interface{}{"id": "a"},
 		map[string]interface{}{"id": "b"},
 	}
-
 	ss := interfaceSliceToStringSlice(mixed)
 	if len(ss) != 2 || ss[0] != "one" || ss[1] != "two" {
 		t.Fatalf("unexpected string conversion result: %v", ss)
 	}
-
 	ms := interfaceSliceToMapSlice(mixed)
 	if len(ms) != 2 {
 		t.Fatalf("unexpected map conversion length: %d", len(ms))
@@ -174,7 +167,6 @@ func TestParseRFC3339Time(t *testing.T) {
 	if got := tm.Format(time.RFC3339); got != "2026-04-21T02:30:00Z" {
 		t.Fatalf("unexpected normalized time: %s", got)
 	}
-
 	if _, ok := parseRFC3339Time("bad-time-value"); ok {
 		t.Fatalf("expected parse failure for invalid value")
 	}

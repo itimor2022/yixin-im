@@ -28,9 +28,13 @@ export interface UserTableSearchParams {
   current?: number
   size?: number
   userName?: string
+  searchMode?: 'exact' | 'fuzzy'
   userPhone?: string
   userEmail?: string
   status?: string
+  gender?: 'male' | 'female' | 'unknown' | ''
+  registerSource?: 'manual' | 'quick' | ''
+  credentialsStatus?: 'initialized' | 'pending' | ''
   onlineOnly?: boolean
 }
 
@@ -55,6 +59,8 @@ export interface UserTableListItem {
   userEmail: string
   avatar: string
   userGender: string
+  registerSource: 'manual' | 'quick'
+  credentialsInitialized: boolean
   status: string
   isOnline: boolean
   lastSeen: string
@@ -75,12 +81,16 @@ export interface UserTableListItem {
 
 /** 获取用户列表（兼容 useTable） */
 export async function fetchGetUserList(params: UserTableSearchParams): Promise<UserTableList> {
-  // 转换参数
+  // 在这里集中适配 useTable 的驼峰分页字段与后端 snake_case 协议。
   const searchParams: UserSearchParams = {
     page: params.current || 1,
     page_size: params.size || 20,
     keyword: params.userName || params.userPhone || params.userEmail,
+    search_mode: params.searchMode || 'exact',
     status: params.status,
+    gender: params.gender || undefined,
+    register_source: params.registerSource || undefined,
+    credentials_status: params.credentialsStatus || undefined,
     online_only: params.onlineOnly
   }
 
@@ -98,7 +108,10 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     userPhone: item.phone || '-',
     userEmail: '-', // 后端暂未返回
     avatar: item.avatar || '',
-    userGender: '-',
+    userGender:
+      item.gender === 'male' || item.gender === 'female' ? item.gender : 'unknown',
+    registerSource: item.register_source === 'quick' ? 'quick' : 'manual',
+    credentialsInitialized: item.credentials_initialized !== false,
     status: String(item.status),
     isOnline: item.is_online,
     lastSeen: item.last_seen || '-',
@@ -136,6 +149,7 @@ export interface ChatTableSearchParams {
   size?: number
   keyword?: string
   type?: number
+  status?: number
 }
 
 /** 会话列表响应（兼容 useTable） */
@@ -167,31 +181,21 @@ export interface ChatTableListItem {
   ownerName: string
   ownerAvatar: string
   memberCount: number
-  onlineCount: number
   isPublic: boolean
   status: number
   createTime: string
   members?: ChatMemberInfo[] // 私聊时的参与者
-  // 群组权限
-  canSendMessage: boolean
-  canSendMedia: boolean
-  canSendLinks: boolean
-  canAddMembers: boolean
-  canPinMessages: boolean
-  memberProtection: boolean
-  joinApproval: boolean
-  // 待审核加入申请
-  pendingRequest?: boolean
-  pendingRequestCount?: number
 }
 
 /** 获取会话列表（兼容 useTable） */
 export async function fetchGetChatList(params: ChatTableSearchParams): Promise<ChatTableList> {
+  // 保持页面层只依赖 useTable 数据结构，后端字段映射统一收敛在 API 适配层。
   const searchParams: ChatSearchParams = {
     page: params.current || 1,
     page_size: params.size || 20,
     keyword: params.keyword,
-    type: params.type
+    type: params.type,
+    status: params.status
   }
 
   const response = await getChatList(searchParams)
@@ -209,20 +213,10 @@ export async function fetchGetChatList(params: ChatTableSearchParams): Promise<C
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
-    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
     createTime: item.created_at,
-    members: item.members || [],
-    canSendMessage: item.can_send_message ?? true,
-    canSendMedia: item.can_send_media ?? true,
-    canSendLinks: item.can_send_links ?? true,
-    canAddMembers: item.can_add_members ?? false,
-    canPinMessages: item.can_pin_messages ?? false,
-    memberProtection: item.member_protection ?? false,
-    joinApproval: item.join_approval ?? false,
-    pendingRequest: item.pending_request,
-    pendingRequestCount: item.pending_request_count
+    members: item.members || []
   }))
 
   return {
@@ -238,7 +232,8 @@ export async function fetchGetGroupList(params: ChatTableSearchParams): Promise<
   const searchParams: ChatSearchParams = {
     page: params.current || 1,
     page_size: params.size || 20,
-    keyword: params.keyword
+    keyword: params.keyword,
+    status: params.status
   }
 
   const response = await getGroupList(searchParams)
@@ -255,19 +250,9 @@ export async function fetchGetGroupList(params: ChatTableSearchParams): Promise<
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
-    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
-    createTime: item.created_at,
-    canSendMessage: item.can_send_message ?? true,
-    canSendMedia: item.can_send_media ?? true,
-    canSendLinks: item.can_send_links ?? true,
-    canAddMembers: item.can_add_members ?? false,
-    canPinMessages: item.can_pin_messages ?? false,
-    memberProtection: item.member_protection ?? false,
-    joinApproval: item.join_approval ?? false,
-    pendingRequest: item.pending_request,
-    pendingRequestCount: item.pending_request_count
+    createTime: item.created_at
   }))
 
   return {
@@ -283,7 +268,8 @@ export async function fetchGetChannelList(params: ChatTableSearchParams): Promis
   const searchParams: ChatSearchParams = {
     page: params.current || 1,
     page_size: params.size || 20,
-    keyword: params.keyword
+    keyword: params.keyword,
+    status: params.status
   }
 
   const response = await getChannelList(searchParams)
@@ -300,19 +286,9 @@ export async function fetchGetChannelList(params: ChatTableSearchParams): Promis
     ownerName: item.owner_name || '',
     ownerAvatar: item.owner_avatar || '',
     memberCount: item.member_count,
-    onlineCount: item.online_count || 0,
     isPublic: item.is_public,
     status: item.status,
-    createTime: item.created_at,
-    canSendMessage: item.can_send_message ?? true,
-    canSendMedia: item.can_send_media ?? true,
-    canSendLinks: item.can_send_links ?? true,
-    canAddMembers: item.can_add_members ?? false,
-    canPinMessages: item.can_pin_messages ?? false,
-    memberProtection: item.member_protection ?? false,
-    joinApproval: item.join_approval ?? false,
-    pendingRequest: item.pending_request,
-    pendingRequestCount: item.pending_request_count
+    createTime: item.created_at
   }))
 
   return {
@@ -403,5 +379,50 @@ export async function updateDiscoverItem(id: number, data: DiscoverItemPayload) 
 export async function deleteDiscoverItem(id: number) {
   return request.del({
     url: `/admin/settings/discover-items/${id}`
+  })
+}
+
+export interface DiscoverBanner {
+  id: number
+  title: string
+  image_url: string
+  url: string
+  sort: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DiscoverBannerPayload {
+  title: string
+  image_url: string
+  url?: string
+  sort?: number
+  enabled?: boolean
+}
+
+export async function getDiscoverBanners() {
+  return request.get<DiscoverBanner[]>({
+    url: '/admin/settings/discover-banners'
+  })
+}
+
+export async function createDiscoverBanner(data: DiscoverBannerPayload) {
+  return request.post<DiscoverBanner>({
+    url: '/admin/settings/discover-banners',
+    params: data
+  })
+}
+
+export async function updateDiscoverBanner(id: number, data: DiscoverBannerPayload) {
+  return request.put<DiscoverBanner>({
+    url: `/admin/settings/discover-banners/${id}`,
+    params: data
+  })
+}
+
+export async function deleteDiscoverBanner(id: number) {
+  return request.del({
+    url: `/admin/settings/discover-banners/${id}`
   })
 }

@@ -1,12 +1,13 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
+	"gorm.io/gorm"
 	"regexp"
 	"strings"
-
-	"gaoranim/internal/models"
-
-	"gorm.io/gorm"
+	"genericim/internal/models"
 )
 
 // filterContentWithDB 对文本内容进行违禁词过滤（包级共享，供各 handler 调用）
@@ -21,10 +22,8 @@ func filterContentWithDB(db *gorm.DB, content string) (string, bool) {
 	if len(bannedWords) == 0 {
 		return content, false
 	}
-
 	filtered := content
 	lowerContent := strings.ToLower(content)
-
 	for _, bw := range bannedWords {
 		// 空 Word 会导致 Contains 恒为 true，跳过
 		if strings.TrimSpace(bw.Word) == "" {
@@ -57,6 +56,5 @@ func filterContentWithDB(db *gorm.DB, content string) (string, bool) {
 			// 未知级别同警告处理
 		}
 	}
-
 	return filtered, false
 }

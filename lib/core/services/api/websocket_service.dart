@@ -1,19 +1,39 @@
+// 文件用途：管理 WebSocket 连接、重连、心跳以及实时事件分发。
+// 核心逻辑：维护实时连接、心跳和指数退避重连，把服务端事件去重后分发给聊天、通知和会话同步模块。
 import 'dart:async';
-import 'web_document_stub.dart'
-    if (dart.library.js_interop) 'web_document_web.dart';
 import 'dart:convert';
 import 'dart:math' show Random;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_io/io.dart' show HttpClient, Platform;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../background_service.dart';
+import '../background_keep_alive_policy.dart';
+import '../account_session_coordinator.dart';
+import '../../i18n/app_localizations.dart';
+import '../../utils/platform_utils.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
+import 'endpoint_manager.dart';
+
+String _websocketText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
 
 /// 获取当前设备类型
 String _getDeviceType() {
@@ -26,6 +46,7 @@ String _getDeviceType() {
   return 'unknown';
 }
 
+// 关键声明：WebSocket 服务以连接代际和状态机保护并发连接，旧连接回调不得修改当前连接状态。
 /// WebSocket 消息类型
 class WSMessageType {
   static const String ping = 'ping';
@@ -36,6 +57,8 @@ class WSMessageType {
   static const String typing = 'typing';
   static const String read = 'read';
   static const String readReceipt = 'read_receipt';
+  static const String delivered = 'delivered';
+  static const String messageDelivered = 'message_delivered';
   static const String messageRevoked = 'message_revoked';
   static const String messageEdited = 'message_edited';
   static const String onlineStatus = 'online_status';
@@ -52,14 +75,18 @@ class WSMessageType {
   static const String chatHistoryCleared = 'chat_history_cleared';
   static const String reconnected = 'reconnected'; // 客户端内部事件：重连成功
   static const String forceLogout = 'force_logout'; // 管理员强制下线本设备
+  static const String newDeviceLogin = 'new_device_login';
   // 通话相关
   static const String online = 'online';
   static const String discoverItemsUpdated = 'discover_items_updated';
+  static const String systemSettingsUpdated = 'system_settings_updated';
   static const String incomingCall = 'incoming_call';
   static const String callAccepted = 'call_accepted';
   static const String callRejected = 'call_rejected';
   static const String callEnded = 'call_ended';
   static const String callCancelled = 'call_cancelled';
+  static const String callReleased = 'call_released';
+  static const String callMediaChanged = 'call_media_changed';
   // 群会议相关
   static const String meetingInvite = 'meeting_invite';
   static const String meetingStarted = 'meeting_started';
@@ -73,24 +100,6 @@ class WSMessageType {
   static const String meetingJoinRequest = 'meeting_join_request';
   static const String meetingJoinRequestReviewed =
       'meeting_join_request_reviewed';
-  // ── 会话相关 ──────────────────────────────────────────────────────────
-  static const String newChat = 'new_chat';
-  static const String chatUpdate = 'chat_update';
-  static const String chatDeleted = 'chat_deleted';
-  static const String chatLeft = 'chat_left';
-  static const String chatHidden = 'chat_hidden';
-  static const String userStatus = 'user_status';
-  static const String readSync = 'read_sync';
-  static const String joinApproved = 'join_approved';
-  static const String joinRejected = 'join_rejected';
-  static const String profileUpdated = 'profile_updated';
-  // ── 朋友圈通知 ────────────────────────────────────────────────────────
-  static const String momentLike = 'moment_like';
-  static const String momentComment = 'moment_comment';
-  static const String momentReply = 'moment_reply';
-  // ── 钱包通知 ──────────────────────────────────────────────────────────
-  static const String redPacketClaimed = 'red_packet_claimed';
-  static const String transferAccepted = 'transfer_accepted';
 }
 
 /// WebSocket 消息
@@ -130,6 +139,11 @@ class _StaleConnectionAttempt implements Exception {
 /// WebSocket 连接状态
 enum WSConnectionState { disconnected, connecting, connected, reconnecting }
 
+typedef WebSocketChannelFactory = WebSocketChannel Function(Uri uri);
+typedef WebSocketReadyWaiter = Future<void> Function(
+  WebSocketChannel channel,
+);
+
 /// WebSocket 服务 - 高级连接管理
 ///
 /// 特性:
@@ -138,6 +152,8 @@ enum WSConnectionState { disconnected, connecting, connected, reconnecting }
 /// - 消息队列和自动重发
 /// - 生命周期感知
 /// - 网络状态感知（自动重连）
+///
+/// 此服务只保证连接与事件分发，不保存聊天业务真相；消息缺口最终由 HTTP 增量同步补齐。
 class WebSocketService extends StateNotifier<WSConnectionState>
     with WidgetsBindingObserver {
   WebSocketChannel? _channel;
@@ -155,8 +171,6 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// WS 已断或卡在退避时，任意一次有网能力抖动也应触发补连（防抖合并）。
   Timer? _networkUpReconnectDebounce;
   Timer? _reconnectMonitorTimer;
-  // Web 端 visibilitychange 回调引用（用于 removeEventListener）
-  dynamic _webVisibilityCallback;
 
   int _reconnectAttempts = 0;
   int _reconnectCountdown = 0; // 距下次重连的倒计时（秒）
@@ -164,6 +178,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   int _latencyMs = 0;
   int _pongTimeoutCount = 0;
   int _resumePingTimeoutCount = 0;
+  // 每次建立或强制断开都会推进代次，只有当前代次可以更新连接状态或派发业务事件。
   int _connectionGeneration = 0;
   int _activeConnectionGeneration = 0;
   bool _hasConnectedOnce = false;
@@ -178,11 +193,20 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   DateTime? _lastPingTime;
   DateTime? _lastConnectedAt;
   DateTime? _lastForceReconnectAt;
+  DateTime? _enteredBackgroundAt;
+  DateTime? _lastBackgroundPingAt;
+  DateTime? _lastBackgroundReconnectAt;
   String? _token;
   String? _deviceType;
   VoidCallback? _removeBackgroundKeepAliveHandler;
+  int _backgroundFastReconnects = 0;
   // 使用 Completer 防止并发连接
   Completer<void>? _connectCompleter;
+  // 强制重连断开旧传输期间，阻止认证监听并发创建新连接。
+  Completer<void>? _reconnectTransitionCompleter;
+
+  final WebSocketChannelFactory _channelFactory;
+  final WebSocketReadyWaiter _readyWaiter;
 
   // 网络状态监听
   final Connectivity _connectivity = Connectivity();
@@ -191,7 +215,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   final Map<String, List<Function(dynamic)>> _handlers = {};
   // 消息流控制器
   final _messageController = StreamController<WSMessage>.broadcast();
-  // 消息队列：断线时缓存待发送消息，重连后自动发送
+  // 消息队列：仅缓存可丢弃的实时控制消息；业务消息可靠发送仍由 HTTP/离线队列负责。
+  // 断线时缓存待发送消息，重连后自动发送
   final List<WSMessage> _messageQueue = [];
   final Set<String> _subscribedChatIds = {};
   final Map<String, (String, Function(dynamic))> _handlerIdMap = {};
@@ -206,6 +231,55 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   bool _isWithinWindow(DateTime? time, Duration window) {
     if (time == null) return false;
     return DateTime.now().difference(time) < window;
+  }
+
+  BackgroundKeepAliveProfile get _keepAliveProfile =>
+      BackgroundKeepAlivePolicyStore.instance.profile;
+
+  bool get _isInBackground => _enteredBackgroundAt != null;
+
+  Duration get _backgroundElapsed {
+    final entered = _enteredBackgroundAt;
+    if (entered == null) return Duration.zero;
+    return DateTime.now().difference(entered);
+  }
+
+  bool get _isLongBackground =>
+      _isInBackground &&
+      _backgroundElapsed >= _keepAliveProfile.shortBackgroundWindow;
+
+  Duration get _effectiveBackgroundPingInterval {
+    final profile = _keepAliveProfile;
+    return _isLongBackground
+        ? profile.longBackgroundPingInterval
+        : profile.backgroundPingInterval;
+  }
+
+  Duration get _backgroundReconnectCooldown {
+    if (!_isInBackground) return Duration.zero;
+    final profile = _keepAliveProfile;
+    if (_isLongBackground ||
+        _backgroundFastReconnects >= profile.maxBackgroundFastReconnects) {
+      return profile.longBackgroundReconnectMinInterval;
+    }
+    return profile.backgroundReconnectMinInterval;
+  }
+
+  bool _markBackgroundReconnectAllowed(String reason) {
+    if (!_isInBackground) return true;
+    final cooldown = _backgroundReconnectCooldown;
+    final now = DateTime.now();
+    final last = _lastBackgroundReconnectAt;
+    if (last != null && now.difference(last) < cooldown) {
+      debugPrint(
+        '[WS] Background reconnect skipped ($reason), cooldown=${cooldown.inSeconds}s',
+      );
+      return false;
+    }
+
+    _lastBackgroundReconnectAt = now;
+    _backgroundFastReconnects++;
+    return true;
   }
 
   bool _shouldThrottleForceReconnect({
@@ -230,17 +304,17 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     if (_isDisposed || _token == null) return;
 
     if (_connectCompleter != null) {
-      if (kDebugMode) debugPrint('[WS] Skip force reconnect ($reason), connect in progress');
+      debugPrint('[WS] Skip force reconnect ($reason), connect in progress');
       return;
     }
 
     if (_shouldThrottleForceReconnect(minInterval: minInterval)) {
-      if (kDebugMode) debugPrint('[WS] Skip force reconnect ($reason), within cooldown');
+      debugPrint('[WS] Skip force reconnect ($reason), within cooldown');
       return;
     }
 
     _lastForceReconnectAt = DateTime.now();
-    if (kDebugMode) debugPrint('[WS] Force reconnect: $reason');
+    debugPrint('[WS] Force reconnect: $reason');
     await _triggerForceReconnect();
   }
 
@@ -250,78 +324,106 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 当前重连次数（供 UI 展示）
   int get reconnectAttempts => _reconnectAttempts;
 
+  Future<bool> ensureConnectedForRealtime({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (_isDisposed) return false;
+    if (state == WSConnectionState.connected) return true;
+
+    final token = _token;
+    if (token == null || token.isEmpty) return false;
+
+    if (_connectCompleter == null) {
+      if (state == WSConnectionState.disconnected) {
+        unawaited(connect(token, deviceType: _deviceType));
+      } else if (state == WSConnectionState.reconnecting) {
+        _cancelReconnectSchedule();
+        _reconnectAttempts = 0;
+        unawaited(
+          connect(token, deviceType: _deviceType, isReconnectAttempt: true),
+        );
+      }
+    }
+
+    final deadline = DateTime.now().add(timeout);
+    while (!_isDisposed && DateTime.now().isBefore(deadline)) {
+      if (state == WSConnectionState.connected) return true;
+      await Future.delayed(const Duration(milliseconds: 120));
+      if (_connectCompleter == null &&
+          state == WSConnectionState.reconnecting &&
+          _reconnectTimer != null) {
+        _cancelReconnectSchedule();
+        _reconnectAttempts = 0;
+        unawaited(
+          connect(token, deviceType: _deviceType, isReconnectAttempt: true),
+        );
+      }
+    }
+    return state == WSConnectionState.connected;
+  }
+
   /// 连接状态描述文字（供 UI 直接使用）
   String get connectionStatusMessage {
     switch (state) {
       case WSConnectionState.disconnected:
-        return '网络连接已断开';
+        return _websocketText(
+          zhCN: '网络连接已断开',
+          zhTW: '網路連線已中斷',
+          en: 'Network connection lost',
+        );
       case WSConnectionState.connecting:
-        return '正在连接...';
+        return _websocketText(
+          zhCN: '正在连接...',
+          zhTW: '正在連線...',
+          en: 'Connecting...',
+        );
       case WSConnectionState.reconnecting:
         if (!_isNetworkAvailable) {
           return _reconnectCountdown > 0
-              ? '网络不可用，$_reconnectCountdown 秒后重试（第 $_reconnectAttempts 次）'
-              : '网络不可用，正在重试...';
+              ? _websocketText(
+                  zhCN:
+                      '网络不可用，$_reconnectCountdown 秒后重试（第 $_reconnectAttempts 次）',
+                  zhTW:
+                      '網路不可用，$_reconnectCountdown 秒後重試（第 $_reconnectAttempts 次）',
+                  en: 'Network unavailable. Retrying in $_reconnectCountdown s (attempt $_reconnectAttempts)',
+                )
+              : _websocketText(
+                  zhCN: '网络不可用，正在重试...',
+                  zhTW: '網路不可用，正在重試...',
+                  en: 'Network unavailable. Retrying...',
+                );
         }
         return _reconnectCountdown > 0
-            ? '连接中断，$_reconnectCountdown 秒后重试（第 $_reconnectAttempts 次）'
-            : '正在重连...';
+            ? _websocketText(
+                zhCN: '连接中断，$_reconnectCountdown 秒后重试（第 $_reconnectAttempts 次）',
+                zhTW: '連線中斷，$_reconnectCountdown 秒後重試（第 $_reconnectAttempts 次）',
+                en: 'Connection interrupted. Retrying in $_reconnectCountdown s (attempt $_reconnectAttempts)',
+              )
+            : _websocketText(
+                zhCN: '正在重连...',
+                zhTW: '正在重新連線...',
+                en: 'Reconnecting...',
+              );
       case WSConnectionState.connected:
-        return '已连接';
+        return _websocketText(
+          zhCN: '已连接',
+          zhTW: '已連線',
+          en: 'Connected',
+        );
     }
   }
 
-  WebSocketService() : super(WSConnectionState.disconnected) {
+  WebSocketService({
+    WebSocketChannelFactory? channelFactory,
+    WebSocketReadyWaiter? readyWaiter,
+  })  : _channelFactory = channelFactory ?? WebSocketChannel.connect,
+        _readyWaiter = readyWaiter ?? ((channel) => channel.ready),
+        super(WSConnectionState.disconnected) {
     WidgetsBinding.instance.addObserver(this);
     _setupNetworkListener();
     if (!kIsWeb && Platform.isAndroid) {
       _removeBackgroundKeepAliveHandler = BackgroundService.instance
           .addKeepAliveHandler(_onBackgroundKeepAlive);
-    }
-    // Web 端：监听 document.visibilitychange 补偿 AppLifecycle 不可靠问题
-    if (kIsWeb) {
-      _setupWebVisibilityListener();
-    }
-  }
-
-  /// Web 端页面可见性监听（补偿 AppLifecycleState 在浏览器中不可靠的问题）
-  ///
-  /// 切换 Tab / 最小化浏览器 → hidden；回到页面 → visible
-  /// visible 时触发重连检查和心跳恢复，与原生 resumed 逻辑保持一致
-  void _setupWebVisibilityListener() {
-    // 使用 dart:js_interop 注册 visibilitychange 事件
-    // 避免引入 dart:html，与项目已有的 package:web 迁移方向一致
-    try {
-      _webVisibilityCallback = (dynamic _) {
-        _onWebVisibilityChanged();
-      };
-      webAddEventListener('visibilitychange', _webVisibilityCallback);
-      if (kDebugMode) debugPrint('[WS] Web visibilitychange listener registered');
-    } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Failed to register visibilitychange: $e');
-    }
-  }
-
-  /// 页面可见性变化处理
-  void _onWebVisibilityChanged() {
-    if (_isDisposed || _token == null) return;
-    try {
-      final hidden = webDocumentHidden();
-      if (kDebugMode) debugPrint('[WS] Web visibility changed: hidden=$hidden');
-      if (!hidden) {
-        // 页面重新可见：等同于 resumed，检查连接并恢复心跳
-        if (kDebugMode) debugPrint('[WS] Web page visible again, checking connection...');
-        _checkAndReconnect();
-        unawaited(_nudgeReconnectIfConnectivityOnline());
-      } else {
-        // 页面隐藏：等同于 paused，切换为低频心跳
-        _startBackgroundPing();
-        if (state == WSConnectionState.connected) {
-          _lastPongTime = DateTime.now();
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[WS] visibilitychange handler error: $e');
     }
   }
 
@@ -334,7 +436,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       _isNetworkAvailable =
           results.isNotEmpty && !results.contains(ConnectivityResult.none);
 
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] Network status: available=$_isNetworkAvailable (was=$wasAvailable), results=$results',
       );
 
@@ -342,7 +444,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
       if (!_isNetworkAvailable) {
         if (_hasConnectedOnce && state != WSConnectionState.connecting) {
-          if (kDebugMode) debugPrint('[WS] Network lost, entering reconnect mode...');
+          debugPrint('[WS] Network lost, entering reconnect mode...');
           unawaited(_enterReconnectMode());
         }
         return;
@@ -350,7 +452,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
       // 明确从无网恢复：立刻换新连接
       if (!wasAvailable) {
-        if (kDebugMode) debugPrint('[WS] Network restored from offline, force reconnect...');
+        debugPrint('[WS] Network restored from offline, force reconnect...');
         _networkUpReconnectDebounce?.cancel();
         _networkUpReconnectDebounce = null;
         _reconnectAttempts = 0;
@@ -385,13 +487,13 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       }
 
       if (_connectCompleter != null) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Connectivity event while WS offline -> connect already in progress, skip',
         );
         return;
       }
 
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] Connectivity event while WS offline -> debounced force reconnect',
       );
       _reconnectAttempts = 0;
@@ -427,12 +529,12 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       if (_isDisposed || _token == null || !_isNetworkAvailable) return;
 
       if (state == WSConnectionState.connected) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Connectivity changed while connected, verify + resume ping',
         );
         unawaited(_verifyTransportAfterConnectivityChange());
       } else if (state == WSConnectionState.disconnected) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Connectivity event while disconnected, retrying connect',
         );
         _reconnectAttempts = 0;
@@ -455,7 +557,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     if (_isDisposed || state != WSConnectionState.connected) return;
 
     if (!ok) {
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] API host unreachable while WS still connected -> force reconnect',
       );
       await _forceReconnectIfAllowed(
@@ -478,7 +580,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       await res.drain();
       return true;
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] quick API probe failed: $e');
+      debugPrint('[WS] quick API probe failed: $e');
       return false;
     } finally {
       client?.close(force: true);
@@ -519,7 +621,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     try {
       await channel.sink.close().timeout(const Duration(seconds: 2));
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Error closing channel: $e');
+      debugPrint('[WS] Error closing channel: $e');
     }
   }
 
@@ -540,13 +642,32 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 确保新的重连尝试不会被旧连接回调污染。
   Future<void> _triggerForceReconnect() async {
     if (_isDisposed) return;
-    _invalidateActiveConnection();
-    final token = _token;
+
+    final activeTransition = _reconnectTransitionCompleter;
+    if (activeTransition != null) {
+      await activeTransition.future;
+      return;
+    }
+
+    final transition = Completer<void>();
+    _reconnectTransitionCompleter = transition;
     final deviceType = _deviceType;
-    state = WSConnectionState.reconnecting;
-    await _disconnectInternal(preserveRecoveringState: true);
+    try {
+      _invalidateActiveConnection();
+      state = WSConnectionState.reconnecting;
+      await _disconnectInternal(preserveRecoveringState: true);
+    } finally {
+      if (_reconnectTransitionCompleter == transition) {
+        _reconnectTransitionCompleter = null;
+      }
+      if (!transition.isCompleted) {
+        transition.complete();
+      }
+    }
+
     _reconnectAttempts = 0;
-    if (token != null) {
+    final token = _token;
+    if (!_isDisposed && token != null) {
       await connect(token, deviceType: deviceType, isReconnectAttempt: true);
     }
   }
@@ -568,9 +689,16 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 应用生命周期变化
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (kDebugMode) debugPrint('[WS] App lifecycle changed: $lifecycleState');
+    debugPrint('[WS] App lifecycle changed: $lifecycleState');
 
     if (lifecycleState == AppLifecycleState.resumed) {
+      _enteredBackgroundAt = null;
+      _lastBackgroundPingAt = null;
+      _lastBackgroundReconnectAt = null;
+      _backgroundFastReconnects = 0;
+      unawaited(BackgroundKeepAlivePolicyStore.instance.load().then((mode) {
+        BackgroundService.instance.applyPolicy(mode);
+      }));
       if (state == WSConnectionState.connected) {
         _startPing();
       }
@@ -578,6 +706,18 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       unawaited(_nudgeReconnectIfConnectivityOnline());
     } else if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden) {
+      _enteredBackgroundAt ??= DateTime.now();
+      if (!kIsWeb && Platform.isIOS) {
+        _pingTimer?.cancel();
+        _pingTimer = null;
+        _pongTimeoutTimer?.cancel();
+        _pongTimeoutTimer = null;
+        debugPrint('[WS] iOS background: pause websocket heartbeat');
+        return;
+      }
+      BackgroundService.instance.applyPolicy(
+        BackgroundKeepAlivePolicyStore.instance.mode,
+      );
       _startBackgroundPing();
       if (state == WSConnectionState.connected) {
         _lastPongTime = DateTime.now();
@@ -594,7 +734,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     }
 
     if (state == WSConnectionState.disconnected) {
-      if (kDebugMode) debugPrint('[WS] Reconnecting after resume...');
+      debugPrint('[WS] Reconnecting after resume...');
       _reconnectAttempts = 0;
       unawaited(
         connect(_token!, deviceType: _deviceType, isReconnectAttempt: true),
@@ -613,7 +753,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
           results.isNotEmpty && !results.contains(ConnectivityResult.none);
       if (!ok) return;
       if (state == WSConnectionState.disconnected) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Resume snapshot: online but WS disconnected -> reconnect',
         );
         _reconnectTimer?.cancel();
@@ -626,7 +766,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       } else if (state == WSConnectionState.reconnecting &&
           _reconnectTimer == null &&
           _connectCompleter == null) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Resume snapshot: reconnecting without active timer -> retry connect',
         );
         _reconnectAttempts = 0;
@@ -637,7 +777,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         );
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] checkConnectivity on resume failed: $e');
+      debugPrint('[WS] checkConnectivity on resume failed: $e');
     }
   }
 
@@ -648,7 +788,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         _lastPingTime != null &&
         DateTime.now().difference(_lastPingTime!) <
             const Duration(seconds: 8)) {
-      if (kDebugMode) debugPrint('[WS] Resume ping skipped, ping already in flight');
+      debugPrint('[WS] Resume ping skipped, ping already in flight');
       return;
     }
 
@@ -675,7 +815,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     _resumePingTimeoutCount++;
     if (_resumePingTimeoutCount == 1) {
-      if (kDebugMode) debugPrint('[WS] Resume ping timed out once, retrying before reconnect');
+      debugPrint('[WS] Resume ping timed out once, retrying before reconnect');
 
       final apiReachable = kIsWeb ? true : await _quickProbeApiReachable();
       if (_isDisposed ||
@@ -705,7 +845,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       return;
     }
 
-    if (kDebugMode) debugPrint('[WS] Resume ping timed out twice, reconnecting');
+    debugPrint('[WS] Resume ping timed out twice, reconnecting');
     _resumePingTimeoutCount = 0;
     await _forceReconnectIfAllowed('resume ping timed out twice');
   }
@@ -721,10 +861,10 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       if (_isDisposed) return;
       if (_waitingForPong) {
         _pongTimeoutCount++;
-        if (kDebugMode) debugPrint('[WS] Pong timeout (count: $_pongTimeoutCount/3)');
+        debugPrint('[WS] Pong timeout (count: $_pongTimeoutCount/3)');
 
         if (_pongTimeoutCount >= 3) {
-          if (kDebugMode) debugPrint('[WS] Too many pong timeouts, reconnecting...');
+          debugPrint('[WS] Too many pong timeouts, reconnecting...');
           _pongTimeoutCount = 0;
           unawaited(_forceReconnectIfAllowed('pong timeout limit reached'));
         }
@@ -735,7 +875,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// HTTP 层刷新 JWT 后调用：WS URL 里的 token 必须同步，否则服务端可能仍校验旧 JWT 导致收不到推送。
   void applyRefreshedHttpToken(String token) {
     if (_isDisposed || token.isEmpty) return;
-    if (kDebugMode) debugPrint('[WS] applyRefreshedHttpToken -> force reconnect');
+    debugPrint('[WS] applyRefreshedHttpToken -> force reconnect');
     _token = token;
     _reconnectAttempts = 0;
     unawaited(_triggerForceReconnect());
@@ -744,15 +884,43 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 后台模式下的心跳（更频繁）
   void _startBackgroundPing() {
     _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    final tickInterval = _keepAliveProfile.backgroundPingInterval;
+    _pingTimer = Timer.periodic(tickInterval, (_) {
       if (_isDisposed) {
         _pingTimer?.cancel();
         return;
       }
-      if (state == WSConnectionState.connected) {
-        send(WSMessage(type: WSMessageType.ping));
-      }
+      _maybeSendBackgroundPing('background timer');
     });
+  }
+
+  void _maybeSendBackgroundPing(String reason) {
+    if (_isDisposed || state != WSConnectionState.connected) return;
+
+    final now = DateTime.now();
+    final interval = _effectiveBackgroundPingInterval;
+    final lastPing = _lastBackgroundPingAt;
+    if (lastPing != null && now.difference(lastPing) < interval) {
+      return;
+    }
+
+    _lastBackgroundPingAt = now;
+    debugPrint(
+      '[WS] Background ping ($reason), interval=${interval.inSeconds}s, '
+      'elapsed=${_backgroundElapsed.inSeconds}s',
+    );
+    _sendPingWithTimeout();
+  }
+
+  Future<void> _forceBackgroundReconnect(String reason) async {
+    final minInterval = _backgroundReconnectCooldown;
+    if (!_markBackgroundReconnectAllowed(reason)) return;
+    await _forceReconnectIfAllowed(
+      reason,
+      minInterval: minInterval == Duration.zero
+          ? const Duration(seconds: 12)
+          : minInterval,
+    );
   }
 
   Future<void> _onBackgroundKeepAlive() async {
@@ -767,33 +935,37 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
         if (_waitingForPong &&
             lastPing != null &&
-            now.difference(lastPing).inSeconds > 20) {
-          if (kDebugMode) debugPrint('[WS] Background keepAlive: pong timeout, reconnecting');
+            now.difference(lastPing) > _keepAliveProfile.pongTimeoutThreshold) {
+          debugPrint('[WS] Background keepAlive: pong timeout, reconnecting');
           _pongTimeoutCount = 0;
-          await _forceReconnectIfAllowed('background keepalive pong timeout');
+          await _forceBackgroundReconnect('background keepalive pong timeout');
           return;
         }
 
-        if (lastPong != null && now.difference(lastPong).inSeconds > 45) {
-          if (kDebugMode) debugPrint(
+        final staleThreshold = _isLongBackground
+            ? _keepAliveProfile.longBackgroundStaleTransportThreshold
+            : _keepAliveProfile.staleTransportThreshold;
+        if (lastPong != null && now.difference(lastPong) > staleThreshold) {
+          debugPrint(
             '[WS] Background keepAlive: stale connection, reconnecting',
           );
-          await _forceReconnectIfAllowed(
+          await _forceBackgroundReconnect(
             'background keepalive stale transport',
           );
           return;
         }
 
         if (!_waitingForPong) {
-          if (kDebugMode) debugPrint('[WS] Background keepAlive: ping');
-          _sendPingWithTimeout();
+          _maybeSendBackgroundPing('foreground service keepAlive');
         }
         return;
       }
 
       if (state == WSConnectionState.disconnected) {
-        if (kDebugMode) debugPrint('[WS] Background keepAlive: disconnected, reconnecting');
-        _reconnectAttempts = 0;
+        if (!_markBackgroundReconnectAllowed('background disconnected')) {
+          return;
+        }
+        debugPrint('[WS] Background keepAlive: disconnected, reconnecting');
         await connect(
           _token!,
           deviceType: _deviceType,
@@ -803,17 +975,15 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       }
 
       if (state == WSConnectionState.reconnecting && _reconnectTimer == null) {
-        if (kDebugMode) debugPrint(
+        debugPrint(
           '[WS] Background keepAlive: reconnect timer missing, retrying',
         );
-        _reconnectAttempts = 0;
-        await _forceReconnectIfAllowed(
+        await _forceBackgroundReconnect(
           'background keepalive missing reconnect timer',
-          minInterval: const Duration(seconds: 5),
         );
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Background keepAlive error: $e');
+      debugPrint('[WS] Background keepAlive error: $e');
     } finally {
       _handlingBackgroundKeepAlive = false;
     }
@@ -831,21 +1001,31 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   }) async {
     if (_isDisposed) return;
 
+    final reconnectTransition = _reconnectTransitionCompleter;
+    if (reconnectTransition != null) {
+      debugPrint('[WS] Waiting for force reconnect transition...');
+      await reconnectTransition.future;
+      if (_isDisposed) return;
+      token = _token ?? token;
+      deviceType ??= _deviceType;
+    }
+
     deviceType ??= _getDeviceType();
     final effectiveReconnectAttempt =
         isReconnectAttempt || state == WSConnectionState.reconnecting;
-    if (kDebugMode) debugPrint('[WS] connect() called, current state: $state');
+    debugPrint('[WS] connect() called, current state: $state');
 
     _token = token;
     _deviceType = deviceType;
 
+    // 并发调用者复用同一个 Future，避免认证监听、网络监听和生命周期恢复各建一条连接。
     if (_connectCompleter != null) {
-      if (kDebugMode) debugPrint('[WS] Connection in progress, waiting...');
+      debugPrint('[WS] Connection in progress, waiting...');
       return _connectCompleter!.future;
     }
 
     if (state == WSConnectionState.connected && _channel != null) {
-      if (kDebugMode) debugPrint('[WS] Already connected');
+      debugPrint('[WS] Already connected');
       return;
     }
 
@@ -861,6 +1041,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         : WSConnectionState.connecting;
 
     try {
+      // 连接建立期间所有回调都绑定 generation；旧连接晚到的 onDone/onError
+      // 不能覆盖当前连接状态，也不能清空新连接的订阅集合。
       await _doConnect(
         token,
         deviceType,
@@ -875,7 +1057,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         completer.complete();
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Connection error: $e');
+      debugPrint('[WS] Connection error: $e');
       if (_isCurrentConnectionGeneration(generation)) {
         state = effectiveReconnectAttempt
             ? WSConnectionState.reconnecting
@@ -905,21 +1087,21 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     required bool isReconnectAttempt,
   }) async {
     final encodedToken = Uri.encodeQueryComponent(token);
-    final wsUrl =
-        '${ApiConfig.wsUrl}?device_type=$deviceType&token=$encodedToken';
-    if (kDebugMode) debugPrint('[WS] Connecting to: ${ApiConfig.wsUrl}');
+    final endpointWsUrl = ApiConfig.wsUrl;
+    final wsUrl = '$endpointWsUrl?device_type=$deviceType&token=$encodedToken';
+    debugPrint('[WS] Connecting to: $endpointWsUrl');
 
     WebSocketChannel? channel;
     StreamSubscription? subscription;
 
     try {
-      channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      channel = _channelFactory(Uri.parse(wsUrl));
       if (!_isCurrentConnectionGeneration(generation)) {
         throw const _StaleConnectionAttempt();
       }
       _channel = channel;
 
-      await channel.ready.timeout(
+      await _readyWaiter(channel).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
           throw TimeoutException('WebSocket connection timeout');
@@ -958,17 +1140,19 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
       _startPing();
 
-      if (Platform.isAndroid) {
+      if (PlatformUtils.isAndroid) {
         BackgroundService.instance.start();
       }
 
-      if (kDebugMode) debugPrint('[WS] Connected successfully');
+      unawaited(EndpointManager.instance.markWsSuccess(endpointWsUrl));
+      debugPrint('[WS] Connected successfully');
       _networkUpReconnectDebounce?.cancel();
       _networkUpReconnectDebounce = null;
       _flushMessageQueue();
       if (_subscribedChatIds.isNotEmpty) {
-        if (kDebugMode) debugPrint('[WS] Re-subscribing to ${_subscribedChatIds.length} chats');
-        subscribeChats(_subscribedChatIds.toList());
+        // 订阅集合是客户端期望状态；新传输建立后必须重放，服务端不会继承旧连接订阅。
+        debugPrint('[WS] Re-subscribing to ${_subscribedChatIds.length} chats');
+        subscribeChats(_subscribedChatIds.toList(), force: true);
       }
       if (isReconnectAttempt) {
         _hasConnectedOnce = true;
@@ -977,7 +1161,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         _hasConnectedOnce = true;
       }
     } on TimeoutException catch (e) {
-      if (kDebugMode) debugPrint('[WS] Connection timeout: $e');
+      debugPrint('[WS] Connection timeout: $e');
+      await EndpointManager.instance.markWsFailure(endpointWsUrl);
       if (_isCurrentConnectionGeneration(generation)) {
         if (identical(_channel, channel)) {
           _channel = null;
@@ -995,7 +1180,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         await _closeChannel(channel);
         rethrow;
       }
-      if (kDebugMode) debugPrint('[WS] Connection error: $e');
+      debugPrint('[WS] Connection error: $e');
+      await EndpointManager.instance.markWsFailure(endpointWsUrl);
       if (_isCurrentConnectionGeneration(generation)) {
         if (identical(_channel, channel)) {
           _channel = null;
@@ -1049,12 +1235,13 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     _pongTimeoutCount = 0;
     _resumePingTimeoutCount = 0;
 
+    // 必须在第一个 await 之前同时取走旧 subscription 和旧 channel。
+    // 否则并发重连可能在 cancel() 等待期间替换 _channel，导致这里误关新连接。
     final subscription = _subscription;
-    _subscription = null;
-    await subscription?.cancel();
-
     final channel = _channel;
+    _subscription = null;
     _channel = null;
+    await subscription?.cancel();
     await _closeChannel(channel);
 
     if (!_isDisposed) {
@@ -1064,7 +1251,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         state = WSConnectionState.disconnected;
       }
     }
-    if (kDebugMode) debugPrint('[WS] Disconnected (clearToken=$clearToken)');
+    debugPrint('[WS] Disconnected (clearToken=$clearToken)');
   }
 
   /// 取消所有定时器
@@ -1089,6 +1276,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     message = WSMessage(type: message.type, seq: ++_seq, data: message.data);
 
+    // 返回 false 只表示本次没有写入传输层；调用方不能把入队等同于服务端已接收。
     if (state != WSConnectionState.connected) {
       if (queueIfDisconnected &&
           message.type != WSMessageType.ping &&
@@ -1105,11 +1293,11 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   void _enqueueMessage(WSMessage message) {
     if (_messageQueue.length < _maxQueueSize) {
       _messageQueue.add(message);
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] Queued message: ${message.type} (queue: ${_messageQueue.length})',
       );
     } else {
-      if (kDebugMode) debugPrint('[WS] Queue full, dropping: ${message.type}');
+      debugPrint('[WS] Queue full, dropping: ${message.type}');
     }
   }
 
@@ -1117,10 +1305,10 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   bool _sendMessage(WSMessage message) {
     try {
       _channel?.sink.add(message.toJsonString());
-      if (kDebugMode) debugPrint('[WS] Sent: ${message.type}');
+      debugPrint('[WS] Sent: ${message.type}');
       return true;
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Send error: $e');
+      debugPrint('[WS] Send error: $e');
       _enqueueMessage(message);
       return false;
     }
@@ -1129,7 +1317,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 清空消息队列（重连成功后调用）
   void _flushMessageQueue() {
     if (_messageQueue.isEmpty) return;
-    if (kDebugMode) debugPrint('[WS] Flushing ${_messageQueue.length} queued messages');
+    debugPrint('[WS] Flushing ${_messageQueue.length} queued messages');
 
     final messages = List<WSMessage>.from(_messageQueue);
     _messageQueue.clear();
@@ -1145,18 +1333,19 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
   /// 广播重连事件（内部调用，触发增量同步）
   void _dispatchReconnected() {
+    // “已重连”只表示传输恢复，业务层收到事件后仍需按 seq 主动补齐断线窗口。
     if (_handlers.containsKey(WSMessageType.reconnected)) {
       final handlerList = List<Function(dynamic)>.from(
         _handlers[WSMessageType.reconnected]!,
       );
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] Dispatching reconnected to ${handlerList.length} handlers',
       );
       for (final handler in handlerList) {
         try {
           handler({});
         } catch (e) {
-          if (kDebugMode) debugPrint('[WS] Reconnected handler error: $e');
+          debugPrint('[WS] Reconnected handler error: $e');
         }
       }
     }
@@ -1164,16 +1353,27 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
   // 记录已订阅的 chatIds，重连后自动重订阅
   /// 订阅会话
-  void subscribeChats(List<String> chatIds) {
-    _subscribedChatIds.addAll(chatIds);
-    send(WSMessage(type: WSMessageType.subscribe, data: {'chat_ids': chatIds}));
+  void subscribeChats(List<String> chatIds, {bool force = false}) {
+    final nextIds = chatIds
+        .map((id) => id.trim())
+        .where((id) =>
+            id.isNotEmpty && (force || !_subscribedChatIds.contains(id)))
+        .toList();
+    if (nextIds.isEmpty) return;
+
+    _subscribedChatIds.addAll(nextIds);
+    send(WSMessage(type: WSMessageType.subscribe, data: {'chat_ids': nextIds}));
   }
 
   /// 取消订阅会话
   void unsubscribeChats(List<String> chatIds) {
-    _subscribedChatIds.removeAll(chatIds);
+    final nextIds =
+        chatIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toList();
+    if (nextIds.isEmpty) return;
+
+    _subscribedChatIds.removeAll(nextIds);
     send(
-      WSMessage(type: WSMessageType.unsubscribe, data: {'chat_ids': chatIds}),
+      WSMessage(type: WSMessageType.unsubscribe, data: {'chat_ids': nextIds}),
     );
   }
 
@@ -1250,14 +1450,14 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     try {
       if (rawData is! String) {
-        if (kDebugMode) debugPrint('[WS] Ignoring non-string message: ${rawData.runtimeType}');
+        debugPrint('[WS] Ignoring non-string message: ${rawData.runtimeType}');
         return;
       }
 
       final json = jsonDecode(rawData) as Map<String, dynamic>;
       final type = json['type'] as String? ?? '';
 
-      if (kDebugMode) debugPrint('[WS] Received: $type');
+      debugPrint('[WS] Received: $type');
 
       // 构建消息对象
       final message = WSMessage(
@@ -1275,16 +1475,16 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       // 注意：创建副本以防止遍历时被修改导致并发修改异常
       if (_handlers.containsKey(type)) {
         final handlerList = List<Function(dynamic)>.from(_handlers[type]!);
-        if (kDebugMode) debugPrint('[WS] Dispatching $type to ${handlerList.length} handlers');
+        debugPrint('[WS] Dispatching $type to ${handlerList.length} handlers');
         for (final handler in handlerList) {
           try {
             handler(json);
           } catch (e) {
-            if (kDebugMode) debugPrint('[WS] Handler error for $type: $e');
+            debugPrint('[WS] Handler error for $type: $e');
           }
         }
       } else {
-        if (kDebugMode) debugPrint('[WS] No handlers registered for type: $type');
+        debugPrint('[WS] No handlers registered for type: $type');
       }
 
       // 处理 pong
@@ -1299,7 +1499,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         _pongTimeoutTimer?.cancel();
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[WS] Parse error: $e');
+      debugPrint('[WS] Parse error: $e');
     }
   }
 
@@ -1308,7 +1508,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   /// 仅当前有效连接代际可以触发重连；旧连接错误直接丢弃。
   void _onError(dynamic error, int generation) {
     if (!_isCurrentConnectionGeneration(generation)) return;
-    if (kDebugMode) debugPrint('[WS] Connection error: $error');
+    debugPrint('[WS] Connection error: $error');
     if (_isDisposed) return;
     _cancelAllTimers();
     _subscription = null;
@@ -1325,7 +1525,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     // 尝试读取 WebSocket 关闭码与原因，便于排查服务端主动断连
     final closeCode = _channel?.closeCode;
     final closeReason = _channel?.closeReason;
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[WS] Connection closed'
       '${closeCode != null ? ", code=$closeCode" : ""}'
       '${closeReason != null && closeReason.isNotEmpty ? ", reason=$closeReason" : ""}',
@@ -1361,7 +1561,7 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     if (_reconnectTimer != null) return;
 
     if (_reconnectAttempts >= 30) {
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[WS] Max reconnect attempts reached, switching to monitor mode',
       );
       state = WSConnectionState.disconnected;
@@ -1375,12 +1575,26 @@ class WebSocketService extends StateNotifier<WSConnectionState>
 
     final base = (2 << _reconnectAttempts).clamp(2, 60);
     final jitter = Random().nextInt(5);
-    final delaySecs = base + jitter;
+    var delaySecs = base + jitter;
+    if (_isInBackground) {
+      final cooldown = _backgroundReconnectCooldown;
+      final now = DateTime.now();
+      final last = _lastBackgroundReconnectAt;
+      final remaining =
+          last == null ? cooldown : cooldown - now.difference(last);
+      final floor = remaining.isNegative ? cooldown : remaining;
+      if (floor > Duration.zero) {
+        delaySecs = delaySecs.clamp(floor.inSeconds, 300);
+      }
+      _lastBackgroundReconnectAt = now;
+      _backgroundFastReconnects++;
+    }
     _reconnectAttempts++;
 
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[WS] Reconnecting in ${delaySecs}s '
-      '(attempt $_reconnectAttempts, base=${base}s, jitter=+${jitter}s)',
+      '(attempt $_reconnectAttempts, base=${base}s, jitter=+${jitter}s, '
+      'background=${_isInBackground}, longBackground=${_isLongBackground})',
     );
 
     _startCountdown(delaySecs);
@@ -1434,36 +1648,26 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       if (_token != null &&
           (state == WSConnectionState.disconnected ||
               state == WSConnectionState.reconnecting)) {
-        if (kDebugMode) debugPrint('[WS] Reconnect monitor: attempting reconnect...');
+        debugPrint('[WS] Reconnect monitor: attempting reconnect...');
         _reconnectAttempts = 0;
         unawaited(_triggerForceReconnect());
       }
     });
   }
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   @override
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
 
-    if (kDebugMode) debugPrint('[WS] Disposing WebSocket service');
+    debugPrint('[WS] Disposing WebSocket service');
 
     WidgetsBinding.instance.removeObserver(this);
     _removeBackgroundKeepAliveHandler?.call();
     _removeBackgroundKeepAliveHandler = null;
     _networkSubscription?.cancel();
     _networkSubscription = null;
-    // Web 端：清理 visibilitychange 监听
-    if (kIsWeb && _webVisibilityCallback != null) {
-      try {
-        // ignore: undefined_prefixed_name
-        webRemoveEventListener(
-          'visibilitychange',
-          _webVisibilityCallback!,
-        );
-      } catch (_) {}
-      _webVisibilityCallback = null;
-    }
 
     _cancelAllTimers();
     disconnect();
@@ -1483,33 +1687,49 @@ final webSocketServiceProvider =
 
   // 初始检查当前状态
   final initialState = ref.read(authServiceProvider);
-  if (kDebugMode) debugPrint(
+  debugPrint(
     '[WS Provider] Initial auth state: ${initialState.status}, hasToken: ${initialState.token != null}',
   );
 
   if (initialState.status == AuthStatus.authenticated &&
       initialState.token != null) {
     Future.microtask(() {
-      if (kDebugMode) debugPrint('[WS Provider] Initial connect...');
+      if (!ref.read(accountSessionCoordinatorProvider).isActive) return;
+      debugPrint('[WS Provider] Initial connect...');
       ws.connect(initialState.token!);
     });
   }
 
   // 监听后续认证状态变化
   ref.listen<AuthState>(authServiceProvider, (previous, next) {
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[WS Provider] Auth state changed: ${previous?.status} -> ${next.status}',
     );
     if (next.status == AuthStatus.authenticated && next.token != null) {
-      if (ws.connectionState != WSConnectionState.connected &&
-          ws.connectionState != WSConnectionState.connecting) {
-        if (kDebugMode) debugPrint('[WS Provider] Connecting due to auth change...');
-        ws.connect(next.token!);
-      }
+      Future.microtask(() {
+        final session = ref.read(accountSessionCoordinatorProvider);
+        if (!session.isActive) return;
+        if (ws.connectionState != WSConnectionState.connected &&
+            ws.connectionState != WSConnectionState.connecting) {
+          debugPrint('[WS Provider] Connecting due to auth change...');
+          ws.connect(next.token!);
+        }
+      });
     } else if (previous?.status == AuthStatus.authenticated &&
         next.status != AuthStatus.authenticated) {
       // logout 时清除 token，防止 _onDone 用旧 token 重连
       ws.disconnect(clearToken: true);
+    }
+  });
+
+  ref.listen<AccountSessionState>(accountSessionCoordinatorProvider, (
+    previous,
+    next,
+  ) {
+    if (!next.isActive && previous?.isActive == true) {
+      // Publish the account boundary before remote logout. Clearing the token
+      // here prevents the old account from reconnecting during teardown.
+      unawaited(ws.disconnect(clearToken: true));
     }
   });
 

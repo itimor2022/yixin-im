@@ -25,6 +25,7 @@
 
   const { width } = useWindowSize()
   const settingStore = useSettingStore()
+  // 此处只在桌面宽度展示手动选项；移动端布局切换由设置面板的断点逻辑接管。
   const { menuType } = storeToRefs(settingStore)
   const { configOptions } = useSettingsConfig()
   const { switchMenuLayouts } = useSettingsState()

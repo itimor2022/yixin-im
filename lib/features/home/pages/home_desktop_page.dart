@@ -1,6 +1,9 @@
+// 文件用途：实现 SelectedChatInfo 页面及其交互流程，属于应用首页。
+// 核心逻辑：维护 SelectedChatInfo 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
 
 import 'dart:async';
 import '../../../core/theme/app_colors.dart';
@@ -20,6 +23,7 @@ import '../../chat/pages/user_profile_page.dart';
 import '../../chat/pages/channel_profile_page.dart';
 import '../../chat/pages/search_page.dart';
 import '../../contacts/pages/new_contact_page.dart';
+import '../../contacts/providers/contact_provider.dart';
 import '../../discover/pages/discover_page.dart';
 import '../../portal/pages/custom_portal_page.dart';
 import '../../contacts/pages/contacts_page.dart';
@@ -43,6 +47,7 @@ import '../../settings/pages/stickers_page.dart';
 import '../../settings/pages/faq_page.dart';
 import '../../chat/pages/group_edit_page.dart';
 
+// 关键声明：home desktop page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 桌面端选中的聊天信息
 class SelectedChatInfo {
   final String id;
@@ -145,8 +150,26 @@ const double kMacOSTitleBarHeight = 28.0;
 
 class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
   double _sidebarWidth = PlatformUtils.desktopSidebarWidth;
+  String _localizedText(
+    AppLocalizations? l10n, {
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    final code = l10n?.language.code ?? 'zh_CN';
+    switch (code) {
+      case 'en':
+        return en;
+      case 'zh_TW':
+        return zhTW ?? zhCN;
+      default:
+        return zhCN;
+    }
+  }
+
   Timer? _sidebarSaveTimer; // 侧边栏宽度保存防抖
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -267,7 +290,12 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
   }
 
   Future<void> _loadSidebarWidth() async {
-    final width = await WindowService.instance.getSidebarWidth();
+    final width = (await WindowService.instance.getSidebarWidth())
+        .clamp(
+          PlatformUtils.desktopSidebarMinWidth,
+          PlatformUtils.desktopSidebarMaxWidth,
+        )
+        .toDouble();
     if (mounted) {
       setState(() => _sidebarWidth = width);
     }
@@ -318,7 +346,8 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
     final selectedChatId = ref.watch(selectedChatIdProvider);
     final navIndex = ref.watch(desktopNavIndexProvider);
     final settings = ref.watch(systemSettingsProvider).valueOrNull;
-    final hasCustomPortal = settings?.hasCustomPortal == true;
+    final hasCustomPortal = settings?.hasCustomPortal == true &&
+        (!PlatformUtils.isIOS || settings!.iosCompliance.allowsCustomPortal);
     final portalLabel = settings?.portalTitle.isNotEmpty == true
         ? settings!.portalTitle
         : l10n.tabPortal;
@@ -407,7 +436,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: navIndex == kDesktopNavSettings
-                            ? AppColors.primary
+                            ? AppColors.primaryFor(context)
                             : Colors.transparent,
                         width: 2,
                       ),
@@ -477,7 +506,19 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                     ? Colors.orange
                     : Colors.red;
             return Tooltip(
-              message: isConnected ? '已连接 · 延迟 ${latency}ms' : '连接已断开',
+              message: isConnected
+                  ? _localizedText(
+                      l10n,
+                      zhCN: '已连接 · 延迟 ${latency}ms',
+                      zhTW: '已連線 · 延遲 ${latency}ms',
+                      en: 'Connected · ${latency}ms latency',
+                    )
+                  : _localizedText(
+                      l10n,
+                      zhCN: '连接已断开',
+                      zhTW: '連線已中斷',
+                      en: 'Connection lost',
+                    ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -556,7 +597,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
             height: 52,
             decoration: BoxDecoration(
               color: isSelected
-                  ? AppColors.primary.withOpacity(0.15)
+                  ? AppColors.primaryWithOpacity(context, 0.15)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
@@ -577,7 +618,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                           isSelected ? (activeIconData ?? iconData) : iconData,
                           size: 24,
                           color: isSelected
-                              ? AppColors.primary
+                              ? AppColors.primaryFor(context)
                               : (isDark ? Colors.white54 : Colors.black54),
                         ),
                       ),
@@ -588,7 +629,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                     isSelected ? (activeIconData ?? iconData) : iconData,
                     size: 24,
                     color: isSelected
-                        ? AppColors.primary
+                        ? AppColors.primaryFor(context)
                         : (isDark ? Colors.white54 : Colors.black54),
                   )
                 else
@@ -597,7 +638,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                     width: 24,
                     height: 24,
                     color: isSelected
-                        ? AppColors.primary
+                        ? AppColors.primaryFor(context)
                         : (isDark ? Colors.white54 : Colors.black54),
                   ),
                 if (badge != null && badge > 0)
@@ -610,7 +651,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
+                        color: AppColors.primaryFor(context),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       constraints: const BoxConstraints(minWidth: 18),
@@ -655,12 +696,13 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
 
   int _getUnreadChatCount() {
     final state = ref.watch(chatListProvider);
-    return state.pinnedChats
+    final chatUnread = state.pinnedChats
             .where((c) => c.unreadCount > 0)
             .fold<int>(0, (sum, c) => sum + c.unreadCount) +
         state.regularChats
             .where((c) => c.unreadCount > 0)
             .fold<int>(0, (sum, c) => sum + c.unreadCount);
+    return chatUnread + ref.watch(pendingFriendRequestCountProvider);
   }
 
   /// 侧边栏内容
@@ -751,7 +793,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
             // 资料页（右侧面板，固定宽度 360）
             SizedBox(
               width: 360,
-              child: _buildProfilePanel(isDark, profileInfo),
+              child: _buildProfilePanel(isDark, profileInfo, l10n),
             ),
           ],
         );
@@ -762,7 +804,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
 
     // 没有选中聊天但有资料页（如从联系人直接查看资料、设置页等）
     if (hasProfile) {
-      return _buildProfilePanel(isDark, profileInfo);
+      return _buildProfilePanel(isDark, profileInfo, l10n);
     }
 
     // 其他页面：显示空状态
@@ -770,7 +812,11 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
   }
 
   /// 右侧面板
-  Widget _buildProfilePanel(bool isDark, DesktopProfileInfo info) {
+  Widget _buildProfilePanel(
+    bool isDark,
+    DesktopProfileInfo info,
+    AppLocalizations l10n,
+  ) {
     Widget panelPage;
 
     switch (info.type) {
@@ -839,56 +885,56 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
       case DesktopPanelType.settingsProfile:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_profile'),
-          title: '个人资料',
+          title: l10n.profile,
           child: const ProfilePage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsNotification:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_notification'),
-          title: '通知和声音',
+          title: l10n.notificationSettings,
           child: const NotificationSettingsPage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsPrivacy:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_privacy'),
-          title: '隐私和安全',
+          title: l10n.privacy,
           child: const PrivacySettingsPage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsDataStorage:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_data'),
-          title: '数据和存储',
+          title: l10n.dataStorage,
           child: const DataStoragePage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsChatSettings:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_chat'),
-          title: '聊天设置',
+          title: l10n.chatSettings,
           child: const ChatSettingsPage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsDevices:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_devices'),
-          title: '设备',
+          title: l10n.devices,
           child: const DevicesPage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsStickers:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_stickers'),
-          title: '贴纸和表情',
+          title: l10n.stickersEmoji,
           child: const StickersPage(isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.settingsFaq:
         panelPage = DesktopSettingsPanel(
           key: const ValueKey('settings_faq'),
-          title: '常见问题',
+          title: l10n.faq,
           child: const FAQPage(isDesktopPanel: true),
         );
         break;
@@ -900,14 +946,24 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
       case DesktopPanelType.groupEdit:
         panelPage = DesktopSettingsPanel(
           key: ValueKey('group_edit_${info.id}'),
-          title: '编辑群组',
+          title: _localizedText(
+            l10n,
+            zhCN: '编辑群组',
+            zhTW: '編輯群組',
+            en: 'Edit Group',
+          ),
           child: GroupEditPage(chatId: info.id, isDesktopPanel: true),
         );
         break;
       case DesktopPanelType.channelEdit:
         panelPage = DesktopSettingsPanel(
           key: ValueKey('channel_edit_${info.id}'),
-          title: '编辑频道',
+          title: _localizedText(
+            l10n,
+            zhCN: '编辑频道',
+            zhTW: '編輯頻道',
+            en: 'Edit Channel',
+          ),
           child: GroupEditPage(chatId: info.id, isDesktopPanel: true),
         );
         break;
@@ -924,106 +980,115 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
     int navIndex = 0,
     AppLocalizations? l10n,
   }) {
-    // 根据当前标签显示不同的空状态
     String lottiePath;
     String title;
     String subtitle;
 
-    // 根据语言获取文本
-    final isEn = l10n?.language.code == 'en';
-    final isZhTW = l10n?.language.code == 'zh_TW';
-
     switch (navIndex) {
-      case kDesktopNavChats: // 聊天
+      case kDesktopNavChats:
         lottiePath = 'assets/emoji/lottie/hatched_chick.json';
-        title = isEn
-            ? 'Select a chat to start messaging'
-            : isZhTW
-                ? '選擇一個聊天開始對話'
-                : '选择一个聊天开始对话';
-        subtitle = isEn
-            ? 'or press ⌘N to start a new chat'
-            : isZhTW
-                ? '或按 ⌘N 創建新聊天'
-                : '或按 ⌘N 创建新聊天';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择一个聊天开始对话',
+          zhTW: '選擇一個聊天開始對話',
+          en: 'Select a chat to start messaging',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '或按 ⌘N 创建新聊天',
+          zhTW: '或按 ⌘N 創建新聊天',
+          en: 'or press ⌘N to start a new chat',
+        );
         break;
-      case kDesktopNavContacts: // 联系人
+      case kDesktopNavContacts:
         lottiePath = 'assets/emoji/lottie/baby_chick.json';
-        title = isEn
-            ? 'Select a contact to start chatting'
-            : isZhTW
-                ? '選擇聯絡人開始聊天'
-                : '选择联系人开始聊天';
-        subtitle = isEn
-            ? 'or press ⌘N to add a new contact'
-            : isZhTW
-                ? '或按 ⌘N 添加新聯絡人'
-                : '或按 ⌘N 添加新联系人';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择联系人开始聊天',
+          zhTW: '選擇聯絡人開始聊天',
+          en: 'Select a contact to start chatting',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '或按 ⌘N 添加新联系人',
+          zhTW: '或按 ⌘N 添加新聯絡人',
+          en: 'or press ⌘N to add a new contact',
+        );
         break;
-      case kDesktopNavPortal: // 自定义网站
+      case kDesktopNavPortal:
         lottiePath = 'assets/emoji/lottie/eyes.json';
-        title = isEn
-            ? 'Open the configured website'
-            : isZhTW
-                ? '打開後台配置的網站'
-                : '打开后台配置的网站';
-        subtitle = isEn
-            ? 'The admin panel controls this portal title, icon, and target URL'
-            : isZhTW
-                ? '此欄目標題、圖示與網址由後台統一配置'
-                : '该栏目标题、图标和网址由后台统一配置';
+        title = _localizedText(
+          l10n,
+          zhCN: '打开后台配置的网站',
+          zhTW: '打開後台配置的網站',
+          en: 'Open the configured website',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '该栏目标题、图标和网址由后台统一配置',
+          zhTW: '此欄目標題、圖示與網址由後台統一配置',
+          en: 'The admin panel controls this portal title, icon, and target URL',
+        );
         break;
-      case kDesktopNavDiscover: // 发现
+      case kDesktopNavDiscover:
         lottiePath = 'assets/emoji/lottie/eyes.json';
-        title = isEn
-            ? 'Select a portal to start browsing'
-            : isZhTW
-                ? '選擇一個入口開始瀏覽'
-                : '选择一个入口开始浏览';
-        subtitle = isEn
-            ? 'The current content is frontend demo data and will later be replaced by backend configuration'
-            : isZhTW
-                ? '目前內容為前端演示資料，後續會切換為後台配置'
-                : '当前内容为前端演示数据，后续会切换为后台配置';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择一个入口开始浏览',
+          zhTW: '選擇一個入口開始瀏覽',
+          en: 'Select a portal to start browsing',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '入口内容由后台统一配置，点击后即可访问',
+          zhTW: '入口內容由後台統一配置，點擊後即可訪問',
+          en: 'Entries are managed centrally and open when selected',
+        );
         break;
-      case kDesktopNavMoments: // 动态
+      case kDesktopNavMoments:
         lottiePath = 'assets/emoji/lottie/angel.json';
-        title = isEn
-            ? 'Select a post to view details'
-            : isZhTW
-                ? '選擇一條動態查看詳情'
-                : '选择一条动态查看详情';
-        subtitle = isEn
-            ? 'Click on a post card to view full content'
-            : isZhTW
-                ? '點擊動態卡片查看完整內容'
-                : '点击动态卡片查看完整内容';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择一条动态查看详情',
+          zhTW: '選擇一條動態查看詳情',
+          en: 'Select a post to view details',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '点击动态卡片查看完整内容',
+          zhTW: '點擊動態卡片查看完整內容',
+          en: 'Click on a post card to view full content',
+        );
         break;
-      case kDesktopNavSettings: // 设置
+      case kDesktopNavSettings:
         lottiePath = 'assets/emoji/lottie/unicorn.json';
-        title = isEn
-            ? 'Select a setting to view details'
-            : isZhTW
-                ? '選擇設定項查看詳情'
-                : '选择设置项查看详情';
-        subtitle = isEn
-            ? 'Click on a menu item to configure'
-            : isZhTW
-                ? '點擊左側選單項進行設定'
-                : '点击左侧菜单项进行设置';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择设置项查看详情',
+          zhTW: '選擇設定項查看詳情',
+          en: 'Select a setting to view details',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '点击左侧菜单项进行设置',
+          zhTW: '點擊左側選單項進行設定',
+          en: 'Click on a menu item to configure',
+        );
         break;
       default:
         lottiePath = 'assets/emoji/lottie/hatched_chick.json';
-        title = isEn
-            ? 'Select a chat to start messaging'
-            : isZhTW
-                ? '選擇一個聊天開始對話'
-                : '选择一个聊天开始对话';
-        subtitle = isEn
-            ? 'or press ⌘N to start a new chat'
-            : isZhTW
-                ? '或按 ⌘N 創建新聊天'
-                : '或按 ⌘N 创建新聊天';
+        title = _localizedText(
+          l10n,
+          zhCN: '选择一个聊天开始对话',
+          zhTW: '選擇一個聊天開始對話',
+          en: 'Select a chat to start messaging',
+        );
+        subtitle = _localizedText(
+          l10n,
+          zhCN: '或按 ⌘N 创建新聊天',
+          zhTW: '或按 ⌘N 創建新聊天',
+          en: 'or press ⌘N to start a new chat',
+        );
     }
 
     return Container(
@@ -1035,7 +1100,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
             SizedBox(
               width: 100,
               height: 100,
-              child: Lottie.asset(lottiePath, repeat: true),
+              child: WebSafeLottie.asset(lottiePath, repeat: true),
             ),
             const SizedBox(height: 20),
             Text(
@@ -1092,6 +1157,11 @@ class DesktopMomentDetailPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations(ref.watch(languageProvider));
+    final configuredName =
+        ref.watch(systemSettingsProvider).valueOrNull?.displayName.trim() ?? '';
+    final appName =
+        configuredName.isNotEmpty ? configuredName : defaultAppDisplayName();
 
     return Scaffold(
       backgroundColor:
@@ -1100,14 +1170,15 @@ class DesktopMomentDetailPanel extends ConsumerWidget {
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () {
             ref.read(desktopProfileProvider.notifier).state =
                 DesktopProfileInfo.none;
           },
         ),
         title: Text(
-          '动态详情',
+          l10n.moments,
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -1181,7 +1252,8 @@ class DesktopSettingsPanel extends ConsumerWidget {
         backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () {
             ref.read(desktopProfileProvider.notifier).state =
                 DesktopProfileInfo.none;
@@ -1210,6 +1282,11 @@ class DesktopAboutPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations(ref.watch(languageProvider));
+    final configuredName =
+        ref.watch(systemSettingsProvider).valueOrNull?.displayName.trim() ?? '';
+    final appName =
+        configuredName.isNotEmpty ? configuredName : defaultAppDisplayName();
 
     return Scaffold(
       backgroundColor:
@@ -1218,14 +1295,15 @@ class DesktopAboutPanel extends ConsumerWidget {
         backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () {
             ref.read(desktopProfileProvider.notifier).state =
                 DesktopProfileInfo.none;
           },
         ),
         title: Text(
-          '关于',
+          l10n.about,
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -1242,18 +1320,18 @@ class DesktopAboutPanel extends ConsumerWidget {
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primaryWithOpacity(context, 0.1),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Icon(
                 Icons.info_outline_rounded,
                 size: 48,
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              '壹信IM',
+              appName,
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1270,7 +1348,7 @@ class DesktopAboutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
             Text(
-              '© 2024 壹信网络',
+              l10n.copyright,
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.white38 : Colors.black38,

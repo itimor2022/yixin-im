@@ -1,3 +1,6 @@
+// 文件用途：定义业务实体的 ORM 字段、关联关系和持久化约束。
+// 核心逻辑：统一描述字段映射、状态值、索引和表名，作为各层共享数据契约。
+
 package models
 
 import "time"
@@ -5,6 +8,11 @@ import "time"
 const (
 	MeetingTypeVoice = "voice"
 	MeetingTypeVideo = "video"
+)
+
+const (
+	RTCProviderAgora   = "agora"
+	RTCProviderLiveKit = "livekit"
 )
 
 const (
@@ -41,6 +49,7 @@ type Meeting struct {
 	ID              uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	UUID            string     `gorm:"type:char(36);uniqueIndex;not null" json:"uuid"`
 	ChannelName     string     `gorm:"type:varchar(100);uniqueIndex;not null" json:"channel_name"`
+	RTCProvider     string     `gorm:"type:varchar(20);index;not null;default:'agora'" json:"rtc_provider"`
 	ChatID          uint64     `gorm:"index;default:0" json:"chat_id"`
 	CreatorID       uint64     `gorm:"index;not null" json:"creator_id"`
 	Title           string     `gorm:"type:varchar(100)" json:"title"`

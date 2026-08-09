@@ -1,10 +1,31 @@
-import 'dart:js_interop';
+// 文件用途：提供 custom portal content 在 Web 平台的实现，服务于门户内容。
+// 核心逻辑：实现 CustomPortalContent 的 Web 平台分支，适配浏览器 API 和资源生命周期，并保持与原生实现相同的调用契约。
+// ignore_for_file: avoid_web_libraries_in_flutter
+
+import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
-import 'package:web/web.dart' as web;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+
+String _portalWebText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：custom portal content web 是 Web 平台实现，负责把浏览器资源和异步生命周期适配为跨平台接口。
 class CustomPortalContent extends StatefulWidget {
   final String title;
   final String url;
@@ -26,6 +47,7 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
   late String _viewType;
   late String _currentUrl;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -57,7 +79,7 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
   String _registerIframe(String url) {
     final viewType = 'custom-portal-iframe-${_viewCounter++}';
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
-      final iframe = web.HTMLIFrameElement()
+      return html.IFrameElement()
         ..src = url
         ..style.border = '0'
         ..style.width = '100%'
@@ -66,7 +88,6 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
         ..allow =
             'autoplay; camera; clipboard-read; clipboard-write; fullscreen; geolocation; microphone; payment'
         ..referrerPolicy = 'strict-origin-when-cross-origin';
-      return iframe;
     });
     return viewType;
   }
@@ -101,7 +122,11 @@ class _CustomPortalContentState extends State<CustomPortalContent> {
             right: 12,
             bottom: 12,
             child: Tooltip(
-              message: '如果页面未正常显示，可在新窗口打开',
+              message: _portalWebText(
+                zhCN: '如果页面未正常显示，可在新窗口打开',
+                zhTW: '如果頁面未正常顯示，可在新視窗開啟',
+                en: 'Open in a new window if the page does not display correctly',
+              ),
               child: FilledButton.tonal(
                 onPressed: _openInNewTab,
                 style: FilledButton.styleFrom(
@@ -138,7 +163,13 @@ class _PortalWebUnavailable extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(16, isDesktopSidebar ? 12 : 20, 16, 20),
         child: Center(
           child: Text(
-            title.isEmpty ? '网站暂不可用' : title,
+            title.isEmpty
+                ? _portalWebText(
+                    zhCN: '网站暂不可用',
+                    zhTW: '網站暫不可用',
+                    en: 'Website is temporarily unavailable',
+                  )
+                : title,
             style: TextStyle(
               color: isDark ? Colors.white54 : Colors.black54,
               fontSize: 14,

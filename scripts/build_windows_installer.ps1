@@ -1,7 +1,33 @@
+<#
+.SYNOPSIS
+构建 Flutter Windows Release 并使用 Inno Setup 生成安装程序。
+
+.DESCRIPTION
+从 pubspec.yaml 读取版本，将服务地址写入 Flutter 构建，再复制运行时依赖并调用
+Inno Setup。使用 -SkipBuild 时复用现有 build/windows 产物，调用方需保证地址和版本一致。
+
+.PARAMETER SkipBuild
+跳过 Flutter Windows 构建，只重新打包当前 Release 目录。
+
+.PARAMETER InnoSetupCompiler
+ISCC.exe 路径；为空时从常见安装目录探测。
+
+.PARAMETER OutputDir
+最终安装程序输出目录。
+
+.EXAMPLE
+pwsh -File scripts/build_windows_installer.ps1 -OutputDir dist/windows-installer
+#>
 param(
     [switch]$SkipBuild,
     [string]$OutputDir = "dist/windows-installer",
-    [string]$InnoSetupCompiler = ""
+    [string]$InnoSetupCompiler = "",
+    [string]$ServerUrl = "",
+    [string]$WsUrl = "",
+    [string]$BootstrapUrl = "",
+    [string]$BootstrapUrls = "",
+    [string]$PublicH5Url = "",
+    [string]$PubHostedUrl = "https://pub.flutter-io.cn"
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,6 +98,7 @@ function Get-InnoSetupCompiler {
     }
 
     $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
         'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
         'C:\Program Files\Inno Setup 6\ISCC.exe',
         'D:\Program Files (x86)\Inno Setup 6\ISCC.exe',
@@ -186,18 +213,51 @@ function Ensure-FirebaseCppSdk {
 $repoRoot = Get-RepoRoot
 Set-Location $repoRoot
 
+Write-Step "Check source mojibake"
+& (Join-Path $repoRoot "scripts\check-mojibake.ps1")
+
 $pubspecPath = Join-Path $repoRoot "pubspec.yaml"
 $versionInfo = Get-AppVersionInfo -PubspecPath $pubspecPath
-$exeName = "gao_ran_im.exe"
+$exeName = "genericim.exe"
 
 Write-Step "Installing Flutter dependencies"
+if (-not [string]::IsNullOrWhiteSpace($PubHostedUrl)) {
+    $env:PUB_HOSTED_URL = $PubHostedUrl
+}
 flutter pub get
+if ($LASTEXITCODE -ne 0) {
+    throw "flutter pub get failed with exit code $LASTEXITCODE"
+}
 
 if (-not $SkipBuild) {
     Ensure-FirebaseCppSdk -RepoRoot $repoRoot
 
     Write-Step "Building Windows release"
-    flutter build windows --release
+    $flutterBuildArgs = @(
+        "build",
+        "windows",
+        "--release"
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ServerUrl)) {
+        $flutterBuildArgs += "--dart-define=GENERIC_IM_SERVER_URL=$($ServerUrl.TrimEnd('/'))"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WsUrl)) {
+        $flutterBuildArgs += "--dart-define=GENERIC_IM_WS_URL=$($WsUrl.TrimEnd('/'))"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($BootstrapUrl)) {
+        $flutterBuildArgs += "--dart-define=GENERIC_IM_BOOTSTRAP_URL=$($BootstrapUrl.Trim())"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($BootstrapUrls)) {
+        $flutterBuildArgs += "--dart-define=GENERIC_IM_BOOTSTRAP_URLS=$($BootstrapUrls.Trim())"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PublicH5Url)) {
+        $flutterBuildArgs += "--dart-define=GENERIC_IM_PUBLIC_H5_URL=$($PublicH5Url.TrimEnd('/'))"
+    }
+
+    flutter @flutterBuildArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "flutter build windows failed with exit code $LASTEXITCODE"
+    }
 }
 
 $releaseDir = Join-Path $repoRoot "build/windows/x64/runner/Release"
@@ -206,7 +266,7 @@ if (-not (Test-Path $exePath)) {
     throw "Windows release output not found: $exePath"
 }
 
-$issPath = Join-Path $repoRoot "windows/installer/yixin_setup.iss"
+$issPath = Join-Path $repoRoot "windows/installer/generic_im_setup.iss"
 if (-not (Test-Path $issPath)) {
     throw "Inno Setup script not found: $issPath"
 }

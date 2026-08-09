@@ -1,5 +1,6 @@
+// 文件用途：实现 ChatPage 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 ChatPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:universal_io/io.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,30 +8,58 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/services/media_cache_manager.dart';
 import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/system_settings_service.dart';
+import '../../../core/services/performance_trace_service.dart';
 import '../../../core/services/notification_sound_service.dart';
+import '../../../core/services/time_zone_refresh_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/animated_gif_image.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
+import '../../../shared/widgets/sticker_image.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/fancy_refresh_indicator.dart';
 import '../widgets/chat_list_item.dart';
 import '../widgets/create_sheets.dart';
 import '../providers/chat_provider.dart';
 import '../providers/folder_provider.dart';
+import '../services/emoji_store_service.dart';
+import '../utils/call_preview_formatter.dart';
 import '../../contacts/providers/contact_provider.dart';
+import '../../contacts/pages/friend_requests_page.dart';
 import '../../settings/pages/chat_settings_page.dart';
 import '../../home/pages/home_desktop_page.dart';
 import 'chat_detail_page.dart' show ChatType;
 
+String _chatPageText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：chat page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class ChatPage extends ConsumerStatefulWidget {
   /// 是否作为桌面端侧边栏使用
   final bool isDesktopSidebar;
@@ -41,6 +70,75 @@ class ChatPage extends ConsumerStatefulWidget {
   ConsumerState<ChatPage> createState() => _ChatPageState();
 }
 
+class _ChatPageTitle extends ConsumerWidget {
+  final bool isDark;
+
+  const _ChatPageTitle({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations(ref.watch(languageProvider));
+    final isLoading = ref.watch(chatListProvider.select((s) => s.isLoading));
+    final isSilentLoading = ref.watch(
+      chatListProvider.select((s) => s.isSilentLoading),
+    );
+
+    if (isLoading || isSilentLoading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                AppColors.textSecondaryFor(context),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            l10n.refreshing,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondaryFor(context),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(
+      l10n.tabChat,
+      style: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimaryFor(context),
+      ),
+    );
+  }
+}
+
+class _MaybeGlassBlur extends StatelessWidget {
+  final double sigma;
+  final Widget child;
+
+  const _MaybeGlassBlur({required this.sigma, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (Platform.isAndroid) {
+      return child;
+    }
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: child,
+    );
+  }
+}
+
 class _ChatPageState extends ConsumerState<ChatPage>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   final Set<String> _selectedChatIds = {};
@@ -48,8 +146,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
   @override
   bool get wantKeepAlive => true;
 
-  bool get _isEditing => ref.watch(chatEditModeProvider);
-
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -59,20 +156,22 @@ class _ChatPageState extends ConsumerState<ChatPage>
     // 初始化时从服务器加载数据（仅在已登录时）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      PerformanceTraceService.mark('chat_page.first_post_frame');
       final authState = ref.read(authServiceProvider);
       if (authState.status == AuthStatus.authenticated) {
+        PerformanceTraceService.mark('chat_page.initialize_chat_list');
         // 优先初始化聊天列表（用户首先看到的内容）
         // initialize() 内部会先读 Isar 缓存再请求服务器
         ref.read(chatListProvider.notifier).initialize();
 
         // 延迟初始化联系人，减少启动时的请求压力
-        Future.delayed(const Duration(milliseconds: 800), () {
+        Future.delayed(const Duration(milliseconds: 3000), () {
           if (!mounted) return;
           ref.read(contactListProvider.notifier).initialize();
         });
 
         // 进一步延迟同步官方联系人，避免启动时请求过多
-        Future.delayed(const Duration(milliseconds: 2000), () async {
+        Future.delayed(const Duration(milliseconds: 6500), () async {
           if (!mounted) return;
           final settingsService = ref.read(systemSettingsServiceProvider);
           try {
@@ -80,7 +179,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                 await settingsService.getSettings(forceRefresh: true);
             if (!mounted || !settings.newUserFollowOfficial) return;
           } catch (error) {
-            if (kDebugMode) debugPrint(
+            debugPrint(
               '[ChatPage] Load settings before official sync failed: $error',
             );
             return;
@@ -118,6 +217,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
       ref.read(chatListProvider.notifier).silentRefresh();
       // 静默刷新联系人列表
       ref.read(contactListProvider.notifier).silentRefresh();
+      ref.read(pendingFriendRequestCountProvider.notifier).refresh();
     }
   }
 
@@ -140,9 +240,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isDark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary,
+                AppColors.textSecondaryFor(context),
               ),
             ),
           ),
@@ -152,9 +250,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? AppColors.darkTextSecondary
-                  : AppColors.lightTextSecondary,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ],
@@ -172,9 +268,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isDark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary,
+                AppColors.textSecondaryFor(context),
               ),
             ),
           ),
@@ -184,9 +278,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? AppColors.darkTextSecondary
-                  : AppColors.lightTextSecondary,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
         ],
@@ -198,7 +290,61 @@ class _ChatPageState extends ConsumerState<ChatPage>
       style: TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
-        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+        color: AppColors.textPrimaryFor(context),
+      ),
+    );
+  }
+
+  Widget _buildHeaderPill({
+    required bool isDark,
+    required Widget child,
+    required VoidCallback onTap,
+    double? width,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 16),
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: width,
+        height: 38,
+        padding: padding,
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.darkControlBackgroundStrong
+              : const Color(0xFFF1F1F2),
+          borderRadius: BorderRadius.circular(19),
+          border: isDark
+              ? Border.all(color: AppColors.darkDivider.withOpacity(0.85))
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildHeaderIconAction({
+    required bool isDark,
+    required VoidCallback onTap,
+    IconData? icon,
+    Widget? child,
+  }) {
+    assert(icon != null || child != null);
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Center(
+          child: child ??
+              Icon(
+                icon,
+                size: 23,
+                color: isDark
+                    ? AppColors.primaryFor(context)
+                    : const Color(0xFF1D1D1F),
+              ),
+        ),
       ),
     );
   }
@@ -206,8 +352,9 @@ class _ChatPageState extends ConsumerState<ChatPage>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
+    ref.watch(timeZoneRefreshProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final folderState = ref.watch(folderProvider);
+    final isEditing = ref.watch(chatEditModeProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
     // 使用 select 只监听需要的字段，避免不必要的重建
@@ -217,13 +364,25 @@ class _ChatPageState extends ConsumerState<ChatPage>
     final regularChats = ref.watch(
       chatListProvider.select((s) => s.regularChats),
     );
-    final typingByChat = ref.watch(
-      chatListProvider.select((s) => s.typingByChat),
+    final chatListIsLoading = ref.watch(
+      chatListProvider.select((s) => s.isLoading),
     );
+    final chatListIsSilentLoading = ref.watch(
+      chatListProvider.select((s) => s.isSilentLoading),
+    );
+    final chatListError = ref.watch(chatListProvider.select((s) => s.error));
+    final chatListIsInitialized = ref.watch(
+      chatListProvider.select((s) => s.isInitialized),
+    );
+    final pendingFriendRequestCount =
+        ref.watch(pendingFriendRequestCountProvider);
     final chats = ChatListState(
       pinnedChats: pinnedChats,
       regularChats: regularChats,
-      isInitialized: true,
+      isLoading: chatListIsLoading,
+      isSilentLoading: chatListIsSilentLoading,
+      error: chatListError,
+      isInitialized: chatListIsInitialized,
     );
 
     // 获取系统设置（官方用户/群组/频道列表）- 使用 select 只监听需要的字段
@@ -240,19 +399,11 @@ class _ChatPageState extends ConsumerState<ChatPage>
       orElse: () => <String>{},
     );
 
-    // 当前选中的文件夹
-    final currentFolder = folderState.folders.isNotEmpty &&
-            folderState.selectedIndex < folderState.folders.length
-        ? folderState.folders[folderState.selectedIndex]
-        : null;
-    final floatingBottomSpace = FloatingNavLayout.isEnabled
+    final floatingBottomSpace = FloatingNavLayout.isEnabledForContext(context)
         ? FloatingNavLayout.reservedSpace(context, extra: 12)
         : 20.0;
 
-    // 过滤后的聊天
-    final filteredChats = currentFolder != null
-        ? ref.read(folderProvider.notifier).filterChats(currentFolder, chats)
-        : chats;
+    final filteredChats = chats;
 
     // 预先计算聊天列表，避免在 build 中重复调用
     final allChats = _getChatList(filteredChats);
@@ -261,417 +412,612 @@ class _ChatPageState extends ConsumerState<ChatPage>
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor:
-            isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        body: CustomScrollView(
-          slivers: [
-            // 顶部标题栏 - 毛玻璃固定效果
-            SliverAppBar(
-              floating: false,
-              snap: false,
-              pinned: true,
-              backgroundColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              flexibleSpace: Platform.isAndroid
-                  ? Container(
-                      color: isDark
-                          ? AppColors.darkBackground
-                          : AppColors.lightBackground,
-                    )
-                  : ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                        child: Container(
-                          color: isDark
-                              ? AppColors.darkBackground.withOpacity(0.85)
-                              : AppColors.lightBackground.withOpacity(0.85),
-                        ),
-                      ),
-                    ),
-              leadingWidth: widget.isDesktopSidebar ? 16 : 76,
-              leading: widget.isDesktopSidebar
-                  ? const SizedBox(width: 16) // 桌面端不显示编辑按钮
-                  : Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Center(
-                        child: GestureDetector(
-                          onTap: () {
-                            GlobalHaptics.selection();
-                            if (_isEditing) {
-                              ref.read(chatEditModeProvider.notifier).state =
-                                  false;
-                              setState(() => _selectedChatIds.clear());
-                            } else {
-                              ref.read(chatEditModeProvider.notifier).state =
-                                  true;
-                              setState(() => _selectedChatIds.clear());
-                            }
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white.withOpacity(0.12)
-                                      : Colors.white.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: isDark
-                                      ? Border.all(
-                                          color: Colors.white.withOpacity(0.1),
-                                          width: 0.5,
-                                        )
-                                      : null,
-                                  boxShadow: isDark
-                                      ? null
-                                      : [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.06,
-                                            ),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                ),
-                                child: Text(
-                                  _isEditing ? '完成' : '编辑',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
+        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+        body: FancyRefreshIndicator(
+          topOffset: MediaQuery.of(context).padding.top + 52,
+          onRefresh: () async {
+            await Future.wait([
+              ref.read(chatListProvider.notifier).refresh(),
+              ref.read(pendingFriendRequestCountProvider.notifier).refresh(),
+            ]);
+          },
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            cacheExtent: 900,
+            slivers: [
+              // 顶部标题栏
+              SliverAppBar(
+                floating: false,
+                snap: false,
+                pinned: true,
+                toolbarHeight: 64,
+                backgroundColor:
+                    isDark ? AppColors.darkBackground : Colors.white,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                flexibleSpace: Container(
+                  color: isDark ? AppColors.darkBackground : Colors.white,
+                ),
+                leadingWidth: widget.isDesktopSidebar ? 16 : 92,
+                leading: widget.isDesktopSidebar
+                    ? const SizedBox(width: 16) // 桌面端不显示编辑按钮
+                    : Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: Center(
+                          child: _buildHeaderPill(
+                            isDark: isDark,
+                            onTap: () {
+                              GlobalHaptics.selection();
+                              if (isEditing) {
+                                ref.read(chatEditModeProvider.notifier).state =
+                                    false;
+                                setState(() => _selectedChatIds.clear());
+                              } else {
+                                ref.read(chatEditModeProvider.notifier).state =
+                                    true;
+                                setState(() => _selectedChatIds.clear());
+                              }
+                            },
+                            child: Text(
+                              isEditing
+                                  ? _chatPageText(
+                                      context,
+                                      zhCN: '完成',
+                                      zhTW: '完成',
+                                      en: 'Done',
+                                    )
+                                  : _chatPageText(
+                                      context,
+                                      zhCN: '编辑',
+                                      zhTW: '編輯',
+                                      en: 'Edit',
+                                    ),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: isDark
+                                    ? AppColors.primaryFor(context)
+                                    : const Color(0xFF1D1D1F),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-              title: _isEditing
-                  ? Text(
-                      _selectedChatIds.isEmpty
-                          ? '选择聊天'
-                          : '${l10n.selectedCount} ${_selectedChatIds.length}',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? AppColors.darkTextPrimary
-                            : AppColors.lightTextPrimary,
-                      ),
-                    )
-                  : _buildTitle(isDark, l10n),
-              centerTitle: true,
-              actions: [
-                if (!_isEditing) ...[
-                  // 右侧加号按钮
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: GestureDetector(
-                      onTap: () => _showCreateOptions(context),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.white.withOpacity(0.12)
-                                  : Colors.white.withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(18),
-                              border: isDark
-                                  ? Border.all(
-                                      color: Colors.white.withOpacity(0.1),
-                                      width: 0.5,
-                                    )
-                                  : null,
-                              boxShadow: isDark
-                                  ? null
-                                  : [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.06),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                            ),
-                            child: Icon(
-                              Icons.add,
-                              size: 22,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  // 编辑模式下的全选按钮
-                  GestureDetector(
-                    onTap: () {
-                      GlobalHaptics.selection();
-                      final allChats = _getChatList(filteredChats);
-                      setState(() {
-                        if (_selectedChatIds.length == allChats.length) {
-                          _selectedChatIds.clear();
-                        } else {
-                          _selectedChatIds.clear();
-                          _selectedChatIds.addAll(allChats.map((c) => c.id));
-                        }
-                      });
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: Text(
-                        _selectedChatIds.length ==
-                                _getChatList(filteredChats).length
-                            ? l10n.deselectAll
-                            : l10n.selectAll,
+                title: isEditing
+                    ? Text(
+                        _selectedChatIds.isEmpty
+                            ? _chatPageText(
+                                context,
+                                zhCN: '选择聊天',
+                                zhTW: '選擇聊天',
+                                en: 'Select Chats',
+                              )
+                            : '${l10n.selectedCount} ${_selectedChatIds.length}',
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.primary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimaryFor(context),
+                        ),
+                      )
+                    : _ChatPageTitle(isDark: isDark),
+                centerTitle: true,
+                actions: [
+                  if (!isEditing) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: _buildHeaderPill(
+                        isDark: isDark,
+                        width: 46,
+                        padding: EdgeInsets.zero,
+                        onTap: () {},
+                        child: Row(
+                          children: [
+                            _buildHeaderIconAction(
+                              isDark: isDark,
+                              icon: Icons.add_circle_outline_rounded,
+                              onTap: () {
+                                GlobalHaptics.selection();
+                                _showCreateOptions(context);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // 编辑模式下的全选按钮
+                    GestureDetector(
+                      onTap: () {
+                        GlobalHaptics.selection();
+                        final allChats = _getChatList(filteredChats);
+                        setState(() {
+                          if (_selectedChatIds.length == allChats.length) {
+                            _selectedChatIds.clear();
+                          } else {
+                            _selectedChatIds.clear();
+                            _selectedChatIds.addAll(allChats.map((c) => c.id));
+                          }
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Text(
+                          _selectedChatIds.length ==
+                                  _getChatList(filteredChats).length
+                              ? l10n.deselectAll
+                              : l10n.selectAll,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.primaryFor(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+
+              // 搜索框（滑动时隐藏）
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (widget.isDesktopSidebar) {
+                        // 桌面端：在右侧面板显示搜索
+                        ref.read(desktopProfileProvider.notifier).state =
+                            const DesktopProfileInfo(
+                          type: DesktopPanelType.search,
+                          id: 'search',
+                        );
+                      } else {
+                        context.push('/search');
+                      }
+                    },
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkInputBackground
+                            : const Color(0xFFF1F1F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: isDark
+                            ? Border.all(color: AppColors.darkDivider)
+                            : null,
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.search_rounded,
+                              size: 20,
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : const Color(0xFF9A9A9D),
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              _chatPageText(
+                                context,
+                                zhCN: '搜索',
+                                zhTW: '搜尋',
+                                en: 'Search',
+                              ),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                color: isDark
+                                    ? AppColors.darkTextSecondary
+                                    : const Color(0xFF9A9A9D),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                ],
-              ],
-            ),
+                ),
+              ),
 
-            // 搜索框（滑动时隐藏）
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: GestureDetector(
-                  onTap: () {
-                    if (widget.isDesktopSidebar) {
-                      // 桌面端：在右侧面板显示搜索
-                      ref.read(desktopProfileProvider.notifier).state =
-                          const DesktopProfileInfo(
-                        type: DesktopPanelType.search,
-                        id: 'search',
-                      );
-                    } else {
-                      context.push('/search');
-                    }
-                  },
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.darkInputBackground
-                          : const Color(0xFFEDEDED),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search,
-                          size: 18,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : const Color(0xFF8E8E93),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '搜索',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: isDark
-                                ? AppColors.darkTextTertiary
-                                : const Color(0xFF8E8E93),
-                          ),
-                        ),
-                      ],
-                    ),
+              if (!isEditing && pendingFriendRequestCount > 0)
+                SliverToBoxAdapter(
+                  child: _buildFriendRequestNotice(
+                    isDark: isDark,
+                    count: pendingFriendRequestCount,
                   ),
                 ),
-              ),
-            ),
 
-            // 分组 Tab（滑动时隐藏）
-            SliverToBoxAdapter(
-              child: _FolderTabs(
-                folders: folderState.folders,
-                selectedIndex: folderState.selectedIndex,
-                chats: chats,
-                onSelect: (index) {
-                  GlobalHaptics.selection();
-                  ref.read(folderProvider.notifier).selectFolder(index);
-                },
-              ),
-            ),
-
-            // 聊天列表
-            if (!chats.isInitialized && chats.isLoading)
-              // 首次加载显示骨架屏
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildSkeletonItem(isDark),
-                  childCount: 8,
-                ),
-              )
-            else if (allChats.isEmpty)
-              SliverFillRemaining(child: _buildEmptyState(l10n))
-            else
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final chat = allChats[index];
-                  final isSelected = _selectedChatIds.contains(chat.id);
-
-                  if (_isEditing) {
-                    // 编辑模式 - 显示复选框
-                    return _buildEditableChatItem(
-                      chat,
-                      isSelected,
+              // 聊天列表
+              if (!chats.isInitialized && chats.isLoading)
+                // 首次加载显示骨架屏
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildSkeletonItem(isDark),
+                    childCount: 8,
+                  ),
+                )
+              else if (_normalizedChatListError(chats) != null &&
+                  allChats.isEmpty)
+                SliverFillRemaining(
+                  child: _buildChatListErrorState(
+                    l10n,
+                    _normalizedChatListError(chats)!,
+                  ),
+                )
+              else if (allChats.isEmpty && pendingFriendRequestCount == 0)
+                SliverFillRemaining(child: _buildEmptyState(l10n))
+              else if (allChats.isNotEmpty) ...[
+                if (_normalizedChatListError(chats) != null)
+                  SliverToBoxAdapter(
+                    child: _buildChatListErrorBanner(
+                      _normalizedChatListError(chats)!,
                       isDark,
-                      typingText: typingByChat[chat.id],
-                    );
-                  }
-
-                  // 判断是否是官方用户/群组/频道
-                  final isOfficial = chat.type == ChatItemType.private
-                      ? officialUsers.contains(chat.targetUserUuid)
-                      : officialChats.contains(chat.id);
-
-                  // 桌面端：检查是否选中（用于高亮当前打开的聊天）
-                  final isChatActive = widget.isDesktopSidebar
-                      ? ref.watch(selectedChatIdProvider) == chat.id
-                      : false;
-
-                  // RepaintBoundary + key 隔离每个列表项的重绘，优化滚动性能
-                  return RepaintBoundary(
-                    key: ValueKey(chat.id),
-                    child: ChatListItem(
-                      chat: chat,
-                      typingText: typingByChat[chat.id],
-                      isOfficial: isOfficial,
-                      isSelected: isChatActive,
-                      isDesktop: widget.isDesktopSidebar,
-                      showPendingApprovalDot: chat.hasPendingJoinRequests,
-                      onTap: () => _openChat(context, chat),
-                      onLongPress: widget.isDesktopSidebar
-                          ? null
-                          : () => _showChatPreview(context, ref, chat),
-                      onSwipeAction: (action) =>
-                          _handleSwipeAction(context, ref, chat, action),
                     ),
-                  );
-                }, childCount: allChats.length),
-              ),
+                  ),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final chat = allChats[index];
+                        final isSelected = _selectedChatIds.contains(chat.id);
 
-            // 编辑模式下留出底部操作栏空间
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: _isEditing ? 100 : floatingBottomSpace,
+                        if (isEditing) {
+                          // 编辑模式 - 显示复选框
+                          return RepaintBoundary(
+                            key: ValueKey(chat.id),
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final typingText = ref.watch(
+                                  chatListProvider.select(
+                                    (s) => s.typingByChat[chat.id],
+                                  ),
+                                );
+                                return _buildEditableChatItem(
+                                  chat,
+                                  isSelected,
+                                  isDark,
+                                  typingText: typingText,
+                                );
+                              },
+                            ),
+                          );
+                        }
+
+                        // 判断是否是官方用户/群组/频道
+                        final isOfficial = chat.type == ChatItemType.private
+                            ? officialUsers.contains(chat.targetUserUuid)
+                            : officialChats.contains(chat.id);
+
+                        // 桌面端：检查是否选中（用于高亮当前打开的聊天）
+                        // RepaintBoundary + key 隔离每个列表项的重绘，优化滚动性能
+                        return RepaintBoundary(
+                          key: ValueKey(chat.id),
+                          child: Consumer(
+                            builder: (context, ref, _) {
+                              final typingText = ref.watch(
+                                chatListProvider.select(
+                                  (s) => s.typingByChat[chat.id],
+                                ),
+                              );
+                              final isChatActive = widget.isDesktopSidebar
+                                  ? ref.watch(selectedChatIdProvider) == chat.id
+                                  : false;
+                              return ChatListItem(
+                                chat: chat,
+                                typingText: typingText,
+                                isOfficial: isOfficial,
+                                isSelected: isChatActive,
+                                isDesktop: widget.isDesktopSidebar,
+                                showPendingApprovalDot:
+                                    chat.hasPendingJoinRequests,
+                                onTap: () => _openChat(context, chat),
+                                onLongPress: widget.isDesktopSidebar
+                                    ? null
+                                    : () =>
+                                        _showChatPreview(context, ref, chat),
+                                onSwipeAction: (action) => _handleSwipeAction(
+                                  context,
+                                  ref,
+                                  chat,
+                                  action,
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                      childCount: allChats.length,
+                      findChildIndexCallback: (key) {
+                        final value =
+                            key is ValueKey<String> ? key.value : null;
+                        if (value == null) return null;
+                        final index =
+                            allChats.indexWhere((chat) => chat.id == value);
+                        return index == -1 ? null : index;
+                      },
+                      addAutomaticKeepAlives: false,
+                      addRepaintBoundaries: false,
+                      addSemanticIndexes: true),
+                ),
+              ],
+
+              // 编辑模式下留出底部操作栏空间
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: isEditing ? 100 : floatingBottomSpace,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         // 编辑模式底部操作栏
         bottomNavigationBar:
-            _isEditing ? _buildEditBottomBar(isDark, l10n) : null,
+            isEditing ? _buildEditBottomBar(isDark, l10n) : null,
+      ),
+    );
+  }
+
+  Widget _buildFriendRequestNotice({
+    required bool isDark,
+    required int count,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => const FriendRequestsPage(),
+                ),
+              )
+              .then(
+                (_) => ref
+                    .read(pendingFriendRequestCountProvider.notifier)
+                    .refresh(),
+              );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.dividerFor(context),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryWithOpacity(context, 0.14),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.person_add_alt_1_rounded,
+                  color: AppColors.primaryFor(context),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _chatPageText(
+                        context,
+                        zhCN: '新的好友申请',
+                        zhTW: '新的好友申請',
+                        en: 'New friend requests',
+                      ),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimaryFor(context),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _chatPageText(
+                        context,
+                        zhCN: '有 $count 条申请等待处理',
+                        zhTW: '有 $count 則申請等待處理',
+                        en: '$count request${count == 1 ? '' : 's'} awaiting review',
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondaryFor(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                constraints: const BoxConstraints(minWidth: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF453A),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  count > 99 ? '99+' : count.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textTertiaryFor(context),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   void _showCreateOptions(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomSpacing = FloatingNavLayout.isEnabled
+    final bottomSpacing = FloatingNavLayout.isEnabledForContext(context)
         ? FloatingNavLayout.reservedSpace(context, extra: 8)
         : 8.0;
     // 保存外部 context 用于导航（底部弹窗 pop 后内部 context 会失效）
     final outerContext = context;
 
+    if (FloatingNavLayout.isEnabledForContext(context)) {
+      ref.read(floatingNavHiddenProvider.notifier).state = true;
+    }
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color:
-                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                  borderRadius: BorderRadius.circular(2),
+      builder: (sheetContext) {
+        final mediaQuery = MediaQuery.of(sheetContext);
+        final maxHeight = mediaQuery.size.height - mediaQuery.padding.top - 12;
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : AppColors.lightBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkDivider
+                            : AppColors.lightDivider,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _CreateOption(
+                      icon: Icons.search,
+                      iconColor: AppColors.primaryFor(outerContext),
+                      title: _chatPageText(
+                        outerContext,
+                        zhCN: '搜索用户',
+                        zhTW: '搜尋用戶',
+                        en: 'Search Users',
+                      ),
+                      subtitle: _chatPageText(
+                        outerContext,
+                        zhCN: '搜索用户开始聊天',
+                        zhTW: '搜尋用戶開始聊天',
+                        en: 'Find a user to start chatting',
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        if (widget.isDesktopSidebar) {
+                          // 桌面端：在右侧面板显示搜索用户
+                          ref.read(desktopProfileProvider.notifier).state =
+                              const DesktopProfileInfo(
+                            type: DesktopPanelType.searchUsers,
+                            id: 'search_users',
+                          );
+                        } else {
+                          outerContext.push('/search-users');
+                        }
+                      },
+                    ),
+                    _CreateOption(
+                      icon: Icons.group_outlined,
+                      iconColor: const Color(0xFF4CAF50),
+                      title: _chatPageText(
+                        outerContext,
+                        zhCN: '新建群组',
+                        zhTW: '新建群組',
+                        en: 'New Group',
+                      ),
+                      subtitle: _chatPageText(
+                        outerContext,
+                        zhCN: '创建一个群聊',
+                        zhTW: '建立一個群聊',
+                        en: 'Create a group chat',
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Future<void>.delayed(const Duration(milliseconds: 80),
+                            () {
+                          if (!mounted || !outerContext.mounted) return;
+                          _showCreateGroup(outerContext);
+                        });
+                      },
+                    ),
+                    _CreateOption(
+                      icon: Icons.campaign_outlined,
+                      iconColor: const Color(0xFFFF9800),
+                      title: _chatPageText(
+                        outerContext,
+                        zhCN: '新建频道',
+                        zhTW: '新建頻道',
+                        en: 'New Channel',
+                      ),
+                      subtitle: _chatPageText(
+                        outerContext,
+                        zhCN: '创建一个频道发布消息',
+                        zhTW: '建立一個頻道發佈消息',
+                        en: 'Create a channel to publish messages',
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Future<void>.delayed(const Duration(milliseconds: 80),
+                            () {
+                          if (!mounted || !outerContext.mounted) return;
+                          _showCreateChannel(outerContext);
+                        });
+                      },
+                    ),
+                    _CreateOption(
+                      icon: Icons.qr_code_scanner,
+                      iconColor: const Color(0xFF9C27B0),
+                      title: _chatPageText(
+                        outerContext,
+                        zhCN: '扫描二维码',
+                        zhTW: '掃描二維碼',
+                        en: 'Scan QR Code',
+                      ),
+                      subtitle: _chatPageText(
+                        outerContext,
+                        zhCN: '扫码添加好友或群组',
+                        zhTW: '掃碼添加好友或群組',
+                        en: 'Scan to add a friend or join a group',
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        outerContext.push('/scan');
+                      },
+                    ),
+                    SizedBox(height: bottomSpacing),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              _CreateOption(
-                icon: Icons.search,
-                iconColor: AppColors.primary,
-                title: '搜索用户',
-                subtitle: '搜索用户开始聊天',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  if (widget.isDesktopSidebar) {
-                    // 桌面端：在右侧面板显示搜索用户
-                    ref.read(desktopProfileProvider.notifier).state =
-                        const DesktopProfileInfo(
-                      type: DesktopPanelType.searchUsers,
-                      id: 'search_users',
-                    );
-                  } else {
-                    outerContext.push('/search-users');
-                  }
-                },
-              ),
-              _CreateOption(
-                icon: Icons.group_outlined,
-                iconColor: const Color(0xFF4CAF50),
-                title: '新建群组',
-                subtitle: '创建一个群聊',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCreateGroup(outerContext);
-                },
-              ),
-              _CreateOption(
-                icon: Icons.campaign_outlined,
-                iconColor: const Color(0xFFFF9800),
-                title: '新建频道',
-                subtitle: '创建一个频道发布消息',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCreateChannel(outerContext);
-                },
-              ),
-              _CreateOption(
-                icon: Icons.qr_code_scanner,
-                iconColor: const Color(0xFF9C27B0),
-                title: '扫描二维码',
-                subtitle: '扫码添加好友或群组',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  outerContext.push('/scan');
-                },
-              ),
-              SizedBox(height: bottomSpacing),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        );
+      },
+    ).whenComplete(() {
+      if (!mounted) return;
+      ref.read(floatingNavHiddenProvider.notifier).state = false;
+    });
   }
 
   void _showNewChat(BuildContext context) {
@@ -711,6 +1057,114 @@ class _ChatPageState extends ConsumerState<ChatPage>
   }
 
   /// 编辑模式下的聊天项
+  String? _normalizedChatListError(ChatListState chats) {
+    final error = chats.error?.trim();
+    if (error == null || error.isEmpty) {
+      return null;
+    }
+    return error;
+  }
+
+  Widget _buildChatListErrorBanner(String error, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.error.withOpacity(isDark ? 0.16 : 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.error.withOpacity(isDark ? 0.28 : 0.18),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.wifi_off_rounded,
+              color: AppColors.error,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                error,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isDark
+                      ? AppColors.textSecondaryFor(context)
+                      : const Color(0xFF8A1F11),
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => ref.read(chatListProvider.notifier).refresh(),
+              child: Text(
+                _chatPageText(
+                  context,
+                  zhCN: '重试',
+                  zhTW: '重試',
+                  en: 'Retry',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatListErrorState(AppLocalizations l10n, String error) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: AppColors.textTertiaryFor(context),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _chatPageText(
+                context,
+                zhCN: '会话加载失败',
+                zhTW: '會話載入失敗',
+                en: 'Failed to load chats',
+              ),
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimaryFor(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: AppColors.textSecondaryFor(context),
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => ref.read(chatListProvider.notifier).refresh(),
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(l10n.retry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEditableChatItem(
     ChatItem chat,
     bool isSelected,
@@ -740,11 +1194,13 @@ class _ChatPageState extends ConsumerState<ChatPage>
               margin: const EdgeInsets.only(right: 12),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isSelected ? AppColors.primary : Colors.transparent,
+                color: isSelected
+                    ? AppColors.primaryFor(context)
+                    : Colors.transparent,
                 border: Border.all(
                   color: isSelected
-                      ? AppColors.primary
-                      : (isDark ? Colors.white38 : Colors.black26),
+                      ? AppColors.primaryFor(context)
+                      : AppColors.textTertiaryFor(context),
                   width: 2,
                 ),
               ),
@@ -753,7 +1209,12 @@ class _ChatPageState extends ConsumerState<ChatPage>
                   : null,
             ),
             // 头像
-            AvatarWidget(avatar: chat.avatar, name: chat.name, size: 52),
+            AvatarWidget(
+              avatar: chat.avatar,
+              name: chat.name,
+              size: 52,
+              borderRadius: 12,
+            ),
             const SizedBox(width: 12),
             // 内容
             Expanded(
@@ -771,9 +1232,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                                 nicknameColor: chat.nicknameColor,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
-                                defaultColor: isDark
-                                    ? AppColors.darkTextPrimary
-                                    : AppColors.lightTextPrimary,
+                                defaultColor: AppColors.textPrimaryFor(context),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -794,40 +1253,13 @@ class _ChatPageState extends ConsumerState<ChatPage>
                         _formatTime(chat.lastMessageTime),
                         style: TextStyle(
                           fontSize: 14,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : AppColors.lightTextTertiary,
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    (typingText != null && typingText.isNotEmpty)
-                        ? typingText
-                        : (chat.lastMessage?.isNotEmpty == true
-                            ? chat.lastMessage!
-                            : '快来发送第一条消息吧～'),
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: (typingText != null && typingText.isNotEmpty)
-                          ? Colors.blue
-                          : (chat.lastMessage?.isNotEmpty == true
-                              ? (isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary)
-                              : (isDark
-                                  ? AppColors.darkTextTertiary
-                                  : AppColors.lightTextTertiary)),
-                      fontStyle: (typingText != null && typingText.isNotEmpty)
-                          ? FontStyle.italic
-                          : (chat.lastMessage?.isNotEmpty == true
-                              ? FontStyle.normal
-                              : FontStyle.italic),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  _buildLastMessagePreview(chat, typingText, isDark),
                 ],
               ),
             ),
@@ -837,23 +1269,214 @@ class _ChatPageState extends ConsumerState<ChatPage>
     );
   }
 
+  Widget _buildLastMessagePreview(
+    ChatItem chat,
+    String? typingText,
+    bool isDark,
+  ) {
+    final isTyping = typingText != null && typingText.isNotEmpty;
+    final hasLastMessage = chat.lastMessage?.isNotEmpty == true;
+    final text = isTyping
+        ? typingText!
+        : (hasLastMessage
+            ? _chatPreviewText(chat)
+            : _chatPageText(
+                context,
+                zhCN: '快来发送第一条消息吧～',
+                zhTW: '快來傳送第一條訊息吧～',
+                en: 'Send the first message',
+              ));
+    final style = TextStyle(
+      fontSize: 15,
+      color: isTyping
+          ? Colors.blue
+          : (hasLastMessage
+              ? (AppColors.textSecondaryFor(context))
+              : (AppColors.textTertiaryFor(context))),
+      fontStyle: isTyping
+          ? FontStyle.italic
+          : (hasLastMessage ? FontStyle.normal : FontStyle.italic),
+    );
+    final thumbnailUrl = isTyping ? null : _lastMessageThumbnailUrl(chat);
+
+    if (thumbnailUrl == null) {
+      return Text(
+        text,
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    return SizedBox(
+      height: 24,
+      child: Row(
+        children: [
+          _buildLastMessageThumbnail(
+            thumbnailUrl,
+            chat.lastMessageType,
+            isDark,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _chatPreviewText(ChatItem chat) {
+    if (chat.lastMessageType == MessageContentType.call) {
+      return formatChatCallPreview(
+        text: chat.lastMessage,
+        language: AppLocalizations.of(context).language,
+      ).summary;
+    }
+    final text = chat.lastMessage ?? '';
+    if (text.startsWith(EmojiStoreService.builtInStickerSendPrefix)) {
+      return _chatPageText(
+        context,
+        zhCN: '[贴纸]',
+        zhTW: '[貼紙]',
+        en: '[Sticker]',
+      );
+    }
+    return text;
+  }
+
+  String? _lastMessageThumbnailUrl(ChatItem chat) {
+    final isMedia = chat.lastMessageType == MessageContentType.photo ||
+        chat.lastMessageType == MessageContentType.video ||
+        chat.lastMessageType == MessageContentType.sticker;
+    if (!isMedia) return null;
+    final rawUrl = chat.lastMessageMediaUrl?.trim() ?? '';
+    if (rawUrl.isEmpty) return null;
+    final url = chat.lastMessageType == MessageContentType.sticker
+        ? EmojiStoreService.resolveStickerDisplayPath(rawUrl)
+        : _isLocalPreviewPath(rawUrl)
+            ? rawUrl
+            : ChatMediaCacheManager.normalizeUrl(rawUrl);
+    return url.isEmpty ? null : url;
+  }
+
+  Widget _buildLastMessageThumbnail(
+    String url,
+    MessageContentType? type,
+    bool isDark,
+  ) {
+    const size = 24.0;
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(
+        Icons.image_outlined,
+        size: 15,
+        color: AppColors.textTertiaryFor(context),
+      ),
+    );
+
+    Widget image;
+    if (type == MessageContentType.sticker) {
+      image = StickerImage(
+        source: url,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __) => fallback,
+      );
+    } else if (_isLocalPreviewPath(url)) {
+      final file = File(url);
+      image = file.existsSync()
+          ? Image.file(
+              file,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            )
+          : fallback;
+    } else if (url.startsWith('http')) {
+      image = CachedNetworkImage(
+        imageUrl: url,
+        cacheManager: ChatMediaCacheManager.instance,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        memCacheWidth: 96,
+        memCacheHeight: 96,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
+      );
+    } else {
+      image = fallback;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: image,
+    );
+  }
+
+  bool _isLocalPreviewPath(String url) {
+    return ChatMediaCacheManager.isLocalPath(url) ||
+        RegExp(r'^[A-Za-z]:[\\/]').hasMatch(url);
+  }
+
   String _formatTime(DateTime? time) {
     if (time == null) return '';
     final now = DateTime.now();
     final diff = now.difference(time);
 
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+    if (diff.inMinutes < 1) {
+      return _chatPageText(
+        context,
+        zhCN: '刚刚',
+        zhTW: '剛剛',
+        en: 'just now',
+      );
+    }
+    if (diff.inHours < 1) {
+      return _chatPageText(
+        context,
+        zhCN: '${diff.inMinutes}分钟前',
+        zhTW: '${diff.inMinutes}分鐘前',
+        en: '${diff.inMinutes} min ago',
+      );
+    }
     if (diff.inDays < 1) {
       return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     }
-    if (diff.inDays < 7) return '${diff.inDays}天前';
+    if (diff.inDays < 7) {
+      return _chatPageText(
+        context,
+        zhCN: '${diff.inDays}天前',
+        zhTW: '${diff.inDays}天前',
+        en: '${diff.inDays} days ago',
+      );
+    }
     return '${time.month}/${time.day}';
   }
 
   /// 编辑模式底部操作栏（毛玻璃按钮）
   Widget _buildEditBottomBar(bool isDark, AppLocalizations l10n) {
     final hasSelection = _selectedChatIds.isNotEmpty;
+    final chatState = ref.watch(chatListProvider);
+    final allChats = _getChatList(chatState);
+    final selectedChats =
+        allChats.where((chat) => _selectedChatIds.contains(chat.id)).toList();
+    final shouldMarkUnread = selectedChats.isNotEmpty &&
+        selectedChats.every((chat) => chat.unreadCount == 0);
 
     return Container(
       padding: EdgeInsets.only(
@@ -867,7 +1490,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
           // 标记已读
           Expanded(
             child: GestureDetector(
-              onTap: hasSelection ? _markSelectedAsRead : null,
+              onTap: hasSelection ? _toggleSelectedReadState : null,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: BackdropFilter(
@@ -885,14 +1508,21 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
-                      l10n.markAsRead,
+                      shouldMarkUnread
+                          ? _chatPageText(
+                              context,
+                              zhCN: '标记未读',
+                              zhTW: '標記未讀',
+                              en: 'Mark as Unread',
+                            )
+                          : l10n.markAsRead,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                         color: hasSelection
-                            ? AppColors.primary
-                            : (isDark ? Colors.white38 : Colors.grey),
+                            ? AppColors.primaryFor(context)
+                            : AppColors.textTertiaryFor(context),
                       ),
                     ),
                   ),
@@ -920,14 +1550,19 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
-                      '删除',
+                      _chatPageText(
+                        context,
+                        zhCN: '删除',
+                        zhTW: '刪除',
+                        en: 'Delete',
+                      ),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                         color: hasSelection
                             ? AppColors.error
-                            : (isDark ? Colors.white38 : Colors.grey),
+                            : AppColors.textTertiaryFor(context),
                       ),
                     ),
                   ),
@@ -940,17 +1575,23 @@ class _ChatPageState extends ConsumerState<ChatPage>
     );
   }
 
-  void _markSelectedAsRead() {
+  void _toggleSelectedReadState() {
     GlobalHaptics.medium();
     final notifier = ref.read(chatListProvider.notifier);
     final chats = ref.read(chatListProvider);
     final allChats = _getChatList(chats);
 
+    final selectedChats =
+        allChats.where((chat) => _selectedChatIds.contains(chat.id)).toList();
+    final shouldMarkUnread = selectedChats.isNotEmpty &&
+        selectedChats.every((chat) => chat.unreadCount == 0);
+
     for (final chatId in _selectedChatIds) {
       final idx = allChats.indexWhere((c) => c.id == chatId);
       if (idx < 0) continue;
       final chat = allChats[idx];
-      if (chat.unreadCount > 0) {
+      if ((shouldMarkUnread && chat.unreadCount == 0) ||
+          (!shouldMarkUnread && chat.unreadCount > 0)) {
         notifier.toggleUnread(chatId);
       }
     }
@@ -1033,7 +1674,12 @@ class _ChatPageState extends ConsumerState<ChatPage>
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '删除 ${_selectedChatIds.length} 个聊天？',
+                      _chatPageText(
+                        context,
+                        zhCN: '删除 ${_selectedChatIds.length} 个聊天？',
+                        zhTW: '刪除 ${_selectedChatIds.length} 個聊天？',
+                        en: 'Delete ${_selectedChatIds.length} chats?',
+                      ),
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -1042,11 +1688,16 @@ class _ChatPageState extends ConsumerState<ChatPage>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '聊天将从列表中移除，但不会删除聊天记录',
+                      _chatPageText(
+                        context,
+                        zhCN: '聊天将从列表中移除，但不会删除聊天记录',
+                        zhTW: '聊天將從清單中移除，但不會刪除聊天記錄',
+                        en: 'These chats will be removed from the list, but the chat history will be kept',
+                      ),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark ? Colors.white60 : Colors.black54,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -1064,13 +1715,17 @@ class _ChatPageState extends ConsumerState<ChatPage>
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                '取消',
+                                _chatPageText(
+                                  context,
+                                  zhCN: '取消',
+                                  zhTW: '取消',
+                                  en: 'Cancel',
+                                ),
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,
-                                  color:
-                                      isDark ? Colors.white70 : Colors.black54,
+                                  color: AppColors.textSecondaryFor(context),
                                 ),
                               ),
                             ),
@@ -1089,10 +1744,15 @@ class _ChatPageState extends ConsumerState<ChatPage>
                                 color: AppColors.error,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Text(
-                                '删除',
+                              child: Text(
+                                _chatPageText(
+                                  context,
+                                  zhCN: '删除',
+                                  zhTW: '刪除',
+                                  en: 'Delete',
+                                ),
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.white,
@@ -1130,7 +1790,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
           SizedBox(
             width: 100,
             height: 100,
-            child: Lottie.asset(
+            child: WebSafeLottie.asset(
               'assets/emoji/lottie/hatched_chick.json',
               repeat: true,
             ),
@@ -1138,7 +1798,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
           const SizedBox(height: 16),
           Text(
             l10n.noChats,
-            style: TextStyle(fontSize: 16, color: AppColors.lightTextSecondary),
+            style: TextStyle(
+                fontSize: 16, color: AppColors.textSecondaryFor(context)),
           ),
           const SizedBox(height: 8),
           TextButton(
@@ -1249,7 +1910,14 @@ class _ChatPageState extends ConsumerState<ChatPage>
         notifier.deleteChat(chat.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('已删除'),
+            content: Text(
+              _chatPageText(
+                context,
+                zhCN: '已删除',
+                zhTW: '已刪除',
+                en: 'Deleted',
+              ),
+            ),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -1274,26 +1942,41 @@ class _ChatPageState extends ConsumerState<ChatPage>
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '删除聊天',
+          _chatPageText(
+            context,
+            zhCN: '删除聊天',
+            zhTW: '刪除聊天',
+            en: 'Delete Chat',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         content: Text(
-          '确定要删除与"${chat.name}"的聊天记录吗？',
+          _chatPageText(
+            context,
+            zhCN: '确定要删除与"${chat.name}"的聊天记录吗？',
+            zhTW: '確定要刪除與「${chat.name}」的聊天記錄嗎？',
+            en: 'Delete the chat history with "${chat.name}"?',
+          ),
           style: TextStyle(
             fontSize: 15,
-            color: isDark ? Colors.white70 : Colors.black87,
+            color: AppColors.textSecondaryFor(context),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+              _chatPageText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -1301,7 +1984,15 @@ class _ChatPageState extends ConsumerState<ChatPage>
               Navigator.pop(context);
               ref.read(chatListProvider.notifier).deleteChat(chat.id);
             },
-            child: Text('删除', style: TextStyle(color: AppColors.error)),
+            child: Text(
+              _chatPageText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: TextStyle(color: AppColors.error),
+            ),
           ),
         ],
       ),
@@ -1327,7 +2018,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             // 选项卡片
             Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                color: AppColors.cardFor(context),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -1337,22 +2028,37 @@ class _ChatPageState extends ConsumerState<ChatPage>
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                     child: Text(
-                      '删除与"${chat.name}"的聊天',
+                      _chatPageText(
+                        context,
+                        zhCN: '删除与"${chat.name}"的聊天',
+                        zhTW: '刪除與「${chat.name}」的聊天',
+                        en: 'Delete chat with "${chat.name}"',
+                      ),
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white54 : Colors.black45,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ),
                   Divider(
                     height: 1,
-                    color: isDark ? Colors.white12 : Colors.black12,
+                    color: AppColors.dividerFor(context),
                   ),
                   // 删除列表
                   _DeleteOptionItem(
-                    title: '从列表中删除',
-                    subtitle: '仅从聊天列表移除，保留聊天记录',
+                    title: _chatPageText(
+                      context,
+                      zhCN: '从列表中删除',
+                      zhTW: '從列表中刪除',
+                      en: 'Remove from List',
+                    ),
+                    subtitle: _chatPageText(
+                      context,
+                      zhCN: '仅从聊天列表移除，保留聊天记录',
+                      zhTW: '僅從聊天列表移除，保留聊天記錄',
+                      en: 'Remove it from the chat list only and keep the chat history',
+                    ),
                     isDark: isDark,
                     onTap: () {
                       Navigator.pop(context);
@@ -1361,7 +2067,14 @@ class _ChatPageState extends ConsumerState<ChatPage>
                           .hideChatFromServer(chat.id);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text('已从列表中移除'),
+                          content: Text(
+                            _chatPageText(
+                              context,
+                              zhCN: '已从列表中移除',
+                              zhTW: '已從列表中移除',
+                              en: 'Removed from the list',
+                            ),
+                          ),
                           duration: const Duration(seconds: 2),
                           behavior: SnackBarBehavior.floating,
                           shape: RoundedRectangleBorder(
@@ -1373,12 +2086,22 @@ class _ChatPageState extends ConsumerState<ChatPage>
                   ),
                   Divider(
                     height: 1,
-                    color: isDark ? Colors.white12 : Colors.black12,
+                    color: AppColors.dividerFor(context),
                   ),
                   // 删除聊天记录
                   _DeleteOptionItem(
-                    title: '删除聊天记录',
-                    subtitle: '清空本地聊天记录，对方的记录不受影响',
+                    title: _chatPageText(
+                      context,
+                      zhCN: '删除聊天记录',
+                      zhTW: '刪除聊天記錄',
+                      en: 'Delete Chat History',
+                    ),
+                    subtitle: _chatPageText(
+                      context,
+                      zhCN: '清空本地聊天记录，对方的记录不受影响',
+                      zhTW: '清空本地聊天記錄，對方的記錄不受影響',
+                      en: "Clear your local chat history only. The other person's history is not affected",
+                    ),
                     isDark: isDark,
                     isDestructive: true,
                     onTap: () {
@@ -1395,7 +2118,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                color: AppColors.cardFor(context),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: TextButton(
@@ -1407,11 +2130,16 @@ class _ChatPageState extends ConsumerState<ChatPage>
                   ),
                 ),
                 child: Text(
-                  '取消',
+                  _chatPageText(
+                    context,
+                    zhCN: '取消',
+                    zhTW: '取消',
+                    en: 'Cancel',
+                  ),
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                   ),
                 ),
               ),
@@ -1437,18 +2165,30 @@ class _ChatPageState extends ConsumerState<ChatPage>
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
-          '确认删除',
+          _chatPageText(
+            context,
+            zhCN: '确认删除',
+            zhTW: '確認刪除',
+            en: 'Confirm Delete',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         content: Text(
-          '确定要删除与"${chat.name}"的所有聊天记录吗？\n\n此操作仅删除您本地的记录，对方手机上的聊天记录不会被删除。',
+          _chatPageText(
+            context,
+            zhCN:
+                '确定要删除与"${chat.name}"的所有聊天记录吗？\n\n此操作仅删除您本地的记录，对方手机上的聊天记录不会被删除。',
+            zhTW:
+                '確定要刪除與「${chat.name}」的所有聊天記錄嗎？\n\n此操作僅刪除你本機的記錄，對方裝置上的聊天記錄不會被刪除。',
+            en: 'Delete all chat history with "${chat.name}"?\n\nThis only deletes your local records. The other person\'s chat history will not be deleted.',
+          ),
           style: TextStyle(
             fontSize: 15,
-            color: isDark ? Colors.white70 : Colors.black87,
+            color: AppColors.textSecondaryFor(context),
             height: 1.4,
           ),
         ),
@@ -1456,8 +2196,13 @@ class _ChatPageState extends ConsumerState<ChatPage>
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              '取消',
-              style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+              _chatPageText(
+                context,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+              style: TextStyle(color: AppColors.textSecondaryFor(context)),
             ),
           ),
           TextButton(
@@ -1467,7 +2212,14 @@ class _ChatPageState extends ConsumerState<ChatPage>
               ref.read(chatListProvider.notifier).deleteChat(chat.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: const Text('聊天记录已删除'),
+                  content: Text(
+                    _chatPageText(
+                      context,
+                      zhCN: '聊天记录已删除',
+                      zhTW: '聊天記錄已刪除',
+                      en: 'Chat history deleted',
+                    ),
+                  ),
                   duration: const Duration(seconds: 2),
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
@@ -1476,7 +2228,15 @@ class _ChatPageState extends ConsumerState<ChatPage>
                 ),
               );
             },
-            child: Text('删除', style: TextStyle(color: AppColors.error)),
+            child: Text(
+              _chatPageText(
+                context,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+              style: TextStyle(color: AppColors.error),
+            ),
           ),
         ],
       ),
@@ -1519,7 +2279,7 @@ class _DeleteOptionItem extends StatelessWidget {
                 fontWeight: FontWeight.w400,
                 color: isDestructive
                     ? AppColors.error
-                    : (isDark ? Colors.white : Colors.black),
+                    : AppColors.textPrimaryFor(context),
               ),
             ),
             const SizedBox(height: 4),
@@ -1527,7 +2287,7 @@ class _DeleteOptionItem extends StatelessWidget {
               subtitle,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
               textAlign: TextAlign.center,
             ),
@@ -1646,7 +2406,7 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
         });
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('加载用户状态失败: $e');
+      debugPrint('加载用户状态失败: $e');
     }
   }
 
@@ -1691,7 +2451,7 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('加载消息失败: $e');
+      debugPrint('加载消息失败: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -1851,7 +2611,8 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                                   Icons
                                                       .arrow_back_ios_new_rounded,
                                                   size: 16,
-                                                  color: AppColors.primary,
+                                                  color: AppColors.primaryFor(
+                                                      context),
                                                 ),
                                               ),
                                               const SizedBox(width: 10),
@@ -1909,10 +2670,9 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                                         fontSize: 12,
                                                         color: _isOnline
                                                             ? AppColors.online
-                                                            : (isDark
-                                                                ? Colors.white54
-                                                                : Colors
-                                                                    .black45),
+                                                            : AppColors
+                                                                .textSecondaryFor(
+                                                                    context),
                                                       ),
                                                     ),
                                                   ],
@@ -1967,7 +2727,19 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                 icon: chat.unreadCount > 0
                                     ? Icons.mark_chat_read_outlined
                                     : Icons.mark_chat_unread_outlined,
-                                title: chat.unreadCount > 0 ? '标记为已读' : '标记为未读',
+                                title: chat.unreadCount > 0
+                                    ? _chatPageText(
+                                        context,
+                                        zhCN: '标记为已读',
+                                        zhTW: '標記為已讀',
+                                        en: 'Mark as Read',
+                                      )
+                                    : _chatPageText(
+                                        context,
+                                        zhCN: '标记为未读',
+                                        zhTW: '標記為未讀',
+                                        en: 'Mark as Unread',
+                                      ),
                                 isDark: isDark,
                                 onTap: () async {
                                   await _closeWithAnimation();
@@ -1979,7 +2751,19 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                 icon: chat.isPinned
                                     ? Icons.push_pin_outlined
                                     : Icons.push_pin,
-                                title: chat.isPinned ? '取消置顶' : '置顶',
+                                title: chat.isPinned
+                                    ? _chatPageText(
+                                        context,
+                                        zhCN: '取消置顶',
+                                        zhTW: '取消置頂',
+                                        en: 'Unpin',
+                                      )
+                                    : _chatPageText(
+                                        context,
+                                        zhCN: '置顶',
+                                        zhTW: '置頂',
+                                        en: 'Pin',
+                                      ),
                                 isDark: isDark,
                                 onTap: () async {
                                   await _closeWithAnimation();
@@ -1991,7 +2775,19 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                                 icon: chat.isMuted
                                     ? Icons.notifications_active_outlined
                                     : Icons.notifications_off_outlined,
-                                title: chat.isMuted ? '取消静音' : '静音',
+                                title: chat.isMuted
+                                    ? _chatPageText(
+                                        context,
+                                        zhCN: '取消静音',
+                                        zhTW: '取消靜音',
+                                        en: 'Unmute',
+                                      )
+                                    : _chatPageText(
+                                        context,
+                                        zhCN: '静音',
+                                        zhTW: '靜音',
+                                        en: 'Mute',
+                                      ),
                                 isDark: isDark,
                                 onTap: () async {
                                   await _closeWithAnimation();
@@ -2001,7 +2797,12 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
                               _TGMenuDivider(isDark: isDark),
                               _TGMenuItem(
                                 icon: Icons.delete_outline,
-                                title: '删除',
+                                title: _chatPageText(
+                                  context,
+                                  zhCN: '删除',
+                                  zhTW: '刪除',
+                                  en: 'Delete',
+                                ),
                                 isDark: isDark,
                                 isDestructive: true,
                                 onTap: () async {
@@ -2054,7 +2855,12 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            '暂无消息',
+            _chatPageText(
+              context,
+              zhCN: '暂无消息',
+              zhTW: '暫無消息',
+              en: 'No messages yet',
+            ),
             style: TextStyle(
               fontSize: 14,
               color: isDark ? Colors.white70 : Colors.white,
@@ -2084,28 +2890,83 @@ class _ChatPreviewDialogState extends ConsumerState<_ChatPreviewDialog>
   String _getSubtitle() {
     // 使用实时获取的在线状态
     if (widget.chat.type == ChatItemType.private) {
-      if (_isOnline) return '在线';
+      if (_isOnline) {
+        return _chatPageText(
+          context,
+          zhCN: '在线',
+          zhTW: '在線',
+          en: 'Online',
+        );
+      }
       if (_lastSeen != null) {
-        return '最近上线于 ${_formatLastSeen(_lastSeen!)}';
+        return _chatPageText(
+          context,
+          zhCN: '最近上线于 ${_formatLastSeen(_lastSeen!)}',
+          zhTW: '最近上線於 ${_formatLastSeen(_lastSeen!)}',
+          en: 'Last seen ${_formatLastSeen(_lastSeen!)}',
+        );
       }
     }
     if (widget.chat.type == ChatItemType.group) {
-      return '${widget.chat.memberCount} 位成员';
+      return _chatPageText(
+        context,
+        zhCN: '${widget.chat.memberCount} 位成员',
+        zhTW: '${widget.chat.memberCount} 位成員',
+        en: '${widget.chat.memberCount} members',
+      );
     }
     if (widget.chat.type == ChatItemType.channel) {
-      return '${widget.chat.memberCount} 位订阅者';
+      return _chatPageText(
+        context,
+        zhCN: '${widget.chat.memberCount} 位订阅者',
+        zhTW: '${widget.chat.memberCount} 位訂閱者',
+        en: '${widget.chat.memberCount} subscribers',
+      );
     }
-    return '最近上线于 ${widget.chat.time}';
+    return _chatPageText(
+      context,
+      zhCN: '最近上线于 ${widget.chat.time}',
+      zhTW: '最近上線於 ${widget.chat.time}',
+      en: 'Last seen ${widget.chat.time}',
+    );
   }
 
   String _formatLastSeen(DateTime lastSeen) {
     final now = DateTime.now();
     final diff = now.difference(lastSeen);
 
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
-    if (diff.inHours < 24) return '${diff.inHours} 小时前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
+    if (diff.inMinutes < 1) {
+      return _chatPageText(
+        context,
+        zhCN: '刚刚',
+        zhTW: '剛剛',
+        en: 'just now',
+      );
+    }
+    if (diff.inMinutes < 60) {
+      return _chatPageText(
+        context,
+        zhCN: '${diff.inMinutes} 分钟前',
+        zhTW: '${diff.inMinutes} 分鐘前',
+        en: '${diff.inMinutes} min ago',
+      );
+    }
+    if (diff.inHours < 24) {
+      return _chatPageText(
+        context,
+        zhCN: '${diff.inHours} 小时前',
+        zhTW: '${diff.inHours} 小時前',
+        en: '${diff.inHours} hr ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _chatPageText(
+        context,
+        zhCN: '${diff.inDays} 天前',
+        zhTW: '${diff.inDays} 天前',
+        en: '${diff.inDays} days ago',
+      );
+    }
 
     return '${lastSeen.hour.toString().padLeft(2, '0')}:${lastSeen.minute.toString().padLeft(2, '0')}';
   }
@@ -2232,7 +3093,14 @@ class _PreviewBubble extends ConsumerWidget {
                     ),
                   ),
                 Text(
-                  text.isEmpty ? '[媒体消息]' : text,
+                  text.isEmpty
+                      ? _chatPageText(
+                          context,
+                          zhCN: '[媒体消息]',
+                          zhTW: '[媒體消息]',
+                          en: '[Media]',
+                        )
+                      : text,
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.25,
@@ -2293,7 +3161,7 @@ class _PreviewBubble extends ConsumerWidget {
                 width: 80,
                 height: 80,
                 child: lottieFile != null
-                    ? Lottie.asset(
+                    ? WebSafeLottie.asset(
                         lottieFile,
                         fit: BoxFit.contain,
                         repeat: true,
@@ -2308,7 +3176,7 @@ class _PreviewBubble extends ConsumerWidget {
                     timeStr,
                     style: TextStyle(
                       fontSize: 10,
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                   if (isMine) ...[
@@ -2316,7 +3184,9 @@ class _PreviewBubble extends ConsumerWidget {
                     Icon(
                       Icons.done_all,
                       size: 13,
-                      color: isDark ? Colors.white54 : AppColors.primary,
+                      color: isDark
+                          ? AppColors.textSecondaryFor(context)
+                          : AppColors.primaryFor(context),
                     ),
                   ],
                 ],
@@ -2477,10 +3347,10 @@ class _TGMenuItemState extends State<_TGMenuItem> {
   Widget build(BuildContext context) {
     final textColor = widget.isDestructive
         ? AppColors.error
-        : (widget.isDark ? Colors.white : Colors.black);
+        : AppColors.textPrimaryFor(context);
     final iconColor = widget.isDestructive
         ? AppColors.error
-        : (widget.isDark ? Colors.white70 : Colors.black54);
+        : AppColors.textSecondaryFor(context);
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
@@ -2599,17 +3469,39 @@ class _FolderTabs extends ConsumerWidget {
     required this.onSelect,
   });
 
-  String _getFolderName(ChatFolder folder, AppLocalizations l10n) {
+  String _getFolderName(
+    BuildContext context,
+    ChatFolder folder,
+    AppLocalizations l10n,
+  ) {
     // 翻译默认分组名称
     switch (folder.id) {
       case 'all':
-        return l10n.get('all') ?? '全部';
+        return l10n.get('all') ??
+            _chatPageText(
+              context,
+              zhCN: '全部',
+              zhTW: '全部',
+              en: 'All',
+            );
       case 'contacts':
         return l10n.tabContacts;
       case 'groups':
-        return l10n.get('groups') ?? '群组';
+        return l10n.get('groups') ??
+            _chatPageText(
+              context,
+              zhCN: '群组',
+              zhTW: '群組',
+              en: 'Groups',
+            );
       case 'channels':
-        return l10n.get('channels') ?? '频道';
+        return l10n.get('channels') ??
+            _chatPageText(
+              context,
+              zhCN: '频道',
+              zhTW: '頻道',
+              en: 'Channels',
+            );
       default:
         return folder.name;
     }
@@ -2621,10 +3513,10 @@ class _FolderTabs extends ConsumerWidget {
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
     return SizedBox(
-      height: 48,
+      height: 42,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
         itemCount: folders.length,
         itemBuilder: (context, index) {
           final folder = folders[index];
@@ -2634,97 +3526,72 @@ class _FolderTabs extends ConsumerWidget {
 
           return GestureDetector(
             onTap: () => onSelect(index),
-            child: Container(
-              margin: const EdgeInsets.only(right: 10),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      // 选中渐变蓝色，未选中毛玻璃
-                      gradient: isSelected
-                          ? LinearGradient(
-                              colors: [
-                                AppColors.primary,
-                                AppColors.primaryLight,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : null,
-                      color: isSelected
-                          ? null
-                          : (isDark
-                              ? Colors.white.withOpacity(0.1)
-                              : Colors.white.withOpacity(0.9)),
-                      borderRadius: BorderRadius.circular(20),
-                      border: !isSelected && isDark
-                          ? Border.all(
-                              color: Colors.white.withOpacity(0.08),
-                              width: 0.5,
-                            )
-                          : null,
-                      boxShadow: [
-                        BoxShadow(
-                          color: isSelected
-                              ? AppColors.primary.withOpacity(0.3)
-                              : (isDark
-                                  ? Colors.black.withOpacity(0.2)
-                                  : Colors.black.withOpacity(0.05)),
-                          blurRadius: isSelected ? 12 : 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _getFolderName(folder, l10n),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight:
-                                isSelected ? FontWeight.w600 : FontWeight.w500,
-                            color: isSelected
-                                ? Colors.white
-                                : (isDark ? Colors.white : Colors.black87),
-                          ),
-                        ),
-                        if (unreadCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.white.withOpacity(0.25)
-                                  : (isDark
-                                      ? AppColors.primary.withOpacity(0.3)
-                                      : AppColors.primary.withOpacity(0.1)),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              unreadCount > 99 ? '99+' : unreadCount.toString(),
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 76),
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? (isDark
+                          ? AppColors.primaryWithOpacity(context, 0.20)
+                          : AppColors.primaryWithOpacity(context, 0.10))
+                      : AppColors.cardFor(context),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isDark
+                        ? (isSelected
+                            ? AppColors.primaryWithOpacity(context, 0.30)
+                            : AppColors.dividerFor(context))
+                        : (isSelected
+                            ? AppColors.primaryWithOpacity(context, 0.18)
+                            : Colors.black.withOpacity(0.05)),
+                    width: 0.8,
                   ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _getFolderName(context, folder, l10n),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.primaryFor(context)
+                            : (isDark
+                                ? AppColors.darkTextPrimary
+                                : const Color(0xFF1D1D1F)),
+                      ),
+                    ),
+                    if (unreadCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.10)
+                              : const Color(0xFFE1E3E6),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : const Color(0xFF63666A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -2767,7 +3634,8 @@ class _CreateOption extends StatelessWidget {
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(
         subtitle,
-        style: TextStyle(fontSize: 13, color: AppColors.lightTextSecondary),
+        style:
+            TextStyle(fontSize: 13, color: AppColors.textSecondaryFor(context)),
       ),
       onTap: onTap,
     );
@@ -2827,11 +3695,16 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      '新建私聊',
+                      _chatPageText(
+                        context,
+                        zhCN: '新建私聊',
+                        zhTW: '新增私聊',
+                        en: 'New Private Chat',
+                      ),
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
                       ),
@@ -2856,7 +3729,12 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
                   controller: _searchController,
                   onChanged: (v) => setState(() => _searchQuery = v),
                   decoration: InputDecoration(
-                    hintText: '搜索联系人',
+                    hintText: _chatPageText(
+                      context,
+                      zhCN: '搜索联系人',
+                      zhTW: '搜尋聯絡人',
+                      en: 'Search Contacts',
+                    ),
                     prefixIcon: const Icon(Icons.search, size: 20),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -2875,13 +3753,18 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
                           Icon(
                             Icons.person_search,
                             size: 64,
-                            color: AppColors.lightTextTertiary,
+                            color: AppColors.textTertiaryFor(context),
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            '未找到联系人',
+                            _chatPageText(
+                              context,
+                              zhCN: '未找到联系人',
+                              zhTW: '找不到聯絡人',
+                              en: 'No contacts found',
+                            ),
                             style: TextStyle(
-                              color: AppColors.lightTextSecondary,
+                              color: AppColors.textSecondaryFor(context),
                             ),
                           ),
                         ],
@@ -2898,25 +3781,35 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
                             name: contact.name,
                             userId: contact.id,
                             size: 44,
-                            premiumType: contact.premiumType,
                           ),
                           title: ColoredNameWidget(
                             name: contact.name,
                             nicknameColor: contact.nicknameColor,
-                            premiumType: contact.premiumType,
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            defaultColor: Colors.black87,
+                            defaultColor: AppColors.textPrimaryFor(context),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Text(
-                            contact.isOnline ? '在线' : '最近在线',
+                            contact.isOnline
+                                ? _chatPageText(
+                                    context,
+                                    zhCN: '在线',
+                                    zhTW: '在線',
+                                    en: 'Online',
+                                  )
+                                : _chatPageText(
+                                    context,
+                                    zhCN: '最近在线',
+                                    zhTW: '最近在線',
+                                    en: 'Last seen',
+                                  ),
                             style: TextStyle(
                               fontSize: 13,
                               color: contact.isOnline
                                   ? AppColors.online
-                                  : AppColors.lightTextSecondary,
+                                  : AppColors.textSecondaryFor(context),
                             ),
                           ),
                           onTap: () => _startChat(contact),
@@ -2951,7 +3844,18 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
     } else {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('打开聊天失败，请重试')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            _chatPageText(
+              context,
+              zhCN: '打开聊天失败，请重试',
+              zhTW: '打開聊天失敗，請重試',
+              en: 'Failed to open chat. Please try again.',
+            ),
+          ),
+        ),
+      );
     }
   }
 }
@@ -2976,10 +3880,10 @@ class _EditActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = !enabled
-        ? (isDark ? Colors.white24 : Colors.black26)
+        ? AppColors.textTertiaryFor(context)
         : isDestructive
             ? AppColors.error
-            : AppColors.primary;
+            : AppColors.primaryFor(context);
 
     return GestureDetector(
       onTap: enabled ? onTap : null,
@@ -2989,7 +3893,7 @@ class _EditActionButton extends StatelessWidget {
           color: enabled
               ? (isDestructive
                   ? AppColors.error.withOpacity(0.1)
-                  : AppColors.primary.withOpacity(0.1))
+                  : AppColors.primaryWithOpacity(context, 0.1))
               : (isDark
                   ? Colors.white.withOpacity(0.05)
                   : Colors.black.withOpacity(0.03)),

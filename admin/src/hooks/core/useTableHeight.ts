@@ -56,6 +56,7 @@ class TableHeightCalculator {
    */
   private calculateOffset(): number {
     if (!this.options.showTableHeader.value) {
+      // 头部隐藏时只扣除实际存在的分页区域，零高度表示不占布局空间。
       return this.calculatePaginationOffset()
     }
 
@@ -77,6 +78,7 @@ class TableHeightCalculator {
    */
   private calculatePaginationOffset(): number {
     const { paginationHeight, paginationSpacing } = this.options
+    // 分页器未渲染时不能单独扣除间距，否则表格底部会留下空白。
     return paginationHeight.value === 0 ? 0 : paginationHeight.value + paginationSpacing.value
   }
 }

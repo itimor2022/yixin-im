@@ -1,16 +1,17 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
 	"encoding/json"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"time"
-
-	"gaoranim/internal/models"
-	"gaoranim/pkg/response"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"genericim/internal/models"
+	"genericim/pkg/response"
 )
 
 type MomentMgmtHandler struct {
@@ -125,7 +126,6 @@ func (h *MomentMgmtHandler) ListMoments(c *gin.Context) {
 	for _, u := range users {
 		userMap[u.ID] = u
 	}
-
 	adminMap := make(map[uint64]models.Admin)
 	if len(reviewerIDs) > 0 {
 		var admins []models.Admin
@@ -144,7 +144,6 @@ func (h *MomentMgmtHandler) ListMoments(c *gin.Context) {
 		var topics []string
 		json.Unmarshal(m.MediaUrls, &mediaUrls)
 		json.Unmarshal(m.Topics, &topics)
-
 		item := AdminMomentItem{
 			ID:           m.ID,
 			UUID:         m.UUID,
@@ -164,7 +163,6 @@ func (h *MomentMgmtHandler) ListMoments(c *gin.Context) {
 			ViewCount:    m.ViewCount,
 			CreatedAt:    m.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
-
 		if m.ReviewedBy != nil {
 			if admin, ok := adminMap[*m.ReviewedBy]; ok {
 				item.ReviewedByName = admin.Nickname
@@ -176,14 +174,12 @@ func (h *MomentMgmtHandler) ListMoments(c *gin.Context) {
 		if m.ReviewedAt != nil {
 			item.ReviewedAt = m.ReviewedAt.Format("2006-01-02 15:04:05")
 		}
-
 		if user.Avatar != "" {
 			item.UserAvatar = &user.Avatar
 		}
 
 		result = append(result, item)
 	}
-
 	response.Success(c, gin.H{
 		"list":      result,
 		"total":     total,
@@ -194,6 +190,7 @@ func (h *MomentMgmtHandler) ListMoments(c *gin.Context) {
 
 // UpdateMomentStatus 更新动态状态（隐藏/恢复）
 func (h *MomentMgmtHandler) UpdateMomentStatus(c *gin.Context) {
+
 	momentID := c.Param("id")
 
 	var req struct {
@@ -210,7 +207,6 @@ func (h *MomentMgmtHandler) UpdateMomentStatus(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "动态不存在")
 		return
 	}
-
 	moment.Status = req.Status
 	adminIDValue, _ := c.Get("admin_id")
 	if adminID, ok := adminIDValue.(uint64); ok {
@@ -224,19 +220,18 @@ func (h *MomentMgmtHandler) UpdateMomentStatus(c *gin.Context) {
 		moment.ReviewReason = req.Reason
 	}
 	h.db.Save(&moment)
-
 	response.SuccessWithMessage(c, "更新成功", nil)
 }
 
 // DeleteMoment 删除动态（后台硬删除）
 func (h *MomentMgmtHandler) DeleteMoment(c *gin.Context) {
+
 	momentID := c.Param("id")
 
 	// 删除相关数据
 	h.db.Where("moment_id = ?", momentID).Delete(&models.MomentLike{})
 	h.db.Where("moment_id = ?", momentID).Delete(&models.MomentComment{})
 	h.db.Delete(&models.Moment{}, momentID)
-
 	response.SuccessWithMessage(c, "删除成功", nil)
 }
 
@@ -247,11 +242,9 @@ func (h *MomentMgmtHandler) ListTopics(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	keyword := c.Query("keyword")
-
 	offset := (page - 1) * pageSize
 
 	query := h.db.Model(&models.Topic{})
-
 	if keyword != "" {
 		query = query.Where("name LIKE ?", "%"+keyword+"%")
 	}
@@ -261,7 +254,6 @@ func (h *MomentMgmtHandler) ListTopics(c *gin.Context) {
 
 	var topics []models.Topic
 	query.Order("sort DESC, post_count DESC").Offset(offset).Limit(pageSize).Find(&topics)
-
 	response.Success(c, gin.H{
 		"list":      topics,
 		"total":     total,
@@ -292,7 +284,6 @@ func (h *MomentMgmtHandler) CreateTopic(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "话题已存在")
 		return
 	}
-
 	topic := models.Topic{
 		Name:        req.Name,
 		Description: req.Description,
@@ -303,12 +294,10 @@ func (h *MomentMgmtHandler) CreateTopic(c *gin.Context) {
 		Sort:        req.Sort,
 		Status:      1,
 	}
-
 	if err := h.db.Create(&topic).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "创建失败")
 		return
 	}
-
 	response.Success(c, topic)
 }
 
@@ -336,7 +325,6 @@ func (h *MomentMgmtHandler) UpdateTopic(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "话题不存在")
 		return
 	}
-
 	updates := make(map[string]interface{})
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -362,10 +350,8 @@ func (h *MomentMgmtHandler) UpdateTopic(c *gin.Context) {
 	if req.Sort != nil {
 		updates["sort"] = *req.Sort
 	}
-
 	h.db.Model(&topic).Updates(updates)
 	h.db.First(&topic, topicID)
-
 	response.Success(c, topic)
 }
 
@@ -384,11 +370,9 @@ func (h *MomentMgmtHandler) ListBannedWords(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	keyword := c.Query("keyword")
 	category := c.Query("category")
-
 	offset := (page - 1) * pageSize
 
 	query := h.db.Model(&models.BannedWord{})
-
 	if keyword != "" {
 		query = query.Where("word LIKE ?", "%"+keyword+"%")
 	}
@@ -401,7 +385,6 @@ func (h *MomentMgmtHandler) ListBannedWords(c *gin.Context) {
 
 	var words []models.BannedWord
 	query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&words)
-
 	response.Success(c, gin.H{
 		"list":      words,
 		"total":     total,
@@ -437,7 +420,6 @@ func (h *MomentMgmtHandler) CreateBannedWord(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "违禁词已存在")
 		return
 	}
-
 	word := models.BannedWord{
 		Word:        req.Word,
 		Category:    req.Category,
@@ -445,12 +427,10 @@ func (h *MomentMgmtHandler) CreateBannedWord(c *gin.Context) {
 		Replacement: req.Replacement,
 		Status:      1,
 	}
-
 	if err := h.db.Create(&word).Error; err != nil {
 		response.Error(c, http.StatusInternalServerError, "创建失败")
 		return
 	}
-
 	response.Success(c, word)
 }
 
@@ -475,7 +455,6 @@ func (h *MomentMgmtHandler) UpdateBannedWord(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "违禁词不存在")
 		return
 	}
-
 	updates := make(map[string]interface{})
 	if req.Word != nil {
 		updates["word"] = *req.Word
@@ -492,10 +471,8 @@ func (h *MomentMgmtHandler) UpdateBannedWord(c *gin.Context) {
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
-
 	h.db.Model(&word).Updates(updates)
 	h.db.First(&word, wordID)
-
 	response.Success(c, word)
 }
 
@@ -517,14 +494,12 @@ func (h *MomentMgmtHandler) BatchCreateBannedWords(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-
 	if req.Category == "" {
 		req.Category = models.BannedCategoryOther
 	}
 	if req.Level == 0 {
 		req.Level = models.BannedLevelFilter
 	}
-
 	created := 0
 	for _, w := range req.Words {
 		if w == "" {
@@ -544,7 +519,6 @@ func (h *MomentMgmtHandler) BatchCreateBannedWords(c *gin.Context) {
 			created++
 		}
 	}
-
 	response.SuccessWithMessage(c, "批量创建成功", gin.H{"created": created})
 }
 
@@ -556,7 +530,9 @@ func (h *MomentMgmtHandler) GetMomentStats(c *gin.Context) {
 	var totalLikes int64
 
 	h.db.Model(&models.Moment{}).Where("status = 1").Count(&totalMoments)
-	h.db.Model(&models.Moment{}).Where("status = 1 AND DATE(created_at) = CURDATE()").Count(&todayMoments)
+	h.db.Model(&models.Moment{}).
+		Where("status = 1 AND created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)").
+		Count(&todayMoments)
 	h.db.Model(&models.MomentComment{}).Where("status = 1").Count(&totalComments)
 	h.db.Model(&models.MomentLike{}).Count(&totalLikes)
 
@@ -571,7 +547,6 @@ func (h *MomentMgmtHandler) GetMomentStats(c *gin.Context) {
 	var totalHitCount int64
 	h.db.Model(&models.BannedWord{}).Where("status = 1").Count(&totalBannedWords)
 	h.db.Model(&models.BannedWord{}).Select("SUM(hit_count)").Scan(&totalHitCount)
-
 	response.Success(c, gin.H{
 		"moments": gin.H{
 			"total":    totalMoments,

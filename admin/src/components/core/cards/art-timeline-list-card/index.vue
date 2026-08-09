@@ -65,5 +65,6 @@
   })
 
   // 计算最大高度
+  // maxCount 只控制可视区域高度，完整列表仍保留在滚动容器中。
   const maxHeight = computed(() => `${ITEM_HEIGHT * props.maxCount}px`)
 </script>

@@ -1,4 +1,6 @@
+// 文件用途：由代码生成器生成 message model 的序列化或数据库适配代码，请勿手工修改。
 // GENERATED CODE - DO NOT MODIFY BY HAND
+// 核心逻辑：仅承载代码生成器输出的序列化、数据库适配或字段映射代码，业务逻辑位于对应源文件。
 
 part of 'message_model.dart';
 
@@ -13,180 +15,198 @@ extension GetMessageModelCollection on Isar {
   IsarCollection<MessageModel> get messageModels => this.collection();
 }
 
-int _messageModelJsSafeInt(String value) => int.parse(value);
-
-final MessageModelSchema = CollectionSchema(
+const MessageModelSchema = CollectionSchema(
   name: r'MessageModel',
-  id: _messageModelJsSafeInt('-902762555029995869'),
+  id: -902762555029995869,
   properties: {
-    r'burnAfterRead': PropertySchema(
+    r'accountId': PropertySchema(
       id: 0,
+      name: r'accountId',
+      type: IsarType.string,
+    ),
+    r'burnAfterRead': PropertySchema(
+      id: 1,
       name: r'burnAfterRead',
       type: IsarType.bool,
     ),
     r'burnAfterSeconds': PropertySchema(
-      id: 1,
+      id: 2,
       name: r'burnAfterSeconds',
       type: IsarType.long,
     ),
+    r'cachedAt': PropertySchema(
+      id: 3,
+      name: r'cachedAt',
+      type: IsarType.dateTime,
+    ),
     r'chatId': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'chatId',
       type: IsarType.string,
     ),
     r'contactAvatar': PropertySchema(
-      id: 3,
+      id: 5,
       name: r'contactAvatar',
       type: IsarType.string,
     ),
     r'contactName': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'contactName',
       type: IsarType.string,
     ),
     r'contactUserId': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'contactUserId',
       type: IsarType.string,
     ),
     r'contactUsername': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'contactUsername',
       type: IsarType.string,
     ),
     r'content': PropertySchema(
-      id: 7,
+      id: 9,
       name: r'content',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'editedAt': PropertySchema(
-      id: 9,
+      id: 11,
       name: r'editedAt',
       type: IsarType.dateTime,
     ),
     r'fileName': PropertySchema(
-      id: 10,
+      id: 12,
       name: r'fileName',
       type: IsarType.string,
     ),
     r'forwardFrom': PropertySchema(
-      id: 11,
+      id: 13,
       name: r'forwardFrom',
       type: IsarType.string,
     ),
     r'id': PropertySchema(
-      id: 12,
+      id: 14,
       name: r'id',
       type: IsarType.string,
     ),
     r'isDeleted': PropertySchema(
-      id: 13,
+      id: 15,
       name: r'isDeleted',
       type: IsarType.bool,
     ),
     r'isOutgoing': PropertySchema(
-      id: 14,
+      id: 16,
       name: r'isOutgoing',
       type: IsarType.bool,
     ),
     r'isRead': PropertySchema(
-      id: 15,
+      id: 17,
       name: r'isRead',
       type: IsarType.bool,
     ),
     r'localPath': PropertySchema(
-      id: 16,
+      id: 18,
       name: r'localPath',
       type: IsarType.string,
     ),
     r'mediaDuration': PropertySchema(
-      id: 17,
+      id: 19,
       name: r'mediaDuration',
       type: IsarType.long,
     ),
     r'mediaHeight': PropertySchema(
-      id: 18,
+      id: 20,
       name: r'mediaHeight',
       type: IsarType.long,
     ),
+    r'mediaId': PropertySchema(
+      id: 21,
+      name: r'mediaId',
+      type: IsarType.string,
+    ),
     r'mediaSize': PropertySchema(
-      id: 19,
+      id: 22,
       name: r'mediaSize',
       type: IsarType.long,
     ),
     r'mediaWidth': PropertySchema(
-      id: 20,
+      id: 23,
       name: r'mediaWidth',
       type: IsarType.long,
     ),
     r'reactions': PropertySchema(
-      id: 21,
+      id: 24,
       name: r'reactions',
       type: IsarType.string,
     ),
     r'remoteUrl': PropertySchema(
-      id: 22,
+      id: 25,
       name: r'remoteUrl',
       type: IsarType.string,
     ),
     r'replyToId': PropertySchema(
-      id: 23,
+      id: 26,
       name: r'replyToId',
       type: IsarType.string,
     ),
     r'replyToPreview': PropertySchema(
-      id: 24,
+      id: 27,
       name: r'replyToPreview',
       type: IsarType.string,
     ),
     r'senderAvatar': PropertySchema(
-      id: 25,
+      id: 28,
       name: r'senderAvatar',
       type: IsarType.string,
     ),
     r'senderEmojiAvatar': PropertySchema(
-      id: 26,
+      id: 29,
       name: r'senderEmojiAvatar',
       type: IsarType.string,
     ),
     r'senderId': PropertySchema(
-      id: 27,
+      id: 30,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'senderName': PropertySchema(
-      id: 28,
+      id: 31,
       name: r'senderName',
       type: IsarType.string,
     ),
     r'senderNicknameColor': PropertySchema(
-      id: 29,
+      id: 32,
       name: r'senderNicknameColor',
       type: IsarType.string,
     ),
     r'seq': PropertySchema(
-      id: 30,
+      id: 33,
       name: r'seq',
       type: IsarType.long,
     ),
     r'status': PropertySchema(
-      id: 31,
+      id: 34,
       name: r'status',
       type: IsarType.byte,
       enumMap: _MessageModelstatusEnumValueMap,
     ),
     r'thumbnail': PropertySchema(
-      id: 32,
+      id: 35,
       name: r'thumbnail',
       type: IsarType.string,
     ),
+    r'thumbnailMediaId': PropertySchema(
+      id: 36,
+      name: r'thumbnailMediaId',
+      type: IsarType.string,
+    ),
     r'type': PropertySchema(
-      id: 33,
+      id: 37,
       name: r'type',
       type: IsarType.byte,
       enumMap: _MessageModeltypeEnumValueMap,
@@ -198,10 +218,28 @@ final MessageModelSchema = CollectionSchema(
   deserializeProp: _messageModelDeserializeProp,
   idName: r'isarId',
   indexes: {
-    r'id': IndexSchema(
-      id: _messageModelJsSafeInt('-3268401673993471357'),
-      name: r'id',
+    r'accountId_id': IndexSchema(
+      id: 5095769145217530892,
+      name: r'accountId_id',
       unique: true,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'accountId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+        IndexPropertySchema(
+          name: r'id',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'id': IndexSchema(
+      id: -3268401673993471357,
+      name: r'id',
+      unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
@@ -212,7 +250,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'chatId_createdAt': IndexSchema(
-      id: _messageModelJsSafeInt('-8009080684031631222'),
+      id: -8009080684031631222,
       name: r'chatId_createdAt',
       unique: false,
       replace: false,
@@ -230,7 +268,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'senderId': IndexSchema(
-      id: _messageModelJsSafeInt('-1619654757968658561'),
+      id: -1619654757968658561,
       name: r'senderId',
       unique: false,
       replace: false,
@@ -243,7 +281,7 @@ final MessageModelSchema = CollectionSchema(
       ],
     ),
     r'createdAt': IndexSchema(
-      id: _messageModelJsSafeInt('-3433535483987302584'),
+      id: -3433535483987302584,
       name: r'createdAt',
       unique: false,
       replace: false,
@@ -270,6 +308,7 @@ int _messageModelEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.accountId.length * 3;
   bytesCount += 3 + object.chatId.length * 3;
   {
     final value = object.contactAvatar;
@@ -311,6 +350,12 @@ int _messageModelEstimateSize(
   bytesCount += 3 + object.id.length * 3;
   {
     final value = object.localPath;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.mediaId;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
@@ -365,6 +410,12 @@ int _messageModelEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  {
+    final value = object.thumbnailMediaId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   return bytesCount;
 }
 
@@ -374,40 +425,44 @@ void _messageModelSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeBool(offsets[0], object.burnAfterRead);
-  writer.writeLong(offsets[1], object.burnAfterSeconds);
-  writer.writeString(offsets[2], object.chatId);
-  writer.writeString(offsets[3], object.contactAvatar);
-  writer.writeString(offsets[4], object.contactName);
-  writer.writeString(offsets[5], object.contactUserId);
-  writer.writeString(offsets[6], object.contactUsername);
-  writer.writeString(offsets[7], object.content);
-  writer.writeDateTime(offsets[8], object.createdAt);
-  writer.writeDateTime(offsets[9], object.editedAt);
-  writer.writeString(offsets[10], object.fileName);
-  writer.writeString(offsets[11], object.forwardFrom);
-  writer.writeString(offsets[12], object.id);
-  writer.writeBool(offsets[13], object.isDeleted);
-  writer.writeBool(offsets[14], object.isOutgoing);
-  writer.writeBool(offsets[15], object.isRead);
-  writer.writeString(offsets[16], object.localPath);
-  writer.writeLong(offsets[17], object.mediaDuration);
-  writer.writeLong(offsets[18], object.mediaHeight);
-  writer.writeLong(offsets[19], object.mediaSize);
-  writer.writeLong(offsets[20], object.mediaWidth);
-  writer.writeString(offsets[21], object.reactions);
-  writer.writeString(offsets[22], object.remoteUrl);
-  writer.writeString(offsets[23], object.replyToId);
-  writer.writeString(offsets[24], object.replyToPreview);
-  writer.writeString(offsets[25], object.senderAvatar);
-  writer.writeString(offsets[26], object.senderEmojiAvatar);
-  writer.writeString(offsets[27], object.senderId);
-  writer.writeString(offsets[28], object.senderName);
-  writer.writeString(offsets[29], object.senderNicknameColor);
-  writer.writeLong(offsets[30], object.seq);
-  writer.writeByte(offsets[31], object.status.index);
-  writer.writeString(offsets[32], object.thumbnail);
-  writer.writeByte(offsets[33], object.type.index);
+  writer.writeString(offsets[0], object.accountId);
+  writer.writeBool(offsets[1], object.burnAfterRead);
+  writer.writeLong(offsets[2], object.burnAfterSeconds);
+  writer.writeDateTime(offsets[3], object.cachedAt);
+  writer.writeString(offsets[4], object.chatId);
+  writer.writeString(offsets[5], object.contactAvatar);
+  writer.writeString(offsets[6], object.contactName);
+  writer.writeString(offsets[7], object.contactUserId);
+  writer.writeString(offsets[8], object.contactUsername);
+  writer.writeString(offsets[9], object.content);
+  writer.writeDateTime(offsets[10], object.createdAt);
+  writer.writeDateTime(offsets[11], object.editedAt);
+  writer.writeString(offsets[12], object.fileName);
+  writer.writeString(offsets[13], object.forwardFrom);
+  writer.writeString(offsets[14], object.id);
+  writer.writeBool(offsets[15], object.isDeleted);
+  writer.writeBool(offsets[16], object.isOutgoing);
+  writer.writeBool(offsets[17], object.isRead);
+  writer.writeString(offsets[18], object.localPath);
+  writer.writeLong(offsets[19], object.mediaDuration);
+  writer.writeLong(offsets[20], object.mediaHeight);
+  writer.writeString(offsets[21], object.mediaId);
+  writer.writeLong(offsets[22], object.mediaSize);
+  writer.writeLong(offsets[23], object.mediaWidth);
+  writer.writeString(offsets[24], object.reactions);
+  writer.writeString(offsets[25], object.remoteUrl);
+  writer.writeString(offsets[26], object.replyToId);
+  writer.writeString(offsets[27], object.replyToPreview);
+  writer.writeString(offsets[28], object.senderAvatar);
+  writer.writeString(offsets[29], object.senderEmojiAvatar);
+  writer.writeString(offsets[30], object.senderId);
+  writer.writeString(offsets[31], object.senderName);
+  writer.writeString(offsets[32], object.senderNicknameColor);
+  writer.writeLong(offsets[33], object.seq);
+  writer.writeByte(offsets[34], object.status.index);
+  writer.writeString(offsets[35], object.thumbnail);
+  writer.writeString(offsets[36], object.thumbnailMediaId);
+  writer.writeByte(offsets[37], object.type.index);
 }
 
 MessageModel _messageModelDeserialize(
@@ -417,43 +472,47 @@ MessageModel _messageModelDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = MessageModel();
-  object.burnAfterRead = reader.readBool(offsets[0]);
-  object.burnAfterSeconds = reader.readLong(offsets[1]);
-  object.chatId = reader.readString(offsets[2]);
-  object.contactAvatar = reader.readStringOrNull(offsets[3]);
-  object.contactName = reader.readStringOrNull(offsets[4]);
-  object.contactUserId = reader.readStringOrNull(offsets[5]);
-  object.contactUsername = reader.readStringOrNull(offsets[6]);
-  object.content = reader.readString(offsets[7]);
-  object.createdAt = reader.readDateTime(offsets[8]);
-  object.editedAt = reader.readDateTimeOrNull(offsets[9]);
-  object.fileName = reader.readStringOrNull(offsets[10]);
-  object.forwardFrom = reader.readStringOrNull(offsets[11]);
-  object.id = reader.readString(offsets[12]);
-  object.isDeleted = reader.readBool(offsets[13]);
-  object.isOutgoing = reader.readBool(offsets[14]);
-  object.isRead = reader.readBool(offsets[15]);
-  object.localPath = reader.readStringOrNull(offsets[16]);
-  object.mediaDuration = reader.readLongOrNull(offsets[17]);
-  object.mediaHeight = reader.readLongOrNull(offsets[18]);
-  object.mediaSize = reader.readLongOrNull(offsets[19]);
-  object.mediaWidth = reader.readLongOrNull(offsets[20]);
-  object.reactions = reader.readStringOrNull(offsets[21]);
-  object.remoteUrl = reader.readStringOrNull(offsets[22]);
-  object.replyToId = reader.readStringOrNull(offsets[23]);
-  object.replyToPreview = reader.readStringOrNull(offsets[24]);
-  object.senderAvatar = reader.readStringOrNull(offsets[25]);
-  object.senderEmojiAvatar = reader.readStringOrNull(offsets[26]);
-  object.senderId = reader.readString(offsets[27]);
-  object.senderName = reader.readString(offsets[28]);
-  object.senderNicknameColor = reader.readStringOrNull(offsets[29]);
-  object.seq = reader.readLong(offsets[30]);
+  object.accountId = reader.readString(offsets[0]);
+  object.burnAfterRead = reader.readBool(offsets[1]);
+  object.burnAfterSeconds = reader.readLong(offsets[2]);
+  object.cachedAt = reader.readDateTime(offsets[3]);
+  object.chatId = reader.readString(offsets[4]);
+  object.contactAvatar = reader.readStringOrNull(offsets[5]);
+  object.contactName = reader.readStringOrNull(offsets[6]);
+  object.contactUserId = reader.readStringOrNull(offsets[7]);
+  object.contactUsername = reader.readStringOrNull(offsets[8]);
+  object.content = reader.readString(offsets[9]);
+  object.createdAt = reader.readDateTime(offsets[10]);
+  object.editedAt = reader.readDateTimeOrNull(offsets[11]);
+  object.fileName = reader.readStringOrNull(offsets[12]);
+  object.forwardFrom = reader.readStringOrNull(offsets[13]);
+  object.id = reader.readString(offsets[14]);
+  object.isDeleted = reader.readBool(offsets[15]);
+  object.isOutgoing = reader.readBool(offsets[16]);
+  object.isRead = reader.readBool(offsets[17]);
+  object.localPath = reader.readStringOrNull(offsets[18]);
+  object.mediaDuration = reader.readLongOrNull(offsets[19]);
+  object.mediaHeight = reader.readLongOrNull(offsets[20]);
+  object.mediaId = reader.readStringOrNull(offsets[21]);
+  object.mediaSize = reader.readLongOrNull(offsets[22]);
+  object.mediaWidth = reader.readLongOrNull(offsets[23]);
+  object.reactions = reader.readStringOrNull(offsets[24]);
+  object.remoteUrl = reader.readStringOrNull(offsets[25]);
+  object.replyToId = reader.readStringOrNull(offsets[26]);
+  object.replyToPreview = reader.readStringOrNull(offsets[27]);
+  object.senderAvatar = reader.readStringOrNull(offsets[28]);
+  object.senderEmojiAvatar = reader.readStringOrNull(offsets[29]);
+  object.senderId = reader.readString(offsets[30]);
+  object.senderName = reader.readString(offsets[31]);
+  object.senderNicknameColor = reader.readStringOrNull(offsets[32]);
+  object.seq = reader.readLong(offsets[33]);
   object.status =
-      _MessageModelstatusValueEnumMap[reader.readByteOrNull(offsets[31])] ??
+      _MessageModelstatusValueEnumMap[reader.readByteOrNull(offsets[34])] ??
           MsgStatus.sending;
-  object.thumbnail = reader.readStringOrNull(offsets[32]);
+  object.thumbnail = reader.readStringOrNull(offsets[35]);
+  object.thumbnailMediaId = reader.readStringOrNull(offsets[36]);
   object.type =
-      _MessageModeltypeValueEnumMap[reader.readByteOrNull(offsets[33])] ??
+      _MessageModeltypeValueEnumMap[reader.readByteOrNull(offsets[37])] ??
           MsgType.text;
   return object;
 }
@@ -466,43 +525,43 @@ P _messageModelDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readBool(offset)) as P;
-    case 1:
-      return (reader.readLong(offset)) as P;
-    case 2:
       return (reader.readString(offset)) as P;
+    case 1:
+      return (reader.readBool(offset)) as P;
+    case 2:
+      return (reader.readLong(offset)) as P;
     case 3:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 5:
       return (reader.readStringOrNull(offset)) as P;
     case 6:
       return (reader.readStringOrNull(offset)) as P;
     case 7:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 8:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 9:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 10:
-      return (reader.readStringOrNull(offset)) as P;
-    case 11:
-      return (reader.readStringOrNull(offset)) as P;
-    case 12:
       return (reader.readString(offset)) as P;
+    case 10:
+      return (reader.readDateTime(offset)) as P;
+    case 11:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 12:
+      return (reader.readStringOrNull(offset)) as P;
     case 13:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 14:
-      return (reader.readBool(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 15:
       return (reader.readBool(offset)) as P;
     case 16:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 17:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 18:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 19:
       return (reader.readLongOrNull(offset)) as P;
     case 20:
@@ -510,9 +569,9 @@ P _messageModelDeserializeProp<P>(
     case 21:
       return (reader.readStringOrNull(offset)) as P;
     case 22:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 23:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 24:
       return (reader.readStringOrNull(offset)) as P;
     case 25:
@@ -520,19 +579,27 @@ P _messageModelDeserializeProp<P>(
     case 26:
       return (reader.readStringOrNull(offset)) as P;
     case 27:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 28:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 29:
       return (reader.readStringOrNull(offset)) as P;
     case 30:
-      return (reader.readLong(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 31:
-      return (_MessageModelstatusValueEnumMap[reader.readByteOrNull(offset)] ??
-          MsgStatus.sending) as P;
+      return (reader.readString(offset)) as P;
     case 32:
       return (reader.readStringOrNull(offset)) as P;
     case 33:
+      return (reader.readLong(offset)) as P;
+    case 34:
+      return (_MessageModelstatusValueEnumMap[reader.readByteOrNull(offset)] ??
+          MsgStatus.sending) as P;
+    case 35:
+      return (reader.readStringOrNull(offset)) as P;
+    case 36:
+      return (reader.readStringOrNull(offset)) as P;
+    case 37:
       return (_MessageModeltypeValueEnumMap[reader.readByteOrNull(offset)] ??
           MsgType.text) as P;
     default:
@@ -601,56 +668,89 @@ void _messageModelAttach(
     IsarCollection<dynamic> col, Id id, MessageModel object) {}
 
 extension MessageModelByIndex on IsarCollection<MessageModel> {
-  Future<MessageModel?> getById(String id) {
-    return getByIndex(r'id', [id]);
+  Future<MessageModel?> getByAccountIdId(String accountId, String id) {
+    return getByIndex(r'accountId_id', [accountId, id]);
   }
 
-  MessageModel? getByIdSync(String id) {
-    return getByIndexSync(r'id', [id]);
+  MessageModel? getByAccountIdIdSync(String accountId, String id) {
+    return getByIndexSync(r'accountId_id', [accountId, id]);
   }
 
-  Future<bool> deleteById(String id) {
-    return deleteByIndex(r'id', [id]);
+  Future<bool> deleteByAccountIdId(String accountId, String id) {
+    return deleteByIndex(r'accountId_id', [accountId, id]);
   }
 
-  bool deleteByIdSync(String id) {
-    return deleteByIndexSync(r'id', [id]);
+  bool deleteByAccountIdIdSync(String accountId, String id) {
+    return deleteByIndexSync(r'accountId_id', [accountId, id]);
   }
 
-  Future<List<MessageModel?>> getAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndex(r'id', values);
+  Future<List<MessageModel?>> getAllByAccountIdId(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return getAllByIndex(r'accountId_id', values);
   }
 
-  List<MessageModel?> getAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'id', values);
+  List<MessageModel?> getAllByAccountIdIdSync(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return getAllByIndexSync(r'accountId_id', values);
   }
 
-  Future<int> deleteAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'id', values);
+  Future<int> deleteAllByAccountIdId(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return deleteAllByIndex(r'accountId_id', values);
   }
 
-  int deleteAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'id', values);
+  int deleteAllByAccountIdIdSync(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return deleteAllByIndexSync(r'accountId_id', values);
   }
 
-  Future<Id> putById(MessageModel object) {
-    return putByIndex(r'id', object);
+  Future<Id> putByAccountIdId(MessageModel object) {
+    return putByIndex(r'accountId_id', object);
   }
 
-  Id putByIdSync(MessageModel object, {bool saveLinks = true}) {
-    return putByIndexSync(r'id', object, saveLinks: saveLinks);
+  Id putByAccountIdIdSync(MessageModel object, {bool saveLinks = true}) {
+    return putByIndexSync(r'accountId_id', object, saveLinks: saveLinks);
   }
 
-  Future<List<Id>> putAllById(List<MessageModel> objects) {
-    return putAllByIndex(r'id', objects);
+  Future<List<Id>> putAllByAccountIdId(List<MessageModel> objects) {
+    return putAllByIndex(r'accountId_id', objects);
   }
 
-  List<Id> putAllByIdSync(List<MessageModel> objects, {bool saveLinks = true}) {
-    return putAllByIndexSync(r'id', objects, saveLinks: saveLinks);
+  List<Id> putAllByAccountIdIdSync(List<MessageModel> objects,
+      {bool saveLinks = true}) {
+    return putAllByIndexSync(r'accountId_id', objects, saveLinks: saveLinks);
   }
 }
 
@@ -739,6 +839,96 @@ extension MessageModelQueryWhere
         upper: upperIsarId,
         includeUpper: includeUpper,
       ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterWhereClause>
+      accountIdEqualToAnyId(String accountId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountId_id',
+        value: [accountId],
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterWhereClause>
+      accountIdNotEqualToAnyId(String accountId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [],
+              upper: [accountId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [],
+              upper: [accountId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterWhereClause>
+      accountIdIdEqualTo(String accountId, String id) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountId_id',
+        value: [accountId, id],
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterWhereClause>
+      accountIdEqualToIdNotEqualTo(String accountId, String id) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              upper: [accountId, id],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId, id],
+              includeLower: false,
+              upper: [accountId],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId, id],
+              includeLower: false,
+              upper: [accountId],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              upper: [accountId, id],
+              includeUpper: false,
+            ));
+      }
     });
   }
 
@@ -1068,6 +1258,142 @@ extension MessageModelQueryWhere
 extension MessageModelQueryFilter
     on QueryBuilder<MessageModel, MessageModel, QFilterCondition> {
   QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'accountId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'accountId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      accountIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'accountId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
       burnAfterReadEqualTo(bool value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -1125,6 +1451,62 @@ extension MessageModelQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
         property: r'burnAfterSeconds',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      cachedAtEqualTo(DateTime value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'cachedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      cachedAtGreaterThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'cachedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      cachedAtLessThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'cachedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      cachedAtBetween(
+    DateTime lower,
+    DateTime upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'cachedAt',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
@@ -2977,6 +3359,160 @@ extension MessageModelQueryFilter
   }
 
   QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'mediaId',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'mediaId',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'mediaId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'mediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'mediaId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'mediaId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      mediaIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'mediaId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
       mediaSizeIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -4737,6 +5273,160 @@ extension MessageModelQueryFilter
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'thumbnailMediaId',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'thumbnailMediaId',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'thumbnailMediaId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'thumbnailMediaId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'thumbnailMediaId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'thumbnailMediaId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition>
+      thumbnailMediaIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'thumbnailMediaId',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterFilterCondition> typeEqualTo(
       MsgType value) {
     return QueryBuilder.apply(this, (query) {
@@ -4800,6 +5490,18 @@ extension MessageModelQueryLinks
 
 extension MessageModelQuerySortBy
     on QueryBuilder<MessageModel, MessageModel, QSortBy> {
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByAccountId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByAccountIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByBurnAfterRead() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'burnAfterRead', Sort.asc);
@@ -4824,6 +5526,18 @@ extension MessageModelQuerySortBy
       sortByBurnAfterSecondsDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'burnAfterSeconds', Sort.desc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByCachedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cachedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByCachedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cachedAt', Sort.desc);
     });
   }
 
@@ -5040,6 +5754,18 @@ extension MessageModelQuerySortBy
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByMediaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByMediaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByMediaSize() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'mediaSize', Sort.asc);
@@ -5217,6 +5943,20 @@ extension MessageModelQuerySortBy
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy>
+      sortByThumbnailMediaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailMediaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy>
+      sortByThumbnailMediaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailMediaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> sortByType() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'type', Sort.asc);
@@ -5232,6 +5972,18 @@ extension MessageModelQuerySortBy
 
 extension MessageModelQuerySortThenBy
     on QueryBuilder<MessageModel, MessageModel, QSortThenBy> {
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByAccountId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByAccountIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByBurnAfterRead() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'burnAfterRead', Sort.asc);
@@ -5256,6 +6008,18 @@ extension MessageModelQuerySortThenBy
       thenByBurnAfterSecondsDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'burnAfterSeconds', Sort.desc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByCachedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cachedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByCachedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cachedAt', Sort.desc);
     });
   }
 
@@ -5484,6 +6248,18 @@ extension MessageModelQuerySortThenBy
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByMediaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByMediaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByMediaSize() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'mediaSize', Sort.asc);
@@ -5661,6 +6437,20 @@ extension MessageModelQuerySortThenBy
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy>
+      thenByThumbnailMediaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailMediaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QAfterSortBy>
+      thenByThumbnailMediaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailMediaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QAfterSortBy> thenByType() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'type', Sort.asc);
@@ -5676,6 +6466,13 @@ extension MessageModelQuerySortThenBy
 
 extension MessageModelQueryWhereDistinct
     on QueryBuilder<MessageModel, MessageModel, QDistinct> {
+  QueryBuilder<MessageModel, MessageModel, QDistinct> distinctByAccountId(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'accountId', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QDistinct>
       distinctByBurnAfterRead() {
     return QueryBuilder.apply(this, (query) {
@@ -5687,6 +6484,12 @@ extension MessageModelQueryWhereDistinct
       distinctByBurnAfterSeconds() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'burnAfterSeconds');
+    });
+  }
+
+  QueryBuilder<MessageModel, MessageModel, QDistinct> distinctByCachedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'cachedAt');
     });
   }
 
@@ -5806,6 +6609,13 @@ extension MessageModelQueryWhereDistinct
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QDistinct> distinctByMediaId(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'mediaId', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QDistinct> distinctByMediaSize() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'mediaSize');
@@ -5903,6 +6713,14 @@ extension MessageModelQueryWhereDistinct
     });
   }
 
+  QueryBuilder<MessageModel, MessageModel, QDistinct>
+      distinctByThumbnailMediaId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'thumbnailMediaId',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<MessageModel, MessageModel, QDistinct> distinctByType() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'type');
@@ -5918,6 +6736,12 @@ extension MessageModelQueryProperty
     });
   }
 
+  QueryBuilder<MessageModel, String, QQueryOperations> accountIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'accountId');
+    });
+  }
+
   QueryBuilder<MessageModel, bool, QQueryOperations> burnAfterReadProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'burnAfterRead');
@@ -5927,6 +6751,12 @@ extension MessageModelQueryProperty
   QueryBuilder<MessageModel, int, QQueryOperations> burnAfterSecondsProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'burnAfterSeconds');
+    });
+  }
+
+  QueryBuilder<MessageModel, DateTime, QQueryOperations> cachedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'cachedAt');
     });
   }
 
@@ -6035,6 +6865,12 @@ extension MessageModelQueryProperty
     });
   }
 
+  QueryBuilder<MessageModel, String?, QQueryOperations> mediaIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mediaId');
+    });
+  }
+
   QueryBuilder<MessageModel, int?, QQueryOperations> mediaSizeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'mediaSize');
@@ -6119,6 +6955,13 @@ extension MessageModelQueryProperty
   QueryBuilder<MessageModel, String?, QQueryOperations> thumbnailProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'thumbnail');
+    });
+  }
+
+  QueryBuilder<MessageModel, String?, QQueryOperations>
+      thumbnailMediaIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'thumbnailMediaId');
     });
   }
 

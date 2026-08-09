@@ -22,6 +22,7 @@
   import { useTheme } from '@/hooks/core/useTheme'
 
   const settingStore = useSettingStore()
+  // systemThemeMode 表示用户选择的自动/明/暗模式，切换细节由 useTheme 统一落到 DOM。
   const { systemThemeMode } = storeToRefs(settingStore)
   const { configOptions } = useSettingsConfig()
   const { switchThemeStyles } = useTheme()

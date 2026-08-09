@@ -1,92 +1,156 @@
+// 文件用途：封装 HTTP 请求、鉴权、超时、上传下载、错误转换与通用响应解析。
+// 核心逻辑：统一添加认证和设备请求头，执行超时/重试/取消处理，并把 Dio 异常转换为应用可识别的 ApiResponse。
 import 'dart:async';
 
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../i18n/app_localizations.dart';
 import '../../utils/platform_utils.dart';
+import 'endpoint_manager.dart';
 
-/// 节点切换回调接口，解耦 ApiConfig 与 ApiClient 的循环依赖
-abstract class BaseUrlUpdatable {
-  void updateBaseUrl(String newServerUrl);
+@visibleForTesting
+Object? cloneRequestDataForRetry(Object? data) {
+  // FormData and MultipartFile bodies are single-subscription streams. Dio
+  // exposes deep clone support specifically so a retry can reopen each file.
+  return data is FormData ? data.clone() : data;
 }
 
+String _apiText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
 
+// 关键声明：API 客户端是网络错误和鉴权头的单一入口，调用方不应绕过它直接创建 Dio 请求。
 /// API 配置
 class ApiConfig {
-  // ── 编译期 Fallback（ServerDiscovery 未完成时使用） ──────
-  // 本地开发时可临时改这里，生产由 ServerDiscovery 动态写入
-  static const String _defaultServerUrl = 'https://vvs.unf58.icu';
+  // 本地开发环境
+  // 线上环境
+  // 改这里即可切换：
+  // `true`  -> 安卓模拟器 `10.0.2.2`
+  static String get serverUrl => EndpointManager.instance.apiServerUrl;
+  static String get wsUrl => EndpointManager.instance.wsUrl;
+  static String get baseUrl => '$serverUrl/api/v1';
 
-  // ── 运行时可变节点（由 ServerDiscovery.updateServer 写入）──
-  static String _serverUrl = _defaultServerUrl;
-
-  /// 当前生效的 serverUrl（只读）
-  static String get serverUrl => _serverUrl;
-
-  /// 当前生效的 wsUrl（自动跟随 serverUrl）
-  static String get wsUrl {
-    final base = _serverUrl
-        .replaceFirst('https://', 'wss://')
-        .replaceFirst('http://', 'ws://');
-    return '$base/api/v1/ws';
-  }
-
-  static String get baseUrl => '$_serverUrl/api/v1';
-
-  /// 由 ServerDiscovery 调用，切换节点
-  /// 同时通知已创建的 ApiClient 实例更新 baseUrl
-  static void updateServer(String newServerUrl) {
-    final url = newServerUrl.endsWith('/')
-        ? newServerUrl.substring(0, newServerUrl.length - 1)
-        : newServerUrl;
-    if (url == _serverUrl) return;
-    if (kDebugMode) debugPrint('[ApiConfig] Server switched: \$_serverUrl → \$url');
-    _serverUrl = url;
-    // 通知所有已注册的 ApiClient 实例更新
-    for (final client in _registeredClients) {
-      client.updateBaseUrl(url);
-    }
-  }
-
-  // ── ApiClient 注册表（节点切换时批量更新）───────────────
-  static final List<BaseUrlUpdatable> _registeredClients = [];
-  static void registerClient(BaseUrlUpdatable c)   => _registeredClients.add(c);
-  static void unregisterClient(BaseUrlUpdatable c) => _registeredClients.remove(c);
-
-  /// 获取完整的媒体 URL（处理相对路径，支持 http/https）
+  /// Return the display URL for media, rewriting app-owned uploads to the
+  /// active media base while preserving third-party absolute URLs.
   static String getMediaUrl(String? url) {
+    final value = _cleanMediaUrl(url);
+    if (value.isEmpty || value.startsWith('data:')) return value;
+
+    if (value.startsWith('//')) {
+      return getMediaUrl('https:$value');
+    }
+
+    if (_isHttpUrl(value)) {
+      final uri = Uri.tryParse(value);
+      if (uri == null || uri.host.isEmpty) return value;
+      final host = uri.host.toLowerCase();
+      final isOwnUpload = _isUploadPath(uri.path);
+      final shouldRewrite = _isConfiguredMediaHost(host) ||
+          _isLocalHost(host) ||
+          (isOwnUpload &&
+              (_isPrivateHost(host) || _isLegacyOwnMediaHost(host)));
+      if (shouldRewrite) {
+        final path = uri.path.startsWith('/') ? uri.path : '/${uri.path}';
+        return '${_mediaBaseUrl()}$path${_uriSuffix(uri)}';
+      }
+      return value;
+    }
+
+    final mediaBaseUrl = _mediaBaseUrl();
+    if (value.startsWith('/')) return '$mediaBaseUrl$value';
+    return '$mediaBaseUrl/$value';
+  }
+
+  /// Normalize app-owned upload URLs before storing them in messages.
+  ///
+  /// Keeping `/uploads/...` in message content lets overseas clients resolve
+  /// media through the current bootstrap media domain instead of a stale host.
+  static String normalizeMediaUrlForMessage(String? url) {
+    final value = _cleanMediaUrl(url);
+    if (value.isEmpty || value.startsWith('data:')) return value;
+
+    if (value.startsWith('//')) {
+      return normalizeMediaUrlForMessage('https:$value');
+    }
+
+    if (value.startsWith('/uploads/')) return value;
+    if (value.startsWith('uploads/')) return '/$value';
+
+    if (_isHttpUrl(value)) {
+      final uri = Uri.tryParse(value);
+      if (uri == null || uri.host.isEmpty) return value;
+      final host = uri.host.toLowerCase();
+      if (_isUploadPath(uri.path) &&
+          (_isConfiguredMediaHost(host) ||
+              _isLocalHost(host) ||
+              _isPrivateHost(host) ||
+              _isLegacyOwnMediaHost(host))) {
+        return '${uri.path}${_uriSuffix(uri)}';
+      }
+    }
+
+    return value;
+  }
+
+  static String _cleanMediaUrl(String? url) {
     if (url == null) return '';
     final value = url.trim().replaceAll('\\', '/');
     if (value.isEmpty) return '';
     final lowerValue = value.toLowerCase();
     if (lowerValue == 'null' || lowerValue == 'undefined') return '';
+    return value;
+  }
 
-    if (value.startsWith('//')) {
-      return 'https:$value';
-    }
+  static bool _isHttpUrl(String value) =>
+      value.startsWith('http://') || value.startsWith('https://');
 
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      final uri = Uri.tryParse(value);
-      if (uri == null || uri.host.isEmpty) return value;
-      final serverUri = Uri.parse(serverUrl);
-      final h = uri.host;
-      final sameHost = h == serverUri.host;
-      final isOwnUpload = uri.path.startsWith('/uploads/');
-      if (sameHost ||
-          h == 'localhost' ||
-          h == '127.0.0.1' ||
-          (isOwnUpload && _isPrivateHost(h))) {
-        final path = uri.path.startsWith('/') ? uri.path : '/${uri.path}';
-        return '$serverUrl$path${uri.query.isEmpty ? '' : '?${uri.query}'}';
+  static bool _isUploadPath(String path) => path.startsWith('/uploads/');
+
+  static String _mediaBaseUrl() =>
+      EndpointManager.instance.mediaBaseUrl.replaceFirst(RegExp(r'/+$'), '');
+
+  static String _uriSuffix(Uri uri) {
+    final query = uri.hasQuery ? '?${uri.query}' : '';
+    final fragment = uri.hasFragment ? '#${uri.fragment}' : '';
+    return '$query$fragment';
+  }
+
+  static bool _isConfiguredMediaHost(String host) {
+    final normalized = host.toLowerCase();
+    for (final rawBase in [
+      serverUrl,
+      ...EndpointManager.instance.mediaBaseUrls,
+    ]) {
+      final uri = Uri.tryParse(rawBase);
+      if (uri != null && uri.host.toLowerCase() == normalized) {
+        return true;
       }
-      return value;
     }
+    return _isLegacyOwnMediaHost(normalized);
+  }
 
-    if (value.startsWith('/')) return '$serverUrl$value';
-    return '$serverUrl/$value';
+  static bool _isLegacyOwnMediaHost(String host) {
+    switch (host.toLowerCase()) {
+      case 'app.example.com':
+        return true;
+      default:
+        return false;
+    }
   }
 
   static bool _isPrivateHost(String host) {
@@ -96,6 +160,18 @@ class ApiConfig {
     final first = int.tryParse(parts[0]);
     final second = int.tryParse(parts[1]);
     return first == 172 && second != null && second >= 16 && second <= 31;
+  }
+
+  static bool _isLocalHost(String host) {
+    final normalized = host.toLowerCase();
+    return normalized ==
+            String.fromCharCodes(
+              const [108, 111, 99, 97, 108, 104, 111, 115, 116],
+            ) ||
+        normalized ==
+            String.fromCharCodes(
+              const [49, 50, 55, 46, 48, 46, 48, 46, 49],
+            );
   }
 
   static const Duration connectTimeout = Duration(seconds: 30);
@@ -118,9 +194,8 @@ class ApiResponse<T> {
   ) {
     // 兼容后端返回数字或字符串 code（如 0 / "0" / 200 / "200"）
     final rawCode = json['code'];
-    final code = rawCode is int
-        ? rawCode
-        : int.tryParse(rawCode?.toString() ?? '') ?? 0;
+    final code =
+        rawCode is int ? rawCode : int.tryParse(rawCode?.toString() ?? '') ?? 0;
     return ApiResponse(
       code: code,
       message: json['message'] ?? '',
@@ -140,9 +215,10 @@ class ApiResponse<T> {
 /// - 自动重试机制
 /// - 请求去重（避免重复的 GET 请求）
 /// - 请求节流（避免频繁重复请求）
-class ApiClient implements BaseUrlUpdatable {
+class ApiClient {
   late final Dio _dio;
   String? _token;
+  StreamSubscription<void>? _endpointSubscription;
 
   // 使用 Completer 协调并发的 Token 刷新请求
   Completer<String?>? _refreshCompleter;
@@ -168,18 +244,29 @@ class ApiClient implements BaseUrlUpdatable {
   final Map<String, DateTime> _lastRequestTime = {};
   static const Duration _throttleDuration = Duration(milliseconds: 300);
 
-  // 独立的 Dio 实例用于 Token 刷新，避免走拦截器导致问题
+  // Token 刷新使用独立客户端，避免刷新请求再次触发 401 拦截形成递归。
   late final Dio _authDio;
 
-  ApiClient() {
-    if (kDebugMode) debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
+  ApiClient() : this._(initializeEndpoints: true);
+
+  @visibleForTesting
+  ApiClient.forTesting() : this._(initializeEndpoints: false);
+
+  ApiClient._({required bool initializeEndpoints}) {
+    if (initializeEndpoints) {
+      EndpointManager.instance.initializeInBackground();
+    }
+    debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: ApiConfig.connectTimeout,
         receiveTimeout: ApiConfig.receiveTimeout,
         sendTimeout: const Duration(seconds: 60), // 添加发送超时
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Platform': PlatformUtils.deviceType,
+        },
       ),
     );
 
@@ -189,18 +276,37 @@ class ApiClient implements BaseUrlUpdatable {
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: ApiConfig.connectTimeout,
         receiveTimeout: ApiConfig.receiveTimeout,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Platform': PlatformUtils.deviceType,
+        },
       ),
     );
 
+    if (initializeEndpoints) {
+      _endpointSubscription = EndpointManager.instance.onChanged.listen((_) {
+        _applyEndpointBaseUrl();
+      });
+    }
+
     _setupInterceptors();
-    // 注册到 ApiConfig，节点切换时自动更新 baseUrl
-    ApiConfig.registerClient(this);
+  }
+
+  void _applyEndpointBaseUrl() {
+    final nextBaseUrl = ApiConfig.baseUrl;
+    if (_dio.options.baseUrl == nextBaseUrl &&
+        _authDio.options.baseUrl == nextBaseUrl) {
+      return;
+    }
+    debugPrint('[API] Switching baseUrl to: $nextBaseUrl');
+    _dio.options.baseUrl = nextBaseUrl;
+    _authDio.options.baseUrl = nextBaseUrl;
   }
 
   /// 设置拦截器
   void _setupInterceptors() {
-    // 1. 请求去重拦截器（仅对 GET 请求生效）
+    // 1. GET 去重：相同完整 URI 的并发调用共享首个请求结果，
+    // 不用于可能产生副作用的写请求。
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -210,7 +316,7 @@ class ApiClient implements BaseUrlUpdatable {
 
             // 检查是否有相同请求正在进行
             if (_pendingRequests.containsKey(key)) {
-              if (kDebugMode) debugPrint('[API] Request dedup: waiting for $key');
+              debugPrint('[API] Request dedup: waiting for $key');
               try {
                 final response = await _pendingRequests[key]!.future;
                 return handler.resolve(response);
@@ -269,7 +375,7 @@ class ApiClient implements BaseUrlUpdatable {
           if (lastTime != null &&
               now.difference(lastTime) < _throttleDuration) {
             // 节流：请求太频繁，跳过
-            if (kDebugMode) debugPrint('[API] Request throttled: $key');
+            debugPrint('[API] Request throttled: $key');
             return handler.reject(
               DioException(
                 requestOptions: options,
@@ -292,21 +398,25 @@ class ApiClient implements BaseUrlUpdatable {
           if (_token != null) {
             options.headers['Authorization'] = 'Bearer $_token';
           }
-          if (kDebugMode) debugPrint('[API] ${options.method} ${options.uri}');
+          debugPrint('[API] ${options.method} ${options.uri}');
           return handler.next(options);
         },
         onResponse: (response, handler) {
-          if (kDebugMode) debugPrint(
+          debugPrint(
             '[API] Response: ${response.statusCode} ${response.requestOptions.path}',
           );
+          unawaited(EndpointManager.instance.markApiSuccess(
+            _requestServerUrl(response.requestOptions),
+          ));
           return handler.next(response);
         },
         onError: (error, handler) async {
-          if (kDebugMode) debugPrint(
+          debugPrint(
             '[API] Error: ${error.message} URL: ${error.requestOptions.uri}',
           );
 
-          // 处理 401 错误 - 使用 Completer 模式避免竞态条件
+          // 并发 401 共用一次刷新；只有服务端明确拒绝刷新凭证才触发登出，
+          // 临时网络失败保留当前会话并把可重试错误交给上层。
           if (_shouldRefreshToken(error)) {
             try {
               final newToken = await _refreshTokenWithLock();
@@ -319,7 +429,7 @@ class ApiClient implements BaseUrlUpdatable {
                 return handler.resolve(retryResponse);
               }
             } catch (e) {
-              if (kDebugMode) debugPrint('[API] Retry failed: $e');
+              debugPrint('[API] Retry failed: $e');
             }
             // 刷新失败，触发登出
             if (_lastRefreshFailureWasAuth) {
@@ -335,11 +445,16 @@ class ApiClient implements BaseUrlUpdatable {
             }
           }
 
-          // 网络错误自动重试（非 401）
+          // 网络错误自动重试（非 401）。超时前请求可能已经到达服务端，
+          // 因此写接口仍需依赖业务侧 client_msg_id 等幂等机制防止重复执行。
           if (_shouldRetryOnError(error)) {
+            final switched = await _maybeSwitchApiEndpoint(error);
+            if (switched) {
+              _applyEndpointBaseUrl();
+            }
             final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
             if (retryCount < 3) {
-              if (kDebugMode) debugPrint(
+              debugPrint(
                 '[API] Retrying request (attempt ${retryCount + 1}/3): ${error.requestOptions.path}',
               );
 
@@ -354,18 +469,20 @@ class ApiClient implements BaseUrlUpdatable {
 
                 final response = await _dio.request(
                   options.path,
-                  data: options.data,
+                  data: cloneRequestDataForRetry(options.data),
                   queryParameters: options.queryParameters,
                   options: Options(
                     method: options.method,
                     headers: options.headers,
                     extra: options.extra,
+                    sendTimeout: options.sendTimeout,
+                    receiveTimeout: options.receiveTimeout,
                   ),
                 );
                 return handler.resolve(response);
               } catch (e) {
                 // 重试失败，继续传递错误
-                if (kDebugMode) debugPrint('[API] Retry failed: $e');
+                debugPrint('[API] Retry failed: $e');
               }
             }
           }
@@ -386,6 +503,9 @@ class ApiClient implements BaseUrlUpdatable {
     if (statusCode != null && statusCode >= 400 && statusCode < 500) {
       if (statusCode != 408 && statusCode != 429) return false;
     }
+    if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
+      return error.requestOptions.extra['retryServerErrors'] == true;
+    }
 
     // 重试网络错误、超时、连接错误
     return error.type == DioExceptionType.connectionTimeout ||
@@ -396,6 +516,31 @@ class ApiClient implements BaseUrlUpdatable {
   }
 
   /// 判断是否应该刷新 Token
+  Future<bool> _maybeSwitchApiEndpoint(DioException error) async {
+    if (error.type == DioExceptionType.badCertificate ||
+        error.type == DioExceptionType.cancel) {
+      return false;
+    }
+    try {
+      // 请求在途期间端点可能已切换，必须把失败归因到实际请求 URL；
+      // 否则旧请求会误伤新的健康端点并触发错误回退。
+      return await EndpointManager.instance.markApiFailure(
+        _requestServerUrl(error.requestOptions),
+      );
+    } catch (e) {
+      debugPrint('[API] Endpoint switch failed: $e');
+      return false;
+    }
+  }
+
+  String _requestServerUrl(RequestOptions options) {
+    final uri = options.uri;
+    if (uri.hasScheme && uri.host.isNotEmpty) {
+      return uri.replace(path: '', query: null, fragment: null).toString();
+    }
+    return ApiConfig.serverUrl;
+  }
+
   bool _shouldRefreshToken(DioException error) {
     return error.response?.statusCode == 401 &&
         _token != null &&
@@ -417,12 +562,12 @@ class ApiClient implements BaseUrlUpdatable {
   Future<String?> _refreshTokenWithLock() async {
     // 如果正在刷新，等待现有刷新完成
     if (_refreshCompleter != null) {
-      if (kDebugMode) debugPrint('[API] Waiting for existing token refresh...');
+      debugPrint('[API] Waiting for existing token refresh...');
       return _refreshCompleter!.future;
     }
 
     if (_token == null || _isDisposed) {
-      if (kDebugMode) debugPrint('[API] Cannot refresh: token is null or disposed');
+      debugPrint('[API] Cannot refresh: token is null or disposed');
       return null;
     }
 
@@ -432,7 +577,7 @@ class ApiClient implements BaseUrlUpdatable {
     _lastRefreshFailureWasAuth = true;
 
     try {
-      if (kDebugMode) debugPrint('[API] Starting token refresh...');
+      debugPrint('[API] Starting token refresh...');
 
       // 使用独立的 _authDio 实例，避免走拦截器导致死循环
       final response = await _authDio.post(
@@ -440,40 +585,39 @@ class ApiClient implements BaseUrlUpdatable {
         options: Options(headers: {'Authorization': 'Bearer $_token'}),
       );
 
-      if (kDebugMode) debugPrint('[API] Refresh response status: ${response.statusCode}');
+      debugPrint('[API] Refresh response status: ${response.statusCode}');
 
       final newToken = _extractToken(response);
       if (newToken != null) {
         _token = newToken;
         await TokenStorage.saveToken(newToken);
-        if (kDebugMode) debugPrint('[API] Token refreshed successfully');
+        debugPrint('[API] Token refreshed successfully');
         try {
           onAccessTokenRefreshed?.call(newToken);
         } catch (e) {
-          if (kDebugMode) debugPrint('[API] onAccessTokenRefreshed error: $e');
+          debugPrint('[API] onAccessTokenRefreshed error: $e');
         }
         _refreshCompleter!.complete(newToken);
         return newToken;
       }
 
-      if (kDebugMode) debugPrint('[API] Token refresh failed: could not extract token');
+      debugPrint('[API] Token refresh failed: could not extract token');
       _lastRefreshFailureWasAuth = true;
       _refreshCompleter!.complete(null);
       return null;
     } on DioException catch (e, stackTrace) {
       final statusCode = e.response?.statusCode;
-      _lastRefreshFailureWasAuth =
-          e.type == DioExceptionType.badResponse &&
+      _lastRefreshFailureWasAuth = e.type == DioExceptionType.badResponse &&
           statusCode != null &&
           statusCode >= 400 &&
           statusCode < 500;
-      if (kDebugMode) debugPrint('[API] Token refresh error: $e');
+      debugPrint('[API] Token refresh error: $e');
       debugPrintStack(stackTrace: stackTrace, maxFrames: 5);
       _refreshCompleter!.complete(null);
       return null;
     } catch (e, stackTrace) {
       _lastRefreshFailureWasAuth = false;
-      if (kDebugMode) debugPrint('[API] Token refresh error: $e');
+      debugPrint('[API] Token refresh error: $e');
       debugPrintStack(stackTrace: stackTrace, maxFrames: 5);
       _refreshCompleter!.complete(null);
       return null;
@@ -504,24 +648,21 @@ class ApiClient implements BaseUrlUpdatable {
 
   /// 使用新 Token 重试请求
   Future<Response> _retryRequest(RequestOptions options, String newToken) {
-    options.headers['Authorization'] = 'Bearer $newToken';
-    return _dio.fetch(options);
+    final retryOptions = options.copyWith(
+      data: cloneRequestDataForRetry(options.data),
+      headers: Map<String, dynamic>.from(options.headers)
+        ..['Authorization'] = 'Bearer $newToken',
+    );
+    return _dio.fetch(retryOptions);
   }
 
   /// 触发登出
   void _triggerLogout() {
     if (_isDisposed) return;
-    if (kDebugMode) debugPrint('[API] Token expired, triggering logout');
+    debugPrint('[API] Token expired, triggering logout');
     _token = null;
-    if (PlatformUtils.isWeb) {
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.remove('auth_token');
-        prefs.remove('user_id');
-        prefs.remove('auth_user_data');
-      });
-    } else {
-      TokenStorage.clear();
-    }
+    // 此处只立即隔离内存 Token；账号工作器停用和持久化凭证清理由 AuthService
+    // 统一编排，避免 ApiClient 越权清理到一半。
     onLogout?.call();
   }
 
@@ -535,19 +676,10 @@ class ApiClient implements BaseUrlUpdatable {
     _token = null;
   }
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   /// 释放资源
-  /// 节点切换时由 ApiConfig.updateServer 调用
-  @override
-  void updateBaseUrl(String newServerUrl) {
-    final newBase = '$newServerUrl/api/v1';
-    _dio.options.baseUrl = newBase;
-    _authDio.options.baseUrl = newBase;
-    if (kDebugMode) debugPrint('[ApiClient] baseUrl updated: $newBase');
-  }
-
   void dispose() {
     _isDisposed = true;
-    ApiConfig.unregisterClient(this);
 
     // 清理正在进行的 token 刷新
     if (_refreshCompleter != null && !_refreshCompleter!.isCompleted) {
@@ -555,7 +687,7 @@ class ApiClient implements BaseUrlUpdatable {
     }
     _refreshCompleter = null;
 
-    // 清理待处理的请求，防止内存泄漏
+    // 显式失败所有等待去重结果的调用，避免 Provider 销毁后 Future 永久悬挂。
     for (final completer in _pendingRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError(
@@ -572,6 +704,8 @@ class ApiClient implements BaseUrlUpdatable {
 
     _dio.close(force: true);
     _authDio.close(force: true);
+    _endpointSubscription?.cancel();
+    _endpointSubscription = null;
     onLogout = null;
     onPhoneBindRequired = null;
     onAccessTokenRefreshed = null;
@@ -586,7 +720,14 @@ class ApiClient implements BaseUrlUpdatable {
     CancelToken? cancelToken,
   }) async {
     if (_isDisposed) {
-      return ApiResponse(code: -1, message: '客户端已释放');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '客户端已释放',
+          zhTW: '客戶端已釋放',
+          en: 'Client unavailable.',
+        ),
+      );
     }
     try {
       final response = await _dio.get(
@@ -598,8 +739,15 @@ class ApiClient implements BaseUrlUpdatable {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      if (kDebugMode) debugPrint('[API] Unexpected error in GET $path: $e');
-      return ApiResponse(code: -1, message: '发生未知错误');
+      debugPrint('[API] Unexpected error in GET $path: $e');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '发生未知错误',
+          zhTW: '發生未知錯誤',
+          en: 'Unknown error occurred.',
+        ),
+      );
     }
   }
 
@@ -610,22 +758,40 @@ class ApiClient implements BaseUrlUpdatable {
     Object? data,
     T Function(dynamic)? fromJson,
     CancelToken? cancelToken,
+    Duration? receiveTimeout,
   }) async {
     if (_isDisposed) {
-      return ApiResponse(code: -1, message: '客户端已释放');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '客户端已释放',
+          zhTW: '客戶端已釋放',
+          en: 'Client unavailable.',
+        ),
+      );
     }
     try {
       final response = await _dio.post(
         path,
         data: data,
         cancelToken: cancelToken,
+        options: receiveTimeout == null
+            ? null
+            : Options(receiveTimeout: receiveTimeout),
       );
       return _parseResponse(response, fromJson);
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      if (kDebugMode) debugPrint('[API] Unexpected error in POST $path: $e');
-      return ApiResponse(code: -1, message: '发生未知错误');
+      debugPrint('[API] Unexpected error in POST $path: $e');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '发生未知错误',
+          zhTW: '發生未知錯誤',
+          en: 'Unknown error occurred.',
+        ),
+      );
     }
   }
 
@@ -637,7 +803,14 @@ class ApiClient implements BaseUrlUpdatable {
     CancelToken? cancelToken,
   }) async {
     if (_isDisposed) {
-      return ApiResponse(code: -1, message: '客户端已释放');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '客户端已释放',
+          zhTW: '客戶端已釋放',
+          en: 'Client unavailable.',
+        ),
+      );
     }
     try {
       final response = await _dio.put(
@@ -649,8 +822,15 @@ class ApiClient implements BaseUrlUpdatable {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      if (kDebugMode) debugPrint('[API] Unexpected error in PUT $path: $e');
-      return ApiResponse(code: -1, message: '发生未知错误');
+      debugPrint('[API] Unexpected error in PUT $path: $e');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '发生未知错误',
+          zhTW: '發生未知錯誤',
+          en: 'Unknown error occurred.',
+        ),
+      );
     }
   }
 
@@ -662,7 +842,14 @@ class ApiClient implements BaseUrlUpdatable {
     CancelToken? cancelToken,
   }) async {
     if (_isDisposed) {
-      return ApiResponse(code: -1, message: '客户端已释放');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '客户端已释放',
+          zhTW: '客戶端已釋放',
+          en: 'Client unavailable.',
+        ),
+      );
     }
     try {
       final response = await _dio.delete(
@@ -674,8 +861,15 @@ class ApiClient implements BaseUrlUpdatable {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      if (kDebugMode) debugPrint('[API] Unexpected error in DELETE $path: $e');
-      return ApiResponse(code: -1, message: '发生未知错误');
+      debugPrint('[API] Unexpected error in DELETE $path: $e');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '发生未知错误',
+          zhTW: '發生未知錯誤',
+          en: 'Unknown error occurred.',
+        ),
+      );
     }
   }
 
@@ -689,15 +883,25 @@ class ApiClient implements BaseUrlUpdatable {
     Duration? sendTimeout, // 可配置的上传超时
   }) async {
     if (_isDisposed) {
-      return ApiResponse(code: -1, message: '客户端已释放');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '客户端已释放',
+          zhTW: '客戶端已釋放',
+          en: 'Client unavailable.',
+        ),
+      );
     }
     try {
+      final uploadTimeout = sendTimeout ?? const Duration(minutes: 5);
       final response = await _dio.post(
         path,
         data: formData,
         options: Options(
           contentType: 'multipart/form-data',
-          sendTimeout: sendTimeout ?? const Duration(minutes: 5), // 大文件上传需要更长时间
+          sendTimeout: uploadTimeout,
+          receiveTimeout: uploadTimeout,
+          extra: const <String, dynamic>{'retryServerErrors': true},
         ),
         onSendProgress: onSendProgress,
         cancelToken: cancelToken,
@@ -706,8 +910,15 @@ class ApiClient implements BaseUrlUpdatable {
     } on DioException catch (e) {
       return _handleError(e);
     } catch (e) {
-      if (kDebugMode) debugPrint('[API] Unexpected error in UPLOAD $path: $e');
-      return ApiResponse(code: -1, message: '发生未知错误');
+      debugPrint('[API] Unexpected error in UPLOAD $path: $e');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '发生未知错误',
+          zhTW: '發生未知錯誤',
+          en: 'Unknown error occurred.',
+        ),
+      );
     }
   }
 
@@ -718,7 +929,14 @@ class ApiClient implements BaseUrlUpdatable {
   ) {
     final data = response.data;
     if (data is! Map<String, dynamic>) {
-      return ApiResponse(code: -1, message: '响应格式错误');
+      return ApiResponse(
+        code: -1,
+        message: _apiText(
+          zhCN: '响应格式错误',
+          zhTW: '響應格式錯誤',
+          en: 'Invalid response format.',
+        ),
+      );
     }
     final sanitizedData = Map<String, dynamic>.from(data);
     sanitizedData['message'] = _sanitizeServerMessage(
@@ -751,34 +969,92 @@ class ApiClient implements BaseUrlUpdatable {
 
     for (final marker in technicalMarkers) {
       if (lower.contains(marker)) {
-        return '消息服务暂时不可用，请稍后重试';
+        return _apiText(
+          zhCN: '消息服务暂时不可用，请稍后重试',
+          zhTW: '消息服務暫時不可用，請稍後重試',
+          en: 'Message service is temporarily unavailable. Please try again later.',
+        );
       }
     }
 
     return normalized;
   }
 
-  static const _errorMessages = <DioExceptionType, String>{
-    DioExceptionType.connectionTimeout: '连接超时，请检查网络',
-    DioExceptionType.sendTimeout: '发送超时，请检查网络',
-    DioExceptionType.receiveTimeout: '服务器响应超时',
-    DioExceptionType.badCertificate: '证书验证失败',
-    DioExceptionType.connectionError: '网络连接失败，请检查网络设置',
-    DioExceptionType.cancel: '请求已取消',
-  };
+  String? _localizedDioErrorMessage(DioExceptionType type) {
+    switch (type) {
+      case DioExceptionType.connectionTimeout:
+        return _apiText(
+          zhCN: '连接超时，请检查网络',
+          zhTW: '連接超時，請檢查網絡',
+          en: 'Connection timed out. Check your network.',
+        );
+      case DioExceptionType.sendTimeout:
+        return _apiText(
+          zhCN: '发送超时，请检查网络',
+          zhTW: '發送超時，請檢查網絡',
+          en: 'Request send timed out. Check your network.',
+        );
+      case DioExceptionType.receiveTimeout:
+        return _apiText(
+          zhCN: '服务器响应超时',
+          zhTW: '服務器響應超時',
+          en: 'Server response timed out.',
+        );
+      case DioExceptionType.badCertificate:
+        return _apiText(
+          zhCN: '证书验证失败',
+          zhTW: '證書驗證失敗',
+          en: 'Certificate validation failed.',
+        );
+      case DioExceptionType.connectionError:
+        return _apiText(
+          zhCN: '网络连接失败，请检查网络设置',
+          zhTW: '網絡連接失敗，請檢查網絡設置',
+          en: 'Network connection failed. Check your network settings.',
+        );
+      case DioExceptionType.cancel:
+        return _apiText(
+          zhCN: '请求已取消',
+          zhTW: '請求已取消',
+          en: 'Request was cancelled.',
+        );
+      default:
+        return null;
+    }
+  }
 
   /// HTTP 状态码到消息的映射
-  static const _httpStatusMessages = <int, String>{
-    401: '登录已过期，请重新登录',
-    403: '没有权限',
-    404: '请求的资源不存在',
-  };
+  String? _localizedHttpStatusMessage(int statusCode) {
+    switch (statusCode) {
+      case 401:
+        return _apiText(
+          zhCN: '登录已过期，请重新登录',
+          zhTW: '登入已過期，請重新登入',
+          en: 'Session expired. Please log in again.',
+        );
+      case 403:
+        return _apiText(
+          zhCN: '没有权限',
+          zhTW: '沒有權限',
+          en: 'Permission denied.',
+        );
+      case 404:
+        return _apiText(
+          zhCN: '请求的资源不存在',
+          zhTW: '請求的資源不存在',
+          en: 'Requested resource not found.',
+        );
+      default:
+        return null;
+    }
+  }
 
   /// 错误处理（使用映射表简化代码）
   ApiResponse<T> _handleError<T>(DioException e) {
     // 优先使用映射表
-    if (_errorMessages.containsKey(e.type)) {
-      return ApiResponse(code: -1, message: _errorMessages[e.type]!);
+    final mappedMessage = _localizedDioErrorMessage(e.type);
+    if (mappedMessage != null) {
+      return ApiResponse(code: -1, message: mappedMessage);
     }
 
     // 处理 badResponse
@@ -792,11 +1068,28 @@ class ApiClient implements BaseUrlUpdatable {
           e.error?.toString().contains('SocketException') ?? false;
       return ApiResponse(
         code: -1,
-        message: isSocketError ? '无法连接服务器，请检查网络' : '网络异常，请稍后重试',
+        message: isSocketError
+            ? _apiText(
+                zhCN: '无法连接服务器，请检查网络',
+                zhTW: '無法連接服務器，請檢查網絡',
+                en: 'Unable to reach the server. Check your network.',
+              )
+            : _apiText(
+                zhCN: '网络异常，请稍后重试',
+                zhTW: '網絡異常，請稍後重試',
+                en: 'Network error. Please try again later.',
+              ),
       );
     }
 
-    return ApiResponse(code: -1, message: '未知错误');
+    return ApiResponse(
+      code: -1,
+      message: _apiText(
+        zhCN: '未知错误',
+        zhTW: '未知錯誤',
+        en: 'Unknown error.',
+      ),
+    );
   }
 
   /// 处理 HTTP 错误响应
@@ -804,28 +1097,49 @@ class ApiClient implements BaseUrlUpdatable {
     final responseData = e.response?.data;
     if (responseData is Map<String, dynamic>) {
       final message = _sanitizeServerMessage(
-        responseData['message']?.toString() ?? '服务器错误',
+        responseData['message']?.toString() ??
+            _apiText(
+              zhCN: '服务器错误',
+              zhTW: '服務器錯誤',
+              en: 'Server error.',
+            ),
       );
       final rawCode = responseData['code'];
       final code = rawCode is int
           ? rawCode
           : int.tryParse(rawCode?.toString() ?? '') ??
-                e.response?.statusCode ??
-                -1;
+              e.response?.statusCode ??
+              -1;
       _maybeNotifyPhoneBindRequired(code, message);
       return ApiResponse(code: code, message: message);
     }
 
     final fallbackStatusCode = e.response?.statusCode ?? 0;
-    final fallbackMessage =
-        _httpStatusMessages[fallbackStatusCode] ??
-        (fallbackStatusCode >= 500 ? '服务器繁忙，请稍后重试' : '请求失败');
+    final fallbackMessage = _localizedHttpStatusMessage(fallbackStatusCode) ??
+        (fallbackStatusCode >= 500
+            ? _apiText(
+                zhCN: '服务器繁忙，请稍后重试',
+                zhTW: '服務器繁忙，請稍後重試',
+                en: 'Server is busy. Please try again later.',
+              )
+            : _apiText(
+                zhCN: '请求失败',
+                zhTW: '請求失敗',
+                en: 'Request failed.',
+              ));
     _maybeNotifyPhoneBindRequired(fallbackStatusCode, fallbackMessage);
     return ApiResponse(code: fallbackStatusCode, message: fallbackMessage);
   }
 
   void _maybeNotifyPhoneBindRequired(int code, String message) {
-    if (code != 403 || !message.contains('绑定手机号')) return;
+    final normalized = message.toLowerCase();
+    if (code != 1002 &&
+        (code != 403 ||
+            (!message.contains('绑定手机号') &&
+                !normalized.contains('bind phone') &&
+                !normalized.contains('phone bind')))) {
+      return;
+    }
     final now = DateTime.now();
     final last = _lastPhoneBindRequiredAt;
     if (last != null && now.difference(last) < const Duration(seconds: 1)) {
@@ -843,11 +1157,22 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return client;
 });
 
-/// Token 安全存储（使用 flutter_secure_storage 加密存储敏感数据）
+/// 认证信息持久化适配器。
+///
+/// 原生端 Token 使用系统安全存储；Web 无对应能力，只能回退到
+/// SharedPreferences。用户资料另有偏好缓存供冷启动恢复，不能视为密钥材料。
 class TokenStorage {
   static const String _tokenKey = 'auth_token';
   static const String _userIdKey = 'user_id';
   static const String _userDataKey = 'auth_user_data';
+  static const String _migrationCompleteKey =
+      'token_storage_migration_complete_v2';
+  static const bool _smokeTest = bool.fromEnvironment('GENERIC_IM_SMOKE_TEST');
+
+  // Unsigned macOS integration-test bundles cannot access the Data Protection
+  // keychain. Keep this fallback strictly scoped to compile-time smoke builds.
+  static bool get _usesPreferencesOnly =>
+      PlatformUtils.isWeb || (_smokeTest && PlatformUtils.isMacOS);
 
   // 使用安全存储来保存 token（加密）
   static const _secureStorage = FlutterSecureStorage(
@@ -858,7 +1183,7 @@ class TokenStorage {
   );
 
   static Future<void> saveToken(String token) async {
-    if (PlatformUtils.isWeb) {
+    if (_usesPreferencesOnly) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, token);
       return;
@@ -867,47 +1192,60 @@ class TokenStorage {
   }
 
   static Future<String?> getToken() async {
-    if (PlatformUtils.isWeb) {
+    if (_usesPreferencesOnly) {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(_tokenKey);
     }
-    return _secureStorage.read(key: _tokenKey);
+    final token = await _secureStorage.read(key: _tokenKey);
+    if (token != null && token.isNotEmpty) return token;
+
+    // 兼容旧版本：安全存储为空时才读取明文旧值，写入成功后立即删除旧副本。
+    final prefs = await SharedPreferences.getInstance();
+    final legacyToken = prefs.getString(_tokenKey);
+    if (legacyToken == null || legacyToken.isEmpty) return null;
+    await _secureStorage.write(key: _tokenKey, value: legacyToken);
+    await prefs.remove(_tokenKey);
+    return legacyToken;
   }
 
   static Future<void> saveUserId(String userId) async {
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_userIdKey, userId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userIdKey, userId);
+    if (_usesPreferencesOnly) {
       return;
     }
     await _secureStorage.write(key: _userIdKey, value: userId);
   }
 
   static Future<String?> getUserId() async {
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_userIdKey);
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(_userIdKey);
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
     }
+    if (_usesPreferencesOnly) return null;
     return _secureStorage.read(key: _userIdKey);
   }
 
   static Future<void> saveUserData(Map<String, dynamic> userData) async {
     final value = jsonEncode(userData);
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_userDataKey, value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userDataKey, value);
+    if (_usesPreferencesOnly) {
       return;
     }
     await _secureStorage.write(key: _userDataKey, value: value);
   }
 
   static Future<Map<String, dynamic>?> getUserData() async {
-    String? value;
-    if (PlatformUtils.isWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      value = prefs.getString(_userDataKey);
-    } else {
+    final prefs = await SharedPreferences.getInstance();
+    var value = prefs.getString(_userDataKey);
+    if ((value == null || value.isEmpty) && !_usesPreferencesOnly) {
+      // SharedPreferences 是启动缓存；缺失时以安全存储副本恢复并回填缓存。
       value = await _secureStorage.read(key: _userDataKey);
+      if (value != null && value.isNotEmpty) {
+        await prefs.setString(_userDataKey, value);
+      }
     }
     if (value == null || value.isEmpty) return null;
 
@@ -921,12 +1259,15 @@ class TokenStorage {
 
   /// 清除所有存储的凭证（使用 Future.wait 并行执行）
   static Future<void> clear() async {
+    // 退出登录必须同时覆盖新旧存储位置，防止迁移中断后残留凭证被再次恢复。
     // 并行清除安全存储（非 Web 平台）
-    await Future.wait([
-      _secureStorage.delete(key: _tokenKey),
-      _secureStorage.delete(key: _userIdKey),
-      _secureStorage.delete(key: _userDataKey),
-    ]);
+    if (!_usesPreferencesOnly) {
+      await Future.wait([
+        _secureStorage.delete(key: _tokenKey),
+        _secureStorage.delete(key: _userIdKey),
+        _secureStorage.delete(key: _userDataKey),
+      ]);
+    }
 
     // 并行清除 SharedPreferences（Web 平台 token/userId 也存于此）
     final prefs = await SharedPreferences.getInstance();
@@ -934,25 +1275,27 @@ class TokenStorage {
       prefs.remove(_tokenKey), // Web 端 token
       prefs.remove(_userIdKey), // Web 端 userId
       prefs.remove(_userDataKey),
+      prefs.remove(_migrationCompleteKey),
       prefs.remove('moment_notification_last_read'),
-      prefs.remove('recent_emojis'),
-      prefs.remove('emoji_store_cloud_updated_at'),
     ]);
   }
 
   /// 迁移旧的 SharedPreferences token 到安全存储
   static Future<void> migrateFromSharedPreferences() async {
+    if (_usesPreferencesOnly) return;
     try {
       final prefs = await SharedPreferences.getInstance();
 
       // 并行迁移 token 和 userId
+      if (prefs.getBool(_migrationCompleteKey) == true) return;
       await Future.wait([
         _migrateKey(prefs, _tokenKey),
         _migrateKey(prefs, _userIdKey),
         _migrateKey(prefs, _userDataKey),
       ]);
+      await prefs.setBool(_migrationCompleteKey, true);
     } catch (e) {
-      if (kDebugMode) debugPrint('[TokenStorage] Migration error: $e');
+      debugPrint('[TokenStorage] Migration error: $e');
     }
   }
 

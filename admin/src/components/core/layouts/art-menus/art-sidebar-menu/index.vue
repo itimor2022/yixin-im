@@ -15,7 +15,12 @@
 
       <ElScrollbar style="height: calc(100% - 135px)">
         <ul>
-          <li v-for="menu in firstLevelMenus" :key="menu.path" @click="handleMenuJump(menu, true)">
+          <li
+            v-for="menu in firstLevelMenus"
+            :key="menu.path"
+            class="dual-menu-entry"
+            @click="handleMenuJump(menu, true)"
+          >
             <ElTooltip
               class="box-item"
               effect="dark"
@@ -66,7 +71,7 @@
       :class="`menu-left-${getMenuTheme.theme} menu-left-${!menuOpen ? 'close' : 'open'}`"
       :style="{ background: getMenuTheme.background }"
     >
-      <ElScrollbar :style="scrollbarStyle">
+      <ElScrollbar class="menu-scrollbar" :style="scrollbarStyle">
         <!-- Logo、系统名称 -->
         <div
           class="header"
@@ -93,12 +98,17 @@
           :collapse="!menuOpen"
           :default-active="routerPath"
           :text-color="getMenuTheme.textColor"
-          :unique-opened="uniqueOpened"
+          :unique-opened="false"
           :background-color="getMenuTheme.background"
           :default-openeds="defaultOpenedMenus"
           :popper-class="`menu-left-popper menu-left-${getMenuTheme.theme}-popper`"
+          :router="true"
           :show-timeout="50"
           :hide-timeout="50"
+          @click.capture="handleMenuClickCapture"
+          @open="handleMenuOpen"
+          @close="handleMenuSubmenuClose"
+          @select="handleMenuSelect"
         >
           <SidebarSubmenu
             :list="menuList"
@@ -138,6 +148,7 @@
   import SidebarSubmenu from './widget/SidebarSubmenu.vue'
   import { useCommon } from '@/hooks/core/useCommon'
   import { useWindowSize, useTimeoutFn } from '@vueuse/core'
+  import type { AppRouteRecord } from '@/types/router'
 
   defineOptions({ name: 'ArtSidebarMenu' })
 
@@ -149,13 +160,13 @@
   const router = useRouter()
   const settingStore = useSettingStore()
 
-  const { getMenuOpenWidth, menuType, uniqueOpened, dualMenuShowText, menuOpen, getMenuTheme } =
+  const { getMenuOpenWidth, menuType, dualMenuShowText, menuOpen, getMenuTheme } =
     storeToRefs(settingStore)
 
   // 组件内部状态
-  const defaultOpenedMenus = ref<string[]>([])
   const isMobileMode = ref(false)
   const showMobileModal = ref(false)
+  const openedMenus = ref<string[]>([])
 
   // 使用 VueUse 的窗口尺寸监听
   const { width } = useWindowSize()
@@ -208,6 +219,31 @@
     return currentMenu?.children ?? []
   })
 
+  const activeMenuAncestors = computed(() => findMenuAncestors(menuList.value, routerPath.value))
+  const defaultOpenedMenus = computed(() =>
+    Array.from(new Set([...activeMenuAncestors.value, ...openedMenus.value]))
+  )
+
+  const findMenuAncestors = (
+    items: AppRouteRecord[],
+    targetPath: string,
+    parents: string[] = []
+  ): string[] => {
+    for (const item of items) {
+      const currentPath = item.path || ''
+      if (currentPath === targetPath) {
+        return parents
+      }
+      if (item.children?.length) {
+        const matched = findMenuAncestors(item.children, targetPath, [...parents, currentPath])
+        if (matched.length) {
+          return matched
+        }
+      }
+    }
+    return []
+  }
+
   // 双列菜单收起时的滚动条样式
   const scrollbarStyle = computed(() => {
     const isCollapsed = isDualMenu.value && !menuOpen.value
@@ -256,6 +292,88 @@
   }
 
   const { homePath } = useCommon()
+
+  const findMenuByPath = (items: any[], path: string): any | undefined => {
+    for (const item of items) {
+      if (item.path === path) {
+        return item
+      }
+
+      if (item.children?.length) {
+        const matched = findMenuByPath(item.children, path)
+        if (matched) {
+          return matched
+        }
+      }
+    }
+  }
+
+  const handleMenuSelect = (index: string): void => {
+    const target =
+      findMenuByPath(menuList.value, index) || findMenuByPath(useMenuStore().menuList, index)
+
+    if (target?.children?.length) {
+      return
+    }
+
+    if (target) {
+      handleMenuJump(target)
+      return
+    }
+
+    if (index.startsWith('/')) {
+      handleMenuJump({ path: index, meta: { title: index } } as AppRouteRecord)
+    }
+  }
+
+  const handleMenuOpen = (index: string): void => {
+    if (!openedMenus.value.includes(index)) {
+      openedMenus.value = [...openedMenus.value, index]
+    }
+  }
+
+  const handleMenuSubmenuClose = (index: string): void => {
+    openedMenus.value = openedMenus.value.filter((path) => path !== index)
+  }
+
+  const getClickedMenuPath = (event: MouseEvent): string => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) {
+      return ''
+    }
+
+    return target.closest<HTMLElement>('[data-menu-path]')?.dataset.menuPath || ''
+  }
+
+  const forceMenuRoute = (path: string): void => {
+    if (!path || path === route.path || !path.startsWith('/')) {
+      return
+    }
+
+    const target =
+      findMenuByPath(menuList.value, path) || findMenuByPath(useMenuStore().menuList, path)
+
+    if (target?.children?.length) {
+      return
+    }
+
+    if (target) {
+      handleMenuJump(target)
+      return
+    }
+
+    handleMenuJump({ path, meta: { title: path } } as AppRouteRecord)
+  }
+
+  const handleMenuClickCapture = (event: MouseEvent): void => {
+    const path = getClickedMenuPath(event)
+    if (!path) {
+      return
+    }
+
+    window.setTimeout(() => forceMenuRoute(path), 0)
+    window.setTimeout(() => forceMenuRoute(path), 120)
+  }
 
   /**
    * 导航到首页

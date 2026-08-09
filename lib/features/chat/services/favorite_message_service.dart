@@ -1,10 +1,31 @@
+// 文件用途：封装 FavoriteMessageEntry 相关业务流程与外部能力调用，属于聊天与消息。
+// 核心逻辑：封装 FavoriteMessageEntry 的外部能力调用，先校验输入和会话，再转换响应结果并向上层返回可处理的错误状态。
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart';
 import '../providers/message_provider.dart';
+import '../utils/system_message_text.dart';
 
+String _favoriteMessageText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：favorite message service 是业务副作用入口，负责校验参数、调用外部资源并把异常转换为上层可处理结果。
 class FavoriteMessageEntry {
   final String messageId;
   final int? messageSeq;
@@ -56,41 +77,113 @@ class FavoriteMessageEntry {
   String get previewText {
     switch (type) {
       case MessageItemType.text:
-        return content.trim().isNotEmpty ? content.trim() : '[文本消息]';
+        return content.trim().isNotEmpty
+            ? content.trim()
+            : _favoriteMessageText(
+                zhCN: '[文本消息]',
+                zhTW: '[文字訊息]',
+                en: '[Text message]',
+              );
       case MessageItemType.image:
-        return content.trim().isNotEmpty ? content.trim() : '[图片]';
+        return content.trim().isNotEmpty
+            ? content.trim()
+            : _favoriteMessageText(
+                zhCN: '[图片]',
+                zhTW: '[圖片]',
+                en: '[Photo]',
+              );
       case MessageItemType.video:
-        return '[视频]';
+        return _favoriteMessageText(
+          zhCN: '[视频]',
+          zhTW: '[影片]',
+          en: '[Video]',
+        );
       case MessageItemType.voice:
-        return content.trim().isNotEmpty ? content.trim() : '[语音]';
+        return content.trim().isNotEmpty
+            ? content.trim()
+            : _favoriteMessageText(
+                zhCN: '[语音]',
+                zhTW: '[語音]',
+                en: '[Voice message]',
+              );
       case MessageItemType.file:
         return fileName?.trim().isNotEmpty == true
-            ? '[文件] ${fileName!.trim()}'
-            : '[文件]';
+            ? '${_favoriteMessageText(zhCN: '[文件]', zhTW: '[檔案]', en: '[File]')} ${fileName!.trim()}'
+            : _favoriteMessageText(
+                zhCN: '[文件]',
+                zhTW: '[檔案]',
+                en: '[File]',
+              );
       case MessageItemType.location:
         return locationTitle?.trim().isNotEmpty == true
             ? locationTitle!.trim()
             : (locationAddress?.trim().isNotEmpty == true
                 ? locationAddress!.trim()
-                : '[位置]');
+                : _favoriteMessageText(
+                    zhCN: '[位置]',
+                    zhTW: '[位置]',
+                    en: '[Location]',
+                  ));
       case MessageItemType.contact:
-        return content.trim().isNotEmpty ? content.trim() : '[名片]';
+        return content.trim().isNotEmpty
+            ? content.trim()
+            : _favoriteMessageText(
+                zhCN: '[名片]',
+                zhTW: '[名片]',
+                en: '[Contact card]',
+              );
       case MessageItemType.redPacket:
-        return '[红包]';
+        return _favoriteMessageText(
+          zhCN: '[红包]',
+          zhTW: '[紅包]',
+          en: '[Red packet]',
+        );
       case MessageItemType.transfer:
-        return '[转账]';
+        return _favoriteMessageText(
+          zhCN: '[转账]',
+          zhTW: '[轉帳]',
+          en: '[Transfer]',
+        );
+      case MessageItemType.forwardBundle:
+        return _favoriteMessageText(
+          zhCN: '[聊天记录]',
+          zhTW: '[聊天記錄]',
+          en: '[Chat history]',
+        );
       case MessageItemType.call:
-        return '[通话]';
+        return _favoriteMessageText(
+          zhCN: '[通话]',
+          zhTW: '[通話]',
+          en: '[Call]',
+        );
       case MessageItemType.system:
-        return content.trim().isNotEmpty ? content.trim() : '[系统消息]';
+        return content.trim().isNotEmpty
+            ? resolveSystemMessageText(content.trim())
+            : _favoriteMessageText(
+                zhCN: '[系统消息]',
+                zhTW: '[系統訊息]',
+                en: '[System message]',
+              );
       case MessageItemType.audio:
-        return '[音频]';
+        return _favoriteMessageText(
+          zhCN: '[音频]',
+          zhTW: '[音訊]',
+          en: '[Audio]',
+        );
       case MessageItemType.sticker:
-        return '[表情]';
+        return _favoriteMessageText(
+          zhCN: '[表情]',
+          zhTW: '[貼圖]',
+          en: '[Sticker]',
+        );
       case MessageItemType.gif:
         return '[GIF]';
       case MessageItemType.poll:
-        return '[投票]';
+        return _favoriteMessageText(
+          zhCN: '[投票]',
+          zhTW: '[投票]',
+          en: '[Poll]',
+        );
     }
   }
 
@@ -126,6 +219,7 @@ class FavoriteMessageEntry {
     return '$normalizedChatId::$storageId';
   }
 
+  // 流程逻辑：`fromMessage` 负责一次完整的外部调用边界，包含参数准备、响应转换、异常归一化和必要的重试/清理。
   factory FavoriteMessageEntry.fromMessage(
     MessageItem message, {
     required String chatName,
@@ -214,40 +308,29 @@ class FavoriteMessageEntry {
 class FavoriteMessageService {
   static const String _storageKey = 'favorite_messages_v1';
 
+  FavoriteMessageService({ApiClient? apiClient}) : _apiClient = apiClient;
+
+  final ApiClient? _apiClient;
+
   String _storageKeyFor(String accountKey) {
     final normalized = accountKey.trim();
-    if (normalized.isEmpty) return _storageKey;
-    return '${_storageKey}_$normalized';
+    if (normalized.isEmpty) return '';
+    final accountHash = sha256.convert(utf8.encode(normalized));
+    return 'acct_v1_${accountHash}_$_storageKey';
+  }
+
+  String _legacyScopedStorageKeyFor(String accountKey) {
+    return '${_storageKey}_${accountKey.trim()}';
   }
 
   Future<String> _resolveAccountKey(String accountKey) async {
-    final normalized = accountKey.trim();
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-    final storedUserId = (await TokenStorage.getUserId())?.trim() ?? '';
-    return storedUserId;
+    return accountKey.trim();
   }
 
   Future<List<String>> _candidateStorageKeys(String accountKey) async {
-    final keys = <String>{_storageKey};
     final normalized = accountKey.trim();
-    if (normalized.isNotEmpty) {
-      keys.add(_storageKeyFor(normalized));
-    }
-    final storedUserId = (await TokenStorage.getUserId())?.trim() ?? '';
-    if (storedUserId.isNotEmpty) {
-      keys.add(_storageKeyFor(storedUserId));
-    }
-    return keys.toList(growable: false);
-  }
-
-  Future<List<String>> _fallbackScopedKeys() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs
-        .getKeys()
-        .where((key) => key.startsWith('${_storageKey}_'))
-        .toList(growable: false);
+    if (normalized.isEmpty) return const [];
+    return [_storageKeyFor(normalized)];
   }
 
   List<FavoriteMessageEntry> _mergeFavorites(
@@ -266,26 +349,28 @@ class FavoriteMessageService {
 
   Future<List<FavoriteMessageEntry>> loadFavorites(String accountKey) async {
     final resolvedAccountKey = await _resolveAccountKey(accountKey);
+    if (resolvedAccountKey.isEmpty) return const [];
+    final remoteFavorites = await _loadRemoteFavorites();
+    if (remoteFavorites != null) {
+      final mergedRemote = _mergeFavorites(remoteFavorites);
+      await _saveFavorites(resolvedAccountKey, mergedRemote);
+      return mergedRemote;
+    }
     final primaryKeys = await _candidateStorageKeys(resolvedAccountKey);
 
-    final merged = _mergeFavorites(
+    var merged = _mergeFavorites(
       await _loadFavoritesFromKeys(primaryKeys),
     );
-    if (merged.isNotEmpty) {
-      if (resolvedAccountKey.isNotEmpty) {
+    if (merged.isEmpty) {
+      final legacyKey = _legacyScopedStorageKeyFor(resolvedAccountKey);
+      merged = _mergeFavorites(await _loadFavoritesFromKeys([legacyKey]));
+      if (merged.isNotEmpty) {
         await _saveFavorites(resolvedAccountKey, merged);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(legacyKey);
       }
-      return merged;
     }
-
-    final fallbackKeys = await _fallbackScopedKeys();
-    final fallbackMerged = _mergeFavorites(
-      await _loadFavoritesFromKeys(fallbackKeys),
-    );
-    if (fallbackMerged.isNotEmpty && resolvedAccountKey.isNotEmpty) {
-      await _saveFavorites(resolvedAccountKey, fallbackMerged);
-    }
-    return fallbackMerged;
+    return merged;
   }
 
   Future<bool> contains(String accountKey, String messageId) async {
@@ -304,6 +389,7 @@ class FavoriteMessageService {
     required String chatName,
   }) async {
     final resolvedAccountKey = await _resolveAccountKey(accountKey);
+    if (resolvedAccountKey.isEmpty) return false;
     final favorites = await loadFavorites(resolvedAccountKey);
     final targetKey = _messageKey(message);
     final normalizedMessageId = message.id.trim();
@@ -314,15 +400,16 @@ class FavoriteMessageService {
               item.messageId == normalizedMessageId),
     );
     if (index >= 0) {
+      await _deleteRemoteFavorite(favorites[index]);
       favorites.removeAt(index);
       await _saveFavorites(resolvedAccountKey, favorites);
       return false;
     }
 
-    favorites.insert(
-      0,
-      FavoriteMessageEntry.fromMessage(message, chatName: chatName),
-    );
+    final localEntry =
+        FavoriteMessageEntry.fromMessage(message, chatName: chatName);
+    final remoteEntry = await _addRemoteFavorite(localEntry);
+    favorites.insert(0, remoteEntry ?? localEntry);
     await _saveFavorites(resolvedAccountKey, favorites);
     return true;
   }
@@ -332,7 +419,9 @@ class FavoriteMessageService {
     FavoriteMessageEntry target,
   ) async {
     final resolvedAccountKey = await _resolveAccountKey(accountKey);
+    if (resolvedAccountKey.isEmpty) return;
     final favorites = await loadFavorites(resolvedAccountKey);
+    await _deleteRemoteFavorite(target);
     favorites.removeWhere((item) => item.dedupeKey == target.dedupeKey);
     await _saveFavorites(resolvedAccountKey, favorites);
   }
@@ -361,6 +450,7 @@ class FavoriteMessageService {
     String accountKey,
     List<FavoriteMessageEntry> favorites,
   ) async {
+    if (accountKey.trim().isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(favorites.map((item) => item.toJson()).toList());
     await prefs.setString(_storageKeyFor(accountKey), encoded);
@@ -401,6 +491,59 @@ class FavoriteMessageService {
       return items;
     } catch (_) {
       return const [];
+    }
+  }
+
+  Future<List<FavoriteMessageEntry>?> _loadRemoteFavorites() async {
+    final api = _apiClient;
+    if (api == null) return null;
+    final response = await api.get<Map<String, dynamic>>(
+      '/message/favorites',
+      queryParameters: const {'page': 1, 'page_size': 100},
+      fromJson: (data) => Map<String, dynamic>.from(data as Map),
+    );
+    if (!response.isSuccess || response.data == null) return null;
+    final rawList = response.data!['list'];
+    if (rawList is! List) return const [];
+    return rawList
+        .whereType<Map>()
+        .map(
+          (item) =>
+              FavoriteMessageEntry.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.dedupeKey.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<FavoriteMessageEntry?> _addRemoteFavorite(
+    FavoriteMessageEntry entry,
+  ) async {
+    final api = _apiClient;
+    if (api == null) return null;
+    final response = await api.post<Map<String, dynamic>>(
+      '/message/favorite',
+      data: {'chat_id': entry.chatId, 'message_id': entry.messageId},
+      fromJson: (data) => Map<String, dynamic>.from(data as Map),
+    );
+    if (!response.isSuccess || response.data == null) {
+      throw StateError(
+          response.message.isEmpty ? 'favorite_failed' : response.message);
+    }
+    return FavoriteMessageEntry.fromJson(response.data!);
+  }
+
+  Future<void> _deleteRemoteFavorite(FavoriteMessageEntry entry) async {
+    final api = _apiClient;
+    if (api == null) return;
+    final chatId = Uri.encodeComponent(entry.chatId);
+    final messageId = Uri.encodeComponent(entry.messageId);
+    final response = await api.delete<void>(
+      '/message/favorite/$chatId/$messageId',
+    );
+    if (!response.isSuccess) {
+      throw StateError(
+        response.message.isEmpty ? 'remove_favorite_failed' : response.message,
+      );
     }
   }
 }

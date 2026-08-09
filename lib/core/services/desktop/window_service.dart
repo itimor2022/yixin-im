@@ -1,5 +1,6 @@
+// 文件用途：实现 WindowService 相关逻辑，服务于业务服务。
+// 核心逻辑：围绕 WindowService 组织，完成输入校验、核心处理和结果回传。
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
@@ -9,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../utils/platform_utils.dart';
 import '../api/system_settings_service.dart';
 
+// 关键声明：window service 把桌面系统能力封装成应用接口，处理窗口、托盘或快捷键生命周期并避免泄漏监听器。
 /// 桌面端窗口管理服务
 /// 仅在 macOS/Windows/Linux 上使用
 class WindowService with WindowListener {
@@ -42,9 +44,9 @@ class WindowService with WindowListener {
         return settings.displayName;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Window] Failed to load app name: $e');
+      debugPrint('[Window] Failed to load app name: $e');
     }
-    return kDefaultAppDisplayName;
+    return defaultAppDisplayName();
   }
 
   /// 初始化窗口管理
@@ -56,9 +58,19 @@ class WindowService with WindowListener {
     // 加载保存的窗口设置
     final prefs = await SharedPreferences.getInstance();
     final savedWidth =
-        prefs.getDouble(_keyWindowWidth) ?? PlatformUtils.desktopDefaultWidth;
-    final savedHeight =
-        prefs.getDouble(_keyWindowHeight) ?? PlatformUtils.desktopDefaultHeight;
+        (prefs.getDouble(_keyWindowWidth) ?? PlatformUtils.desktopDefaultWidth)
+            .clamp(
+              PlatformUtils.desktopMinWidth,
+              double.infinity,
+            )
+            .toDouble();
+    final savedHeight = (prefs.getDouble(_keyWindowHeight) ??
+            PlatformUtils.desktopDefaultHeight)
+        .clamp(
+          PlatformUtils.desktopMinHeight,
+          double.infinity,
+        )
+        .toDouble();
     final savedX = prefs.getDouble(_keyWindowX);
     final savedY = prefs.getDouble(_keyWindowY);
     final savedMaximized = prefs.getBool(_keyWindowMaximized) ?? false;
@@ -86,13 +98,13 @@ class WindowService with WindowListener {
     final fallbackTimer = Timer(const Duration(seconds: 5), () async {
       if (!shown) {
         shown = true;
-        if (kDebugMode) debugPrint('[Window] Fallback: force showing window after timeout');
+        debugPrint('[Window] Fallback: force showing window after timeout');
         try {
           await windowManager.center();
           await windowManager.show();
           await windowManager.focus();
         } catch (e) {
-          if (kDebugMode) debugPrint('[Window] Fallback show error: $e');
+          debugPrint('[Window] Fallback show error: $e');
         }
       }
     });
@@ -106,7 +118,7 @@ class WindowService with WindowListener {
         if (isOnScreen) {
           await windowManager.setPosition(Offset(savedX, savedY));
         } else {
-          if (kDebugMode) debugPrint('[Window] Saved position off-screen ($savedX, $savedY), centering');
+          debugPrint('[Window] Saved position off-screen ($savedX, $savedY), centering');
           await windowManager.center();
         }
       }
@@ -123,7 +135,7 @@ class WindowService with WindowListener {
     windowManager.addListener(this);
 
     _initialized = true;
-    if (kDebugMode) debugPrint('[Window] Initialized with size: ${savedWidth}x$savedHeight');
+    debugPrint('[Window] Initialized with size: ${savedWidth}x$savedHeight');
   }
 
   /// 检测坐标是否在任何一块屏幕的可见区域内
@@ -141,7 +153,7 @@ class WindowService with WindowListener {
         }
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[Window] Screen retriever error: $e');
+      debugPrint('[Window] Screen retriever error: $e');
     }
     return false;
   }
@@ -164,9 +176,9 @@ class WindowService with WindowListener {
         await prefs.setDouble(_keyWindowY, position.dy);
       }
       await prefs.setBool(_keyWindowMaximized, isMaximized);
-      if (kDebugMode) debugPrint('[Window] State saved successfully');
+      debugPrint('[Window] State saved successfully');
     } catch (e) {
-      if (kDebugMode) debugPrint('[Window] Failed to save state: $e');
+      debugPrint('[Window] Failed to save state: $e');
     }
   }
 
@@ -179,8 +191,13 @@ class WindowService with WindowListener {
   /// 获取保存的侧边栏宽度
   Future<double> getSidebarWidth() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keySidebarWidth) ??
-        PlatformUtils.desktopSidebarWidth;
+    return (prefs.getDouble(_keySidebarWidth) ??
+            PlatformUtils.desktopSidebarWidth)
+        .clamp(
+          PlatformUtils.desktopSidebarMinWidth,
+          PlatformUtils.desktopSidebarMaxWidth,
+        )
+        .toDouble();
   }
 
   /// 最小化窗口
@@ -283,6 +300,7 @@ class WindowService with WindowListener {
     });
   }
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   /// 销毁
   Future<void> dispose() async {
     if (_isDisposed) return;
@@ -294,10 +312,10 @@ class WindowService with WindowListener {
         await _saveWindowState();
         windowManager.removeListener(this);
       } catch (e) {
-        if (kDebugMode) debugPrint('[Window] Dispose error: $e');
+        debugPrint('[Window] Dispose error: $e');
       }
     }
     _initialized = false;
-    if (kDebugMode) debugPrint('[Window] Disposed');
+    debugPrint('[Window] Disposed');
   }
 }

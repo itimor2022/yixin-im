@@ -1,9 +1,12 @@
+// 文件用途：提供 LinkPreviewCard 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 LinkPreviewCard，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/theme/app_colors.dart';
 import 'in_app_browser.dart';
 
+// 关键声明：link preview card 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 链接预览卡片（Telegram 风格）
 class LinkPreviewCard extends StatelessWidget {
   final String url;
@@ -25,6 +28,7 @@ class LinkPreviewCard extends StatelessWidget {
     this.bubbleColor,
   });
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -32,14 +36,22 @@ class LinkPreviewCard extends StatelessWidget {
     final hasImage = imageUrl != null && imageUrl!.isNotEmpty;
     final hasTitle = title != null && title!.isNotEmpty;
     final hasDescription = description != null && description!.isNotEmpty;
-    
+
     // 颜色配置
-    final cardColor = bubbleColor ?? (isOutgoing 
-        ? (isDark ? AppColors.darkBubbleOutgoing : AppColors.lightBubbleOutgoing)
-        : (isDark ? AppColors.darkBubbleIncoming : AppColors.lightBubbleIncoming));
-    final accentColor = isOutgoing ? Colors.white.withOpacity(0.3) : AppColors.primary;
-    final textColor = isOutgoing ? Colors.white : (isDark ? Colors.white : Colors.black87);
-    final subTextColor = isOutgoing ? Colors.white70 : (isDark ? Colors.white60 : Colors.black54);
+    final cardColor = bubbleColor ??
+        (isOutgoing
+            ? (isDark
+                ? AppColors.darkBubbleOutgoing
+                : AppColors.lightBubbleOutgoing)
+            : (isDark
+                ? AppColors.darkBubbleIncoming
+                : AppColors.lightBubbleIncoming));
+    final accentColor =
+        isOutgoing ? Colors.white.withOpacity(0.3) : AppColors.linkFor(context);
+    final textColor =
+        isOutgoing ? Colors.white : AppColors.textPrimaryFor(context);
+    final subTextColor =
+        isOutgoing ? Colors.white70 : AppColors.textSecondaryFor(context);
 
     return GestureDetector(
       onTap: () => InAppBrowser.open(context, url),
@@ -68,7 +80,7 @@ class LinkPreviewCard extends StatelessWidget {
                 child: CachedNetworkImage(
                   imageUrl: imageUrl!,
                   fit: BoxFit.cover,
-                  memCacheWidth: 560,  // 280 * 2 考虑高 DPI
+                  memCacheWidth: 560, // 280 * 2 考虑高 DPI
                   memCacheHeight: 294, // 147 * 2
                   placeholder: (_, __) => Container(
                     color: isDark ? Colors.white10 : Colors.grey.shade200,
@@ -80,7 +92,7 @@ class LinkPreviewCard extends StatelessWidget {
                     color: isDark ? Colors.white10 : Colors.grey.shade200,
                     child: Icon(
                       Icons.image_not_supported_outlined,
-                      color: isDark ? Colors.white38 : Colors.black26,
+                      color: AppColors.textTertiaryFor(context),
                       size: 40,
                     ),
                   ),
@@ -197,11 +209,14 @@ class SimpleLinkPreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final domain = _getDomain(url);
-    
+
     // 颜色配置
-    final accentColor = isOutgoing ? Colors.white.withOpacity(0.5) : AppColors.primary;
-    final textColor = isOutgoing ? Colors.white : (isDark ? Colors.white : Colors.black87);
-    final linkColor = isOutgoing ? Colors.white70 : Colors.blue;
+    final accentColor =
+        isOutgoing ? Colors.white.withOpacity(0.5) : AppColors.linkFor(context);
+    final textColor =
+        isOutgoing ? Colors.white : AppColors.textPrimaryFor(context);
+    final linkColor =
+        isOutgoing ? Colors.white70 : AppColors.linkEmphasisFor(context);
 
     return GestureDetector(
       onTap: () => InAppBrowser.open(context, url),

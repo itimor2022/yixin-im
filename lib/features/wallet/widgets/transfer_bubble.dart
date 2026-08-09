@@ -1,10 +1,30 @@
+// 文件用途：提供 TransferBubble 可复用界面组件，服务于钱包与支付。
+// 核心逻辑：根据输入模型和状态渲染 TransferBubble，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart' show ApiConfig;
 import '../services/wallet_service.dart';
 
+String _transferBubbleText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：transfer bubble 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 转账消息气泡 - 仿微信简洁风格
 class TransferBubble extends StatelessWidget {
   final TransferInfo transfer;
@@ -12,6 +32,7 @@ class TransferBubble extends StatelessWidget {
   final VoidCallback? onAccept;
   final VoidCallback? onReject;
   final VoidCallback? onTap;
+  final String currency;
 
   const TransferBubble({
     super.key,
@@ -20,8 +41,10 @@ class TransferBubble extends StatelessWidget {
     this.onAccept,
     this.onReject,
     this.onTap,
+    this.currency = '¥',
   });
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     final isAccepted = transfer.status == TransferStatus.accepted;
@@ -86,7 +109,7 @@ class TransferBubble extends StatelessWidget {
                         width: 28,
                         height: 28,
                         errorBuilder: (_, __, ___) => Icon(
-                          isOutgoing 
+                          isOutgoing
                               ? Icons.call_made_rounded
                               : Icons.call_received_rounded,
                           color: Colors.white,
@@ -102,7 +125,7 @@ class TransferBubble extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '¥${transfer.amount.toStringAsFixed(2)}',
+                          '$currency${transfer.amount.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -111,7 +134,7 @@ class TransferBubble extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _getStatusText(),
+                          _getStatusText(context),
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.white.withOpacity(0.8),
@@ -141,7 +164,12 @@ class TransferBubble extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '转账',
+                    _transferBubbleText(
+                      context,
+                      zhCN: '转账',
+                      zhTW: '轉帳',
+                      en: 'Transfer',
+                    ),
                     style: TextStyle(
                       fontSize: 10,
                       color: Colors.white.withOpacity(0.8),
@@ -180,28 +208,68 @@ class TransferBubble extends StatelessWidget {
     }
   }
 
-  String _getStatusText() {
+  String _getStatusText(BuildContext context) {
     if (isOutgoing) {
       switch (transfer.status) {
         case TransferStatus.pending:
-          return '待对方收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '待对方收款',
+            zhTW: '待對方收款',
+            en: 'Waiting for recipient',
+          );
         case TransferStatus.accepted:
-          return '已被收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '已被收款',
+            zhTW: '已被收款',
+            en: 'Received by recipient',
+          );
         case TransferStatus.rejected:
-          return '已退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已退还',
+            zhTW: '已退還',
+            en: 'Returned',
+          );
         case TransferStatus.expired:
-          return '已过期退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已过期退还',
+            zhTW: '已過期退還',
+            en: 'Expired and returned',
+          );
       }
     } else {
       switch (transfer.status) {
         case TransferStatus.pending:
-          return '请收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '请收款',
+            zhTW: '請收款',
+            en: 'Please accept',
+          );
         case TransferStatus.accepted:
-          return '已收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '已收款',
+            zhTW: '已收款',
+            en: 'Received',
+          );
         case TransferStatus.rejected:
-          return '已退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已退还',
+            zhTW: '已退還',
+            en: 'Returned',
+          );
         case TransferStatus.expired:
-          return '已过期';
+          return _transferBubbleText(
+            context,
+            zhCN: '已过期',
+            zhTW: '已過期',
+            en: 'Expired',
+          );
       }
     }
   }
@@ -215,6 +283,7 @@ class TransferDetailDialog extends StatelessWidget {
   final String? peerAvatar;
   final VoidCallback? onAccept;
   final VoidCallback? onReject;
+  final String currency;
 
   const TransferDetailDialog({
     super.key,
@@ -224,6 +293,7 @@ class TransferDetailDialog extends StatelessWidget {
     this.peerAvatar,
     this.onAccept,
     this.onReject,
+    this.currency = '¥',
   });
 
   @override
@@ -290,7 +360,8 @@ class TransferDetailDialog extends StatelessWidget {
                       radius: 24,
                       backgroundColor: Colors.white24,
                       backgroundImage: peerAvatar?.isNotEmpty == true
-                          ? CachedNetworkImageProvider(ApiConfig.getMediaUrl(peerAvatar!))
+                          ? CachedNetworkImageProvider(
+                              ApiConfig.getMediaUrl(peerAvatar!))
                           : null,
                       child: peerAvatar?.isNotEmpty != true
                           ? Text(
@@ -310,7 +381,19 @@ class TransferDetailDialog extends StatelessWidget {
                   const SizedBox(height: 8),
 
                   Text(
-                    isOutgoing ? '转账给 $peerName' : '来自 $peerName',
+                    isOutgoing
+                        ? _transferBubbleText(
+                            context,
+                            zhCN: '转账给 $peerName',
+                            zhTW: '轉帳給 $peerName',
+                            en: 'Transfer to $peerName',
+                          )
+                        : _transferBubbleText(
+                            context,
+                            zhCN: '来自 $peerName',
+                            zhTW: '來自 $peerName',
+                            en: 'From $peerName',
+                          ),
                     style: const TextStyle(
                       fontSize: 14,
                       color: Colors.white,
@@ -326,7 +409,7 @@ class TransferDetailDialog extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    '¥${transfer.amount.toStringAsFixed(2)}',
+                    '$currency${transfer.amount.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
@@ -372,7 +455,8 @@ class TransferDetailDialog extends StatelessWidget {
                           onReject?.call();
                         },
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: isDark ? Colors.white60 : Colors.grey[700],
+                          foregroundColor:
+                              isDark ? Colors.white60 : Colors.grey[700],
                           side: BorderSide(
                             color: isDark ? Colors.white24 : Colors.grey[300]!,
                           ),
@@ -381,7 +465,14 @@ class TransferDetailDialog extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('拒收'),
+                        child: Text(
+                          _transferBubbleText(
+                            context,
+                            zhCN: '拒收',
+                            zhTW: '拒收',
+                            en: 'Decline',
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -400,7 +491,14 @@ class TransferDetailDialog extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('收款'),
+                        child: Text(
+                          _transferBubbleText(
+                            context,
+                            zhCN: '收款',
+                            zhTW: '收款',
+                            en: 'Accept',
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -428,7 +526,7 @@ class TransferDetailDialog extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _getStatusText(),
+                        _getStatusText(context),
                         style: TextStyle(
                           fontSize: 13,
                           color: _getStatusColor(),
@@ -470,28 +568,68 @@ class TransferDetailDialog extends StatelessWidget {
     }
   }
 
-  String _getStatusText() {
+  String _getStatusText(BuildContext context) {
     if (isOutgoing) {
       switch (transfer.status) {
         case TransferStatus.pending:
-          return '待对方收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '待对方收款',
+            zhTW: '待對方收款',
+            en: 'Waiting for recipient',
+          );
         case TransferStatus.accepted:
-          return '对方已收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '对方已收款',
+            zhTW: '對方已收款',
+            en: 'Recipient received it',
+          );
         case TransferStatus.rejected:
-          return '已退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已退还',
+            zhTW: '已退還',
+            en: 'Returned',
+          );
         case TransferStatus.expired:
-          return '已过期退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已过期退还',
+            zhTW: '已過期退還',
+            en: 'Expired and returned',
+          );
       }
     } else {
       switch (transfer.status) {
         case TransferStatus.pending:
-          return '待收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '待收款',
+            zhTW: '待收款',
+            en: 'Waiting to accept',
+          );
         case TransferStatus.accepted:
-          return '已收款';
+          return _transferBubbleText(
+            context,
+            zhCN: '已收款',
+            zhTW: '已收款',
+            en: 'Received',
+          );
         case TransferStatus.rejected:
-          return '已退还';
+          return _transferBubbleText(
+            context,
+            zhCN: '已退还',
+            zhTW: '已退還',
+            en: 'Returned',
+          );
         case TransferStatus.expired:
-          return '已过期';
+          return _transferBubbleText(
+            context,
+            zhCN: '已过期',
+            zhTW: '已過期',
+            en: 'Expired',
+          );
       }
     }
   }
@@ -506,6 +644,7 @@ Future<void> showTransferDetailDialog(
   String? peerAvatar,
   VoidCallback? onAccept,
   VoidCallback? onReject,
+  String currency = '¥',
 }) {
   return showDialog(
     context: context,
@@ -517,6 +656,7 @@ Future<void> showTransferDetailDialog(
       peerAvatar: peerAvatar,
       onAccept: onAccept,
       onReject: onReject,
+      currency: currency,
     ),
   );
 }

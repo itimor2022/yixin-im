@@ -1,24 +1,27 @@
 <!-- 用户增长趋势图表 -->
 <template>
-  <div class="art-card p-5 mb-5 max-sm:mb-4">
-    <div class="flex-cb mb-4">
-      <h4 class="text-base font-medium">用户增长趋势</h4>
+  <div class="art-card trend-panel">
+    <div class="trend-head">
+      <div>
+        <h4>用户增长趋势</h4>
+        <p>新增用户按日期聚合</p>
+      </div>
       <ElRadioGroup v-model="period" size="small" @change="loadData">
         <ElRadioButton value="7">近7天</ElRadioButton>
         <ElRadioButton value="30">近30天</ElRadioButton>
       </ElRadioGroup>
     </div>
 
-    <div v-if="loading" class="h-80 flex-cc">
+    <div v-if="loading" class="chart-placeholder">
       <ElSkeleton :rows="8" animated />
     </div>
 
-    <div v-else-if="chartData.length === 0" class="h-80 flex-cc flex-col text-g-400">
-      <ArtSvgIcon icon="ri:bar-chart-box-line" class="text-4xl mb-2" />
+    <div v-else-if="chartData.length === 0" class="empty-chart">
+      <ArtSvgIcon icon="ri:bar-chart-box-line" />
       <span>暂无数据</span>
     </div>
 
-    <div v-else ref="chartRef" class="h-80"></div>
+    <div v-else ref="chartRef" class="chart-body"></div>
   </div>
 </template>
 
@@ -248,3 +251,73 @@
     chart?.dispose()
   })
 </script>
+
+<style scoped lang="scss">
+  .trend-panel {
+    padding: 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .trend-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+
+    h4 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      color: var(--el-text-color-primary);
+    }
+
+    p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .chart-body,
+  .chart-placeholder,
+  .empty-chart {
+    height: 320px;
+  }
+
+  .chart-body {
+    padding: 12px 10px 4px;
+  }
+
+  .chart-placeholder,
+  .empty-chart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+
+  .empty-chart {
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+
+    .art-svg-icon,
+    :deep(svg) {
+      font-size: 32px;
+      color: var(--el-text-color-placeholder);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .trend-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>

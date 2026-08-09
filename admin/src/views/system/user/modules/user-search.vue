@@ -7,6 +7,14 @@
     @reset="handleReset"
     @search="handleSearch"
   >
+    <template #searchMode>
+      <ElSegmented
+        v-model="formData.searchMode"
+        :options="searchModeOptions"
+        size="default"
+        @change="handleSearch"
+      />
+    </template>
     <template #extra>
       <ElSwitch
         v-model="onlineOnly"
@@ -51,6 +59,30 @@
     { label: '封禁中', value: '3' }
   ]
 
+  const genderOptions = [
+    { label: '全部', value: '' },
+    { label: '男', value: 'male' },
+    { label: '女', value: 'female' },
+    { label: '未设置', value: 'unknown' }
+  ]
+
+  const registerSourceOptions = [
+    { label: '全部', value: '' },
+    { label: '普通注册', value: 'manual' },
+    { label: '一键注册', value: 'quick' }
+  ]
+
+  const credentialsStatusOptions = [
+    { label: '全部', value: '' },
+    { label: '已完善', value: 'initialized' },
+    { label: '待完善', value: 'pending' }
+  ]
+
+  const searchModeOptions = [
+    { label: '精确账号', value: 'exact' },
+    { label: '模糊搜索', value: 'fuzzy' }
+  ]
+
   // 表单配置
   const formItems = computed(() => [
     {
@@ -64,6 +96,14 @@
       }
     },
     {
+      label: '模式',
+      key: 'searchMode',
+      type: 'input',
+      props: {
+        style: { width: '176px' }
+      }
+    },
+    {
       label: '状态',
       key: 'status',
       type: 'select',
@@ -72,12 +112,43 @@
         options: statusOptions,
         clearable: true
       }
+    },
+    {
+      label: '性别',
+      key: 'gender',
+      type: 'select',
+      props: {
+        placeholder: '请选择性别',
+        options: genderOptions,
+        clearable: true
+      }
+    },
+    {
+      label: '注册来源',
+      key: 'registerSource',
+      type: 'select',
+      props: {
+        placeholder: '请选择来源',
+        options: registerSourceOptions,
+        clearable: true
+      }
+    },
+    {
+      label: '登录凭证',
+      key: 'credentialsStatus',
+      type: 'select',
+      props: {
+        placeholder: '请选择状态',
+        options: credentialsStatusOptions,
+        clearable: true
+      }
     }
   ])
 
   // 事件
   function handleReset() {
     onlineOnly.value = false
+    formData.value.searchMode = 'exact'
     emit('reset')
   }
 
@@ -85,6 +156,7 @@
     await searchBarRef.value?.validate()
     emit('search', {
       ...formData.value,
+      searchMode: formData.value.searchMode || 'exact',
       onlineOnly: onlineOnly.value
     })
   }

@@ -1,5 +1,8 @@
+// 文件用途：提供 ShimmerLoading 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 ShimmerLoading，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 
+// 关键声明：shimmer loading 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// Shimmer 加载效果组件
 class ShimmerLoading extends StatefulWidget {
   final Widget child;
@@ -24,6 +27,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
   late AnimationController _controller;
   late Animation<double> _animation;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();

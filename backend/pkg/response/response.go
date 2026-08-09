@@ -1,9 +1,11 @@
+// 文件用途：实现 backend 目录中的 response.go 模块。
+// 核心逻辑：围绕本文件的类型和函数完成输入处理、状态转换或辅助计算。
+
 package response
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 // Response 统一响应结构
@@ -15,13 +17,20 @@ type Response struct {
 
 // 响应码定义
 const (
-	CodeSuccess      = 0
-	CodeBadRequest   = 400
-	CodeUnauthorized = 401
-	CodeForbidden    = 403
-	CodeNotFound     = 404
-	CodeTooMany      = 429
-	CodeServerError  = 500
+	CodeSuccess                        = 0
+	CodePhoneBindRequired              = 1002
+	CodeAccountBanned                  = 1008
+	CodeBadRequest                     = 400
+	CodeUnauthorized                   = 401
+	CodeForbidden                      = 403
+	CodeNotFound                       = 404
+	CodeTooMany                        = 429
+	CodeDirectUploadRateLimited        = 1429
+	CodeDirectUploadStorageUnavailable = 1430
+	CodeDirectUploadDisabled           = 1431
+	CodeDirectUploadPlatformDisabled   = 1432
+	CodeDirectUploadRolloutExcluded    = 1433
+	CodeServerError                    = 500
 )
 
 // Success 成功响应
@@ -50,6 +59,14 @@ func Error(c *gin.Context, code int, message string) {
 	})
 }
 
+func ErrorWithData(c *gin.Context, code int, message string, data interface{}) {
+	c.JSON(http.StatusOK, Response{
+		Code:    code,
+		Message: message,
+		Data:    data,
+	})
+}
+
 // BadRequest 400错误
 func BadRequest(c *gin.Context, message string) {
 	c.JSON(http.StatusBadRequest, Response{
@@ -70,6 +87,13 @@ func Unauthorized(c *gin.Context, message string) {
 func Forbidden(c *gin.Context, message string) {
 	c.JSON(http.StatusForbidden, Response{
 		Code:    CodeForbidden,
+		Message: message,
+	})
+}
+
+func ForbiddenWithCode(c *gin.Context, code int, message string) {
+	c.JSON(http.StatusForbidden, Response{
+		Code:    code,
 		Message: message,
 	})
 }

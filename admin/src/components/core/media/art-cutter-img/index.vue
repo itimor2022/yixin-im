@@ -171,6 +171,7 @@
 
   // 图片预加载
   function preloadImage(url: string): Promise<void> {
+    // 先以匿名 CORS 模式验证外部图片可读，避免画布裁剪后因污染无法导出。
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
@@ -222,6 +223,7 @@
 
   // 裁剪完成
   function cutDownImg(result: CutterResult) {
+    // 裁剪组件通过 v-model 只回传 dataURL；文件上传和持久化由父组件决定。
     emit('update:imgUrl', result.dataURL)
   }
 
@@ -232,6 +234,7 @@
 
   // 图片加载失败
   function handleImageLoadError(error: any) {
+    // error 是通用失败通道，imageLoadError 保留给只关注图片加载阶段的调用方。
     emit('error', error)
     emit('imageLoadError', error)
   }

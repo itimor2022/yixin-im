@@ -23,7 +23,9 @@
 
   <ElMenuItem
     v-else-if="!item.meta.isHide"
+    class="menu-route-item"
     :index="item.path || item.meta.title"
+    :data-menu-path="item.meta.link && !item.meta.isIframe ? undefined : item.path"
     @click="goPage(item)"
   >
     <ArtSvgIcon
@@ -89,6 +91,16 @@
 </script>
 
 <style scoped>
+  .menu-route-item {
+    position: relative;
+  }
+
+  :deep(.art-svg-icon),
+  :deep(.art-badge),
+  :deep(.art-text-badge) {
+    pointer-events: none;
+  }
+
   :deep(.el-sub-menu__title .el-sub-menu__icon-arrow) {
     right: 10px !important;
   }

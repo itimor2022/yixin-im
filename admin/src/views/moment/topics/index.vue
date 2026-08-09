@@ -136,6 +136,7 @@
     handleSizeChange,
     handleCurrentChange,
     refreshData
+  // 将后端 page/page_size 响应适配为 useTable 约定的 current/size 分页结构。
   } = useTable({
     core: {
       apiFn: async (params: any) => {
@@ -219,7 +220,7 @@
               modelValue: row.status === 1,
               activeText: '启用',
               inactiveText: '禁用',
-              onChange: async (val: boolean) => {
+              onChange: async (val: string | number | boolean) => {
                 await updateTopic(row.id, { status: val ? 1 : 2 })
                 refreshData()
               }
@@ -320,6 +321,7 @@
     }).then(async () => {
       await deleteTopic(row.id)
       ElMessage.success('已删除')
+      // 服务端确认删除后刷新列表，避免本地乐观更新与分页总数不一致。
       refreshData()
     })
   }

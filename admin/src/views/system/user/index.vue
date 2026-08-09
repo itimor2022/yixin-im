@@ -47,6 +47,59 @@
         @submit="handleDialogSubmit"
       />
 
+      <ElDialog v-model="vipDialogVisible" title="开通/续期会员" width="500px" destroy-on-close>
+        <ElForm :model="vipGrantForm" label-width="96px">
+          <ElFormItem label="用户">
+            <div class="vip-target-user">
+              <ElAvatar :size="36" :src="vipTargetUser ? getAvatarUrl(vipTargetUser) : ''">
+                {{ (vipTargetUser?.userName || 'U').charAt(0) }}
+              </ElAvatar>
+              <div class="min-w-0">
+                <div class="truncate font-medium">{{ vipTargetUser?.userName || '-' }}</div>
+                <div class="truncate text-xs text-g-400">
+                  @{{ vipTargetUser?.username || '-' }} · {{ vipTargetUser?.uuid || '-' }}
+                </div>
+              </div>
+            </div>
+          </ElFormItem>
+          <ElFormItem label="套餐" required>
+            <ElSelect
+              v-model="vipGrantForm.plan_id"
+              placeholder="选择会员套餐"
+              class="w-full"
+              filterable
+              :loading="vipPlansLoading"
+              @change="syncVipGrantDays"
+            >
+              <ElOption
+                v-for="plan in vipPlans"
+                :key="plan.id"
+                :label="`${plan.name} · ${plan.duration_days}天`"
+                :value="plan.id"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="有效期">
+            <ElInputNumber
+              v-model="vipGrantForm.days"
+              :min="1"
+              :max="3650"
+              controls-position="right"
+            />
+            <span class="ml-2 text-xs text-g-400">天</span>
+          </ElFormItem>
+          <ElFormItem label="备注">
+            <ElInput v-model="vipGrantForm.remark" placeholder="例如：线下开通、活动赠送" />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="vipDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="vipGrantSaving" @click="submitVipGrant">
+            确认开通
+          </ElButton>
+        </template>
+      </ElDialog>
+
       <ElDialog v-model="diagnosticVisible" title="用户诊断" width="920px" destroy-on-close>
         <div v-if="diagnosticData" class="diagnostic-panel">
           <div class="diagnostic-grid">
@@ -194,7 +247,8 @@
     kickUser,
     banUser,
     unbanUser,
-    UserTableListItem
+    UserTableListItem,
+    type UserTableSearchParams
   } from '@/api/system-manage'
   import {
     freezeUser,
@@ -202,13 +256,16 @@
     resetUserPassword,
     getUserDiagnostics,
     sendUserTestPush,
-    UserDiagnosticResponse
+    getVipPlans,
+    grantVip,
+    UserDiagnosticResponse,
+    type VipPlanItem
   } from '@/api/admin'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
   import { ElTag, ElMessageBox, ElMessage, ElAvatar, ElDivider } from 'element-plus'
   import { DialogType } from '@/types'
-  import { fixImageUrl } from '@/utils/url'
+  import { fixImageUrl, getLocalAvatarDataUrl } from '@/utils/url'
   import { usePermission } from '@/hooks/usePermission'
   import { useRouter } from 'vue-router'
 
@@ -222,7 +279,7 @@
     if (row.avatar) {
       return fixImageUrl(row.avatar)
     }
-    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${row.id}`
+    return getLocalAvatarDataUrl(row.id)
   }
 
   // 最后更新时间
@@ -235,11 +292,25 @@
   const diagnosticVisible = ref(false)
   const diagnosticData = ref<UserDiagnosticResponse | null>(null)
   const testPushLoading = ref(false)
+  const vipDialogVisible = ref(false)
+  const vipPlansLoading = ref(false)
+  const vipGrantSaving = ref(false)
+  const vipPlans = ref<VipPlanItem[]>([])
+  const vipTargetUser = ref<UserTableListItem | null>(null)
+  const vipGrantForm = reactive({
+    plan_id: 0,
+    days: 30,
+    remark: ''
+  })
 
   // 搜索表单
-  const searchForm = ref({
+  const searchForm = ref<UserTableSearchParams>({
     userName: undefined,
+    searchMode: 'exact',
     status: '', // 默认显示所有状态
+    gender: '',
+    registerSource: '',
+    credentialsStatus: '',
     onlineOnly: false
   })
 
@@ -304,30 +375,31 @@
         {
           prop: 'userInfo',
           label: '用户信息',
-          minWidth: 280,
+          minWidth: 250,
           formatter: (row) => {
-            return h('div', { class: 'user-info-cell flex items-center py-2' }, [
+            return h('div', { class: 'user-info-cell flex items-center py-1' }, [
               // 头像容器 - 带在线状态
               h('div', { class: 'avatar-wrapper relative' }, [
                 h(ElAvatar, {
-                  size: 48,
+                  size: 40,
                   src: getAvatarUrl(row),
                   class: 'border-2 border-gray-100'
                 }),
                 // 在线状态指示点
                 h('span', {
-                  class: `absolute bottom-0 right-0 size-3.5 rounded-full border-2 border-white ${row.isOnline ? 'bg-green-500' : 'bg-gray-300'}`
+                  class: `absolute bottom-0 right-0 size-3 rounded-full border-2 border-white ${row.isOnline ? 'bg-green-500' : 'bg-gray-300'}`
                 })
               ]),
               // 用户信息
-              h('div', { class: 'ml-4 flex-1' }, [
-                h('div', { class: 'flex items-center gap-2' }, [
+              h('div', { class: 'ml-3 min-w-0 flex-1' }, [
+                h('div', { class: 'flex min-w-0 items-center gap-1.5' }, [
                   h(
                     'span',
-                    { class: 'font-semibold text-base text-g-800' },
+                    { class: 'truncate text-sm font-semibold text-g-800' },
                     row.userName || '未设置'
                   ),
-                  row.nickname && h('span', { class: 'text-sm text-g-400' }, `(${row.nickname})`),
+                  row.nickname &&
+                    h('span', { class: 'truncate text-xs text-g-400' }, `(${row.nickname})`),
                   // 封禁状态标识
                   Number(row.status) === 3 &&
                     h(
@@ -338,10 +410,10 @@
                       '封禁中'
                     )
                 ]),
-                h('div', { class: 'flex items-center gap-3 mt-1.5' }, [
+                h('div', { class: 'mt-1 flex items-center gap-2' }, [
                   h(
                     'span',
-                    { class: 'text-xs text-g-400 font-mono bg-gray-50 px-2 py-0.5 rounded' },
+                    { class: 'rounded bg-gray-50 px-1.5 py-0.5 font-mono text-xs text-g-400' },
                     'ID: ' + (row.uuid?.slice(0, 8) || row.id)
                   ),
                   row.phone && h('span', { class: 'text-xs text-g-400' }, row.phone),
@@ -354,9 +426,60 @@
           }
         },
         {
+          prop: 'userGender',
+          label: '性别',
+          width: 78,
+          align: 'center',
+          formatter: (row) => {
+            const genderConfig =
+              row.userGender === 'male'
+                ? { text: '男', type: 'primary' as const }
+                : row.userGender === 'female'
+                  ? { text: '女', type: 'danger' as const }
+                  : { text: '未设置', type: 'info' as const }
+            return h(
+              ElTag,
+              { type: genderConfig.type, effect: 'light', round: true, size: 'small' },
+              () => genderConfig.text
+            )
+          }
+        },
+        {
+          prop: 'registerSource',
+          label: '注册来源',
+          width: 104,
+          align: 'center',
+          formatter: (row) =>
+            h(
+              ElTag,
+              {
+                type: row.registerSource === 'quick' ? 'warning' : 'info',
+                effect: 'light',
+                size: 'small'
+              },
+              () => (row.registerSource === 'quick' ? '一键注册' : '普通注册')
+            )
+        },
+        {
+          prop: 'credentialsInitialized',
+          label: '登录凭证',
+          width: 104,
+          align: 'center',
+          formatter: (row) =>
+            h(
+              ElTag,
+              {
+                type: row.credentialsInitialized ? 'success' : 'danger',
+                effect: 'light',
+                size: 'small'
+              },
+              () => (row.credentialsInitialized ? '已完善' : '待完善')
+            )
+        },
+        {
           prop: 'status',
           label: '状态',
-          width: 100,
+          width: 82,
           align: 'center',
           formatter: (row) => {
             const statusConfig = getStatusConfig(row.status)
@@ -364,7 +487,7 @@
               ElTag,
               {
                 type: statusConfig.type,
-                size: 'default',
+                size: 'small',
                 effect: 'light',
                 round: true
               },
@@ -375,7 +498,7 @@
         {
           prop: 'device',
           label: '设备 / IP',
-          minWidth: 200,
+          minWidth: 190,
           formatter: (row) => {
             if (!row.deviceType || row.deviceType === '-' || row.deviceType === 'unknown') {
               return h('span', { class: 'text-g-300' }, '—')
@@ -401,7 +524,7 @@
                 name: 'Windows'
               },
               linux: { icon: 'ri:ubuntu-fill', color: '#e95420', bg: '#ffedd5', name: 'Linux' },
-              web: { icon: 'ri:global-line', color: '#6366f1', bg: '#e0e7ff', name: 'Web' }
+              web: { icon: 'ri:global-line', color: '#374151', bg: '#f3f4f6', name: 'Web' }
             }
 
             const deviceType = row.deviceType?.toLowerCase() || 'unknown'
@@ -420,28 +543,34 @@
               : `Push ${pushChannelText} · 未绑定`
 
             return h('div', { class: 'device-info' }, [
-              h('div', { class: 'flex items-center gap-2' }, [
+              h('div', { class: 'flex min-w-0 items-center gap-2' }, [
                 h(
                   'span',
                   {
-                    class: 'inline-flex items-center justify-center size-8 rounded-lg',
+                    class: 'inline-flex size-7 shrink-0 items-center justify-center rounded-md',
                     style: { backgroundColor: config.bg }
                   },
                   [
                     h(ArtSvgIcon, {
                       icon: config.icon,
-                      style: { color: config.color, fontSize: '18px' }
+                      style: { color: config.color, fontSize: '16px' }
                     })
                   ]
                 ),
-                h('div', {}, [
+                h('div', { class: 'min-w-0 flex-1' }, [
                   h(
                     'p',
-                    { class: 'text-sm font-medium text-g-700' },
+                    { class: 'truncate text-[13px] font-medium leading-4 text-g-700' },
                     row.deviceName || config.name
                   ),
-                  h('p', { class: 'text-xs text-g-400 mt-0.5 font-mono' }, row.deviceIp || '-'),
-                  h('p', { class: 'text-xs text-g-500 mt-0.5 font-mono' }, pushStateText)
+                  h(
+                    'p',
+                    {
+                      class: 'mt-0.5 truncate font-mono text-xs leading-4 text-g-400',
+                      title: `${row.deviceIp || '-'} · ${pushStateText}`
+                    },
+                    `${row.deviceIp || '-'} · ${pushStateText}`
+                  )
                 ])
               ])
             ])
@@ -450,7 +579,7 @@
         {
           prop: 'lastSeen',
           label: '最后活跃',
-          width: 140,
+          width: 125,
           align: 'center',
           formatter: (row) => {
             if (row.isOnline) {
@@ -471,7 +600,7 @@
         {
           prop: 'serviceBind',
           label: '归属客服 / 邀请码',
-          minWidth: 210,
+          minWidth: 170,
           formatter: (row) => {
             if (!row.serviceUsername && !row.serviceInviteCode) {
               return h('span', { class: 'text-g-300' }, '—')
@@ -490,7 +619,7 @@
         {
           prop: 'createTime',
           label: '注册时间',
-          width: 140,
+          width: 126,
           align: 'center',
           sortable: true,
           formatter: (row) => {
@@ -500,7 +629,7 @@
         {
           prop: 'operation',
           label: '操作',
-          width: 200,
+          width: 176,
           fixed: 'right',
           align: 'center',
           formatter: (row) => {
@@ -510,11 +639,16 @@
             }
             return h(
               'div',
-              { class: 'flex justify-center gap-1 flex-wrap' },
+              { class: 'user-action-buttons flex flex-wrap justify-center gap-1' },
               [
                 h(ArtButtonTable, {
                   type: 'edit',
                   onClick: () => showDialog('edit', row)
+                }),
+                h(ArtButtonTable, {
+                  icon: 'ri:vip-crown-line',
+                  iconClass: 'bg-amber-100 text-amber-600',
+                  onClick: () => openVipGrantDialog(row)
                 }),
                 h(ArtButtonTable, {
                   icon: 'ri:chat-history-line',
@@ -532,7 +666,7 @@
                 }),
                 h(ArtButtonTable, {
                   icon: 'ri:key-2-line',
-                  iconClass: 'bg-purple-100 text-purple-500',
+                  iconClass: 'bg-gray-100 text-gray-600',
                   onClick: () => handleResetPassword(row)
                 }),
                 // 封禁/解封按钮 - 使用自定义图标和颜色
@@ -577,7 +711,11 @@
   const handleSearch = (params: Record<string, any>) => {
     Object.assign(searchParams, {
       userName: params.userName,
+      searchMode: params.searchMode || 'exact',
       status: params.status,
+      gender: params.gender,
+      registerSource: params.registerSource,
+      credentialsStatus: params.credentialsStatus,
       onlineOnly: params.onlineOnly
     })
     getData()
@@ -638,6 +776,7 @@
     try {
       const result = await sendUserTestPush(userId)
       ElMessage.success(`测试推送已提交，目标设备 ${result.push_device_count} 个`)
+      // 推送投递和日志写入异步完成，短暂延迟后再读取诊断可看到本次结果。
       window.setTimeout(async () => {
         try {
           diagnosticData.value = await getUserDiagnostics(userId)
@@ -650,6 +789,61 @@
       ElMessage.error('测试推送失败')
     } finally {
       testPushLoading.value = false
+    }
+  }
+
+  const loadVipPlansIfNeeded = async (): Promise<void> => {
+    if (vipPlans.value.length > 0 || vipPlansLoading.value) return
+
+    vipPlansLoading.value = true
+    try {
+      vipPlans.value = await getVipPlans({ enabled: true })
+    } catch (error) {
+      console.error('会员套餐加载失败:', error)
+      ElMessage.error('会员套餐加载失败')
+    } finally {
+      vipPlansLoading.value = false
+    }
+  }
+
+  const openVipGrantDialog = async (row: UserTableListItem): Promise<void> => {
+    vipTargetUser.value = row
+    vipGrantForm.remark = ''
+    vipDialogVisible.value = true
+    await loadVipPlansIfNeeded()
+
+    const firstPlan = vipPlans.value[0]
+    vipGrantForm.plan_id = firstPlan?.id || 0
+    vipGrantForm.days = firstPlan?.duration_days || 30
+  }
+
+  const syncVipGrantDays = (): void => {
+    const plan = vipPlans.value.find((item) => item.id === vipGrantForm.plan_id)
+    if (plan) vipGrantForm.days = plan.duration_days
+  }
+
+  const submitVipGrant = async (): Promise<void> => {
+    if (!vipTargetUser.value || !vipGrantForm.plan_id) {
+      ElMessage.warning('请选择会员套餐')
+      return
+    }
+
+    vipGrantSaving.value = true
+    try {
+      await grantVip(
+        vipTargetUser.value.id,
+        vipGrantForm.plan_id,
+        vipGrantForm.days,
+        vipGrantForm.remark
+      )
+      ElMessage.success('会员已开通')
+      vipDialogVisible.value = false
+      refreshData()
+    } catch (error) {
+      console.error('开通会员失败:', error)
+      ElMessage.error('开通会员失败')
+    } finally {
+      vipGrantSaving.value = false
     }
   }
 
@@ -671,6 +865,7 @@
 
   // 封禁用户
   const handleBanUser = async (row: UserTableListItem): Promise<void> => {
+    // “封禁”保留登录能力但禁止发消息，与下面会踢下线的“冻结”是不同状态迁移。
     try {
       const { value: reason } = await ElMessageBox.prompt(
         `确定要封禁用户 "${row.userName}" 吗？\n封禁后用户可以登录但无法发送消息。`,
@@ -800,6 +995,7 @@
     getData()
     // 启动自动刷新
     refreshTimer = setInterval(() => {
+      // 编辑弹窗开启时暂停软刷新，避免后台轮询覆盖用户尚未提交的操作上下文。
       if (!dialogVisible.value) {
         refreshSoft()
         updateLastTime()
@@ -826,6 +1022,10 @@
 <style lang="scss" scoped>
   .user-page {
     :deep(.el-table) {
+      .el-table__cell {
+        padding: 6px 0;
+      }
+
       .el-table__row {
         transition: background-color 0.2s;
 
@@ -835,7 +1035,7 @@
       }
 
       .cell {
-        padding: 12px 16px;
+        padding: 0 8px;
       }
     }
 
@@ -844,11 +1044,34 @@
     }
 
     .user-info-cell {
-      min-height: 56px;
+      min-height: 44px;
     }
 
     .device-info {
-      padding: 4px 0;
+      min-width: 0;
+      padding: 0;
+    }
+
+    .user-action-buttons {
+      max-width: 132px;
+      margin: 0 auto;
+    }
+
+    :deep(.user-action-buttons > div) {
+      width: 30px;
+      min-width: 30px;
+      height: 30px;
+      margin-right: 0;
+      padding: 0;
+      border-radius: 7px;
+      font-size: 14px;
+    }
+
+    .vip-target-user {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
     }
 
     .diagnostic-panel {

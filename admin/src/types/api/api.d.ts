@@ -78,8 +78,10 @@ declare namespace Api {
     interface UserInfo {
       buttons: string[]
       roles: string[]
+      role?: 'super_admin' | 'admin' | 'operator' | 'demo_admin'
       userId: number
       userName: string
+      nickName?: string
       email: string
       avatar?: string
     }

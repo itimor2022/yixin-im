@@ -1,11 +1,12 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
-	"time"
-
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
+	"time"
+	"genericim/internal/models"
 )
 
 // ensureContactRelation 确保单向联系人关系存在且为启用状态。
@@ -17,7 +18,6 @@ func ensureContactRelation(db *gorm.DB, userID, contactUserID uint64, now time.T
 		Find(&contacts).Error; err != nil {
 		return false, err
 	}
-
 	if len(contacts) == 0 {
 		if err := db.Create(&models.Contact{
 			UserID:        userID,
@@ -52,6 +52,5 @@ func ensureContactRelation(db *gorm.DB, userID, contactUserID uint64, now time.T
 		}).Error; err != nil {
 		return false, err
 	}
-
 	return contact.Status != 1 || len(contacts) > 1, nil
 }

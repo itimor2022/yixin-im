@@ -1,36 +1,37 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
-	"log"
-	"net/http"
-	"time"
-
-	"gaoranim/internal/config"
-	"gaoranim/internal/middleware"
-	"gaoranim/internal/models"
-	"gaoranim/internal/ws"
-
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
+	"log"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+	"genericim/internal/config"
+	"genericim/internal/middleware"
+	"genericim/internal/models"
+	"genericim/internal/ws"
 )
 
 // HandleWebSocket WebSocket连接处理
-func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB, allowedOrigins ...string) gin.HandlerFunc {
+func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB) gin.HandlerFunc {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  cfg.ReadBufferSize,
 		WriteBufferSize: cfg.WriteBufferSize,
 		CheckOrigin: func(r *http.Request) bool {
-			return true // 安全由 JWT token 认证保证，无需限制 Origin
+			return isWebSocketOriginAllowed(r.Header.Get("Origin"), cfg.AllowedOrigins)
 		},
 	}
-
 	return func(c *gin.Context) {
 		// 获取用户信息
 		userID := middleware.GetUserID(c)
 		deviceID := middleware.GetDeviceID(c)
 		deviceType := c.Query("device_type")
-
 		if userID == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
@@ -52,7 +53,6 @@ func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB, allow
 
 			var device models.UserDevice
 			result := db.Where("user_id = ? AND device_id = ?", user.ID, deviceID).First(&device)
-
 			if result.Error == gorm.ErrRecordNotFound {
 				// 创建新设备记录
 				device = models.UserDevice{
@@ -89,4 +89,37 @@ func HandleWebSocket(hub *ws.Hub, cfg config.WebSocketConfig, db *gorm.DB, allow
 		// 启动读写协程
 		client.Start()
 	}
+}
+
+func isWebSocketOriginAllowed(origin string, allowedOrigins []string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return true
+	}
+	if len(allowedOrigins) == 0 {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	normalizedOrigin := strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+	for _, allowed := range allowedOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		if allowed == "*" {
+			return true
+		}
+		allowedURL, err := url.Parse(allowed)
+		if err != nil || allowedURL.Scheme == "" || allowedURL.Host == "" {
+			continue
+		}
+		if normalizedOrigin == strings.ToLower(allowedURL.Scheme+"://"+allowedURL.Host) {
+			return true
+		}
+	}
+	return false
 }

@@ -64,7 +64,7 @@
           <template #default="{ row }">
             <div class="preview-cell">
               <span class="emoji">{{ row.preview_emoji || '-' }}</span>
-              <span class="file">{{ row.preview_file || '-' }}</span>
+              <span class="file">{{ previewFileName(row.preview_file) }}</span>
             </div>
           </template>
         </ElTableColumn>
@@ -216,6 +216,7 @@
   })
 
   const parsedStickerFiles = computed(() =>
+    // 多行输入在提交前去空行、去首尾空格并去重，保持服务端文件列表稳定。
     Array.from(
       new Set(
         stickerFilesText.value
@@ -261,6 +262,7 @@
   }
 
   function openEditDialog(item: EmojiStorePackItem) {
+    // editingPack 同时标识编辑模式和更新目标；表单字段使用快照填充。
     editingPack.value = item
     form.pack_id = item.pack_id || ''
     form.name = item.name || ''
@@ -291,6 +293,7 @@
     saving.value = true
     try {
       const payload = {
+        // 表单展示态在此收敛为接口载荷，贴纸文件始终使用归一化后的数组。
         pack_id: form.pack_id.trim(),
         name: form.name.trim(),
         description: form.description?.trim() || '',
@@ -323,6 +326,7 @@
     if (isDemoAdmin.value) return
     try {
       await setEmojiStorePackActive(item.id, isActive)
+      // 服务端确认后再更新当前行；失败时重载列表恢复真实状态。
       item.is_active = isActive
       ElMessage.success(isActive ? '已上架' : '已下架')
     } catch (error) {
@@ -350,6 +354,12 @@
     return new Date(value).toLocaleString('zh-CN')
   }
 
+  function previewFileName(value: string) {
+    if (!value) return '-'
+    const normalized = value.replace(/\\/g, '/')
+    return normalized.split('/').filter(Boolean).pop() || normalized
+  }
+
   onMounted(() => {
     loadPacks()
   })
@@ -362,13 +372,19 @@
     gap: 6px;
     font-size: 12px;
     line-height: 1;
+    max-width: 128px;
+    white-space: nowrap;
 
     .emoji {
+      flex: 0 0 auto;
       font-size: 16px;
     }
 
     .file {
+      min-width: 0;
+      overflow: hidden;
       color: rgb(107 114 128 / 1);
+      text-overflow: ellipsis;
     }
   }
 </style>

@@ -1,23 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-   Android 12+ 数据提取规则配置
-   用于控制设备到设备迁移时的数据提取行为
--->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- 排除敏感数据，不进行云备份 -->
-        <exclude domain="sharedpref" path="flutter_secure_storage.xml"/>
-        <exclude domain="sharedpref" path="flutter_secure_storage_keychain.xml"/>
+        <!-- IM 本地数据、消息缓存、凭证与媒体索引不进入云备份。 -->
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
     </cloud-backup>
     
     <device-transfer>
-        <!-- 设备迁移时包含的数据 -->
-        <include domain="sharedpref" path="."/>
-        <include domain="database" path="."/>
-        <include domain="file" path="."/>
-        
-        <!-- 排除敏感数据 -->
-        <exclude domain="sharedpref" path="flutter_secure_storage.xml"/>
-        <exclude domain="sharedpref" path="flutter_secure_storage_keychain.xml"/>
+        <!-- 设备迁移同样不搬迁账号态与本地消息缓存，用户需重新登录同步。 -->
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
     </device-transfer>
 </data-extraction-rules>

@@ -1,3 +1,5 @@
+// 文件用途：提供 CallOverlay 可复用界面组件，服务于音视频通话。
+// 核心逻辑：根据输入模型和状态渲染 CallOverlay，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'dart:async';
 import 'package:universal_io/io.dart';
 import 'dart:ui';
@@ -14,6 +16,7 @@ import '../../../shared/widgets/avatar_widget.dart';
 import '../pages/call_page.dart';
 import '../pages/incoming_call_page.dart';
 
+// 关键声明：call overlay 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 通话悬浮窗 - 可拖动的小窗口
 class CallOverlay extends ConsumerStatefulWidget {
   const CallOverlay({super.key});
@@ -27,6 +30,7 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
   Timer? _timer;
   int _seconds = 0;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -36,7 +40,8 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
   void _startTimer() {
     final callState = ref.read(callServiceProvider);
     if (callState.callInfo?.connectTime != null) {
-      _seconds = DateTime.now().difference(callState.callInfo!.connectTime!).inSeconds;
+      _seconds =
+          DateTime.now().difference(callState.callInfo!.connectTime!).inSeconds;
     }
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -62,7 +67,10 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
     ref.read(callServiceProvider.notifier).toggleMinimize();
     // 使用 rootNavigatorKey 导航，因为 Overlay 不在 Navigator 树中
     rootNavigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => const CallPage()),
+      MaterialPageRoute(
+        builder: (_) => const CallPage(),
+        settings: const RouteSettings(name: '/call'),
+      ),
     );
   }
 
@@ -91,7 +99,8 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
         onPanUpdate: (details) {
           setState(() {
             _position = Offset(
-              (_position.dx + details.delta.dx).clamp(0, screenSize.width - 160),
+              (_position.dx + details.delta.dx)
+                  .clamp(0, screenSize.width - 160),
               (_position.dy + details.delta.dy).clamp(
                 MediaQuery.of(context).padding.top,
                 screenSize.height - 100,
@@ -124,6 +133,7 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
                     avatar: callInfo.remoteAvatar,
                     userId: callInfo.remoteUserId,
                     size: 36,
+                    isCircle: true,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -144,7 +154,9 @@ class _CallOverlayState extends ConsumerState<CallOverlay> {
                         Row(
                           children: [
                             Icon(
-                              isVideo ? Icons.videocam_rounded : Icons.call_rounded,
+                              isVideo
+                                  ? Icons.videocam_rounded
+                                  : Icons.call_rounded,
                               size: 12,
                               color: AppColors.online,
                             ),
@@ -242,6 +254,7 @@ class IncomingCallPip extends ConsumerWidget {
     final callInfo = callState.callInfo!;
     final isVideo = callInfo.type == CallType.video;
     final isIOS = Platform.isIOS;
+    final l10n = AppLocalizations.of(context);
 
     final content = SafeArea(
       bottom: false,
@@ -254,7 +267,8 @@ class IncomingCallPip extends ConsumerWidget {
               PageRouteBuilder(
                 opaque: false,
                 barrierDismissible: false,
-                pageBuilder: (_, __, ___) => IncomingCallPage(callInfo: callInfo),
+                pageBuilder: (_, __, ___) =>
+                    IncomingCallPage(callInfo: callInfo),
                 transitionsBuilder: (_, animation, __, child) {
                   return FadeTransition(opacity: animation, child: child);
                 },
@@ -274,6 +288,7 @@ class IncomingCallPip extends ConsumerWidget {
                 avatar: callInfo.remoteAvatar,
                 userId: callInfo.remoteUserId,
                 size: isIOS ? 48 : 44,
+                isCircle: true,
               ),
               SizedBox(width: isIOS ? 14 : 12),
               Expanded(
@@ -294,7 +309,7 @@ class IncomingCallPip extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      isVideo ? '视频来电' : '语音来电',
+                      isVideo ? l10n.videoCall : l10n.voiceCall,
                       style: TextStyle(
                         fontSize: isIOS ? 13 : 12,
                         color: isIOS
@@ -340,8 +355,10 @@ class IncomingCallPip extends ConsumerWidget {
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xFF252528),
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-            border: Border.all(color: Colors.white.withOpacity(0.06), width: 0.5),
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(20)),
+            border:
+                Border.all(color: Colors.white.withOpacity(0.06), width: 0.5),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.25),
@@ -403,8 +420,7 @@ class CallOverlayWrapper extends ConsumerWidget {
       children: [
         child,
         // 仅通话中最小化时显示小窗；来电：iOS 用 CallKit，Android 前台用应用内全屏接听页、后台用系统全屏
-        if (callState.isInCall && callState.isMinimized)
-          const CallOverlay(),
+        if (callState.isInCall && callState.isMinimized) const CallOverlay(),
       ],
     );
   }

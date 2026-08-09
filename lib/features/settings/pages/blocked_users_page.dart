@@ -1,13 +1,32 @@
+// 文件用途：实现 BlockedUsersPage 页面及其交互流程，属于应用设置。
+// 核心逻辑：维护 BlockedUsersPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 
+String _blockedUsersText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：blocked users page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 已屏蔽用户页面
 class BlockedUsersPage extends ConsumerStatefulWidget {
   const BlockedUsersPage({super.key});
@@ -20,6 +39,21 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
   List<BlockedUser> _blockedUsers = [];
   bool _isLoading = true;
 
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
+  }
+
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -29,6 +63,7 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
   Future<void> _loadBlockedUsers() async {
     try {
       final api = ref.read(apiClientProvider);
+      // 屏蔽关系以服务端列表为准，页面不从联系人缓存推断关系状态。
       final response = await api.get<Map<String, dynamic>>('/user/blocked');
 
       if (response.isSuccess && response.data != null) {
@@ -36,7 +71,7 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
         _blockedUsers = list.map((e) => BlockedUser.fromJson(e)).toList();
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[BlockedUsers] Load error: $e');
+      debugPrint('[BlockedUsers] Load error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -52,7 +87,8 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
       builder: (context) => AlertDialog(
         title: Text(l10n.unblock),
         content: Text(
-            '${l10n.get('confirm_unblock') ?? '确定要解除对'} "${user.nickname}" ${l10n.get('unblock_suffix') ?? '的屏蔽吗？'}'),
+          '${l10n.get('confirm_unblock') ?? _blockedUsersText(context, zhCN: '确定要解除对', zhTW: '確定要解除對', en: 'Unblock')} "${user.nickname}" ${l10n.get('unblock_suffix') ?? _blockedUsersText(context, zhCN: '的屏蔽吗？', zhTW: '的封鎖嗎？', en: '?')}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -60,8 +96,10 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child:
-                Text(l10n.unblock, style: TextStyle(color: AppColors.primary)),
+            child: Text(
+              l10n.unblock,
+              style: TextStyle(color: AppColors.linkFor(context)),
+            ),
           ),
         ],
       ),
@@ -74,25 +112,53 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
       final response = await api.delete('/user/blocked/${user.userId}');
 
       if (response.isSuccess) {
+        // 服务端确认解除后再移除本地条目，失败时保留原关系状态。
         setState(() {
           _blockedUsers.removeWhere((u) => u.userId == user.userId);
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已解除对 "${user.nickname}" 的屏蔽')),
+            SnackBar(
+              content: Text(
+                _blockedUsersText(
+                  context,
+                  zhCN: '已解除对 "${user.nickname}" 的屏蔽',
+                  zhTW: '已解除對 "${user.nickname}" 的封鎖',
+                  en: 'Unblocked "${user.nickname}"',
+                ),
+              ),
+            ),
           );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response.message)),
+            SnackBar(
+              content: Text(
+                _serverMessage(
+                  raw: response.message,
+                  zhCN: '操作失败，请重试',
+                  zhTW: '操作失敗，請重試',
+                  en: 'Operation failed. Please try again.',
+                ),
+              ),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('操作失败，请重试')),
+          SnackBar(
+            content: Text(
+              _blockedUsersText(
+                context,
+                zhCN: '操作失败，请重试',
+                zhTW: '操作失敗，請重試',
+                en: 'Operation failed, please try again',
+              ),
+            ),
+          ),
         );
       }
     }
@@ -114,7 +180,13 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          l10n.get('blocked_users') ?? '已屏蔽用户',
+          l10n.get('blocked_users') ??
+              _blockedUsersText(
+                context,
+                zhCN: '已屏蔽用户',
+                zhTW: '已封鎖使用者',
+                en: 'Blocked Users',
+              ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -139,22 +211,34 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
           Icon(
             Icons.block_outlined,
             size: 64,
-            color: isDark ? Colors.white24 : Colors.black26,
+            color: AppColors.textTertiaryFor(context).withOpacity(0.72),
           ),
           const SizedBox(height: 16),
           Text(
-            l10n.get('no_blocked_users') ?? '没有已屏蔽的用户',
+            l10n.get('no_blocked_users') ??
+                _blockedUsersText(
+                  context,
+                  zhCN: '没有已屏蔽的用户',
+                  zhTW: '沒有已封鎖的使用者',
+                  en: 'No blocked users',
+                ),
             style: TextStyle(
               fontSize: 16,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppColors.textSecondaryFor(context),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            l10n.get('blocked_users_hint') ?? '被屏蔽的用户将无法向你发送消息',
+            l10n.get('blocked_users_hint') ??
+                _blockedUsersText(
+                  context,
+                  zhCN: '被屏蔽的用户将无法向你发送消息',
+                  zhTW: '被封鎖的使用者將無法向你發送訊息',
+                  en: 'Blocked users cannot send messages to you',
+                ),
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white38 : Colors.black38,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
         ],
@@ -195,14 +279,14 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
               '@${user.username}',
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
             trailing: TextButton(
               onPressed: () => _unblockUser(user, l10n),
               child: Text(
                 l10n.unblock,
-                style: TextStyle(color: AppColors.primary),
+                style: TextStyle(color: AppColors.linkFor(context)),
               ),
             ),
           ),

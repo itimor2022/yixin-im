@@ -1,3 +1,6 @@
+// 文件用途：验证 user_handler_delete_account_cleanup_test.go 对应模块的正常流程、异常处理和回归行为。
+// 核心逻辑：覆盖输入校验、状态变化、错误返回、边界条件和并发幸命。
+
 package handlers
 
 import (
@@ -8,7 +11,6 @@ import (
 
 func TestResolveDeleteAccountUploadLocalPath(t *testing.T) {
 	root := t.TempDir()
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -44,7 +46,6 @@ func TestResolveDeleteAccountUploadLocalPath(t *testing.T) {
 			wantRel: filepath.FromSlash("avatars/u1.png"),
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := resolveDeleteAccountUploadLocalPath(root, tt.raw)
@@ -75,14 +76,12 @@ func TestDeleteAccountUploadFiles_DedupeAndDelete(t *testing.T) {
 	if err := os.WriteFile(fileAbs, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file failed: %v", err)
 	}
-
 	h := &UserHandler{uploadDir: root}
 	deleted, failed := h.deleteAccountUploadFiles([]string{
 		"/uploads/images/2026/04/21/sample.png",
 		"https://cdn.example.com/uploads/images/2026/04/21/sample.png",
 		"/uploads/tmp/not-allowed.txt",
 	})
-
 	if deleted != 1 {
 		t.Fatalf("deleted count mismatch: want=1 got=%d", deleted)
 	}
@@ -97,7 +96,6 @@ func TestDeleteAccountUploadFiles_DedupeAndDelete(t *testing.T) {
 func TestCollectDeleteAccountExternalMediaRefs(t *testing.T) {
 	root := t.TempDir()
 	h := &UserHandler{uploadDir: root}
-
 	got := h.collectDeleteAccountExternalMediaRefs([]string{
 		"/uploads/images/2026/04/21/a.png",
 		"https://cdn.example.com/uploads/images/2026/04/21/b.png",
@@ -106,9 +104,8 @@ func TestCollectDeleteAccountExternalMediaRefs(t *testing.T) {
 		"ftp://bad.example.com/a.png",
 		"",
 	})
-
 	if len(got) != 1 {
-		t.Fatalf("expected 1 external ref, got %d (%v)", len(got), got)
+		t.Fatalf("expected 1 external ref, got %d(%v)", len(got), got)
 	}
 	if got[0] != "https://oss.example.com/path/x.png?token=1" {
 		t.Fatalf("unexpected external ref: %v", got[0])

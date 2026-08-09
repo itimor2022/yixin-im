@@ -3,18 +3,20 @@ import type {
   ServiceAdminInviteCode,
   ServiceAdminInvitee,
   ServiceAdminProfile,
-  ServiceAdminWelcomeMessage
+  ServiceAdminWelcomeMessage,
+  ServiceAdminWelcomeMessageSaveResult
 } from '@/types/service-admin'
 
+// 模块级变量模拟服务端持久状态，使保存后再次读取能看到同一轮会话内的变化。
 let profile: ServiceAdminProfile = {
   nickname: '官方客服小助手',
   phone: '138****2026',
   role: 'official_service',
-  inviteCode: 'KF2026VIP',
+  inviteCode: 'KF2026',
   status: 'enabled'
 }
 
-let welcomeMessage = '您好，欢迎来到壹信。我是您的专属官方客服，后续有任何问题都可以直接联系我。'
+let welcomeMessage = '您好，欢迎来到通用IM。我是您的专属官方客服，后续有任何问题都可以直接联系我。'
 
 const invitees: ServiceAdminInvitee[] = [
   { id: 1, name: '小夏', uuid: '7f0f-32aa-91d1', registeredAt: '2026-04-12 11:08', active: true },
@@ -31,6 +33,7 @@ export function mockLogin() {
 }
 
 export function mockGetProfile() {
+  // 返回浅拷贝，避免表单直接修改 Mock 数据源的顶层字段。
   return wait({ ...profile })
 }
 
@@ -55,6 +58,7 @@ export function mockGetInviteCode(): Promise<ServiceAdminInviteCode> {
 }
 
 export function mockGetInvitees() {
+  // 列表逐项复制，调用方排序或更新行对象时不会污染共享夹具。
   return wait(invitees.map((item) => ({ ...item })))
 }
 
@@ -62,9 +66,9 @@ export function mockGetWelcomeMessage(): Promise<ServiceAdminWelcomeMessage> {
   return wait({ message: welcomeMessage })
 }
 
-export function mockSaveWelcomeMessage(message: string) {
+export function mockSaveWelcomeMessage(message: string): Promise<ServiceAdminWelcomeMessageSaveResult> {
   welcomeMessage = message
-  return wait({ success: true })
+  return wait({ success: true, message: welcomeMessage, length: welcomeMessage.length })
 }
 
 export function mockLogout() {

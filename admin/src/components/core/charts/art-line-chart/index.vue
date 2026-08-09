@@ -58,6 +58,7 @@
 
   // 判断是否为多数据（使用 VueUse 的 computedEager 优化）
   const isMultipleData = computed(() => {
+    // 对象数组表示多系列，数字数组表示单系列，两种输入共享同一组件契约。
     return (
       Array.isArray(props.data) &&
       props.data.length > 0 &&
@@ -264,6 +265,7 @@
 
   // 初始化动画函数（优化：统一定时器管理，减少内存泄漏风险）
   const initChartWithAnimation = () => {
+    // 每次数据重绘前取消上一轮阶梯动画，避免旧定时器写回过期系列。
     clearAnimationTimers()
     isAnimating.value = true
 
@@ -307,6 +309,7 @@
 
   // 空数据检查函数
   const checkIsEmpty = () => {
+    // 全零数据按业务空态处理，避免展示没有信息量的坐标轴和折线。
     // 检查单数据情况
     if (Array.isArray(props.data) && typeof props.data[0] === 'number') {
       const singleData = props.data as number[]
@@ -366,6 +369,7 @@
   })
 
   onBeforeUnmount(() => {
+    // useChartComponent 负责图表实例，本组件额外创建的动画定时器在此释放。
     clearAnimationTimers()
   })
 </script>

@@ -68,6 +68,7 @@
 
   // 组件挂载时初始化播放器
   onMounted(() => {
+    // xgplayer 直接接管指定容器，播放器实例不属于 Vue 的 DOM 生命周期。
     playerInstance.value = new Player({
       id: props.playerId,
       lang: 'zh', // 设置界面语言为中文
@@ -105,6 +106,7 @@
   // 组件卸载前清理播放器实例
   onBeforeUnmount(() => {
     if (playerInstance.value) {
+      // 销毁实例以停止媒体加载并移除播放器内部事件监听。
       playerInstance.value.destroy()
     }
   })

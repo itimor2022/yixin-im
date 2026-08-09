@@ -10,6 +10,13 @@
       <ElFormItem label="手机号" prop="phone">
         <ElInput v-model="formData.phone" placeholder="请输入手机号" />
       </ElFormItem>
+      <ElFormItem label="性别" prop="gender">
+        <ElSelect v-model="formData.gender" style="width: 100%">
+          <ElOption label="男" value="male" />
+          <ElOption label="女" value="female" />
+          <ElOption label="未设置" value="unknown" />
+        </ElSelect>
+      </ElFormItem>
       <ElFormItem label="简介" prop="bio">
         <ElInput v-model="formData.bio" type="textarea" :rows="3" placeholder="请输入用户简介" />
       </ElFormItem>
@@ -41,6 +48,7 @@
     nickname?: string
     phone?: string
     bio?: string
+    userGender?: string
     userPhone?: string
     status?: string
     uuid?: string
@@ -77,6 +85,7 @@
     nickname: '',
     username: '',
     phone: '',
+    gender: 'unknown',
     bio: '',
     status: 1
   })
@@ -99,12 +108,17 @@
    * 初始化表单数据
    */
   const initFormData = () => {
+    // 每次打开都以当前行重新填充，避免复用弹窗时带入上一位用户的字段。
     const row = props.userData
     if (row) {
       Object.assign(formData, {
         nickname: row.nickname || row.userName || '',
         username: row.username || '',
         phone: row.phone || (row.userPhone !== '-' ? row.userPhone : '') || '',
+        gender:
+          row.userGender === 'male' || row.userGender === 'female'
+            ? row.userGender
+            : 'unknown',
         bio: row.bio || '',
         status: parseInt(row.status || '1')
       })
@@ -120,6 +134,7 @@
       if (visible) {
         initFormData()
         nextTick(() => {
+          // 等表单完成本轮渲染后再清理校验提示，否则旧提示可能被重新挂载。
           formRef.value?.clearValidate()
         })
       }
@@ -141,6 +156,7 @@
             nickname: formData.nickname,
             username: formData.username,
             phone: formData.phone || undefined,
+            gender: formData.gender,
             bio: formData.bio || undefined,
             status: formData.status
           } as any)

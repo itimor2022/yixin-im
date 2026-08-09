@@ -42,6 +42,7 @@
 
   // 判断是否为多数据
   const isMultipleData = computed(() => {
+    // 横向柱图沿用纵向柱图的数据契约，仅交换类别轴和值轴的方向。
     return (
       Array.isArray(props.data) &&
       props.data.length > 0 &&
@@ -128,6 +129,7 @@
   } = useChartComponent({
     props,
     checkEmpty: () => {
+      // 全零数据按业务空态处理，避免只显示类别名称和零刻度。
       // 检查单数据情况
       if (Array.isArray(props.data) && typeof props.data[0] === 'number') {
         const singleData = props.data as number[]

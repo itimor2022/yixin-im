@@ -36,6 +36,7 @@
   const { chartRef, isDark, getAnimationConfig, getTooltipStyle } = useChartComponent({
     props,
     checkEmpty: () => {
+      // 任一系列的 value 下标必须与 indicator 下标对应；全零系列统一显示空态。
       return !props.data?.length || props.data.every((item) => item.value.every((val) => val === 0))
     },
     watchSources: [() => props.data, () => props.indicator, () => props.colors],
@@ -72,6 +73,7 @@
         series: [
           {
             type: 'radar',
+            // 颜色按系列循环分配，多于调色板数量时仍保持稳定映射。
             data: props.data.map((item, index) => ({
               name: item.name,
               value: item.value,

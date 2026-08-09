@@ -68,7 +68,7 @@
         </el-table-column>
         <el-table-column label="类型" width="80" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.type === 'lucky' ? 'warning' : ''" size="small" round>
+            <el-tag :type="row.type === 'lucky' ? 'warning' : 'primary'" size="small" round>
               {{ row.type === 'lucky' ? '拼手气' : '普通' }}
             </el-tag>
           </template>
@@ -230,6 +230,8 @@
 
   defineOptions({ name: 'RedPacketList' })
 
+  type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
   const loading = ref(false)
   const stats = ref<WalletStats | null>(null)
   const list = ref<RedPacketRecord[]>([])
@@ -238,14 +240,19 @@
   const searchParams = reactive({ status: '', user_id: '' })
   const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
-  const statusType = (s: string) =>
-    ({ active: 'success', finished: 'info', expired: 'warning' })[s] || 'info'
+  const statusTagMap: Record<string, TagType> = {
+    active: 'success',
+    finished: 'info',
+    expired: 'warning'
+  }
+  const statusType = (s: string): TagType => statusTagMap[s] || 'info'
   const statusText = (s: string) =>
     ({ active: '进行中', finished: '已领完', expired: '已过期' })[s] || s
   const fmtTime = (t: string) => (t ? new Date(t).toLocaleString('zh-CN') : '-')
 
   const fetchStats = async () => {
     try {
+      // 统计卡片和分页列表来自独立接口，列表筛选不会改变全局聚合口径。
       stats.value = (await getWalletStats()) as any
     } catch {
       /* */
@@ -288,6 +295,7 @@
         '退回红包',
         { type: 'warning' }
       )
+      // 余额变更完全由服务端执行；成功后同时刷新剩余金额列表和钱包统计。
       await refundRedPacket(row.id)
       ElMessage.success('退回成功')
       fetchData()

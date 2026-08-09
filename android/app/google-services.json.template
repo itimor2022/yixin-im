@@ -3,7 +3,7 @@
   "_STEPS": [
     "1. 前往 https://console.firebase.google.com/",
     "2. 创建项目或选择已有项目",
-    "3. 添加 Android 应用，包名填写: com.yixinim.app",
+    "3. 添加 Android 应用，包名填写: com.genericim.app",
     "4. 下载 google-services.json 放到 android/app/ 目录",
     "5. 在 Firebase Console 中启用 Cloud Messaging"
   ],
@@ -17,7 +17,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:YOUR_PROJECT_NUMBER:android:YOUR_APP_ID",
         "android_client_info": {
-          "package_name": "com.yixinim.app"
+          "package_name": "com.genericim.app"
         }
       },
       "api_key": [{"current_key": "YOUR_API_KEY"}],

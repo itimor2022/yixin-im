@@ -1,9 +1,30 @@
+// 文件用途：实现 DeviceLoginConfirmPage 页面及其交互流程，属于应用设置。
+// 核心逻辑：维护 DeviceLoginConfirmPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/theme/app_colors.dart';
 
+String _deviceLoginText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：device login confirm page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class DeviceLoginConfirmPage extends ConsumerStatefulWidget {
   final String ticket;
 
@@ -25,10 +46,25 @@ class _DeviceLoginConfirmPageState
   String? _error;
   Map<String, dynamic>? _data;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
     _loadTicketInfo();
+  }
+
+  String _serverMessage({
+    required String? raw,
+    required String zhCN,
+    String? zhTW,
+    required String en,
+  }) {
+    return localizeServerMessage(
+      raw,
+      fallbackZhCN: zhCN,
+      fallbackZhTW: zhTW,
+      fallbackEn: en,
+    );
   }
 
   Future<void> _loadTicketInfo() async {
@@ -39,6 +75,7 @@ class _DeviceLoginConfirmPageState
 
     try {
       final api = ref.read(apiClientProvider);
+      // 路由只携带不可信的票据字符串；设备信息、有效期和状态必须向服务端查询。
       final response = await api.get<Map<String, dynamic>>(
         '/auth/qr-login/status/${widget.ticket}',
         fromJson: (data) => data as Map<String, dynamic>,
@@ -49,6 +86,7 @@ class _DeviceLoginConfirmPageState
       if (response.isSuccess && response.data != null) {
         setState(() {
           _data = response.data!;
+          // pending/confirmed/expired 等状态由服务端决定，页面只负责对应展示。
           _status = (_data!['status'] ?? 'expired').toString();
           _isLoading = false;
         });
@@ -56,19 +94,30 @@ class _DeviceLoginConfirmPageState
       }
 
       setState(() {
-        _error = response.message.isNotEmpty ? response.message : '获取登录信息失败';
+        _error = _serverMessage(
+          raw: response.message,
+          zhCN: '获取登录信息失败',
+          zhTW: '取得登入資訊失敗',
+          en: 'Failed to get login info',
+        );
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '获取登录信息失败';
+        _error = _deviceLoginText(
+          context,
+          zhCN: '获取登录信息失败',
+          zhTW: '取得登入資訊失敗',
+          en: 'Failed to get login info',
+        );
         _isLoading = false;
       });
     }
   }
 
   Future<void> _confirmLogin() async {
+    // isConfirming 同时禁用确认与取消按钮，防止同一票据并发提交。
     setState(() {
       _isConfirming = true;
       _error = null;
@@ -84,9 +133,17 @@ class _DeviceLoginConfirmPageState
       if (!mounted) return;
 
       if (response.isSuccess) {
+        // 仅服务端确认成功才返回 true，调用页不能把弹窗确认视为登录已生效。
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已确认登录桌面设备'),
+          SnackBar(
+            content: Text(
+              _deviceLoginText(
+                context,
+                zhCN: '已确认登录桌面设备',
+                zhTW: '已確認登入桌面裝置',
+                en: 'Desktop device login confirmed',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -95,13 +152,23 @@ class _DeviceLoginConfirmPageState
       }
 
       setState(() {
-        _error = response.message.isNotEmpty ? response.message : '确认登录失败';
+        _error = _serverMessage(
+          raw: response.message,
+          zhCN: '确认登录失败',
+          zhTW: '確認登入失敗',
+          en: 'Login confirmation failed',
+        );
         _isConfirming = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '确认登录失败';
+        _error = _deviceLoginText(
+          context,
+          zhCN: '确认登录失败',
+          zhTW: '確認登入失敗',
+          en: 'Login confirmation failed',
+        );
         _isConfirming = false;
       });
     }
@@ -116,13 +183,33 @@ class _DeviceLoginConfirmPageState
   String _formatDeviceType() {
     switch ((_data?['device_type'] ?? '').toString().toLowerCase()) {
       case 'windows':
-        return 'Windows 设备';
+        return _deviceLoginText(
+          context,
+          zhCN: 'Windows 设备',
+          zhTW: 'Windows 裝置',
+          en: 'Windows Device',
+        );
       case 'macos':
-        return 'Mac 设备';
+        return _deviceLoginText(
+          context,
+          zhCN: 'Mac 设备',
+          zhTW: 'Mac 裝置',
+          en: 'Mac Device',
+        );
       case 'linux':
-        return 'Linux 设备';
+        return _deviceLoginText(
+          context,
+          zhCN: 'Linux 设备',
+          zhTW: 'Linux 裝置',
+          en: 'Linux Device',
+        );
       default:
-        return '桌面设备';
+        return _deviceLoginText(
+          context,
+          zhCN: '桌面设备',
+          zhTW: '桌面裝置',
+          en: 'Desktop Device',
+        );
     }
   }
 
@@ -146,7 +233,14 @@ class _DeviceLoginConfirmPageState
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        title: const Text('确认登录'),
+        title: Text(
+          _deviceLoginText(
+            context,
+            zhCN: '确认登录',
+            zhTW: '確認登入',
+            en: 'Confirm Login',
+          ),
+        ),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -203,7 +297,14 @@ class _DeviceLoginConfirmPageState
           const SizedBox(height: 20),
           FilledButton(
             onPressed: _loadTicketInfo,
-            child: const Text('重试'),
+            child: Text(
+              _deviceLoginText(
+                context,
+                zhCN: '重试',
+                zhTW: '重試',
+                en: 'Retry',
+              ),
+            ),
           ),
         ],
       );
@@ -216,7 +317,12 @@ class _DeviceLoginConfirmPageState
           const Icon(Icons.qr_code_2_rounded, size: 52, color: Colors.orange),
           const SizedBox(height: 16),
           Text(
-            '该二维码已过期，请在桌面端刷新后重新扫描',
+            _deviceLoginText(
+              context,
+              zhCN: '该二维码已过期，请在桌面端刷新后重新扫描',
+              zhTW: '此 QR Code 已過期，請在桌面端重新整理後再掃描',
+              en: 'This QR code has expired. Refresh it on desktop and scan again.',
+            ),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDark ? Colors.white70 : Colors.black87,
@@ -226,7 +332,14 @@ class _DeviceLoginConfirmPageState
           const SizedBox(height: 20),
           OutlinedButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('返回'),
+            child: Text(
+              _deviceLoginText(
+                context,
+                zhCN: '返回',
+                zhTW: '返回',
+                en: 'Back',
+              ),
+            ),
           ),
         ],
       );
@@ -240,7 +353,12 @@ class _DeviceLoginConfirmPageState
               size: 56, color: AppColors.success),
           const SizedBox(height: 16),
           Text(
-            '这台设备已经确认登录',
+            _deviceLoginText(
+              context,
+              zhCN: '这台设备已经确认登录',
+              zhTW: '這台裝置已確認登入',
+              en: 'This device has already been confirmed',
+            ),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDark ? Colors.white : Colors.black,
@@ -251,7 +369,14 @@ class _DeviceLoginConfirmPageState
           const SizedBox(height: 20),
           OutlinedButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('关闭'),
+            child: Text(
+              _deviceLoginText(
+                context,
+                zhCN: '关闭',
+                zhTW: '關閉',
+                en: 'Close',
+              ),
+            ),
           ),
         ],
       );
@@ -266,18 +391,23 @@ class _DeviceLoginConfirmPageState
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.12),
+            color: AppColors.emphasisSoftFor(context),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Icon(
             _deviceIcon(),
             size: 36,
-            color: AppColors.primary,
+            color: AppColors.linkFor(context),
           ),
         ),
         const SizedBox(height: 18),
         Text(
-          '确认登录这台设备？',
+          _deviceLoginText(
+            context,
+            zhCN: '确认登录这台设备？',
+            zhTW: '確認登入這台裝置？',
+            en: 'Confirm login for this device?',
+          ),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
@@ -287,7 +417,12 @@ class _DeviceLoginConfirmPageState
         ),
         const SizedBox(height: 10),
         Text(
-          '请确认这是你本人正在操作的桌面设备',
+          _deviceLoginText(
+            context,
+            zhCN: '请确认这是你本人正在操作的桌面设备',
+            zhTW: '請確認這是你本人正在操作的桌面裝置',
+            en: 'Please confirm that this is the desktop device you are currently using',
+          ),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: isDark ? Colors.white60 : Colors.black54,
@@ -296,18 +431,33 @@ class _DeviceLoginConfirmPageState
         ),
         const SizedBox(height: 24),
         _InfoTile(
-          label: '设备名称',
+          label: _deviceLoginText(
+            context,
+            zhCN: '设备名称',
+            zhTW: '裝置名稱',
+            en: 'Device Name',
+          ),
           value: _formatDeviceName(),
         ),
         const SizedBox(height: 12),
         _InfoTile(
-          label: '设备类型',
+          label: _deviceLoginText(
+            context,
+            zhCN: '设备类型',
+            zhTW: '裝置類型',
+            en: 'Device Type',
+          ),
           value: _formatDeviceType(),
         ),
         if (deviceIp.isNotEmpty) ...[
           const SizedBox(height: 12),
           _InfoTile(
-            label: '设备 IP',
+            label: _deviceLoginText(
+              context,
+              zhCN: '设备 IP',
+              zhTW: '裝置 IP',
+              en: 'Device IP',
+            ),
             value: deviceIp,
           ),
         ],
@@ -319,7 +469,14 @@ class _DeviceLoginConfirmPageState
                 onPressed: _isConfirming
                     ? null
                     : () => Navigator.of(context).pop(false),
-                child: const Text('取消'),
+                child: Text(
+                  _deviceLoginText(
+                    context,
+                    zhCN: '取消',
+                    zhTW: '取消',
+                    en: 'Cancel',
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -335,7 +492,14 @@ class _DeviceLoginConfirmPageState
                           color: Colors.white,
                         ),
                       )
-                    : const Text('确认登录'),
+                    : Text(
+                        _deviceLoginText(
+                          context,
+                          zhCN: '确认登录',
+                          zhTW: '確認登入',
+                          en: 'Confirm Login',
+                        ),
+                      ),
               ),
             ),
           ],
@@ -362,7 +526,8 @@ class _InfoTile extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.04) : const Color(0xFFF6F7FB),
+        color:
+            isDark ? Colors.white.withOpacity(0.04) : const Color(0xFFF6F7FB),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -371,7 +536,7 @@ class _InfoTile extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: isDark ? Colors.white54 : Colors.black45,
+              color: AppColors.textSecondaryFor(context),
               fontSize: 12,
             ),
           ),

@@ -32,6 +32,7 @@
   const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
 
+  // 抽屉可见性完全受父组件 v-model 控制，内部关闭也通过 update 事件回传。
   const visible = computed({
     get: () => props.modelValue,
     set: (value: boolean) => emit('update:modelValue', value)
@@ -42,6 +43,7 @@
   }
 
   const handleDrawerClose = () => {
+    // close 在抽屉动画完成后发出，父组件可在此清理临时全局样式。
     emit('close')
   }
 

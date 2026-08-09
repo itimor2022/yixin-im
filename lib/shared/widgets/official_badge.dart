@@ -1,6 +1,9 @@
+// 文件用途：提供 OfficialBadge 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 OfficialBadge，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+// 关键声明：official badge 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 ///  官方认证标识（带动画）
 class OfficialBadge extends StatefulWidget {
   final double size;
@@ -18,6 +21,7 @@ class _OfficialBadgeState extends State<OfficialBadge>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();

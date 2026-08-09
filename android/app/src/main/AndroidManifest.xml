@@ -16,9 +16,14 @@
     <!-- 媒体权限 (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
     
     <!-- 麦克风权限 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- 生物识别解锁权限 -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     
     <!-- 音视频通话权限 -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
@@ -29,6 +34,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -37,19 +43,19 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     
     <application
-        android:label="壹信"
+        android:label="通用IM"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config"
         android:largeHeap="true"
         android:hardwareAccelerated="true"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -63,14 +69,19 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Android 12+ Splash Screen API 支持 -->
-            <meta-data
-                android:name="io.flutter.embedding.android.SplashScreenDrawable"
-                android:resource="@drawable/launch_background" />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="genericim"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -80,14 +91,25 @@
         <!-- Firebase Cloud Messaging 默认通知渠道（Android 8+） -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="gaoranim_messages" />
+            android:value="genericim_messages" />
         <!-- Android 原厂推送配置占位 -->
         <meta-data android:name="PUSH_HMS_APP_ID" android:value="${PUSH_HMS_APP_ID}" />
         <meta-data android:name="com.huawei.hms.client.appid" android:value="appid=${PUSH_HMS_APP_ID}" />
+        <meta-data android:name="push_kit_auto_init_enabled" android:value="true" />
+        <meta-data android:name="PUSH_JPUSH_APP_KEY" android:value="${PUSH_JPUSH_APP_KEY}" />
+        <meta-data android:name="JPUSH_CHANNEL" android:value="${PUSH_JPUSH_CHANNEL}" />
         <meta-data android:name="PUSH_XIAOMI_APP_ID" android:value="${PUSH_XIAOMI_APP_ID}" />
         <meta-data android:name="PUSH_XIAOMI_APP_KEY" android:value="${PUSH_XIAOMI_APP_KEY}" />
         <meta-data android:name="PUSH_OPPO_APP_KEY" android:value="${PUSH_OPPO_APP_KEY}" />
         <meta-data android:name="PUSH_OPPO_APP_SECRET" android:value="${PUSH_OPPO_APP_SECRET}" />
+        <service
+            android:name=".GenericHmsMessageService"
+            android:enabled="${PUSH_HMS_SERVICE_ENABLED}"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.huawei.push.action.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
         <!-- Impeller 渲染引擎 -->
         <!-- 某些 Android 设备首次启动可能崩溃，暂时禁用 -->
         <meta-data
@@ -111,11 +133,22 @@
                 android:resource="@xml/hot_update_file_paths" />
         </provider>
         
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+
         <!-- 开机自启动接收器 -->
         <receiver
             android:name="id.flutter.flutter_background_service.BootReceiver"
-            android:enabled="true"
-            android:exported="true">
+            android:enabled="false"
+            android:exported="true"
+            tools:replace="android:enabled">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
@@ -128,6 +161,11 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.DEFAULT"/>
+            <data android:mimeType="*/*"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -26,7 +26,9 @@
 
     <ElMenuItem
       v-else
+      class="menu-route-item"
       :index="isExternalLink(item) ? undefined : item.path || item.meta.title"
+      :data-menu-path="isExternalLink(item) ? undefined : item.path"
       :level-item="level + 1"
       @click="goPage(item)"
     >
@@ -186,3 +188,16 @@
     return `${item.path || item.meta.title || 'menu'}-${props.level}-${index}`
   }
 </script>
+
+<style scoped>
+  .menu-route-item {
+    position: relative;
+  }
+
+  :deep(.menu-icon),
+  :deep(.menu-name),
+  :deep(.art-badge),
+  :deep(.art-text-badge) {
+    pointer-events: none;
+  }
+</style>

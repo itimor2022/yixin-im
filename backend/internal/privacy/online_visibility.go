@@ -1,11 +1,12 @@
+// 文件用途：根据用户隐私设置计算在线和活跃状态的可见性。
+// 核心逻辑：将单用户或批量查询结果转换为对外可见状态。
+
 package privacy
 
 import (
-	"strings"
-
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
+	"strings"
+	"genericim/internal/models"
 )
 
 const (
@@ -67,7 +68,6 @@ func CanViewerSeeOnlineStatusByUUID(db *gorm.DB, viewerUUID, targetUUID string) 
 			targetID = user.ID
 		}
 	}
-
 	return CanViewerSeeOnlineStatus(db, viewerID, targetID)
 }
 
@@ -76,7 +76,6 @@ func BatchCanViewerSeeOnlineStatus(db *gorm.DB, viewerID uint64, targetIDs []uin
 	if len(targetIDs) == 0 {
 		return result, nil
 	}
-
 	uniqueTargetIDs := make([]uint64, 0, len(targetIDs))
 	seen := make(map[uint64]struct{}, len(targetIDs))
 	for _, targetID := range targetIDs {
@@ -92,12 +91,32 @@ func BatchCanViewerSeeOnlineStatus(db *gorm.DB, viewerID uint64, targetIDs []uin
 	if len(uniqueTargetIDs) == 0 {
 		return result, nil
 	}
-
 	if db == nil {
 		for _, targetID := range uniqueTargetIDs {
 			result[targetID] = targetID == viewerID
 		}
 		return result, nil
+	}
+	blockedTargetIDs := make(map[uint64]struct{})
+	var blockRows []models.UserBlock
+
+	if err := db.Select("user_id", "blocked_user_id").
+		Where(
+			"(user_id = ? AND blocked_user_id IN ?) OR(blocked_user_id = ? AND user_id IN ?)",
+			viewerID,
+			uniqueTargetIDs,
+			viewerID,
+			uniqueTargetIDs,
+		).
+		Find(&blockRows).Error; err != nil {
+		return nil, err
+	}
+	for _, block := range blockRows {
+		if block.UserID == viewerID {
+			blockedTargetIDs[block.BlockedUserID] = struct{}{}
+		} else if block.BlockedUserID == viewerID {
+			blockedTargetIDs[block.UserID] = struct{}{}
+		}
 	}
 
 	var settings []models.UserPrivacySetting
@@ -106,16 +125,18 @@ func BatchCanViewerSeeOnlineStatus(db *gorm.DB, viewerID uint64, targetIDs []uin
 		Find(&settings).Error; err != nil {
 		return nil, err
 	}
-
 	visibilityByUserID := make(map[uint64]string, len(settings))
 	for _, setting := range settings {
 		visibilityByUserID[setting.UserID] = NormalizeLastSeenVisibility(setting.LastSeenVisibility)
 	}
-
 	contactOnlyTargetIDs := make([]uint64, 0)
 	for _, targetID := range uniqueTargetIDs {
 		if targetID == viewerID {
 			result[targetID] = true
+			continue
+		}
+		if _, blocked := blockedTargetIDs[targetID]; blocked {
+			result[targetID] = false
 			continue
 		}
 
@@ -128,7 +149,6 @@ func BatchCanViewerSeeOnlineStatus(db *gorm.DB, viewerID uint64, targetIDs []uin
 			result[targetID] = true
 		}
 	}
-
 	if len(contactOnlyTargetIDs) == 0 {
 		return result, nil
 	}
@@ -142,16 +162,13 @@ func BatchCanViewerSeeOnlineStatus(db *gorm.DB, viewerID uint64, targetIDs []uin
 		Find(&visibleContacts).Error; err != nil {
 		return nil, err
 	}
-
 	contactVisibleSet := make(map[uint64]struct{}, len(visibleContacts))
 	for _, row := range visibleContacts {
 		contactVisibleSet[row.UserID] = struct{}{}
 	}
-
 	for _, targetID := range contactOnlyTargetIDs {
 		_, visible := contactVisibleSet[targetID]
 		result[targetID] = visible
 	}
-
 	return result, nil
 }

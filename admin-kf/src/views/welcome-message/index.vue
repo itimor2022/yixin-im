@@ -47,7 +47,7 @@
         />
         <div class="actions">
           <ElButton :disabled="!isDirty" @click="resetMessage">恢复默认</ElButton>
-          <ElButton type="success" :loading="saving" :disabled="!isDirty" @click="handleSave">保存欢迎语</ElButton>
+        <ElButton type="primary" :loading="saving" :disabled="!isDirty" @click="handleSave">保存欢迎语</ElButton>
         </div>
         <p v-if="isDirty" class="dirty-tip">你有未保存的修改，离开页面前请先保存。</p>
       </section>
@@ -95,6 +95,7 @@ const loading = ref(true)
 const saving = ref(false)
 const lastSavedAt = ref('')
 const messageLength = computed(() => message.value.length)
+// defaultMessage 保存最近一次服务端确认的快照，用于判断脏状态和撤销本轮编辑。
 const isDirty = computed(() => message.value !== defaultMessage.value)
 const activePresetLabel = computed(
   () => presets.find((preset) => preset.message === message.value)?.label || ''
@@ -150,6 +151,7 @@ const handleSave = async () => {
 
 const beforeUnloadHandler = (event: BeforeUnloadEvent) => {
   if (!isDirty.value) return
+  // 浏览器级离开只能触发原生确认框，站内路由离开则由下方守卫提供明确提示。
   event.preventDefault()
   event.returnValue = ''
 }
@@ -159,6 +161,7 @@ onBeforeMount(() => {
 })
 
 onBeforeUnmount(() => {
+  // 全局监听不会随组件自动销毁，离开页面时必须解除，避免影响其他页面。
   window.removeEventListener('beforeunload', beforeUnloadHandler)
 })
 
@@ -192,27 +195,27 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.page-wrap { padding: 28px; }
-.preset-panel { margin-top: 24px; padding: 22px; border-radius: 18px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.page-wrap { padding: 24px; }
+.preset-panel { margin-top: 24px; padding: 20px; border-radius: var(--kf-radius-md); background: var(--kf-surface); border: 1px solid var(--kf-border); }
 .preset-head, .preset-status, .preview-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .preset-head { margin-bottom: 14px; }
 .preset-status { margin-bottom: 14px; flex-wrap: wrap; }
 .preset-tip, .saved-at { color: var(--text-soft); font-size: 13px; }
-.status-chip, .preview-tag { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.18); color: #c9f7d8; font-size: 13px; }
+.status-chip, .preview-tag { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; background: var(--kf-surface-soft); border: 1px solid var(--kf-border); color: var(--kf-text-secondary); font-size: 12px; }
 .preset-list { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-.preset-card { display: grid; gap: 8px; padding: 16px; border-radius: 14px; border: 1px solid rgba(74,222,128,.16); background: rgba(2,6,23,.35); color: inherit; text-align: left; cursor: pointer; transition: .2s ease; }
-.preset-card:hover, .preset-card.active { border-color: rgba(74,222,128,.45); transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(74,222,128,.16); }
+.preset-card { display: grid; gap: 8px; padding: 16px; border-radius: var(--kf-radius-sm); border: 1px solid var(--kf-border); background: var(--kf-surface-soft); color: inherit; text-align: left; cursor: pointer; transition: .2s ease; }
+.preset-card:hover, .preset-card.active { border-color: var(--kf-primary); background: #fff; box-shadow: 0 0 0 1px var(--kf-primary); }
 .preset-card span { color: var(--text-soft); line-height: 1.7; font-size: 13px; }
 .preset-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; }
 .editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; margin-top: 24px; }
-.editor-panel { padding: 22px; border-radius: 18px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.editor-panel { padding: 20px; border-radius: var(--kf-radius-md); background: var(--kf-surface); border: 1px solid var(--kf-border); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .preview-head { margin-bottom: 16px; }
 .length-indicator { color: var(--text-soft); font-size: 13px; }
-.length-indicator.warning { color: #fbbf24; }
+.length-indicator.warning { color: var(--kf-warning); }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
-.dirty-tip { margin-top: 10px; color: #fbbf24; font-size: 13px; }
-.preview-box { min-height: 280px; display: flex; align-items: flex-start; padding: 18px; border-radius: 16px; background: rgba(2,6,23,.5); }
-.chat-bubble { max-width: 360px; padding: 14px 16px; border-radius: 16px 16px 16px 6px; background: rgba(34,197,94,.18); border: 1px solid rgba(74,222,128,.22); line-height: 1.8; white-space: pre-wrap; }
+.dirty-tip { margin-top: 10px; color: var(--kf-warning); font-size: 13px; }
+.preview-box { min-height: 280px; display: flex; align-items: flex-start; padding: 18px; border-radius: var(--kf-radius-md); background: var(--kf-surface-soft); }
+.chat-bubble { max-width: 360px; padding: 14px 16px; border-radius: 12px 12px 12px 4px; color: #fff; background: #171717; line-height: 1.8; white-space: pre-wrap; }
 @media (max-width: 960px) { .preset-list, .editor-grid { grid-template-columns: 1fr; } .preset-head, .preset-status, .preview-head, .preset-actions { flex-direction: column; align-items: flex-start; } }
 </style>

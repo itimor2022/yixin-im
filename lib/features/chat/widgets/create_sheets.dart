@@ -1,3 +1,5 @@
+// 文件用途：提供 CreateGroupSheet 可复用界面组件，服务于聊天与消息。
+// 核心逻辑：根据输入模型和状态渲染 CreateGroupSheet，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'dart:async';
 import 'package:universal_io/io.dart';
 import 'dart:typed_data';
@@ -20,28 +22,121 @@ import '../../home/pages/home_desktop_page.dart';
 import '../pages/chat_detail_page.dart' show ChatType;
 import '../providers/chat_provider.dart';
 
+String _createSheetText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _cleanCreateSheetError(Object error) {
+  return error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
+}
+
+bool _isVipCreateError(String message) {
+  final lower = message.toLowerCase();
+  return message.contains('VIP') ||
+      message.contains('SVIP') ||
+      message.contains('会员') ||
+      lower.contains('vip');
+}
+
+void _showCreateSheetError(
+  BuildContext context, {
+  required Object error,
+  required String fallback,
+}) {
+  final message = _cleanCreateSheetError(error);
+  final isVipError = _isVipCreateError(message);
+  final router = GoRouter.of(context);
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) return;
+
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(isVipError && message.isNotEmpty ? message : fallback),
+      backgroundColor: Colors.red,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+      showCloseIcon: true,
+      closeIconColor: Colors.white,
+      action: isVipError
+          ? SnackBarAction(
+              label: _createSheetText(
+                context,
+                zhCN: '去开通',
+                zhTW: '去開通',
+                en: 'Open',
+              ),
+              textColor: Colors.white,
+              onPressed: () {
+                messenger.hideCurrentSnackBar();
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
+                router.push('/vip');
+              },
+            )
+          : null,
+    ),
+  );
+}
+
 /// 显示创建群组的底部弹窗
 void showCreateGroupSheet(BuildContext context) {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final usesFloatingNav = FloatingNavLayout.isEnabledForContext(context);
+  if (usesFloatingNav) {
+    container.read(floatingNavHiddenProvider.notifier).state = true;
+  }
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => const CreateGroupSheet(),
-  );
+  ).whenComplete(() {
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    if (usesFloatingNav) {
+      container.read(floatingNavHiddenProvider.notifier).state = false;
+    }
+  });
 }
 
 /// 显示创建频道的底部弹窗
 void showCreateChannelSheet(BuildContext context) {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final usesFloatingNav = FloatingNavLayout.isEnabledForContext(context);
+  if (usesFloatingNav) {
+    container.read(floatingNavHiddenProvider.notifier).state = true;
+  }
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => const CreateChannelSheet(),
-  );
+  ).whenComplete(() {
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    if (usesFloatingNav) {
+      container.read(floatingNavHiddenProvider.notifier).state = false;
+    }
+  });
 }
 
 // ==================== 创建群组 ====================
 
+// 关键声明：create sheets 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 class CreateGroupSheet extends ConsumerStatefulWidget {
   const CreateGroupSheet({super.key});
 
@@ -61,6 +156,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
   Timer? _searchDebounce;
   String _searchQuery = '';
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -166,7 +262,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
       Navigator.pop(context);
 
       if (chat != null) {
-        if (PlatformUtils.isDesktop) {
+        if (PlatformUtils.useDesktopLayout(context)) {
           // 桌面/Web 端：通过 Provider 更新右侧面板，避免路由替换整个布局
           ref.read(selectedChatInfoProvider.notifier).state = SelectedChatInfo(
             id: chat.id,
@@ -184,11 +280,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations(ref.read(languageProvider));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${l10n.createGroupFailed}: $e'),
-          backgroundColor: Colors.red,
-        ),
+      _showCreateSheetError(
+        context,
+        error: e,
+        fallback: l10n.createGroupFailed,
       );
     } finally {
       if (mounted) setState(() => _isCreating = false);
@@ -206,7 +301,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
       orElse: () => false,
     );
     final searchQuery = _searchQuery.trim().toLowerCase();
-    final floatingBottomSpace = FloatingNavLayout.isEnabled
+    final floatingBottomSpace = FloatingNavLayout.isEnabledForContext(context)
         ? FloatingNavLayout.reservedSpace(context, extra: 8)
         : 100.0;
     final contactsByUuid = {
@@ -248,9 +343,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                     child: Text(
                       l10n.createGroup,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                   ),
@@ -267,8 +363,8 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                             l10n.create,
                             style: TextStyle(
                               color: _canCreate
-                                  ? AppColors.primary
-                                  : AppColors.lightTextTertiary,
+                                  ? AppColors.linkFor(context)
+                                  : AppColors.textTertiaryFor(context),
                             ),
                           ),
                   ),
@@ -289,7 +385,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                         width: 60,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.15),
+                          color: AppColors.primaryWithOpacity(context, 0.15),
                         ),
                         child: _avatarPath != null
                             ? Image.file(
@@ -298,7 +394,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                                 width: 60,
                                 height: 60,
                               )
-                            : Icon(Icons.camera_alt, color: AppColors.primary),
+                            : Icon(
+                                Icons.camera_alt,
+                                color: AppColors.linkFor(context),
+                              ),
                       ),
                     ),
                   ),
@@ -309,9 +408,15 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
                         hintText: l10n.groupName,
+                        hintStyle: TextStyle(
+                          color: AppColors.inputHintFor(context),
+                        ),
                         border: InputBorder.none,
                       ),
-                      style: const TextStyle(fontSize: 18),
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: AppColors.textPrimaryFor(context),
+                      ),
                     ),
                   ),
                 ],
@@ -352,11 +457,20 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                   controller: _searchController,
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: '搜索好友',
+                    hintText: _createSheetText(
+                      context,
+                      zhCN: '搜索好友',
+                      zhTW: '搜尋好友',
+                      en: 'Search Friends',
+                    ),
                     prefixIcon: const Icon(Icons.search, size: 20),
+                    hintStyle: TextStyle(
+                      color: AppColors.inputHintFor(context),
+                    ),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
+                  style: TextStyle(color: AppColors.textPrimaryFor(context)),
                 ),
               ),
             ),
@@ -367,18 +481,35 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                   Expanded(
                     child: Text(
                       requireFriendOnly
-                          ? '后台已开启“非好友不可拉群”，这里只显示好友联系人'
-                          : '按昵称、备注或用户名搜索好友并邀请入群',
+                          ? _createSheetText(
+                              context,
+                              zhCN: '后台已开启“非好友不可拉群”，这里只显示好友联系人',
+                              zhTW: '後台已開啟「非好友不可拉群」，這裡只顯示好友聯絡人',
+                              en: 'The admin has enabled "Friends only for group invites", so only friends are shown here',
+                            )
+                          : _createSheetText(
+                              context,
+                              zhCN: '按昵称、备注或用户名搜索好友并邀请入群',
+                              zhTW: '按暱稱、備註或用戶名搜尋好友並邀請入群',
+                              en: 'Search friends by nickname, remark, or username and invite them to the group',
+                            ),
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.lightTextSecondary,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                   ),
                   if (!_isLoadingContacts)
                     TextButton(
                       onPressed: _reloadContacts,
-                      child: const Text('刷新好友'),
+                      child: Text(
+                        _createSheetText(
+                          context,
+                          zhCN: '刷新好友',
+                          zhTW: '重新整理好友',
+                          en: 'Refresh Friends',
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -437,7 +568,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                             width: 50,
                             child: Text(
                               contact.name,
-                              style: const TextStyle(fontSize: 11),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondaryFor(context),
+                              ),
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                             ),
@@ -461,7 +595,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
+                      color: AppColors.linkFor(context),
                     ),
                   ),
                   if (_selectedContactUuids.isNotEmpty) ...[
@@ -470,7 +604,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                       '${l10n.selectedCount} ${_selectedContactUuids.length}',
                       style: TextStyle(
                         fontSize: 14,
-                        color: AppColors.lightTextSecondary,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                   ],
@@ -492,27 +626,47 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                                 Icon(
                                   Icons.group_outlined,
                                   size: 56,
-                                  color: AppColors.lightTextTertiary,
+                                  color: AppColors.textTertiaryFor(context),
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
                                   searchQuery.isNotEmpty
-                                      ? '未找到匹配的好友'
-                                      : '暂无可邀请的好友成员',
+                                      ? _createSheetText(
+                                          context,
+                                          zhCN: '未找到匹配的好友',
+                                          zhTW: '找不到符合的好友',
+                                          en: 'No matching friends found',
+                                        )
+                                      : _createSheetText(
+                                          context,
+                                          zhCN: '暂无可邀请的好友成员',
+                                          zhTW: '暫無可邀請的好友成員',
+                                          en: 'No friends available to invite',
+                                        ),
                                   style: TextStyle(
                                     fontSize: 16,
-                                    color: AppColors.lightTextSecondary,
+                                    color: AppColors.textSecondaryFor(context),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
                                   requireFriendOnly
-                                      ? '当前后台限制为仅可邀请好友入群，请先添加好友后再创建群聊'
-                                      : '请先添加好友，或下拉刷新联系人列表后重试',
+                                      ? _createSheetText(
+                                          context,
+                                          zhCN: '当前后台限制为仅可邀请好友入群，请先添加好友后再创建群聊',
+                                          zhTW: '目前後台限制為僅可邀請好友入群，請先新增好友後再建立群聊',
+                                          en: 'The current admin policy only allows inviting friends to groups. Add friends first before creating the group',
+                                        )
+                                      : _createSheetText(
+                                          context,
+                                          zhCN: '请先添加好友，或下拉刷新联系人列表后重试',
+                                          zhTW: '請先新增好友，或下拉重新整理聯絡人列表後再試',
+                                          en: 'Add friends first, or pull down to refresh the contact list and try again',
+                                        ),
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: AppColors.lightTextSecondary,
+                                    color: AppColors.textSecondaryFor(context),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -538,6 +692,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                                 size: 44,
                               ),
                               title: Text(contact.name),
+                              titleTextStyle: TextStyle(
+                                fontSize: 16,
+                                color: AppColors.textPrimaryFor(context),
+                              ),
                               subtitle: Text(
                                 contact.isOnline
                                     ? l10n.online
@@ -546,7 +704,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                                   fontSize: 12,
                                   color: contact.isOnline
                                       ? AppColors.online
-                                      : AppColors.lightTextSecondary,
+                                      : AppColors.textSecondaryFor(context),
                                 ),
                               ),
                               trailing: Container(
@@ -554,13 +712,13 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                                 height: 24,
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? AppColors.primary
+                                      ? AppColors.primaryFor(context)
                                       : Colors.transparent,
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.lightTextTertiary,
+                                        ? AppColors.primaryFor(context)
+                                        : AppColors.textTertiaryFor(context),
                                     width: 2,
                                   ),
                                 ),
@@ -671,7 +829,7 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
       Navigator.pop(context);
 
       if (chat != null) {
-        if (PlatformUtils.isDesktop) {
+        if (PlatformUtils.useDesktopLayout(context)) {
           ref.read(selectedChatInfoProvider.notifier).state = SelectedChatInfo(
             id: chat.id,
             name: chat.name,
@@ -688,11 +846,10 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations(ref.read(languageProvider));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${l10n.createChannelFailed}: $e'),
-          backgroundColor: Colors.red,
-        ),
+      _showCreateSheetError(
+        context,
+        error: e,
+        fallback: l10n.createChannelFailed,
       );
     } finally {
       if (mounted) setState(() => _isCreating = false);
@@ -703,7 +860,7 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final floatingBottomSpace = FloatingNavLayout.isEnabled
+    final floatingBottomSpace = FloatingNavLayout.isEnabledForContext(context)
         ? FloatingNavLayout.reservedSpace(context, extra: 8)
         : 100.0;
 
@@ -751,8 +908,8 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
                             l10n.create,
                             style: TextStyle(
                               color: _canCreate
-                                  ? AppColors.primary
-                                  : AppColors.lightTextTertiary,
+                                  ? AppColors.linkFor(context)
+                                  : AppColors.textTertiaryFor(context),
                             ),
                           ),
                   ),
@@ -772,7 +929,7 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
                         width: 70,
                         height: 70,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.15),
+                          color: AppColors.primaryWithOpacity(context, 0.15),
                         ),
                         child: _avatarPath != null
                             ? Image.file(
@@ -783,7 +940,7 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
                               )
                             : Icon(
                                 Icons.campaign,
-                                color: AppColors.primary,
+                                color: AppColors.linkFor(context),
                                 size: 32,
                               ),
                       ),
@@ -796,9 +953,15 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
                         hintText: l10n.channelName,
+                        hintStyle: TextStyle(
+                          color: AppColors.inputHintFor(context),
+                        ),
                         border: InputBorder.none,
                       ),
-                      style: const TextStyle(fontSize: 18),
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: AppColors.textPrimaryFor(context),
+                      ),
                     ),
                   ),
                 ],
@@ -813,10 +976,14 @@ class _CreateChannelSheetState extends ConsumerState<CreateChannelSheet> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: l10n.channelDescriptionOptional,
+                  hintStyle: TextStyle(
+                    color: AppColors.inputHintFor(context),
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                style: TextStyle(color: AppColors.textPrimaryFor(context)),
               ),
             ),
 
@@ -864,8 +1031,6 @@ class _GroupTypeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -880,14 +1045,16 @@ class _GroupTypeOption extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? AppColors.primary.withOpacity(0.15)
-                      : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                      ? AppColors.primaryWithOpacity(context, 0.15)
+                      : AppColors.inputBackgroundFor(context),
                   borderRadius: BorderRadius.circular(21),
                 ),
                 child: Icon(
                   icon,
                   size: 22,
-                  color: isSelected ? AppColors.primary : Colors.grey,
+                  color: isSelected
+                      ? AppColors.linkFor(context)
+                      : AppColors.textTertiaryFor(context),
                 ),
               ),
               const SizedBox(width: 16),
@@ -901,9 +1068,7 @@ class _GroupTypeOption extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
-                        color: isDark
-                            ? AppColors.darkTextPrimary
-                            : AppColors.lightTextPrimary,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -911,9 +1076,7 @@ class _GroupTypeOption extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                   ],
@@ -926,14 +1089,21 @@ class _GroupTypeOption extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color:
-                        isSelected ? AppColors.primary : Colors.grey.shade400,
+                    color: isSelected
+                        ? AppColors.primaryFor(context)
+                        : AppColors.textTertiaryFor(context),
                     width: 2,
                   ),
-                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  color: isSelected
+                      ? AppColors.primaryFor(context)
+                      : Colors.transparent,
                 ),
                 child: isSelected
-                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    ? Icon(
+                        Icons.check,
+                        size: 14,
+                        color: AppColors.onPrimaryFor(context),
+                      )
                     : null,
               ),
             ],

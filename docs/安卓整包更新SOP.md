@@ -42,7 +42,7 @@ flutter build apk --release --target-platform android-arm64 --obfuscate --split-
 示例：
 
 ```text
-https://cdn.example.com/yixin/android/4.0.1+10/app-release.apk
+https://cdn.example.com/genericim/android/4.0.1+10/app-release.apk
 ```
 
 ## 4. 计算哈希

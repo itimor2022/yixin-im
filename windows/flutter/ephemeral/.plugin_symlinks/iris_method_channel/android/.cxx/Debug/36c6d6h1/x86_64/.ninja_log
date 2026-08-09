@@ -1,5 +1,0 @@
-# ninja log v5
-1	49	1779447216253682971	CMakeFiles/iris_method_channel.dir/dart-sdk/include/dart_api_dl.c.o	b0d814b9b3a17c65
-1	329	1779447216529836631	CMakeFiles/iris_method_channel.dir/iris_life_cycle_observer.cc.o	fd9a4c11566ac56b
-1	443	1779447216637378563	CMakeFiles/iris_method_channel.dir/iris_event.cc.o	320b1b8f7188c917
-443	487	1779447216691063197	/Volumes/PD/源码/yi-xin-511/build/iris_method_channel/intermediates/cxx/Debug/36c6d6h1/obj/x86_64/libiris_method_channel.so	bfa25d235d52624d

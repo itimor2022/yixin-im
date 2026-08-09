@@ -1,13 +1,16 @@
+// 文件用途：定义业务实体的 ORM 字段、关联关系和持久化约束。
+// 核心逻辑：统一描述字段映射、状态值、索引和表名，作为各层共享数据契约。
+
 package models
 
 import (
-	"time"
-
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"time"
 )
 
 // Wallet 钱包表
+
 type Wallet struct {
 	ID            uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID        uint64         `gorm:"uniqueIndex;not null" json:"user_id"`
@@ -48,18 +51,19 @@ func (w *Wallet) HasPayPassword() bool {
 	return w.PayPassword != ""
 }
 
-// Transaction 交易记录表
+// Transaction 交易
+
 type Transaction struct {
-	ID              uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID          uint64    `gorm:"index;not null" json:"user_id"`
-	Type            string    `gorm:"type:varchar(30);not null;index" json:"type"` // recharge, withdraw, transfer_out, transfer_in, red_packet_send, red_packet_receive, membership_purchase
+	ID              uint64    `gorm:"primaryKey;autoIncrement;index:idx_transactions_user_created,priority:3,sort:desc;index:idx_transactions_user_type_created,priority:4,sort:desc" json:"id"`
+	UserID          uint64    `gorm:"index;index:idx_transactions_user_created,priority:1;index:idx_transactions_user_type_created,priority:1;not null" json:"user_id"`
+	Type            string    `gorm:"type:varchar(30);not null;index;index:idx_transactions_user_type_created,priority:2" json:"type"` // recharge, withdraw, transfer_out, transfer_in, red_packet_send, red_packet_receive
 	Amount          float64   `gorm:"type:decimal(12,2);not null" json:"amount"`
 	BalanceAfter    float64   `gorm:"type:decimal(12,2);not null" json:"balance_after"`
 	RelatedID       string    `gorm:"type:varchar(50);index" json:"related_id"` // 关联ID（红包ID/转账ID等）
 	RelatedUserID   *uint64   `gorm:"index" json:"related_user_id"`             // 关联用户
 	RelatedUserName string    `gorm:"type:varchar(100)" json:"related_user_name"`
 	Remark          string    `gorm:"type:varchar(200)" json:"remark"`
-	CreatedAt       time.Time `gorm:"type:datetime;not null;index" json:"created_at"`
+	CreatedAt       time.Time `gorm:"type:datetime;not null;index;index:idx_transactions_user_created,priority:2,sort:desc;index:idx_transactions_user_type_created,priority:3,sort:desc" json:"created_at"`
 }
 
 func (Transaction) TableName() string {
@@ -68,17 +72,17 @@ func (Transaction) TableName() string {
 
 // 交易类型常量
 const (
-	TransactionTypeRecharge           = "recharge"
-	TransactionTypeWithdraw           = "withdraw"
-	TransactionTypeTransferOut        = "transfer_out"
-	TransactionTypeTransferIn         = "transfer_in"
-	TransactionTypeRedPacketSend      = "red_packet_send"
-	TransactionTypeRedPacketReceive   = "red_packet_receive"
-	TransactionTypeRefund             = "refund"              // 退款（红包过期、转账退回）
-	TransactionTypeAdminRecharge      = "admin_recharge"      // 管理员充值
-	TransactionTypeAdminDeduct        = "admin_deduct"        // 管理员扣减
-	TransactionTypeRechargeRejected   = "recharge_rejected"   // 充值被拒绝
-	TransactionTypeMembershipPurchase = "membership_purchase" // 购买会员
+	TransactionTypeRecharge         = "recharge"
+	TransactionTypeWithdraw         = "withdraw"
+	TransactionTypeTransferOut      = "transfer_out"
+	TransactionTypeTransferIn       = "transfer_in"
+	TransactionTypeRedPacketSend    = "red_packet_send"
+	TransactionTypeRedPacketReceive = "red_packet_receive"
+	TransactionTypeRefund           = "refund"            // 退款（红包过期、转账退回）
+	TransactionTypeAdminRecharge    = "admin_recharge"    // 管理员充值
+	TransactionTypeAdminDeduct      = "admin_deduct"      // 管理员扣减
+	TransactionTypeRechargeRejected = "recharge_rejected" // 充值被拒绝
+	TransactionTypeVipPurchase      = "vip_purchase"      // 购买会员
 )
 
 // RedPacket 红包表
@@ -87,7 +91,7 @@ type RedPacket struct {
 	UUID            string    `gorm:"type:char(36);uniqueIndex;not null" json:"uuid"`
 	SenderID        uint64    `gorm:"index;not null" json:"sender_id"`
 	ChatID          string    `gorm:"type:varchar(50);index;not null" json:"chat_id"`
-	Type            string    `gorm:"type:varchar(20);not null" json:"type"` // normal, lucky (拼手气)
+	Type            string    `gorm:"type:varchar(20);not null" json:"type"` // normal, lucky(拼手气)
 	TotalAmount     float64   `gorm:"type:decimal(12,2);not null" json:"total_amount"`
 	TotalCount      int       `gorm:"not null" json:"total_count"`
 	RemainingAmount float64   `gorm:"type:decimal(12,2);not null" json:"remaining_amount"`
@@ -117,6 +121,7 @@ const (
 )
 
 // RedPacketClaim 红包领取记录表
+
 type RedPacketClaim struct {
 	ID          uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	RedPacketID uint64    `gorm:"uniqueIndex:idx_rp_user;not null" json:"red_packet_id"` // 联合唯一索引防重复领取
@@ -131,6 +136,7 @@ func (RedPacketClaim) TableName() string {
 }
 
 // Transfer 转账表
+
 type Transfer struct {
 	ID         uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	UUID       string     `gorm:"type:char(36);uniqueIndex;not null" json:"uuid"`
@@ -178,6 +184,7 @@ func (WithdrawMethod) TableName() string {
 }
 
 // WithdrawRequest 提现申请表
+
 type WithdrawRequest struct {
 	ID           uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID       uint64     `gorm:"index;not null" json:"user_id"`
@@ -219,6 +226,7 @@ const (
 )
 
 // RechargeMethod 充值方式配置表
+
 type RechargeMethod struct {
 	ID          uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        string         `gorm:"type:varchar(50);not null" json:"name"` // 支付宝、微信、银行卡、USDT

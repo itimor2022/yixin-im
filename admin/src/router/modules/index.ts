@@ -1,31 +1,23 @@
 import { AppRouteRecord } from '@/types/router'
 import { dashboardRoutes } from './dashboard'
 import {
-  userRoutes,
-  chatRoutes,
-  momentRoutes,
-  walletRoutes,
-  callRoutes,
-  reportRoutes,
-  discoverRoutes,
+  userPermissionRoutes,
+  messageCommunityRoutes,
+  contentRiskRoutes,
+  memberWalletRoutes,
+  operationRoutes,
   systemRoutes,
-  broadcastRoutes,
-  officialServiceRoutes
 } from './system'
 
 /**
- * 壹信后台管理路由
+ * 通用IM后台管理路由
  */
 export const routeModules: AppRouteRecord[] = [
   dashboardRoutes,
-  userRoutes,
-  broadcastRoutes,
-  officialServiceRoutes,
-  chatRoutes,
-  momentRoutes,
-  walletRoutes,
-  callRoutes,
-  reportRoutes,
-  discoverRoutes,
+  userPermissionRoutes,
+  messageCommunityRoutes,
+  contentRiskRoutes,
+  memberWalletRoutes,
+  operationRoutes,
   systemRoutes
 ]

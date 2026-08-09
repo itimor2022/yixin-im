@@ -118,6 +118,7 @@
   const { t } = useI18n()
 
   // 环境变量
+  // 锁屏密码和密钥都位于浏览器端，本功能只用于界面隐私保护，不替代服务端身份认证。
   const ENCRYPT_KEY = import.meta.env.VITE_LOCK_ENCRYPT_KEY
 
   // Store
@@ -162,6 +163,7 @@
 
   // 添加禁用控制台的函数
   const disableDevTools = () => {
+    // 全局拦截仅在锁屏状态生效，返回清理函数统一释放事件和轮询定时器。
     // 禁用右键菜单
     const handleContextMenu = (e: Event) => {
       if (isLock.value) {
@@ -323,6 +325,7 @@
 
   // 工具函数
   const verifyPassword = (inputPassword: string, storedPassword: string): boolean => {
+    // 解密失败统一视为密码不匹配，避免损坏的本地状态导致页面异常。
     try {
       const decryptedPassword = CryptoJS.AES.decrypt(storedPassword, ENCRYPT_KEY).toString(
         CryptoJS.enc.Utf8
@@ -440,6 +443,7 @@
   })
 
   onUnmounted(() => {
+    // 恢复页面滚动，并清理 document 监听和桌面端检测轮询。
     document.removeEventListener('keydown', handleKeydown)
     document.body.style.overflow = 'auto'
     // 清理禁用开发者工具的事件监听器

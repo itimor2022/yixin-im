@@ -40,6 +40,7 @@ export function useSettingsHandlers() {
   // 通用切换处理器
   const createToggleHandler = (storeMethod: () => void, callback?: () => void) => {
     return () => {
+      // store 是设置真值来源，DOM 回调只负责同步无法由模板表达的全局效果。
       storeMethod()
       callback?.()
     }
@@ -51,6 +52,7 @@ export function useSettingsHandlers() {
     callback?: (value: T) => void
   ) => {
     return (value: T) => {
+      // 忽略空值可避免清空选择时把无效状态写入持久化设置。
       if (value !== undefined && value !== null) {
         storeMethod(value)
         callback?.(value)
@@ -122,7 +124,7 @@ export function useSettingsHandlers() {
     setBoxMode: (type: 'border-mode' | 'shadow-mode') => {
       const { boxBorderMode } = storeToRefs(settingStore)
 
-      // 防止重复设置
+      // DOM 属性和 store 状态必须成对切换，已处于目标模式时直接返回。
       if (
         (type === 'shadow-mode' && boxBorderMode.value === false) ||
         (type === 'border-mode' && boxBorderMode.value === true)

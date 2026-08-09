@@ -1,0 +1,132 @@
+name: genericim
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: genericim-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: genericim_root
+      MYSQL_DATABASE: genericim
+      MYSQL_USER: genericim
+      MYSQL_PASSWORD: genericim
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=600
+    ports:
+      - "3306:3306"
+    volumes:
+      - genericim_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ugenericim -pgenericim --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    container_name: genericim-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: genericim
+      MONGO_INITDB_ROOT_PASSWORD: genericim
+      MONGO_INITDB_DATABASE: genericim_messages
+    ports:
+      - "27017:27017"
+    volumes:
+      - genericim_mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--username", "genericim", "--password", "genericim", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: genericim-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - genericim_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: deployments/Dockerfile
+    container_name: genericim-api
+    environment:
+      GENERIC_IM_CONFIG: /app/config.yaml
+      GENERIC_IM_SERVER_MODE: debug
+      GENERIC_IM_SERVER_BASE_URL: http://${HOST_LAN_IP:-10.0.2.2}:8080
+      GENERIC_IM_REGISTER_BASE_URL: http://${HOST_LAN_IP:-10.0.2.2}:8080
+      GENERIC_IM_STORAGE_LOCAL_BASE_URL: http://${HOST_LAN_IP:-10.0.2.2}:8080
+      GENERIC_IM_STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      GENERIC_IM_STORAGE_S3_REGION: ${STORAGE_S3_REGION:-}
+      GENERIC_IM_STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+      GENERIC_IM_STORAGE_S3_PUBLIC_BASE_URL: ${STORAGE_S3_PUBLIC_BASE_URL:-}
+      GENERIC_IM_STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT:-}
+      GENERIC_IM_STORAGE_S3_USE_PATH_STYLE: ${STORAGE_S3_USE_PATH_STYLE:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      GENERIC_IM_CLIENT_API_ENDPOINTS: http://${HOST_LAN_IP:-10.0.2.2}:8080
+      GENERIC_IM_CLIENT_WS_ENDPOINTS: ws://${HOST_LAN_IP:-10.0.2.2}:8080/api/v1/ws
+      GENERIC_IM_CLIENT_MEDIA_BASE_URLS: http://${HOST_LAN_IP:-10.0.2.2}:8080
+      GENERIC_IM_MYSQL_HOST: mysql
+      GENERIC_IM_MYSQL_PORT: "3306"
+      GENERIC_IM_MYSQL_USER: genericim
+      GENERIC_IM_MYSQL_PASSWORD: genericim
+      GENERIC_IM_MYSQL_DATABASE: genericim
+      GENERIC_IM_MONGODB_URI: mongodb://genericim:genericim@mongodb:27017/?authSource=admin
+      GENERIC_IM_MONGODB_DATABASE: genericim_messages
+      GENERIC_IM_REDIS_ADDR: redis:6379
+      GENERIC_IM_JWT_SECRET: genericim-local-development-secret-change-before-release
+      GENERIC_IM_SETTINGS_ENCRYPTION_KEY: genericim-local-settings-secret-change-before-release
+      GENERIC_IM_AGORA_ENABLED: "true"
+      GENERIC_IM_AGORA_APP_ID: "00000000000000000000000000000001"
+      GENERIC_IM_AGORA_APP_CERTIFICATE: "00000000000000000000000000000002"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/genericim/backend-config.yaml:/app/config.yaml:ro
+      - genericim_uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: .
+      dockerfile: docker/genericim/admin.Dockerfile
+    container_name: genericim-admin
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+
+volumes:
+  genericim_mysql_data:
+  genericim_mongodb_data:
+  genericim_redis_data:
+  genericim_uploads:

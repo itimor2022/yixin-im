@@ -1,20 +1,26 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-
-	"gaoranim/internal/models"
-
-	"gorm.io/gorm"
+	"genericim/internal/config"
+	"genericim/internal/models"
 )
 
-// ExternalCleanupService processes asynchronous deletion tasks for external media URLs.
+var errObjectStorageURLNotMatched = errors.New("object storage url not matched")
+
+// ExternalCleanupService
 type ExternalCleanupService struct {
 	db               *gorm.DB
 	client           *http.Client
@@ -70,7 +76,6 @@ func (s *ExternalCleanupService) loop() {
 			s.ticker.Stop()
 		}
 	}()
-
 	s.processBatch()
 	for {
 		select {
@@ -86,7 +91,7 @@ func (s *ExternalCleanupService) processBatch() {
 	now := time.Now()
 	var tasks []models.AccountDeletionExternalTask
 	if err := s.db.
-		Where("status IN ? AND (next_retry_at IS NULL OR next_retry_at <= ?)",
+		Where("status IN ? AND(next_retry_at IS NULL OR next_retry_at <= ?)",
 			[]string{models.AccountDeletionExternalTaskPending, models.AccountDeletionExternalTaskRetrying},
 			now,
 		).
@@ -98,8 +103,16 @@ func (s *ExternalCleanupService) processBatch() {
 	if len(tasks) == 0 {
 		return
 	}
-
+	storageCfg := s.currentStorageConfig()
 	for _, task := range tasks {
+
+		if err := s.tryDeleteObjectStorage(storageCfg, task.ResourceURL); err == nil {
+			s.markSuccess(task.ID)
+			continue
+		} else if !errors.Is(err, errObjectStorageURLNotMatched) {
+			s.markRetryOrFailed(task, err)
+			continue
+		}
 		if !s.enableHTTPDelete {
 			s.markManualRequired(task.ID, "http_delete_disabled")
 			continue
@@ -108,41 +121,31 @@ func (s *ExternalCleanupService) processBatch() {
 			s.markManualRequired(task.ID, "host_not_allowed")
 			continue
 		}
-
 		if err := s.tryDelete(task.ResourceURL); err == nil {
-			finishedAt := time.Now()
-			_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-				"status":      models.AccountDeletionExternalTaskSuccess,
-				"finished_at": finishedAt,
-				"last_error":  "",
-				"updated_at":  finishedAt,
-			}).Error
+			s.markSuccess(task.ID)
 			continue
 		} else {
-			retryCount := task.RetryCount + 1
-			lastError := trimAndClamp(err.Error(), 500)
-			if retryCount >= s.maxRetry {
-				finishedAt := time.Now()
-				_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-					"status":      models.AccountDeletionExternalTaskFailed,
-					"retry_count": retryCount,
-					"last_error":  lastError,
-					"finished_at": finishedAt,
-					"updated_at":  finishedAt,
-				}).Error
-				continue
-			}
-
-			nextRetryAt := time.Now().Add(retryBackoffDuration(retryCount))
-			_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-				"status":        models.AccountDeletionExternalTaskRetrying,
-				"retry_count":   retryCount,
-				"next_retry_at": nextRetryAt,
-				"last_error":    lastError,
-				"updated_at":    time.Now(),
-			}).Error
+			s.markRetryOrFailed(task, err)
 		}
 	}
+}
+
+func (s *ExternalCleanupService) currentStorageConfig() config.StorageConfig {
+	var yamlCfg config.StorageConfig
+	if config.GlobalConfig != nil {
+		yamlCfg = config.GlobalConfig.Storage
+	}
+	return LoadStorageForRuntime(s.db, yamlCfg)
+}
+
+func (s *ExternalCleanupService) tryDeleteObjectStorage(storageCfg config.StorageConfig, resourceURL string) error {
+	objectKey, ok := ObjectKeyFromPublicURL(storageCfg, resourceURL)
+	if !ok {
+		return errObjectStorageURLNotMatched
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return DeleteObject(ctx, storageCfg, objectKey)
 }
 
 func (s *ExternalCleanupService) tryDelete(resourceURL string) error {
@@ -161,7 +164,6 @@ func (s *ExternalCleanupService) tryDelete(resourceURL string) error {
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-
 	if (resp.StatusCode >= 200 && resp.StatusCode < 300) || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
 		return nil
 	}
@@ -227,6 +229,41 @@ func (s *ExternalCleanupService) isAllowedExternalURL(rawURL string) bool {
 	}
 	_, ok := s.allowedHosts[host]
 	return ok
+}
+
+func (s *ExternalCleanupService) markSuccess(taskID uint64) {
+	finishedAt := time.Now()
+	_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status":      models.AccountDeletionExternalTaskSuccess,
+		"finished_at": finishedAt,
+		"last_error":  "",
+		"updated_at":  finishedAt,
+	}).Error
+}
+
+func (s *ExternalCleanupService) markRetryOrFailed(task models.AccountDeletionExternalTask, err error) {
+
+	retryCount := task.RetryCount + 1
+	lastError := trimAndClamp(err.Error(), 500)
+	if retryCount >= s.maxRetry {
+		finishedAt := time.Now()
+		_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
+			"status":      models.AccountDeletionExternalTaskFailed,
+			"retry_count": retryCount,
+			"last_error":  lastError,
+			"finished_at": finishedAt,
+			"updated_at":  finishedAt,
+		}).Error
+		return
+	}
+	nextRetryAt := time.Now().Add(retryBackoffDuration(retryCount))
+	_ = s.db.Model(&models.AccountDeletionExternalTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
+		"status":        models.AccountDeletionExternalTaskRetrying,
+		"retry_count":   retryCount,
+		"next_retry_at": nextRetryAt,
+		"last_error":    lastError,
+		"updated_at":    time.Now(),
+	}).Error
 }
 
 func (s *ExternalCleanupService) markManualRequired(taskID uint64, reason string) {

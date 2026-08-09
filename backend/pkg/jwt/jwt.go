@@ -1,12 +1,14 @@
+// 文件用途：实现 backend 目录中的 jwt.go 模块。
+// 核心逻辑：围绕本文件的类型和函数完成输入处理、状态转换或辅助计算。
+
 package jwt
 
 import (
 	"errors"
-	"time"
-
-	"gaoranim/internal/config"
-
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"time"
+	"genericim/internal/config"
 )
 
 // Claims JWT声明（用户端）
@@ -32,7 +34,6 @@ func GenerateToken(userID, deviceID string, sessionVersion ...int64) (string, er
 	if len(sessionVersion) > 0 {
 		version = sessionVersion[0]
 	}
-
 	claims := &Claims{
 		UserID:         userID,
 		DeviceID:       deviceID,
@@ -40,10 +41,10 @@ func GenerateToken(userID, deviceID string, sessionVersion ...int64) (string, er
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.Expire)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "gaoranim",
+			Issuer:    "genericim",
+			ID:        uuid.NewString(),
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.Secret))
 }
@@ -59,10 +60,9 @@ func GenerateAdminToken(adminID uint64, username, role string) (string, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.Expire)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "gaoranim-admin",
+			Issuer:    "genericim-admin",
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.Secret))
 }
@@ -77,15 +77,12 @@ func ParseToken(tokenString string) (*Claims, error) {
 		}
 		return []byte(cfg.Secret), nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 		return claims, nil
 	}
-
 	return nil, errors.New("invalid token")
 }
 
@@ -130,13 +127,12 @@ func parseTokenForRefresh(tokenString string) (*Claims, error) {
 	if !ok || claims == nil {
 		return nil, errors.New("invalid token claims")
 	}
-	if claims.Issuer != "gaoranim" {
+	if claims.Issuer != "genericim" {
 		return nil, errors.New("invalid token issuer")
 	}
 	if claims.ExpiresAt == nil {
 		return nil, errors.New("invalid token exp")
 	}
-
 	now := time.Now()
 	exp := claims.ExpiresAt.Time
 	refreshWindow := cfg.RefreshExpire
@@ -147,7 +143,6 @@ func parseTokenForRefresh(tokenString string) (*Claims, error) {
 	if now.After(exp.Add(refreshWindow)) {
 		return nil, errors.New("token refresh window expired")
 	}
-
 	return claims, nil
 }
 
@@ -161,14 +156,11 @@ func ParseAdminToken(tokenString string) (*AdminClaims, error) {
 		}
 		return []byte(cfg.Secret), nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	if claims, ok := token.Claims.(*AdminClaims); ok && token.Valid {
 		return claims, nil
 	}
-
 	return nil, errors.New("invalid token")
 }

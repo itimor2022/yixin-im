@@ -92,7 +92,7 @@
   import { useI18n } from 'vue-i18n'
   import { HttpError } from '@/utils/http/error'
   import { fetchLogin, fetchGetUserInfo } from '@/api/auth'
-  import { getSystemSettings } from '@/api/admin'
+  import { getPublicAppSettings } from '@/api/admin'
   import { ElNotification, ElMessage, type FormInstance, type FormRules } from 'element-plus'
   import { useSettingStore } from '@/store/modules/setting'
 
@@ -133,9 +133,10 @@
 
   const loadSystemName = async () => {
     try {
-      const settings = await getSystemSettings()
+      const settings = await getPublicAppSettings()
       settingStore.setSystemName(settings.system_name || '')
     } catch {
+      settingStore.setSystemName('')
     }
   }
   const handleSubmit = async () => {
@@ -207,4 +208,3 @@
     height: 40px !important;
   }
 </style>
-

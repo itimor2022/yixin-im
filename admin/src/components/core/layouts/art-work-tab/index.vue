@@ -141,7 +141,8 @@
 
   // 计算属性
   const list = computed(() => store.opened)
-  const activeTab = computed(() => store.activeTabId)
+  // 当前标签由完整路由解析，tabId 而非 path 用于区分携带不同查询参数的页面。
+  const activeTab = computed(() => store.getCurrentTabByRoute(currentRoute.value)?.tabId || '')
   const activeTabIndex = computed(() =>
     list.value.findIndex((tab) => tab.tabId === activeTab.value)
   )
@@ -345,6 +346,7 @@
     }
 
     const setupEventListeners = () => {
+      // wheel 需要阻止默认滚动，因此显式使用非 passive 监听。
       if (tabsRef.value) {
         tabsRef.value.addEventListener('wheel', handleWheelScroll, { passive: false })
         tabsRef.value.addEventListener('touchstart', handleTouchStart, { passive: true })
@@ -354,6 +356,7 @@
     }
 
     const cleanupEventListeners = () => {
+      // 这些监听直接绑定到标签 DOM，组件卸载时必须使用相同处理器引用移除。
       if (tabsRef.value) {
         tabsRef.value.removeEventListener('wheel', handleWheelScroll)
         tabsRef.value.removeEventListener('touchstart', handleTouchStart)
@@ -379,6 +382,7 @@
     }
 
     const closeWorktab = (type: TabCloseType, tabId?: string) => {
+      // 未显式指定目标时，以当前路由对应标签为关闭基准。
       const activeTabInfo = store.getCurrentTabByRoute(currentRoute.value)
       const targetTabId = tabId || activeTabInfo?.tabId || activeTab.value
 

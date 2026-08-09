@@ -122,7 +122,7 @@
   }
 
   /** ArtTable 组件的 Props 接口 */
-  interface ArtTableProps extends TableProps<Record<string, any>> {
+  interface ArtTableProps extends Partial<TableProps<Record<string, any>>> {
     /** 加载状态 */
     loading?: boolean
     /** 列渲染配置 */
@@ -181,6 +181,7 @@
   // 合并分页配置
   const mergedPaginationOptions = computed(() => ({
     ...DEFAULT_PAGINATION_OPTIONS,
+    // 调用方配置覆盖默认值，但页码和总数仍由 pagination 属性统一控制。
     ...props.paginationOptions
   }))
 
@@ -265,6 +266,7 @@
 
   // 分页大小变化
   const handleSizeChange = (val: number) => {
+    // 表格只上报分页意图，不在内部修改业务分页状态或重新请求数据。
     emit('pagination:size-change', val)
   }
 
@@ -286,6 +288,7 @@
 
   // 全局序号
   const getGlobalIndex = (index: number) => {
+    // 序号以服务端分页口径计算，而不是每页都从 1 重新解释为全局序号。
     if (!props.pagination) return index + 1
     const { current, size } = props.pagination
     return (current - 1) * size + index + 1
@@ -298,6 +301,7 @@
 
   // 查找并绑定表格头部元素 - 使用 VueUse 优化
   const findTableHeader = () => {
+    // 表头由外层布局渲染，通过共享 DOM 标识接入高度测量，不属于当前组件子树。
     if (!props.showTableHeader) {
       tableHeaderRef.value = undefined
       return

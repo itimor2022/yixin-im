@@ -6,6 +6,20 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 import { clearServiceAdminToken, getServiceAdminToken, redirectToServiceAdminLogin } from '@/utils/auth'
 
+export class ServiceRequestError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ServiceRequestError'
+    this.status = status
+  }
+}
+
+export function isServiceRequestErrorStatus(error: unknown, status: number) {
+  return error instanceof ServiceRequestError && error.status === status
+}
+
 function buildUrl(url: string, query?: RequestOptions['query']) {
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
   const fullUrl = `${baseUrl}${url}`
@@ -27,7 +41,8 @@ function handleUnauthorized() {
 }
 
 function fallbackMessageByStatus(status: number) {
-  if (status === 401 || status === 403) return '登录状态已失效，请重新登录'
+  if (status === 401) return '登录状态已失效，请重新登录'
+  if (status === 403) return '无权限执行此操作'
   if (status >= 500) return '服务器繁忙，请稍后重试'
   if (status === 404) return '请求的资源不存在'
   return `请求失败（${status}）`
@@ -63,24 +78,25 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     ...rest
   })
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     handleUnauthorized()
   }
 
   if (!response.ok) {
-    throw new Error(await resolveErrorMessage(response))
+    throw new ServiceRequestError(await resolveErrorMessage(response), response.status)
   }
 
   const data = await response.json()
   if (data?.code && data.code !== 0) {
-    if (data.code === 401 || data.code === 403) {
+    const code = Number(data.code)
+    if (code === 401) {
       handleUnauthorized()
     }
     const message =
       typeof data.message === 'string' && data.message.trim()
         ? data.message.trim()
         : '请求失败'
-    throw new Error(message)
+    throw new ServiceRequestError(message, code || response.status)
   }
   return data.data ?? data
 }

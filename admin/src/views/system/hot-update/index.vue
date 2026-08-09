@@ -69,9 +69,7 @@
         </div>
         <div class="flex items-center gap-2">
           <ElButton :loading="loading" @click="loadList">刷新</ElButton>
-          <ElButton type="primary" :disabled="isDemoAdmin" @click="openCreate">
-            新建补丁
-          </ElButton>
+          <ElButton type="primary" :disabled="isDemoAdmin" @click="openCreate"> 新建补丁 </ElButton>
         </div>
       </div>
 
@@ -372,7 +370,7 @@
           <ElInput
             v-model="form.patch_hash"
             maxlength="128"
-            :placeholder="isSelfHostedMode ? 'SHA256 / SHA1 / MD5（可选）' : 'Shorebird 模式下一般留空'"
+            :placeholder="isSelfHostedMode ? 'SHA256（必填）' : 'Shorebird 模式下一般留空'"
           />
         </ElFormItem>
         <ElFormItem label="模式说明">
@@ -553,6 +551,8 @@
 
   const editing = computed(() => !!editingRow.value)
   const isSelfHostedMode = computed(() => form.delivery_mode === 'self_hosted')
+  const sha256HashPattern = /^(sha256:)?[a-f0-9]{64}$/i
+  const httpsURLPattern = /^https:\/\/[^@\s/]+\/\S+$/i
 
   function resetForm() {
     form.name = ''
@@ -780,6 +780,7 @@
   }
 
   function buildPayload(): HotUpdatePatchPayload {
+    // 自托管整包需要 URL/哈希；Shorebird 模式清空这两个字段，避免旧表单值误参与发布。
     return {
       name: form.name.trim(),
       description: form.description.trim(),
@@ -820,6 +821,17 @@
       ElMessage.warning('请输入补丁地址')
       return
     }
+    if (form.delivery_mode === 'self_hosted' && !isValidSelfHostedPatchUrl()) {
+      ElMessage.warning(
+        '自托管补丁地址必须使用 HTTPS，Android 为 .apk，iOS 为 .plist 或合法 itms-services'
+      )
+      return
+    }
+    if (form.delivery_mode === 'self_hosted' && !sha256HashPattern.test(form.patch_hash.trim())) {
+      // 哈希在客户端下载后用于完整性校验，支持纯 64 位十六进制或 sha256: 前缀格式。
+      ElMessage.warning('自托管整包必须填写 SHA256 补丁哈希')
+      return
+    }
     if (
       form.min_build_number > 0 &&
       form.max_build_number > 0 &&
@@ -851,6 +863,32 @@
     }
   }
 
+  function isValidSelfHostedPatchUrl() {
+    const value = form.patch_url.trim()
+    if (form.platform === 'android') {
+      return httpsURLPattern.test(value) && value.toLowerCase().split('?')[0].endsWith('.apk')
+    }
+    if (form.platform === 'ios') {
+      if (httpsURLPattern.test(value) && value.toLowerCase().split('?')[0].endsWith('.plist')) {
+        return true
+      }
+      if (!value.toLowerCase().startsWith('itms-services://')) {
+        return false
+      }
+      try {
+        const parsed = new URL(value)
+        if (parsed.searchParams.get('action') !== 'download-manifest') return false
+        const embedded = parsed.searchParams.get('url') || ''
+        return (
+          httpsURLPattern.test(embedded) && embedded.toLowerCase().split('?')[0].endsWith('.plist')
+        )
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+
   async function handleDelete(row: HotUpdatePatchItem) {
     try {
       await ElMessageBox.confirm(`确认删除补丁“${row.name}”吗？`, '删除确认', {
@@ -868,6 +906,7 @@
     action: 'publish' | 'pause' | 'rollback',
     row: HotUpdatePatchItem
   ) {
+    // 发布、暂停、回滚是服务端状态机动作，页面不预改状态，成功后重新加载权威列表。
     const textMap = {
       publish: '发布',
       pause: '暂停',

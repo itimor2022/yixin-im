@@ -33,8 +33,15 @@ export class RouteRegistry {
    */
   register(menuList: AppRouteRecord[]): void {
     if (this.registered) {
-      console.warn('[RouteRegistry] 路由已注册，跳过重复注册')
-      return
+      const missingRoutes = this.collectMissingRoutes(menuList)
+
+      if (missingRoutes.length === 0) {
+        console.warn('[RouteRegistry] 路由已注册，跳过重复注册')
+        return
+      }
+
+      console.warn(`[RouteRegistry] 动态路由缺失，重新注册: ${missingRoutes.join(', ')}`)
+      this.unregister()
     }
 
     // 验证路由配置
@@ -56,6 +63,62 @@ export class RouteRegistry {
 
     this.removeRouteFns = removeRouteFns
     this.registered = true
+
+    const missingRoutes = this.collectMissingRoutes(menuList)
+    if (missingRoutes.length > 0) {
+      console.warn(`[RouteRegistry] 以下动态路由未成功注册: ${missingRoutes.join(', ')}`)
+    }
+  }
+
+  private collectMissingRoutes(routes: AppRouteRecord[], missingRoutes: string[] = []): string[] {
+    routes.forEach((route) => {
+      if (this.shouldSkipRouteCheck(route)) {
+        return
+      }
+
+      if (!this.routeExists(route)) {
+        missingRoutes.push(String(route.name || route.path))
+      }
+
+      if (route.children?.length) {
+        this.collectMissingRoutes(route.children, missingRoutes)
+      }
+    })
+
+    return missingRoutes
+  }
+
+  private shouldSkipRouteCheck(route: AppRouteRecord): boolean {
+    if (route.meta?.link && !route.meta?.isIframe) {
+      return true
+    }
+
+    if (!route.path && !route.name) {
+      return true
+    }
+
+    return false
+  }
+
+  private routeExists(route: AppRouteRecord): boolean {
+    if (route.name && this.router.hasRoute(route.name)) {
+      return true
+    }
+
+    if (!route.path || this.isExternalPath(route.path)) {
+      return true
+    }
+
+    const path = route.path.startsWith('/') ? route.path : `/${route.path}`
+    const resolved = this.router.resolve(path)
+
+    return resolved.matched.some((record) => {
+      return record.name !== 'Exception404' && !record.path.includes(':pathMatch')
+    })
+  }
+
+  private isExternalPath(path: string): boolean {
+    return /^https?:\/\//i.test(path)
   }
 
   /**

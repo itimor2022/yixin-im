@@ -1,8 +1,11 @@
+// 文件用途：提供 IOSPage 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 IOSPage，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:universal_io/io.dart' show Platform;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// iOS 风格页面（支持左滑返回）
+// 关键声明：page transitions 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
+/// 自适应页面：iOS/macOS 保留系统返回手势，其余平台使用 Material 路由。
 class IOSPage<T> extends Page<T> {
   final Widget child;
   final bool maintainState;
@@ -20,7 +23,7 @@ class IOSPage<T> extends Page<T> {
 
   @override
   Route<T> createRoute(BuildContext context) {
-    // iOS 使用 CupertinoPageRoute 支持左滑返回
+    // maintainState=false 会在页面被覆盖后释放子树，适合可重新加载的重资源页面。
     if (Platform.isIOS || Platform.isMacOS) {
       return CupertinoPageRoute<T>(
         settings: this,
@@ -67,6 +70,7 @@ class IOSModalPage<T> extends Page<T> {
   }
 }
 
+// 流程逻辑：`fadeTransition` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
 /// 淡入淡出过渡
 Widget fadeTransition(
   BuildContext context,
@@ -87,6 +91,7 @@ Widget noTransition(
   Animation<double> secondaryAnimation,
   Widget child,
 ) {
+  // 只移除视觉动画，不改变路由焦点、返回栈和子组件语义。
   return child;
 }
 
@@ -175,6 +180,8 @@ Widget sharedAxisTransition(
   Animation<double> secondaryAnimation,
   Widget child,
 ) {
+  // animation 驱动新页面入场，secondaryAnimation 驱动当前页面在下一路由
+  // 覆盖时退出；两者不能互换，否则返回动画方向会错误。
   final curvedAnimation = CurvedAnimation(
     parent: animation,
     curve: Curves.easeOutCubic,

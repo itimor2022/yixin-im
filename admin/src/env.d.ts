@@ -6,8 +6,6 @@ declare module 'crypto-js'
 
 declare module 'vue-img-cutter'
 
-declare module 'file-saver'
-
 declare module 'qrcode.vue' {
   export type Level = 'L' | 'M' | 'Q' | 'H'
   export type RenderAs = 'canvas' | 'svg'

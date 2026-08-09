@@ -12,7 +12,7 @@
       <ElRow :gutter="gutter">
         <ElCol
           v-for="item in visibleFormItems"
-          :key="item.key"
+          :key="getItemKey(item)"
           :xs="getColSpan(item.span, 'xs')"
           :sm="getColSpan(item.span, 'sm')"
           :md="getColSpan(item.span, 'md')"
@@ -20,17 +20,17 @@
           :xl="getColSpan(item.span, 'xl')"
         >
           <ElFormItem
-            :prop="item.key"
+            :prop="getItemKey(item)"
             :label-width="item.label ? item.labelWidth || labelWidth : undefined"
           >
             <template #label v-if="item.label">
               <component v-if="typeof item.label !== 'string'" :is="item.label" />
               <span v-else>{{ item.label }}</span>
             </template>
-            <slot :name="item.key" :item="item" :modelValue="modelValue">
+            <slot :name="getItemKey(item)" :item="item" :modelValue="modelValue">
               <component
                 :is="getComponent(item)"
-                v-model="modelValue[item.key]"
+                v-model="modelValue[getItemKey(item)]"
                 v-bind="getProps(item)"
               >
                 <!-- 下拉选择 -->
@@ -158,7 +158,9 @@
   // 表单项配置
   export interface SearchFormItem {
     /** 表单项的唯一标识 */
-    key: string
+    key?: string
+    /** 兼容旧版字段名 */
+    field?: string
     /** 表单项的标签文本或自定义渲染函数 */
     label: string | (() => VNode) | Component
     /** 表单项标签的宽度，会覆盖 Form 的 labelWidth */
@@ -172,7 +174,7 @@
     /** 表单项占据的列宽，基于24格栅格系统 */
     span?: number
     /** 选项数据，用于 select、checkbox-group、radio-group 等 */
-    options?: Record<string, any>
+    options?: Record<string, any>[]
     /** 传递给表单项组件的属性 */
     props?: Record<string, any>
     /** 表单项的插槽配置 */
@@ -185,7 +187,9 @@
   // 表单配置
   interface SearchBarProps {
     /** 表单数据 */
-    items: SearchFormItem[]
+    items?: SearchFormItem[]
+    /** 兼容旧版字段名 */
+    fields?: SearchFormItem[]
     /** 每列的宽度（基于 24 格布局） */
     span?: number
     /** 表单控件间隙 */
@@ -227,11 +231,12 @@
 
   interface SearchBarEmits {
     reset: []
-    search: []
+    search: [params: Record<string, any>]
   }
 
   const emit = defineEmits<SearchBarEmits>()
 
+  // 查询字段由 v-model 受控；search 发出提交时的浅快照，避免后续输入改写事件参数。
   const modelValue = defineModel<Record<string, any>>({ default: {} })
 
   /**
@@ -239,7 +244,11 @@
    */
   const isExpanded = ref(props.defaultExpanded)
 
-  const rootProps = ['label', 'labelWidth', 'key', 'type', 'hidden', 'span', 'slots']
+  const formItems = computed(() => (props.items?.length ? props.items : props.fields || []))
+
+  const getItemKey = (item: SearchFormItem) => item.key || item.field || ''
+
+  const rootProps = ['label', 'labelWidth', 'key', 'field', 'type', 'hidden', 'span', 'slots']
 
   const getProps = (item: SearchFormItem) => {
     if (item.props) return item.props
@@ -283,9 +292,10 @@
    * 可见的表单项
    */
   const visibleFormItems = computed(() => {
-    const filteredItems = props.items.filter((item) => !item.hidden)
+    const filteredItems = formItems.value.filter((item) => !item.hidden)
     const shouldShowLess = !props.isExpand && !isExpanded.value
     if (shouldShowLess) {
+      // 折叠时预留一个栅格位置给操作按钮，避免搜索按钮被挤到下一行。
       const maxItemsPerRow = Math.floor(24 / props.span) - 1
       return filteredItems.slice(0, maxItemsPerRow)
     }
@@ -296,7 +306,7 @@
    * 是否应该显示展开/收起按钮
    */
   const shouldShowExpandToggle = computed(() => {
-    const filteredItems = props.items.filter((item) => !item.hidden)
+    const filteredItems = formItems.value.filter((item) => !item.hidden)
     return (
       !props.isExpand && props.showExpand && filteredItems.length > Math.floor(24 / props.span) - 1
     )
@@ -315,7 +325,7 @@
   const actionButtonsStyle = computed(() => ({
     'justify-content': isMobile.value
       ? 'flex-end'
-      : props.items.filter((item) => !item.hidden).length <= props.buttonLeftLimit
+      : formItems.value.filter((item) => !item.hidden).length <= props.buttonLeftLimit
         ? 'flex-start'
         : 'flex-end'
   }))
@@ -334,10 +344,10 @@
     // 重置表单字段（UI 层）
     formInstance.value?.resetFields()
 
-    // 清空所有表单项值（包含隐藏项）
+    // 隐藏项仍属于查询模型，重置时必须清空，避免不可见条件继续影响结果。
     Object.assign(
       modelValue.value,
-      Object.fromEntries(props.items.map(({ key }) => [key, undefined]))
+      Object.fromEntries(formItems.value.map((item) => [getItemKey(item), undefined]))
     )
 
     // 触发 reset 事件
@@ -348,7 +358,7 @@
    * 处理搜索事件
    */
   const handleSearch = () => {
-    emit('search')
+    emit('search', { ...modelValue.value })
   }
 
   defineExpose({

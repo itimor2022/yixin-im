@@ -1,10 +1,31 @@
+// 文件用途：实现 AgreementType 页面及其交互流程，属于用户认证。
+// 核心逻辑：维护 AgreementType 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/api/api_client.dart';
 
+String _agreementText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：agreement page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 协议类型
 enum AgreementType { userAgreement, privacyPolicy }
 
@@ -27,6 +48,7 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
   String _content = '';
   String? _error;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -44,9 +66,9 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
       final endpoint = widget.type == AgreementType.userAgreement
           ? '/app/user-agreement'
           : '/app/privacy-policy';
-      
+
       final response = await api.get(endpoint);
-      
+
       if (response.isSuccess && response.data != null) {
         setState(() {
           _title = response.data['title'] ?? '';
@@ -55,13 +77,23 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
         });
       } else {
         setState(() {
-          _error = response.message ?? '加载失败';
+          _error = localizeServerMessage(
+            response.message,
+            fallbackZhCN: '加载失败',
+            fallbackZhTW: '載入失敗',
+            fallbackEn: 'Load failed',
+          );
           _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _error = '网络错误，请稍后重试';
+        _error = _agreementText(
+          context,
+          zhCN: '网络错误，请稍后重试',
+          zhTW: '網路錯誤，請稍後重試',
+          en: 'Network error. Please try again later.',
+        );
         _isLoading = false;
       });
     }
@@ -70,11 +102,13 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor:
+          isDark ? AppColors.darkBackground : AppColors.lightBackground,
       appBar: AppBar(
-        backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+        backgroundColor:
+            isDark ? AppColors.darkBackground : AppColors.lightBackground,
         elevation: 0,
         leading: IconButton(
           icon: Icon(
@@ -84,7 +118,21 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          _title.isNotEmpty ? _title : (widget.type == AgreementType.userAgreement ? '用户协议' : '隐私政策'),
+          _title.isNotEmpty
+              ? _title
+              : (widget.type == AgreementType.userAgreement
+                  ? _agreementText(
+                      context,
+                      zhCN: '用户协议',
+                      zhTW: '使用者協議',
+                      en: 'User Agreement',
+                    )
+                  : _agreementText(
+                      context,
+                      zhCN: '隐私政策',
+                      zhTW: '隱私政策',
+                      en: 'Privacy Policy',
+                    )),
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
             fontSize: 17,
@@ -126,13 +174,20 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
             ElevatedButton(
               onPressed: _loadAgreement,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                backgroundColor: AppColors.primaryFor(context),
+                foregroundColor: AppColors.onPrimaryFor(context),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text('重试'),
+              child: Text(
+                _agreementText(
+                  context,
+                  zhCN: '重试',
+                  zhTW: '重試',
+                  en: 'Retry',
+                ),
+              ),
             ),
           ],
         ),
@@ -162,21 +217,21 @@ class _AgreementPageState extends ConsumerState<AgreementPage> {
         p: TextStyle(
           fontSize: 15,
           height: 1.6,
-          color: isDark ? Colors.white70 : Colors.black87,
+          color: AppColors.textSecondaryFor(context),
         ),
         listBullet: TextStyle(
           fontSize: 15,
-          color: isDark ? Colors.white70 : Colors.black87,
+          color: AppColors.textSecondaryFor(context),
         ),
         blockquote: TextStyle(
           fontSize: 15,
           fontStyle: FontStyle.italic,
-          color: isDark ? Colors.white54 : Colors.black54,
+          color: AppColors.textSecondaryFor(context),
         ),
         horizontalRuleDecoration: BoxDecoration(
           border: Border(
             top: BorderSide(
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.dividerFor(context),
             ),
           ),
         ),

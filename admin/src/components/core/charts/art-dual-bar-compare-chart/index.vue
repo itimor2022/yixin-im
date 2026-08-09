@@ -93,6 +93,7 @@
   } = useChartComponent({
     props,
     checkEmpty: () => {
+      // 两侧任一数据缺失或两侧全部为零时，无法形成有效对比。
       return (
         props.isEmpty ||
         !props.positiveData.length ||
@@ -108,7 +109,7 @@
       () => props.colors
     ],
     generateOptions: (): EChartsOption => {
-      // 处理负向数据，确保为负值
+      // 调用方传绝对值或负值均可，图表内部统一将左侧系列归一化为负数。
       const processedNegativeData = props.negativeData.map((val) => (val > 0 ? -val : val))
 
       // 优化的Grid配置
@@ -175,6 +176,7 @@
             borderRadius: props.negativeBorderRadius,
             labelPosition: 'bottom',
             colorIndex: 1,
+            // 坐标使用负值定位，但标签向用户展示可直接比较的绝对值。
             formatter: (params: unknown) =>
               String(Math.abs((params as Record<string, unknown>).value as number))
           }),

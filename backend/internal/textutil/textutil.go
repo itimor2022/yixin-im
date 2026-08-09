@@ -1,7 +1,10 @@
+// 文件用途：提供文本清洗、乱码识别和编码兼容工具。
+// 核心逻辑：统一处理输入文本的规范化和异常字符，保证持久化与响应一致。
+
 package textutil
 
-// TruncateRunes returns s limited to max runes. It avoids cutting UTF-8
-// sequences in the middle, which can corrupt Chinese text or emoji.
+// TruncateRunes
+
 func TruncateRunes(s string, max int) string {
 	if max <= 0 {
 		return ""
@@ -13,8 +16,8 @@ func TruncateRunes(s string, max int) string {
 	return string(runes[:max])
 }
 
-// TruncateRunesWithSuffix truncates s to max runes and appends suffix only
-// when truncation actually happened.
+// TruncateRunesWithSuffix
+
 func TruncateRunesWithSuffix(s string, max int, suffix string) string {
 	if max <= 0 {
 		return ""

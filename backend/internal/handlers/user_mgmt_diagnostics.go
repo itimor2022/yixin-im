@@ -1,14 +1,15 @@
+// 文件用途：实现后端 HTTP 接口的请求处理和统一响应。
+// 核心逻辑：绑定参数，校验身份与权限，调用业务服务并持久化关键状态。
+
 package handlers
 
 import (
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
 	"time"
-
-	"gaoranim/internal/models"
-	"gaoranim/pkg/response"
-
-	"github.com/gin-gonic/gin"
+	"genericim/internal/models"
+	"genericim/pkg/response"
 )
 
 func firstNonEmptyText(values ...string) string {
@@ -29,7 +30,6 @@ func (h *UserMgmtHandler) GetUserDiagnostics(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "用户不存在")
 		return
 	}
-
 	now := time.Now()
 	onlineThreshold := now.Add(-5 * time.Minute)
 	isOnline := h.hub != nil && h.hub.IsUserOnline(user.UUID)
@@ -53,7 +53,6 @@ func (h *UserMgmtHandler) GetUserDiagnostics(c *gin.Context) {
 			latestPushByDevice[item.DeviceID] = item
 		}
 	}
-
 	deviceList := make([]gin.H, 0, len(devices))
 	pushBoundCount := 0
 	activeDeviceCount := 0
@@ -148,13 +147,12 @@ func (h *UserMgmtHandler) GetUserDiagnostics(c *gin.Context) {
 			"last_msg_text":   uc.LastMsgText,
 			"last_msg_type":   uc.LastMsgType,
 			"last_msg_sender": uc.LastMsgSender,
-			"last_msg_time":   formatAdminTime(uc.LastMsgTime),
+			"last_msg_time":   formatAdminTimePtr(uc.LastMsgTime),
 			"unread_count":    uc.UnreadCount,
 			"is_muted":        uc.IsMuted,
 			"is_pinned":       uc.IsPinned,
 		})
 	}
-
 	checks := make([]gin.H, 0, 8)
 	addCheck := func(level, title, detail string) {
 		checks = append(checks, gin.H{"level": level, "title": title, "detail": detail})
@@ -193,7 +191,6 @@ func (h *UserMgmtHandler) GetUserDiagnostics(c *gin.Context) {
 	if len(sessions) == 0 {
 		addCheck("info", "没有有效登录会话记录", "如果用户称已登录，请检查 token 刷新或设备登录记录。")
 	}
-
 	response.Success(c, gin.H{
 		"user": gin.H{
 			"id":         user.ID,
@@ -254,7 +251,6 @@ func (h *UserMgmtHandler) SendTestPush(c *gin.Context) {
 		response.Error(c, http.StatusServiceUnavailable, "推送服务未初始化")
 		return
 	}
-
 	userID := c.Param("id")
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
@@ -273,15 +269,14 @@ func (h *UserMgmtHandler) SendTestPush(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "用户没有绑定推送 token")
 		return
 	}
-
 	now := time.Now()
 	err := h.push.PushToUser(
 		user.ID,
 		"推送诊断",
 		"这是一条后台测试推送，用于验证当前设备推送通道。",
 		map[string]interface{}{
-			"type":        "push_diagnostic",
-			"user_id":     user.UUID,
+			"type":         "push_diagnostic",
+			"user_id":      user.UUID,
 			"diagnosed_at": formatAdminTime(now),
 		},
 	)
@@ -289,7 +284,6 @@ func (h *UserMgmtHandler) SendTestPush(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	response.Success(c, gin.H{
 		"user_id":           user.ID,
 		"uuid":              user.UUID,

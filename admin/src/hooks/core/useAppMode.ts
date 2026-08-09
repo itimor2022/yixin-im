@@ -19,7 +19,7 @@ import { computed } from 'vue'
 
 export function useAppMode() {
   // 获取访问模式配置
-  const accessMode = import.meta.env.VITE_ACCESS_MODE
+  const accessMode = import.meta.env.VITE_ACCESS_MODE || 'frontend'
 
   /**
    * 是否为前端控制模式

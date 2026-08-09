@@ -6,7 +6,7 @@
         <p class="page-subtitle">当前版本展示独立后台下的个人邀请码管理界面。</p>
       </div>
       <div class="head-actions">
-        <ElButton type="success" @click="handleCopyCode">复制邀请码</ElButton>
+        <ElButton type="primary" @click="handleCopyCode">复制邀请码</ElButton>
         <ElButton plain @click="handleCopyLink">复制注册链接</ElButton>
       </div>
     </div>
@@ -70,6 +70,7 @@ const copyText = async (value: string, successText: string) => {
   if (!value || value === '-') return
 
   try {
+    // Clipboard API 需要安全上下文；失败时仅提示手动复制，不修改邀请码状态。
     await navigator.clipboard.writeText(value)
     ElMessage.success(successText)
   } catch {
@@ -88,6 +89,7 @@ const handleCopyLink = () => {
 
 onMounted(async () => {
   try {
+    // 注册链接由后端按当前客服身份和 server.base_url 生成，前端不自行拼接域名或邀请码。
     inviteCode.value = await fetchServiceAdminInviteCode()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '获取邀请码失败')
@@ -98,22 +100,22 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.page-wrap { padding: 28px; }
+.page-wrap { padding: 24px; }
 .head-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 24px; }
 .head-actions { display: flex; gap: 12px; }
-.invite-box { padding: 28px; border-radius: 20px; background: linear-gradient(135deg, rgba(34,197,94,.18), rgba(59,130,246,.12)); border: 1px solid rgba(74,222,128,.25); margin-bottom: 18px; }
+.invite-box { padding: 26px; border-radius: var(--kf-radius-md); background: #171717; border: 1px solid #171717; color: #fff; margin-bottom: 18px; }
 .invite-box-head { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
 .invite-code { font-size: 42px; font-weight: 800; letter-spacing: .08em; }
-.invite-meta { display: flex; gap: 20px; margin-top: 12px; color: var(--text-soft); flex-wrap: wrap; }
-.status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(2,6,23,.32); border: 1px solid rgba(74,222,128,.24); color: #d8ffe5; }
-.status-dot { width: 8px; height: 8px; border-radius: 999px; background: #4ade80; box-shadow: 0 0 10px rgba(74,222,128,.7); }
+.invite-meta { display: flex; gap: 20px; margin-top: 12px; color: rgb(255 255 255 / 58%); flex-wrap: wrap; }
+.status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgb(255 255 255 / 10%); border: 1px solid rgb(255 255 255 / 16%); color: #fff; }
+.status-dot { width: 8px; height: 8px; border-radius: 999px; background: #22c55e; }
 .link-panel { margin-bottom: 18px; }
 .link-label { margin-bottom: 10px; color: var(--text-soft); font-size: 13px; }
-.link-card { padding: 18px; border-radius: 16px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.link-card { padding: 18px; border-radius: var(--kf-radius-md); background: var(--kf-surface-soft); border: 1px solid var(--kf-border); }
 .link-main { font-size: 15px; line-height: 1.8; word-break: break-all; color: var(--text); }
 .link-tip { margin-top: 8px; color: var(--text-soft); font-size: 12px; }
 .data-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
-.data-card { display: grid; gap: 10px; padding: 18px; border-radius: 16px; background: rgba(15,23,42,.62); border: 1px solid var(--line); }
+.data-card { display: grid; gap: 10px; padding: 18px; border-radius: var(--kf-radius-md); background: var(--kf-surface); border: 1px solid var(--kf-border); }
 .data-card span { color: var(--text-soft); font-size: 13px; }
 .data-card strong { font-size: 26px; }
 @media (max-width: 720px) {

@@ -1,24 +1,33 @@
-# 壹信 IM 后端 - 宝塔部署指南
+<!-- 文件用途：baota\README.md 是一个部署、运维或资源说明文档。
+     核心逻辑：按文件中的顺序执行配置加载、数据库变更、构建部署或维护操作，并保持可重复执行。 -->
+
+# 通用 IM 后端 - 宝塔部署指南
 
 ## 文件说明
 
 ```
 baota/
 ├── server           # 主程序（Linux amd64, 15MB）
-├── config.yaml      # 配置文件（需修改）
+├── config.yaml      # 示例配置文件（生产请复制为私有配置或使用环境变量覆盖）
 ├── init.sql         # MySQL 数据库初始化脚本
 ├── start.sh         # 启动脚本
 ├── stop.sh          # 停止脚本
 ├── restart.sh       # 重启脚本
-├── gaoranim.service # systemd 服务文件
+├── generic-im.service # systemd 服务文件
 ├── uploads/         # 上传文件目录
 └── README.md        # 本文档
 ```
 
-## 默认管理员
+## 初始管理员
 
 - 用户名: `admin`
-- 密码: `123456`
+- 密码: `123456`（可通过 `GENERIC_IM_INITIAL_ADMIN_PASSWORD` 覆盖）
+
+## 演示管理员
+
+- 用户名: `demo`
+- 密码: `demo123`
+- 权限: 只能查看，不能新增、删除、修改；敏感密钥返回脱敏值
 
 **首次登录后请立即修改密码！**
 
@@ -28,13 +37,13 @@ baota/
 
 将整个 `baota` 目录上传到服务器，建议路径：
 ```
-/www/wwwroot/gaoranim/
+/www/wwwroot/genericim/
 ```
 
 ### 2. 设置权限
 
 ```bash
-cd /www/wwwroot/gaoranim
+cd /www/wwwroot/genericim
 chmod +x server start.sh stop.sh restart.sh
 chmod 755 uploads
 ```
@@ -42,7 +51,7 @@ chmod 755 uploads
 ### 3. 配置数据库
 
 #### MySQL
-1. 在宝塔面板创建 MySQL 数据库（如 `gaoranim`）
+1. 在宝塔面板创建 MySQL 数据库（如 `genericim`）
 2. 导入数据库结构：
    ```bash
    mysql -u 用户名 -p 数据库名 < init.sql
@@ -60,22 +69,22 @@ chmod 755 uploads
    ```
 
 #### MongoDB
-在宝塔安装 MongoDB，用面板创建数据库（如 `grimimim`）及对应用户。**宝塔把用户建在该库下，连接时必须加 `authSource=数据库名`，否则会认证失败。**
+在宝塔安装 MongoDB，用面板创建数据库（如 `genericim`）及对应用户。**宝塔把用户建在该库下，连接时必须加 `authSource=数据库名`，否则会认证失败。**
 
 修改 `config.yaml`：
 ```yaml
 mongodb:
   uri: mongodb://用户名:密码@localhost:27017/?authSource=数据库名
-  database: grimimim_messages
+  database: genericim_messages
 ```
-示例（库名 `grimimim`，用户 `grimimim`）：
+示例（库名 `genericim`，用户 `genericim`）：
 ```yaml
 mongodb:
-  uri: mongodb://grimimim:grimimim@localhost:27017/?authSource=grimimim
-  database: grimimim_messages
+  uri: mongodb://genericim:genericim@localhost:27017/?authSource=genericim
+  database: genericim_messages
 ```
 
-**消息库授权**：消息存在 `grimimim_messages`，须给用户授予该库权限，否则发消息会 500（`not authorized on grimimim_messages`）。宝塔开启安全认证时，须用 root 连接后执行。
+**消息库授权**：消息存在 `genericim_messages`，须给用户授予该库权限，否则发消息会 500（`not authorized on genericim_messages`）。宝塔开启安全认证时，须用 root 连接后执行。
 
 在服务器执行（把 `你的root密码` 换成宝塔 MongoDB 的 root 密码）：
 ```bash
@@ -83,12 +92,12 @@ mongosh -u root -p 你的root密码 --authenticationDatabase admin
 ```
 进入 mongosh 后：
 ```javascript
-use grimimim
-db.grantRolesToUser("grimimim", [{ role: "readWrite", db: "grimimim_messages" }])
+use genericim
+db.grantRolesToUser("genericim", [{ role: "readWrite", db: "genericim_messages" }])
 ```
 看到 `{ ok: 1 }` 即成功。然后 `exit` 退出。
 
-一行执行方式：`mongosh -u root -p 你的root密码 --authenticationDatabase admin --eval 'db.getSiblingDB("grimimim").grantRolesToUser("grimimim", [{ role: "readWrite", db: "grimimim_messages" }])'`
+一行执行方式：`mongosh -u root -p 你的root密码 --authenticationDatabase admin --eval 'db.getSiblingDB("genericim").grantRolesToUser("genericim", [{ role: "readWrite", db: "genericim_messages" }])'`
 
 #### Redis
 在宝塔安装 Redis，如有密码请修改配置：
@@ -98,17 +107,27 @@ redis:
   password: "你的密码"
 ```
 
-### 4. 修改 JWT 密钥
+### 4. 配置 JWT 密钥
 
-**重要**：必须修改 JWT 密钥！
+**重要**：生产环境必须配置独立 JWT 密钥，推荐使用环境变量，不要把真实密钥提交到仓库。
 ```yaml
 jwt:
   secret: 修改为一个长随机字符串
 ```
 
+或使用环境变量：
+```bash
+export GENERIC_IM_JWT_SECRET="$(openssl rand -hex 32)"
+```
+
 生成随机密钥：
 ```bash
 openssl rand -hex 32
+```
+
+如需使用私有配置文件启动：
+```bash
+export GENERIC_IM_CONFIG=/www/wwwroot/genericim/config.private.yaml
 ```
 
 ### 5. 配置服务器地址
@@ -131,25 +150,25 @@ server:
 #### 方式二：使用 systemd（推荐生产环境）
 ```bash
 # 复制服务文件
-cp gaoranim.service /etc/systemd/system/
+cp generic-im.service /etc/systemd/system/
 
-# 修改服务文件中的路径（如果不是 /www/wwwroot/gaoranim）
-vim /etc/systemd/system/gaoranim.service
+# 修改服务文件中的路径（如果不是 /www/wwwroot/genericim）
+vim /etc/systemd/system/generic-im.service
 
 # 重载配置
 systemctl daemon-reload
 
 # 启动服务
-systemctl start gaoranim
+systemctl start genericim
 
 # 开机自启
-systemctl enable gaoranim
+systemctl enable genericim
 
 # 查看状态
-systemctl status gaoranim
+systemctl status genericim
 
 # 查看日志
-journalctl -u gaoranim -f
+journalctl -u genericim -f
 ```
 
 ### 7. 配置反向代理（宝塔 Nginx）
@@ -186,10 +205,38 @@ location / {
 
 # 静态文件加速
 location /uploads/ {
-    alias /www/wwwroot/gaoranim/uploads/;
+    alias /www/wwwroot/genericim/uploads/;
     expires 30d;
 }
 ```
+
+如果后台管理端由 Nginx 直接托管静态文件，请确保 `index.html` 不缓存，避免浏览器拿旧
+`index.html` 去请求已被新版本删除的 `assets/index-*.js` / `assets/index-*.css`，导致后台白屏：
+
+```nginx
+root /www/wwwroot/genericim-admin;
+index index.html;
+
+location = /index.html {
+    add_header Cache-Control "no-cache, no-store, must-revalidate";
+    add_header Pragma "no-cache";
+    add_header Expires "0";
+    try_files /index.html =404;
+}
+
+location /assets/ {
+    expires 30d;
+    add_header Cache-Control "public, max-age=2592000, immutable";
+    try_files $uri =404;
+}
+
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+每次发布后台时，请上传同一次 `npm run build` 生成的完整 `admin/dist` 目录，不要只覆盖
+`index.html` 或只覆盖 `assets`。
 
 3. 如需上传大文件，在网站配置中添加：
 ```nginx
@@ -210,10 +257,10 @@ server:
 
 ```bash
 # 查看日志
-tail -f /www/wwwroot/gaoranim/server.log
+tail -f /www/wwwroot/genericim/server.log
 
 # 查看进程
-ps aux | grep gaoranim
+ps aux | grep genericim
 
 # 查看端口
 netstat -tlnp | grep 8080

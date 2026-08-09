@@ -44,57 +44,6 @@
         </template>
       </ElDescriptions>
 
-      <!-- 群组权限信息（仅群组/频道显示） -->
-      <div v-if="!isPrivateChat" class="mt-4">
-        <h4 class="text-base font-medium mb-2">群组设置</h4>
-        <ElDescriptions :column="3" border size="small">
-          <ElDescriptionsItem label="发送消息">
-            <ElTag :type="chat?.can_send_message !== false ? 'success' : 'danger'" size="small">
-              {{ chat?.can_send_message !== false ? '允许' : '禁止' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="发送媒体">
-            <ElTag :type="chat?.can_send_media !== false ? 'success' : 'danger'" size="small">
-              {{ chat?.can_send_media !== false ? '允许' : '禁止' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="发送链接">
-            <ElTag :type="chat?.can_send_links !== false ? 'success' : 'danger'" size="small">
-              {{ chat?.can_send_links !== false ? '允许' : '禁止' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="添加成员">
-            <ElTag :type="chat?.can_add_members ? 'success' : 'info'" size="small">
-              {{ chat?.can_add_members ? '允许' : '仅管理员' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="置顶消息">
-            <ElTag :type="chat?.can_pin_messages ? 'success' : 'info'" size="small">
-              {{ chat?.can_pin_messages ? '允许' : '仅管理员' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="成员保护">
-            <ElTag :type="chat?.member_protection ? 'warning' : 'info'" size="small">
-              {{ chat?.member_protection ? '已开启' : '未开启' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="加入审核">
-            <ElTag :type="chat?.join_approval ? 'warning' : 'info'" size="small">
-              {{ chat?.join_approval ? '需审核' : '直接加入' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="在线人数">
-            <span class="text-green-500 font-medium">{{ chat?.online_count || 0 }} 人</span>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem v-if="chat?.join_approval" label="待审核申请">
-            <ElTag v-if="chat?.pending_request_count && chat.pending_request_count > 0" type="danger" size="small">
-              {{ chat.pending_request_count }} 条待处理
-            </ElTag>
-            <span v-else class="text-g-400">暂无</span>
-          </ElDescriptionsItem>
-        </ElDescriptions>
-      </div>
-
       <!-- 群主信息（仅群组/频道显示） -->
       <div v-if="owner && !isPrivateChat" class="mt-4">
         <h4 class="text-base font-medium mb-2">{{ chat?.type === 3 ? '频道主' : '群主' }}信息</h4>

@@ -1,3 +1,5 @@
+// 文件用途：实现 OfficialAnnouncementPage 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 OfficialAnnouncementPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -6,11 +8,30 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/services/media_cache_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../providers/message_provider.dart';
 
+String _channelText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：channel page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 官方公告页面 - 系统级只读消息
 /// 强制出现在所有用户的聊天列表中，无法删除
 class OfficialAnnouncementPage extends ConsumerStatefulWidget {
@@ -26,13 +47,16 @@ class OfficialAnnouncementPage extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<OfficialAnnouncementPage> createState() => _OfficialAnnouncementPageState();
+  ConsumerState<OfficialAnnouncementPage> createState() =>
+      _OfficialAnnouncementPageState();
 }
 
-class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementPage> {
+class _OfficialAnnouncementPageState
+    extends ConsumerState<OfficialAnnouncementPage> {
   final ScrollController _scrollController = ScrollController();
   bool _showScrollToTop = false;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -85,7 +109,8 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
     final messages = ref.watch(messageListProvider(widget.channelId));
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA),
+      backgroundColor:
+          isDark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA),
       body: Stack(
         children: [
           CustomScrollView(
@@ -93,10 +118,10 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
             slivers: [
               // 简洁顶部栏
               _buildAppBar(isDark),
-              
+
               // 官方公告头部
               SliverToBoxAdapter(child: _buildHeader(isDark)),
-              
+
               // 公告列表
               messages.isEmpty
                   ? SliverFillRemaining(child: _buildEmptyState(isDark))
@@ -107,23 +132,29 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
                           (context, index) {
                             final reversedIndex = messages.length - 1 - index;
                             final message = messages[reversedIndex];
-                            final previousMessage = reversedIndex > 0 
-                                ? messages[reversedIndex - 1] 
+                            final previousMessage = reversedIndex > 0
+                                ? messages[reversedIndex - 1]
                                 : null;
-                            
+
                             final showDateDivider = previousMessage == null ||
-                                !_isSameDay(message.createdAt, previousMessage.createdAt);
+                                !_isSameDay(message.createdAt,
+                                    previousMessage.createdAt);
 
                             return Column(
                               children: [
-                                if (showDateDivider) _buildDateDivider(message.createdAt, isDark),
+                                if (showDateDivider)
+                                  _buildDateDivider(message.createdAt, isDark),
                                 _AnnouncementCard(
                                   message: message,
                                   isDark: isDark,
-                                  onLongPress: () => _showMessageOptions(message),
-                                ).animate()
-                                  .fadeIn(duration: 300.ms, delay: (index * 30).ms)
-                                  .slideY(begin: 0.05, end: 0),
+                                  onLongPress: () =>
+                                      _showMessageOptions(message),
+                                )
+                                    .animate()
+                                    .fadeIn(
+                                        duration: 300.ms,
+                                        delay: (index * 30).ms)
+                                    .slideY(begin: 0.05, end: 0),
                               ],
                             );
                           },
@@ -133,7 +164,7 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
                     ),
             ],
           ),
-          
+
           // 回到顶部按钮
           if (_showScrollToTop)
             Positioned(
@@ -155,9 +186,9 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
       surfaceTintColor: Colors.transparent,
       leading: IconButton(
         icon: Icon(
-          Icons.arrow_back_ios_new_rounded, 
+          Icons.arrow_back_ios_new_rounded,
           size: 20,
-          color: isDark ? Colors.white : Colors.black87,
+          color: AppColors.textPrimaryFor(context),
         ),
         onPressed: () => context.pop(),
       ),
@@ -170,7 +201,7 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppColors.textPrimaryFor(context),
             ),
           ),
           const SizedBox(width: 4),
@@ -178,15 +209,20 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.15),
+              color: AppColors.primaryWithOpacity(context, 0.15),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              '官方',
+              _channelText(
+                context,
+                zhCN: '官方',
+                zhTW: '官方',
+                en: 'Official',
+              ),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
               ),
             ),
           ),
@@ -196,7 +232,7 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
         IconButton(
           icon: Icon(
             Icons.info_outline_rounded,
-            color: isDark ? Colors.white70 : Colors.black54,
+            color: AppColors.textSecondaryFor(context),
           ),
           onPressed: () => _showAbout(context, isDark),
         ),
@@ -218,14 +254,14 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.primary,
-                  AppColors.primary.withOpacity(0.7),
+                  AppColors.primaryFor(context),
+                  AppColors.primaryWithOpacity(context, 0.7),
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.3),
+                  color: AppColors.primaryWithOpacity(context, 0.3),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -238,39 +274,46 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // 标题
           Text(
             widget.channelName,
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppColors.textPrimaryFor(context),
             ),
           ),
           const SizedBox(height: 8),
-          
+
           // 描述
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              '重要通知、版本更新、活动公告都会在这里发布，请注意查看',
+              _channelText(
+                context,
+                zhCN: '重要通知、版本更新、活动公告都会在这里发布，请注意查看',
+                zhTW: '重要通知、版本更新、活動公告都會在這裡發布，請注意查看',
+                en: 'Important notices, version updates, and event announcements will be posted here.',
+              ),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 height: 1.5,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: AppColors.textSecondaryFor(context),
               ),
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 提示标签
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.04),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -279,14 +322,19 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
                 Icon(
                   Icons.lock_outline_rounded,
                   size: 14,
-                  color: isDark ? Colors.white38 : Colors.black38,
+                  color: AppColors.textTertiaryFor(context),
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '系统消息 · 仅官方可发布',
+                  _channelText(
+                    context,
+                    zhCN: '系统消息 · 仅官方可发布',
+                    zhTW: '系統消息 · 僅官方可發布',
+                    en: 'System messages · Only official posts can be published',
+                  ),
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white38 : Colors.black38,
+                    color: AppColors.textTertiaryFor(context),
                   ),
                 ),
               ],
@@ -305,14 +353,19 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
           Icon(
             Icons.inbox_outlined,
             size: 56,
-            color: isDark ? Colors.white24 : Colors.black12,
+            color: AppColors.textTertiaryFor(context),
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无公告',
+            _channelText(
+              context,
+              zhCN: '暂无公告',
+              zhTW: '暫無公告',
+              en: 'No announcements yet',
+            ),
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white38 : Colors.black38,
+              color: AppColors.textTertiaryFor(context),
             ),
           ),
         ],
@@ -325,36 +378,53 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Row(
         children: [
-          Expanded(child: Divider(color: isDark ? Colors.white10 : Colors.black12)),
+          Expanded(child: Divider(color: AppColors.dividerFor(context))),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              _formatDateDivider(date),
+              _formatDateDivider(context, date),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
           ),
-          Expanded(child: Divider(color: isDark ? Colors.white10 : Colors.black12)),
+          Expanded(child: Divider(color: AppColors.dividerFor(context))),
         ],
       ),
     );
   }
 
-  bool _isSameDay(DateTime a, DateTime b) => 
+  bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  String _formatDateDivider(DateTime date) {
+  String _formatDateDivider(BuildContext context, DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
     final messageDate = DateTime(date.year, date.month, date.day);
-    
-    if (messageDate == today) return '今天';
-    if (messageDate == yesterday) return '昨天';
-    if (date.year == now.year) return '${date.month}月${date.day}日';
+
+    if (_isSameDay(messageDate, today)) {
+      return _channelText(
+        context,
+        zhCN: '今天',
+        zhTW: '今天',
+        en: 'Today',
+      );
+    }
+    if (_isSameDay(messageDate, yesterday)) {
+      return _channelText(
+        context,
+        zhCN: '昨天',
+        zhTW: '昨天',
+        en: 'Yesterday',
+      );
+    }
+    if (date.year == now.year) return '${date.month}/${date.day}';
+    if (AppLocalizations.of(context).language == AppLanguage.en) {
+      return DateFormat('yyyy/MM/dd').format(date);
+    }
     return '${date.year}年${date.month}月${date.day}日';
   }
 
@@ -374,63 +444,88 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 40, height: 4,
+                  width: 40,
+                  height: 4,
                   margin: const EdgeInsets.only(bottom: 24),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white24 : Colors.black12,
+                    color: AppColors.dividerFor(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                
+
                 // Logo
                 Container(
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.7)],
+                      colors: [
+                        AppColors.primaryFor(context),
+                        AppColors.primaryWithOpacity(context, 0.7)
+                      ],
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Icon(Icons.campaign_rounded, size: 32, color: Colors.white),
+                  child: const Icon(Icons.campaign_rounded,
+                      size: 32, color: Colors.white),
                 ),
                 const SizedBox(height: 16),
-                
+
                 Text(
-                  '关于官方公告',
+                  _channelText(
+                    context,
+                    zhCN: '关于官方公告',
+                    zhTW: '關於官方公告',
+                    en: 'About Official Announcements',
+                  ),
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 Text(
-                  '官方公告是系统级消息通道，用于发布重要通知、版本更新、活动信息等。\n\n此消息会自动出现在所有用户的聊天列表中，无法删除或退出。',
+                  _channelText(
+                    context,
+                    zhCN:
+                        '官方公告是系统级消息通道，用于发布重要通知、版本更新、活动信息等。\n\n此消息会自动出现在所有用户的聊天列表中，无法删除或退出。',
+                    zhTW:
+                        '官方公告是系統級消息通道，用於發布重要通知、版本更新、活動資訊等。\n\n此消息會自動出現在所有使用者的聊天列表中，無法刪除或退出。',
+                    en: 'Official announcements are system-level messages used for important notices, version updates, and event information.\n\nThese messages automatically appear in every user chat list and cannot be deleted or left.',
+                  ),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.6,
-                    color: isDark ? Colors.white60 : Colors.black54,
+                    color: AppColors.textSecondaryFor(context),
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 SizedBox(
                   width: double.infinity,
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      backgroundColor: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: isDark
+                          ? Colors.white.withOpacity(0.08)
+                          : Colors.black.withOpacity(0.04),
                     ),
                     child: Text(
-                      '我知道了',
+                      _channelText(
+                        context,
+                        zhCN: '我知道了',
+                        zhTW: '我知道了',
+                        en: 'OK',
+                      ),
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                   ),
@@ -446,7 +541,7 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
   void _showMessageOptions(MessageItem message) {
     HapticFeedback.mediumImpact();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -461,31 +556,58 @@ class _OfficialAnnouncementPageState extends ConsumerState<OfficialAnnouncementP
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 8),
               ListTile(
-                leading: Icon(Icons.copy_rounded, color: isDark ? Colors.white70 : Colors.black54),
-                title: Text('复制', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                leading: Icon(Icons.copy_rounded,
+                    color: AppColors.textSecondaryFor(context)),
+                title: Text(
+                  _channelText(
+                    context,
+                    zhCN: '复制',
+                    zhTW: '複製',
+                    en: 'Copy',
+                  ),
+                  style: TextStyle(color: AppColors.textPrimaryFor(context)),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   Clipboard.setData(ClipboardData(text: message.content));
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('已复制'),
+                      content: Text(
+                        _channelText(
+                          context,
+                          zhCN: '已复制',
+                          zhTW: '已複製',
+                          en: 'Copied',
+                        ),
+                      ),
                       behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                   );
                 },
               ),
               ListTile(
-                leading: Icon(Icons.forward_rounded, color: isDark ? Colors.white70 : Colors.black54),
-                title: Text('转发', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                leading: Icon(Icons.forward_rounded,
+                    color: AppColors.textSecondaryFor(context)),
+                title: Text(
+                  _channelText(
+                    context,
+                    zhCN: '转发',
+                    zhTW: '轉發',
+                    en: 'Forward',
+                  ),
+                  style: TextStyle(color: AppColors.textPrimaryFor(context)),
+                ),
                 onTap: () => Navigator.pop(context),
               ),
               const SizedBox(height: 8),
@@ -535,70 +657,93 @@ class _AnnouncementCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     height: 1.6,
-                    color: isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1F2328),
+                    color: isDark
+                        ? const Color(0xFFE6EDF3)
+                        : const Color(0xFF1F2328),
                   ),
                 ),
               ),
-            
+
             // 图片
-            if (message.type == MessageItemType.image && message.mediaUrl != null)
+            if (message.type == MessageItemType.image &&
+                message.mediaUrl != null)
               ClipRRect(
-                borderRadius: message.content.isEmpty 
+                borderRadius: message.content.isEmpty
                     ? const BorderRadius.vertical(top: Radius.circular(13))
                     : BorderRadius.zero,
                 child: CachedNetworkImage(
-                  imageUrl: message.mediaUrl!,
+                  imageUrl: ChatMediaCacheManager.normalizeUrl(
+                    message.mediaUrl,
+                  ),
                   fit: BoxFit.cover,
                   width: double.infinity,
                   memCacheWidth: 800,
                   maxWidthDiskCache: 800,
                   placeholder: (context, url) => Container(
                     height: 160,
-                    color: isDark ? const Color(0xFF30363D) : const Color(0xFFF6F8FA),
-                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    color: isDark
+                        ? const Color(0xFF30363D)
+                        : const Color(0xFFF6F8FA),
+                    child: const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2)),
                   ),
                   errorWidget: (context, url, error) => Container(
                     height: 160,
-                    color: isDark ? const Color(0xFF30363D) : const Color(0xFFF6F8FA),
-                    child: const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+                    color: isDark
+                        ? const Color(0xFF30363D)
+                        : const Color(0xFFF6F8FA),
+                    child: const Center(
+                        child: Icon(Icons.broken_image, color: Colors.grey)),
                   ),
                 ),
               ),
-            
+
             // 底部
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withOpacity(0.02) : Colors.black.withOpacity(0.02),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(13)),
+                color: isDark
+                    ? Colors.white.withOpacity(0.02)
+                    : Colors.black.withOpacity(0.02),
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(13)),
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.access_time_rounded,
                     size: 13,
-                    color: isDark ? const Color(0xFF7D8590) : const Color(0xFF656D76),
+                    color: isDark
+                        ? const Color(0xFF7D8590)
+                        : const Color(0xFF656D76),
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    _formatTime(message.createdAt),
+                    _formatTime(context, message.createdAt),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? const Color(0xFF7D8590) : const Color(0xFF656D76),
+                      color: isDark
+                          ? const Color(0xFF7D8590)
+                          : const Color(0xFF656D76),
                     ),
                   ),
                   const Spacer(),
                   Icon(
                     Icons.visibility_outlined,
                     size: 13,
-                    color: isDark ? const Color(0xFF7D8590) : const Color(0xFF656D76),
+                    color: isDark
+                        ? const Color(0xFF7D8590)
+                        : const Color(0xFF656D76),
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    _formatViews((message.id.hashCode.abs() % 8000) + 2000),
+                    _formatViews(
+                        context, (message.id.hashCode.abs() % 8000) + 2000),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? const Color(0xFF7D8590) : const Color(0xFF656D76),
+                      color: isDark
+                          ? const Color(0xFF7D8590)
+                          : const Color(0xFF656D76),
                     ),
                   ),
                 ],
@@ -610,19 +755,52 @@ class _AnnouncementCard extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime time) {
+  String _formatTime(BuildContext context, DateTime time) {
     final now = DateTime.now();
     final diff = now.difference(time);
-    
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
+
+    if (diff.inMinutes < 1) {
+      return _channelText(
+        context,
+        zhCN: '刚刚',
+        zhTW: '剛剛',
+        en: 'Just now',
+      );
+    }
+    if (diff.inMinutes < 60) {
+      return _channelText(
+        context,
+        zhCN: '${diff.inMinutes}分钟前',
+        zhTW: '${diff.inMinutes}分鐘前',
+        en: '${diff.inMinutes}m ago',
+      );
+    }
+    if (diff.inHours < 24) {
+      return _channelText(
+        context,
+        zhCN: '${diff.inHours}小时前',
+        zhTW: '${diff.inHours}小時前',
+        en: '${diff.inHours}h ago',
+      );
+    }
+    if (diff.inDays < 7) {
+      return _channelText(
+        context,
+        zhCN: '${diff.inDays}天前',
+        zhTW: '${diff.inDays}天前',
+        en: '${diff.inDays}d ago',
+      );
+    }
     return DateFormat('MM/dd HH:mm').format(time);
   }
 
-  String _formatViews(int views) {
-    if (views >= 10000) return '${(views / 10000).toStringAsFixed(1)}万';
+  String _formatViews(BuildContext context, int views) {
+    final isEnglish = AppLocalizations.of(context).language == AppLanguage.en;
+    if (views >= 10000) {
+      return isEnglish
+          ? '${(views / 1000).toStringAsFixed(1)}k'
+          : '${(views / 10000).toStringAsFixed(1)}万';
+    }
     if (views >= 1000) return '${(views / 1000).toStringAsFixed(1)}k';
     return views.toString();
   }
@@ -639,7 +817,8 @@ class _ScrollToTopButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 44, height: 44,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF21262D) : Colors.white,
           shape: BoxShape.circle,

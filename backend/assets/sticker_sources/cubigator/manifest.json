@@ -1,0 +1,184 @@
+[
+  {
+    "name": "cubigator_01",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_01.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_01.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_01.json",
+    "source": "/uploads/stickers/cubigator/cubigator_01.tgs"
+  },
+  {
+    "name": "cubigator_02",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_02.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_02.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_02.json",
+    "source": "/uploads/stickers/cubigator/cubigator_02.tgs"
+  },
+  {
+    "name": "cubigator_03",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_03.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_03.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_03.json",
+    "source": "/uploads/stickers/cubigator/cubigator_03.tgs"
+  },
+  {
+    "name": "cubigator_04",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_04.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_04.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_04.json",
+    "source": "/uploads/stickers/cubigator/cubigator_04.tgs"
+  },
+  {
+    "name": "cubigator_05",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_05.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_05.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_05.json",
+    "source": "/uploads/stickers/cubigator/cubigator_05.tgs"
+  },
+  {
+    "name": "cubigator_06",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_06.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_06.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_06.json",
+    "source": "/uploads/stickers/cubigator/cubigator_06.tgs"
+  },
+  {
+    "name": "cubigator_07",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_07.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_07.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_07.json",
+    "source": "/uploads/stickers/cubigator/cubigator_07.tgs"
+  },
+  {
+    "name": "cubigator_08",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_08.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_08.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_08.json",
+    "source": "/uploads/stickers/cubigator/cubigator_08.tgs"
+  },
+  {
+    "name": "cubigator_09",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_09.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_09.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_09.json",
+    "source": "/uploads/stickers/cubigator/cubigator_09.tgs"
+  },
+  {
+    "name": "cubigator_10",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_10.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_10.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_10.json",
+    "source": "/uploads/stickers/cubigator/cubigator_10.tgs"
+  },
+  {
+    "name": "cubigator_11",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_11.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_11.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_11.json",
+    "source": "/uploads/stickers/cubigator/cubigator_11.tgs"
+  },
+  {
+    "name": "cubigator_12",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_12.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_12.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_12.json",
+    "source": "/uploads/stickers/cubigator/cubigator_12.tgs"
+  },
+  {
+    "name": "cubigator_13",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_13.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_13.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_13.json",
+    "source": "/uploads/stickers/cubigator/cubigator_13.tgs"
+  },
+  {
+    "name": "cubigator_14",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_14.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_14.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_14.json",
+    "source": "/uploads/stickers/cubigator/cubigator_14.tgs"
+  },
+  {
+    "name": "cubigator_15",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_15.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_15.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_15.json",
+    "source": "/uploads/stickers/cubigator/cubigator_15.tgs"
+  },
+  {
+    "name": "cubigator_16",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_16.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_16.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_16.json",
+    "source": "/uploads/stickers/cubigator/cubigator_16.tgs"
+  },
+  {
+    "name": "cubigator_17",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_17.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_17.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_17.json",
+    "source": "/uploads/stickers/cubigator/cubigator_17.tgs"
+  },
+  {
+    "name": "cubigator_18",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_18.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_18.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_18.json",
+    "source": "/uploads/stickers/cubigator/cubigator_18.tgs"
+  },
+  {
+    "name": "cubigator_19",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_19.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_19.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_19.json",
+    "source": "/uploads/stickers/cubigator/cubigator_19.tgs"
+  },
+  {
+    "name": "cubigator_20",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_20.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_20.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_20.json",
+    "source": "/uploads/stickers/cubigator/cubigator_20.tgs"
+  },
+  {
+    "name": "cubigator_21",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_21.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_21.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_21.json",
+    "source": "/uploads/stickers/cubigator/cubigator_21.tgs"
+  },
+  {
+    "name": "cubigator_22",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_22.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_22.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_22.json",
+    "source": "/uploads/stickers/cubigator/cubigator_22.tgs"
+  },
+  {
+    "name": "cubigator_23",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_23.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_23.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_23.json",
+    "source": "/uploads/stickers/cubigator/cubigator_23.tgs"
+  },
+  {
+    "name": "cubigator_24",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_24.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_24.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_24.json",
+    "source": "/uploads/stickers/cubigator/cubigator_24.tgs"
+  },
+  {
+    "name": "cubigator_25",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_25.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_25.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_25.json",
+    "source": "/uploads/stickers/cubigator/cubigator_25.tgs"
+  },
+  {
+    "name": "cubigator_26",
+    "path": "backend/assets/sticker_sources/cubigator/cubigator_26.json",
+    "tgs_path": "backend/assets/sticker_sources/cubigator/cubigator_26.tgs",
+    "upload_path": "backend/uploads/stickers/cubigator/cubigator_26.json",
+    "source": "/uploads/stickers/cubigator/cubigator_26.tgs"
+  }
+]

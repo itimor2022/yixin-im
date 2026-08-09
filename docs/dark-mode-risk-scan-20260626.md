@@ -1,0 +1,1467 @@
+# 深色模式硬编码风险扫描 2026-06-26
+
+## 规则
+
+- 必须复核：`AppColors.primary`、`AppColors.lightText*`、弱灰 `Colors.white38/54/24`、旧深色块 `0xFF17212B/232E3C/2C2C2E/161B22`、深色 UI 中的 `Colors.black*`。
+- 可保留但需人工确认：图片/视频遮罩、全屏相机/视频/通话黑底、Snackbar/错误红底白字、二维码白底、红包/转账品牌气泡。
+
+## 必须复核命中 995
+
+- `lib/shared/widgets\animated_emoji_text.dart:195:          cursorColor: widget.style?.color ?? Colors.black,`
+- `lib/shared/widgets\avatar_crop_page.dart:135:        foregroundColor: Colors.white,`
+- `lib/shared/widgets\avatar_crop_page.dart:146:            style: const TextStyle(color: Colors.white, fontSize: 16),`
+- `lib/shared/widgets\avatar_crop_page.dart:159:              color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),`
+- `lib/shared/widgets\avatar_crop_page.dart:170:                        strokeWidth: 2, color: Colors.white),`
+- `lib/shared/widgets\avatar_crop_page.dart:197:              baseColor: Colors.black,`
+- `lib/shared/widgets\avatar_crop_page.dart:204:                child: CircularProgressIndicator(color: Colors.white),`
+- `lib/shared/widgets\avatar_widget.dart:241:            color: Colors.white,`
+- `lib/features\call\widgets\call_overlay.dart:111:            color: const Color(0xFF1C1C1E),`
+- `lib/features\call\widgets\call_overlay.dart:144:                            color: Colors.white,`
+- `lib/features\call\widgets\call_overlay.dart:184:                    color: Colors.white24,`
+- `lib/features\call\widgets\call_overlay.dart:192:                    color: callState.isMuted ? Colors.white : Colors.white24,`
+- `lib/features\call\widgets\call_overlay.dart:193:                    iconColor: callState.isMuted ? Colors.black : Colors.white,`
+- `lib/features\call\widgets\call_overlay.dart:217:    Color iconColor = Colors.white,`
+- `lib/features\call\widgets\call_overlay.dart:300:                        color: isIOS ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\call\widgets\call_overlay.dart:395:        child: Icon(icon, color: Colors.white, size: size * 0.5),`
+- `lib/features\home\pages\home_page.dart:346:                                color: Colors.white,`
+- `lib/features\auth\pages\register_page.dart:324:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\register_page.dart:340:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\register_page.dart:405:                    color: Colors.white,`
+- `lib/features\auth\pages\register_page.dart:446:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\register_page.dart:565:                      color: isDark ? const Color(0xFF0E0E0E) : Colors.white,`
+- `lib/features\auth\pages\register_page.dart:571:                    color: Colors.white,`
+- `lib/features\auth\pages\register_page.dart:596:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\home_desktop_page.dart:610:                              : (isDark ? Colors.white54 : Colors.black54),`
+- `lib/features\home\pages\home_desktop_page.dart:621:                        : (isDark ? Colors.white54 : Colors.black54),`
+- `lib/features\home\pages\home_desktop_page.dart:630:                        : (isDark ? Colors.white54 : Colors.black54),`
+- `lib/features\home\pages\home_desktop_page.dart:649:                          color: Colors.white,`
+- `lib/features\home\pages\home_desktop_page.dart:1082:      color: isDark ? AppColors.darkBackground : const Color(0xFFF5F5F5),`
+- `lib/features\home\pages\home_desktop_page.dart:1098:                color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\home\pages\home_desktop_page.dart:1106:                color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\home\pages\home_desktop_page.dart:1155:          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),`
+- `lib/features\home\pages\home_desktop_page.dart:1157:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\home\pages\home_desktop_page.dart:1172:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\home_desktop_page.dart:1237:          isDark ? AppColors.darkBackground : const Color(0xFFF2F2F7),`
+- `lib/features\home\pages\home_desktop_page.dart:1239:        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,`
+- `lib/features\home\pages\home_desktop_page.dart:1254:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\home_desktop_page.dart:1280:          isDark ? AppColors.darkBackground : const Color(0xFFF2F2F7),`
+- `lib/features\home\pages\home_desktop_page.dart:1282:        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,`
+- `lib/features\home\pages\home_desktop_page.dart:1297:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\home_desktop_page.dart:1325:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\home_desktop_page.dart:1333:                color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\home\pages\home_desktop_page.dart:1341:                color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\auth\pages\login_page.dart:203:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\login_page.dart:810:                  color: Colors.white,`
+- `lib/features\auth\pages\login_page.dart:920:        backgroundColor: Colors.white,`
+- `lib/features\home\pages\desktop_about_panel.dart:47:          isDark ? AppColors.darkBackground : const Color(0xFFF2F2F7),`
+- `lib/features\home\pages\desktop_about_panel.dart:49:        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,`
+- `lib/features\home\pages\desktop_about_panel.dart:69:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\desktop_about_panel.dart:143:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\home\pages\desktop_about_panel.dart:151:            color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\home\pages\desktop_about_panel.dart:164:            color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\auth\pages\forgot_password_page.dart:124:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\forgot_password_page.dart:140:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\forgot_password_page.dart:171:            color: isDark ? Colors.white : Colors.black,`
+- `lib/shared/widgets\colored_name_widget.dart:65:        defaultColor ?? (isDark ? Colors.white : Colors.black);`
+- `lib/shared/widgets\colored_name_widget.dart:90:              color: Colors.white,`
+- `lib/features\contacts\pages\new_contact_page.dart:648:                        color: isDark ? AppColors.darkBackground : Colors.white,`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:232:                        color: Colors.white,`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:258:                        color: Colors.white,`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:382:          child: Icon(icon, color: Colors.white, size: 20),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:394:                  color: Colors.white,`
+- `lib/features\auth\pages\agreement_page.dart:112:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\agreement_page.dart:133:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\agreement_page.dart:201:          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\agreement_page.dart:206:          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\auth\pages\agreement_page.dart:211:          color: isDark ? Colors.white : Colors.black,`
+- `lib/shared/widgets\avatar_widget.dart.bak:181:                color: widget.borderColor ?? AppColors.primary,`
+- `lib/shared/widgets\avatar_widget.dart.bak:241:            color: Colors.white,`
+- `lib/shared/widgets\connection_status_banner.dart:184:                  color: Colors.white,`
+- `lib/shared/widgets\connection_status_banner.dart:237:          color: Colors.white,`
+- `lib/shared/widgets\connection_status_banner.dart:263:          color: Colors.white,`
+- `lib/shared/widgets\in_app_browser_native.dart:127:      ..setBackgroundColor(Colors.white)`
+- `lib/shared/widgets\in_app_browser_native.dart:442:    final contentBg = isDark ? const Color(0xFF000000) : Colors.white;`
+- `lib/features\contacts\pages\contacts_page.dart:151:        isDark ? AppColors.darkBackground : const Color(0xFFF5F5F5);`
+- `lib/features\contacts\pages\contacts_page.dart:171:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\contacts\pages\contacts_page.dart:242:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\contacts\pages\contacts_page.dart:462:                                    color: Colors.white,`
+- `lib/features\contacts\pages\contacts_page.dart:743:        isDark ? AppColors.darkBackground : const Color(0xFFF5F5F5);`
+- `lib/features\contacts\pages\contacts_page.dart:763:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\contacts\pages\contacts_page.dart:915:                    color: Colors.white,`
+- `lib/features\contacts\pages\contacts_page.dart:1212:                          ? Colors.white`
+- `lib/features\call\pages\call_page.dart:247:      backgroundColor: const Color(0xFF17212B),`
+- `lib/features\call\pages\call_page.dart:307:                color: Colors.white,`
+- `lib/features\call\pages\call_page.dart:475:                            ? Colors.white`
+- `lib/features\call\pages\call_page.dart:491:                        isEndCall || !isActive ? Colors.white : Colors.black87,`
+- `lib/features\call\pages\call_page.dart:572:                          color: Colors.white,`
+- `lib/features\call\pages\call_page.dart:618:                                color: Colors.white, size: 20),`
+- `lib/features\call\pages\call_page.dart:756:      color: const Color(0xFF17212B),`
+- `lib/features\call\pages\call_page.dart:765:                border: Border.all(color: Colors.white24, width: 2),`
+- `lib/features\call\pages\call_page.dart:781:                color: Colors.white,`
+- `lib/features\call\pages\call_page.dart:793:                  color: Colors.white54,`
+- `lib/features\call\pages\call_page.dart:807:                    color: Colors.white54,`
+- `lib/features\call\pages\call_page.dart:848:                            ? Colors.white`
+- `lib/features\call\pages\call_page.dart:864:                        isEndCall || !isActive ? Colors.white : Colors.black87,`
+- `lib/features\call\pages\call_page.dart:910:                color: Colors.black,`
+- `lib/features\call\pages\call_page.dart:912:                border: Border.all(color: Colors.white24, width: 1.5),`
+- `lib/features\call\pages\call_page.dart:973:                                color: Colors.white70,`
+- `lib/features\call\pages\call_page.dart:1025:                border: Border.all(color: Colors.white24, width: 2),`
+- `lib/features\call\pages\call_page.dart:1041:                color: Colors.white,`
+- `lib/features\call\pages\call_page.dart:1151:                    color: Colors.white70,`
+- `lib/features\call\pages\call_page.dart:1163:                      color: Colors.white70,`
+- `lib/features\call\pages\call_page.dart:1215:            child: Icon(icon, color: Colors.white, size: 22),`
+- `lib/features\call\pages\call_page.dart:1259:              color: Colors.white,`
+- `lib/features\call\pages\call_page.dart:1271:                color: Colors.white70,`
+- `lib/features\call\pages\call_page.dart:1308:            color: Colors.white70,`
+- `lib/features\call\pages\call_page.dart:1456:                  color: isActive ? Colors.black : Colors.white,`
+- `lib/features\call\pages\call_page.dart:1511:                  color: Colors.white,`
+- `lib/shared/widgets\official_badge.dart:51:                color: Colors.white,`
+- `lib/shared/widgets\official_badge.dart:163:            color: Colors.white,`
+- `lib/features\chat\widgets\create_sheets.dart:70:      closeIconColor: Colors.white,`
+- `lib/features\chat\widgets\create_sheets.dart:79:              textColor: Colors.white,`
+- `lib/features\chat\widgets\create_sheets.dart:555:                                      color: Colors.white,`
+- `lib/features\chat\widgets\create_sheets.dart:725:                                        color: Colors.white,`
+- `lib/features\call\pages\incoming_call_page.dart:278:                    color: Colors.white70,`
+- `lib/features\call\pages\incoming_call_page.dart:319:                    color: Colors.white,`
+- `lib/features\call\pages\incoming_call_page.dart:376:      backgroundColor: const Color(0xFF17212B),`
+- `lib/features\call\pages\incoming_call_page.dart:432:                color: Colors.white,`
+- `lib/features\call\pages\incoming_call_page.dart:546:                    color: Colors.white,`
+- `lib/features\call\pages\incoming_call_page.dart:573:              ? [const Color(0xFF111827), const Color(0xFF3F3F46)]`
+- `lib/features\call\pages\incoming_call_page.dart:615:                  color: Colors.white,`
+- `lib/features\call\pages\incoming_call_page.dart:625:                color: Colors.white70,`
+- `lib/shared/widgets\link_preview_card.dart:48:        isOutgoing ? Colors.white : AppColors.textPrimaryFor(context);`
+- `lib/shared/widgets\link_preview_card.dart:50:        isOutgoing ? Colors.white70 : AppColors.textSecondaryFor(context);`
+- `lib/shared/widgets\link_preview_card.dart:82:                    color: isDark ? Colors.white10 : Colors.grey.shade200,`
+- `lib/shared/widgets\link_preview_card.dart:88:                    color: isDark ? Colors.white10 : Colors.grey.shade200,`
+- `lib/shared/widgets\link_preview_card.dart:213:        isOutgoing ? Colors.white : AppColors.textPrimaryFor(context);`
+- `lib/shared/widgets\link_preview_card.dart:215:        isOutgoing ? Colors.white70 : AppColors.linkEmphasisFor(context);`
+- `lib/features\chat\widgets\chat_list_item.dart:274:                const Icon(Icons.delete_forever, color: Colors.white, size: 24),`
+- `lib/features\chat\widgets\chat_list_item.dart:284:                    color: Colors.white,`
+- `lib/features\chat\widgets\chat_list_item.dart:761:                          color: Colors.white,`
+- `lib/features\chat\widgets\chat_list_item.dart:814:      return Colors.white;`
+- `lib/features\chat\widgets\chat_list_item.dart:1328:            Icon(icon, color: Colors.white, size: 22),`
+- `lib/features\chat\widgets\chat_list_item.dart:1333:                color: Colors.white,`
+- `lib/features\wallet\widgets\pay_password_input.dart:202:                    color: Colors.white,`
+- `lib/features\chat\widgets\chat_input_bar.dart:233:                    : (isDark ? AppColors.darkSurface : Colors.white)`
+- `lib/features\chat\widgets\chat_input_bar.dart:551:          color: Colors.white,`
+- `lib/features\wallet\widgets\amount_input.dart:97:        : Colors.white;`
+- `lib/features\wallet\widgets\amount_input.dart:162:        : Colors.white;`
+- `lib/features\wallet\widgets\amount_input.dart:381:                          : Colors.white,`
+- `lib/features\chat\widgets\chat_background.dart:58:                isDark ? Colors.white : Colors.white,`
+- `lib/features\chat\widgets\chat_background.dart:116:                  isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\widgets\chat_background.dart:147:                Colors.white,`
+- `lib/features\chat\widgets\chat_background.dart:259:                                Colors.white,`
+- `lib/features\chat\widgets\chat_background.dart:278:                                color: Colors.white,`
+- `lib/features\meeting\widgets\meeting_overlay.dart:221:              color: const Color(0xFF111827),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:248:                        color: Colors.white,`
+- `lib/features\meeting\widgets\meeting_overlay.dart:262:                              color: Colors.white,`
+- `lib/features\meeting\widgets\meeting_overlay.dart:417:            Icon(icon, size: 14, color: Colors.white),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:422:                color: Colors.white,`
+- `lib/features\splash\pages\splash_page.dart:1466:                                    ? Colors.white.withValues(alpha: 0.12)`
+- `lib/features\splash\pages\splash_page.dart:1467:                                    : Colors.black.withValues(alpha: 0.08),`
+- `lib/features\splash\pages\splash_page.dart:1476:                                color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:1487:                            color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:1496:                              color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:1535:        color: Colors.black.withValues(alpha: 0.35),`
+- `lib/features\splash\pages\splash_page.dart:1541:              color: isDark ? const Color(0xFF181818) : Colors.white,`
+- `lib/features\splash\pages\splash_page.dart:1545:                  color: Colors.black.withValues(alpha: 0.12),`
+- `lib/features\splash\pages\splash_page.dart:1565:                            ? Colors.white.withValues(alpha: 0.12)`
+- `lib/features\splash\pages\splash_page.dart:1566:                            : Colors.black.withValues(alpha: 0.08),`
+- `lib/features\splash\pages\splash_page.dart:1577:                        color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:1589:                    color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:1599:                      color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:1692:              backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,`
+- `lib/features\splash\pages\splash_page.dart:2159:      backgroundColor: isDark ? const Color(0xFF000000) : Colors.white,`
+- `lib/features\splash\pages\splash_page.dart:2174:                    color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:2184:                    color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:2199:                      color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\splash\pages\splash_page.dart:2213:                          ? Colors.white.withValues(alpha: 0.06)`
+- `lib/features\splash\pages\splash_page.dart:2214:                          : Colors.black.withValues(alpha: 0.04),`
+- `lib/features\splash\pages\splash_page.dart:2218:                            ? Colors.white.withValues(alpha: 0.08)`
+- `lib/features\splash\pages\splash_page.dart:2219:                            : Colors.black.withValues(alpha: 0.06),`
+- `lib/features\splash\pages\splash_page.dart:2234:                                      isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:2244:                                color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:2259:                              ? Colors.white.withValues(alpha: 0.12)`
+- `lib/features\splash\pages\splash_page.dart:2260:                              : Colors.black.withValues(alpha: 0.08),`
+- `lib/features\splash\pages\splash_page.dart:2268:                              color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\splash\pages\splash_page.dart:2397:      backgroundColor: isDark ? const Color(0xFF000000) : Colors.white,`
+- `lib/features\splash\pages\splash_page.dart:2439:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:2452:                        color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\splash\pages\splash_page.dart:2480:                      foregroundColor: isDark ? Colors.white : Colors.black87,`
+- `lib/features\splash\pages\splash_page.dart:2481:                      backgroundColor: (isDark ? Colors.white : Colors.black)`
+- `lib/features\wallet\pages\withdraw_page.dart:1133:        iconColor = Colors.white;`
+- `lib/features\wallet\pages\withdraw_page.dart:1138:        iconColor = Colors.white;`
+- `lib/features\wallet\pages\withdraw_page.dart:1143:        iconColor = Colors.white;`
+- `lib/features\wallet\pages\withdraw_page.dart:1148:        iconColor = Colors.white;`
+- `lib/features\chat\widgets\message_bubble_location.dart:109:                                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_location.dart:123:                                  color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:114:                                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:123:                                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:130:                                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:160:                          color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:169:                          color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:197:                  color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:239:              Icon(Icons.check_circle, color: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:262:              const Icon(Icons.error, color: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:363:                              color: Colors.white54,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:373:                              style: TextStyle(color: Colors.white54),`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:396:                      icon: const Icon(Icons.close, color: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:402:                          color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:417:                        color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:128:            color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:133:          icon: const Icon(Icons.arrow_back_ios, size: 20, color: Colors.white),`
+- `lib/features\wallet\pages\wallet_page.dart:200:                                color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:225:                                  color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:419:                                color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:431:                                  color: Colors.white,`
+- `lib/features\wallet\pages\wallet_page.dart:549:            Icon(icon, size: 22, color: Colors.white),`
+- `lib/features\wallet\pages\wallet_page.dart:553:              style: const TextStyle(fontSize: 13, color: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_image.dart:69:                            color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_image.dart:74:                          _buildStatusIcon(Colors.white),`
+- `lib/features\meeting\pages\meeting_page.dart:1086:                  color: isDark ? const Color(0xFF111827) : Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:1109:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\meeting\pages\meeting_page.dart:1122:                        color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\meeting\pages\meeting_page.dart:1188:                                      isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\meeting\pages\meeting_page.dart:1257:                                                      ? Colors.white`
+- `lib/features\meeting\pages\meeting_page.dart:1258:                                                      : Colors.black87,`
+- `lib/features\meeting\pages\meeting_page.dart:1271:                                                      ? Colors.white70`
+- `lib/features\meeting\pages\meeting_page.dart:1272:                                                      : Colors.black54,`
+- `lib/features\meeting\pages\meeting_page.dart:2427:        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:2532:          colors: [Color(0xFFF4F7FF), Color(0xFFF8FAFF), Color(0xFFFFFFFF)],`
+- `lib/features\meeting\pages\meeting_page.dart:2651:        color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:2945:                      foregroundColor: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3169:                              color: Colors.white54,`
+- `lib/features\meeting\pages\meeting_page.dart:3183:                              color: Colors.white54,`
+- `lib/features\meeting\pages\meeting_page.dart:3188:                    child: Icon(Icons.person, color: Colors.white54, size: 44),`
+- `lib/features\meeting\pages\meeting_page.dart:3237:                      color: Colors.white54,`
+- `lib/features\meeting\pages\meeting_page.dart:3270:                      color: Colors.white54,`
+- `lib/features\meeting\pages\meeting_page.dart:3291:          color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3487:          color: isDark ? Colors.white70 : const Color(0xFF3557C4),`
+- `lib/features\meeting\pages\meeting_page.dart:3567:              color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3584:                          color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3601:                        foregroundColor: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3698:        color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3805:      foregroundColor: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:3968:        color: Colors.white,`
+- `lib/features\meeting\pages\meeting_page.dart:4033:                            border: Border.all(color: Colors.white, width: 2),`
+- `lib/features\meeting\pages\meeting_page.dart:4215:    final fg = textColor ?? Colors.white;`
+- `lib/features\wallet\pages\transfer_page.dart:109:                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:240:                            ? const Color(0xFF1C1C1E)`
+- `lib/features\wallet\pages\transfer_page.dart:282:              color: isDark ? const Color(0xFF3A3A3C) : Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:441:          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),`
+- `lib/features\wallet\pages\transfer_page.dart:455:            color: Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:463:            color: Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:496:                      backgroundColor: Colors.white24,`
+- `lib/features\wallet\pages\transfer_page.dart:508:                                color: Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:537:                            color: Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:563:                        color: Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:577:                  color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\transfer_page.dart:648:                        color: isDark ? Colors.white10 : Colors.grey[100]),`
+- `lib/features\wallet\pages\transfer_page.dart:667:                                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\pages\transfer_page.dart:711:                        isDark ? Colors.white12 : Colors.grey[300],`
+- `lib/features\chat\widgets\message_bubble_burn.dart:15:    final lockedHintColor = isDark ? Colors.white70 : Colors.black87;`
+- `lib/features\chat\widgets\message_bubble_burn.dart:16:    final lockedSubColor = isDark ? Colors.white54 : Colors.black54;`
+- `lib/features\chat\widgets\message_bubble_burn.dart:106:        isDark ? Colors.white70 : const Color(0xFF9A3412);`
+- `lib/features\wallet\pages\transaction_list_page.dart:72:          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F5),`
+- `lib/features\wallet\pages\transaction_list_page.dart:74:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\wallet\pages\transaction_list_page.dart:86:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\wallet\pages\transaction_list_page.dart:94:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\wallet\pages\transaction_list_page.dart:191:        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\transaction_list_page.dart:218:                    color: isDark ? Colors.white : const Color(0xFF1D1D1F),`
+- `lib/features\wallet\pages\transaction_list_page.dart:249:                      : (isDark ? Colors.white : const Color(0xFF1D1D1F)),`
+- `lib/features\chat\widgets\voice_record_overlay.dart:136:                          color: Colors.white,`
+- `lib/features\chat\widgets\voice_record_overlay.dart:142:                          color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\widgets\voice_record_overlay.dart:163:                      color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\chat\widgets\voice_record_overlay.dart:200:                            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\widgets\voice_record_overlay.dart:247:                    color: Colors.white,`
+- `lib/features\chat\widgets\voice_record_overlay.dart:341:        : (isDark ? const Color(0xFF2C2C2E) : Colors.white);`
+- `lib/features\chat\widgets\voice_record_overlay.dart:343:        ? Colors.white`
+- `lib/features\chat\widgets\voice_record_overlay.dart:344:        : (isDark ? Colors.white : Colors.black);`
+- `lib/features\chat\widgets\voice_record_overlay.dart:346:        ? Colors.white70`
+- `lib/features\chat\widgets\voice_record_overlay.dart:347:        : (isDark ? Colors.white54 : Colors.black54);`
+- `lib/features\chat\widgets\voice_record_overlay.dart:374:                    ? Colors.white`
+- `lib/features\chat\widgets\message_bubble.dart:193:    final textColor = bubbleLuminance > 0.5 ? Colors.black : Colors.white;`
+- `lib/features\chat\widgets\message_bubble.dart:203:      timeColor = Colors.white60;`
+- `lib/features\chat\widgets\message_bubble.dart:459:                      color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\widgets\message_bubble_file.dart:253:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\widgets\message_bubble_file.dart:483:                  border: Border.all(color: Colors.white, width: 2),`
+- `lib/features\chat\widgets\message_bubble_file.dart:491:                child: const Icon(Icons.check, color: Colors.white, size: 12),`
+- `lib/features\chat\widgets\emoji_picker.dart:262:              color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\widgets\emoji_picker.dart:682:                  color: isDark ? Colors.white10 : Colors.black12,`
+- `lib/features\chat\widgets\message_bubble_video.dart:260:                              color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video.dart:271:                            widget.buildStatusIcon(Colors.white),`
+- `lib/features\chat\widgets\message_bubble_video.dart:342:      color: const Color(0xFF2C2C2E),`
+- `lib/features\chat\widgets\message_bubble_video.dart:405:                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video.dart:412:                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video.dart:465:            Icon(icon, color: Colors.white, size: 14),`
+- `lib/features\chat\widgets\message_bubble_video.dart:471:              color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:480:              color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\widgets\message_context_menu.dart:668:        : (isDark ? Colors.white : Colors.black87);`
+- `lib/features\chat\widgets\message_context_menu.dart:814:                  : (isDark ? Colors.white70 : Colors.black54),`
+- `lib/features\chat\widgets\message_context_menu.dart:1018:                        ? Colors.white10`
+- `lib/features\chat\widgets\message_context_menu.dart:1025:                        ? Colors.white10`
+- `lib/features\chat\widgets\message_context_menu.dart:1043:                  color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1192:                        color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1230:                color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1244:                  color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1487:        : (isDark ? Colors.white : Colors.black87);`
+- `lib/features\chat\widgets\message_context_menu.dart:1571:                                color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1578:                                  color: Colors.white,`
+- `lib/features\chat\widgets\message_context_menu.dart:1650:        : (isDark ? Colors.white : Colors.black87);`
+- `lib/features\chat\pages\channel_page.dart:180:      backgroundColor: isDark ? const Color(0xFF161B22) : Colors.white,`
+- `lib/features\chat\pages\channel_page.dart:268:              color: Colors.white,`
+- `lib/features\chat\pages\channel_page.dart:432:          color: isDark ? const Color(0xFF161B22) : Colors.white,`
+- `lib/features\chat\pages\channel_page.dart:465:                      size: 32, color: Colors.white),`
+- `lib/features\chat\pages\channel_page.dart:545:          color: isDark ? const Color(0xFF161B22) : Colors.white,`
+- `lib/features\chat\pages\channel_page.dart:636:          color: isDark ? const Color(0xFF21262D) : Colors.white,`
+- `lib/features\chat\pages\channel_page.dart:816:          color: isDark ? const Color(0xFF21262D) : Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:160:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:229:                        color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:241:                    color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:365:                                    isDark ? Colors.white60 : Colors.grey[700],`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:368:                                      ? Colors.white24`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:399:                                foregroundColor: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:412:                                          Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:480:                color: dark ? Colors.white54 : Colors.grey[600],`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:489:                color: color ?? (dark ? Colors.white : Colors.black87),`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:496:      Divider(height: 1, color: dark ? Colors.white10 : Colors.grey[200]);`
+- `lib/features\chat\pages\channel_profile_page.dart:1342:                  color: Colors.white,`
+- `lib/features\chat\pages\channel_profile_page.dart:1659:    final fg = isDark ? Colors.white : const Color(0xFF252932);`
+- `lib/features\chat\pages\channel_profile_page.dart:2157:                        color: Colors.black54,`
+- `lib/features\chat\pages\channel_profile_page.dart:2163:                            color: Colors.white, size: 12),`
+- `lib/features\chat\pages\channel_profile_page.dart:2167:                                  color: Colors.white, fontSize: 10)),`
+- `lib/features\chat\pages\channel_profile_page.dart:2844:                      child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\channel_profile_page.dart:2848:                          color: Colors.white54, size: 64),`
+- `lib/features\chat\pages\channel_profile_page.dart:2863:                    color: Colors.black54,`
+- `lib/features\chat\pages\channel_profile_page.dart:2866:                  child: const Icon(Icons.close, color: Colors.white, size: 20),`
+- `lib/features\chat\pages\channel_profile_page.dart:2934:                  : const CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\channel_profile_page.dart:2946:                      color: Colors.black54,`
+- `lib/features\chat\pages\channel_profile_page.dart:2950:                        const Icon(Icons.close, color: Colors.white, size: 20),`
+- `lib/features\chat\pages\channel_profile_page.dart:2967:                      color: Colors.black54,`
+- `lib/features\chat\pages\channel_profile_page.dart:2974:                      color: Colors.white,`
+- `lib/features\chat\pages\channel_profile_page.dart:2992:                              color: Colors.white, fontSize: 12),`
+- `lib/features\chat\pages\channel_profile_page.dart:3017:                              color: Colors.white, fontSize: 12),`
+- `lib/features\chat\widgets\message_bubble_voice.dart:343:                    color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:150:                icon: const Icon(Icons.close, color: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:193:                        color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:222:              color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:247:                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:269:                color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:380:              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:400:                      color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:416:                          color: isDark ? Colors.white60 : Colors.grey[600],`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:424:                          color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:442:                          color: isDark ? Colors.white60 : Colors.grey[600],`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:457:                          color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:477:                            color: isDark ? Colors.white60 : Colors.grey[600],`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:492:                            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:512:                              color: isDark ? Colors.white60 : Colors.grey[600],`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:525:                              color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_attachment_sheet.dart:63:        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF7F7F7),`
+- `lib/features\chat\pages\chat_detail_attachment_sheet.dart:315:                  : (isDark ? const Color(0xFF2C2C2E) : Colors.white),`
+- `lib/features\chat\pages\chat_detail_attachment_sheet.dart:320:                    : (isDark ? Colors.white10 : const Color(0xFFEDEDED)),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:145:                    Icon(Icons.warning_rounded, color: Colors.white, size: 20),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:192:                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:227:                  color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:307:                            color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:318:                            style: TextStyle(color: Colors.white, fontSize: 13),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:327:                      color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:370:                              color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:383:                                          color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:393:                                            : Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:419:                          color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:448:                                activeTrackColor: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:452:                                thumbColor: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:492:                                      color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:506:                                      color: Colors.white,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:562:      color: Colors.black,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:580:                    color: Colors.white,`
+- `lib/features\chat\pages\chat_detail_build.dart:94:                                      : Colors.white,`
+- `lib/features\chat\pages\chat_detail_build.dart:435:                  color: isDark ? Colors.white70 : const Color(0xFF344054),`
+- `lib/features\portal\pages\custom_portal_content_web.dart:170:              color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_common_widgets.dart:16:          color: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\portal\pages\custom_portal_content_native.dart:115:      ..setBackgroundColor(Colors.white)`
+- `lib/features\portal\pages\custom_portal_content_native.dart:295:        await _controller.setBackgroundColor(Colors.white);`
+- `lib/features\portal\pages\custom_portal_content_native.dart:492:                color: isDark ? const Color(0xFF1F1F1F) : Colors.white,`
+- `lib/features\portal\pages\custom_portal_content_native.dart:513:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\portal\pages\custom_portal_content_native.dart:522:                          color: isDark ? Colors.white60 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:229:                                  color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:247:                                      isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:276:                                              ? Colors.white70`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:277:                                              : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:318:                                          color: Colors.white,`
+- `lib/features\wallet\pages\payment_result_page.dart:303:    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1E);`
+- `lib/features\wallet\pages\payment_result_page.dart:304:    final subColor = isDark ? Colors.white60 : const Color(0xFF6B7280);`
+- `lib/features\wallet\pages\payment_result_page.dart:305:    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;`
+- `lib/features\wallet\pages\payment_result_page.dart:306:    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7);`
+- `lib/features\wallet\pages\payment_result_page.dart:312:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\wallet\pages\payment_result_page.dart:520:                                    ? Colors.white`
+- `lib/features\wallet\pages\recharge_page.dart:274:                      color: dk ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\recharge_page.dart:296:                          color: dk ? Colors.white : Colors.black87),`
+- `lib/features\wallet\pages\recharge_page.dart:384:            backgroundColor: dk ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\recharge_page.dart:392:              style: TextStyle(color: dk ? Colors.white : Colors.black87),`
+- `lib/features\wallet\pages\recharge_page.dart:409:                  color: dk ? Colors.white70 : Colors.black87, height: 1.35),`
+- `lib/features\wallet\pages\recharge_page.dart:488:    final bg = dk ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);`
+- `lib/features\wallet\pages\recharge_page.dart:489:    final card = dk ? const Color(0xFF2C2C2E) : Colors.white;`
+- `lib/features\wallet\pages\recharge_page.dart:491:    final txt = dk ? Colors.white : const Color(0xFF1C1C1E);`
+- `lib/features\wallet\pages\recharge_page.dart:497:          backgroundColor: dk ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\wallet\pages\recharge_page.dart:601:                                          : const Color(0xFFF5F5F5)),`
+- `lib/features\wallet\pages\recharge_page.dart:629:                                : const Color(0xFFF5F5F5),`
+- `lib/features\wallet\pages\recharge_page.dart:798:                                                        color: Colors.black`
+- `lib/features\wallet\pages\recharge_page.dart:804:                                                        color: Colors.white)))),`
+- `lib/features\wallet\pages\recharge_page.dart:822:                                                          ? Colors.white`
+- `lib/features\wallet\pages\recharge_page.dart:876:                                    : const Color(0xFFF5F5F5),`
+- `lib/features\wallet\pages\recharge_page.dart:926:                              dk ? Colors.white12 : const Color(0xFFD0D0D0),`
+- `lib/features\wallet\pages\recharge_page.dart:1027:                        color: dk ? Colors.white24 : Colors.grey[300],`
+- `lib/features\wallet\pages\recharge_page.dart:1061:                                            ? Colors.white10`
+- `lib/features\wallet\pages\recharge_page.dart:1113:                color: Colors.white,`
+- `lib/features\chat\pages\chat_detail_feedback_widgets.dart:80:                      ? const Color(0xFF2C2C2E).withOpacity(0.95)`
+- `lib/features\chat\pages\chat_detail_feedback_widgets.dart:103:                        color: Colors.white,`
+- `lib/features\chat\pages\chat_detail_feedback_widgets.dart:113:                        color: widget.isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:138:                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:269:                            ? const Color(0xFF1C1C1E)`
+- `lib/features\wallet\pages\send_red_packet_page.dart:311:              color: isDark ? const Color(0xFF3A3A3C) : Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:506:          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:527:            color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:535:            color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:561:                        backgroundColor: Colors.white24,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:574:                                  color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:609:                                color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:635:                            color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:651:                  color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:722:                        color: isDark ? Colors.white10 : Colors.grey[100]),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:744:                              color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:772:                          color: isDark ? Colors.white10 : Colors.grey[100]),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:816:                          color: isDark ? Colors.white10 : Colors.grey[100]),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:829:                            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:869:                    foregroundColor: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:871:                        isDark ? Colors.white12 : Colors.grey[300],`
+- `lib/features\wallet\pages\send_red_packet_page.dart:883:                            color: Colors.white,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:946:                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\pages\send_red_packet_page.dart:971:              : (isDark ? Colors.white10 : Colors.grey[100]),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:980:                isSelected ? Colors.white : AppColors.textSecondaryFor(context),`
+- `lib/features\chat\pages\chat_detail_forward_actions.dart:43:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_forward_actions.dart:53:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\chat\pages\chat_detail_forward_actions.dart:64:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_forward_actions.dart:93:                              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:56:                        ? const [Color(0xFF1B2333), Color(0xFF111827)]`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:82:                                isDark ? Colors.white : const Color(0xFF0F172A),`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:182:                              isDark ? Colors.white : const Color(0xFF0F172A),`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:214:                              isDark ? Colors.white : const Color(0xFF0F172A),`
+- `lib/features\chat\pages\chat_detail_group_info_widgets.dart:30:              color: isDark ? Colors.white : const Color(0xFF334155),`
+- `lib/features\chat\pages\chat_detail_group_info_widgets.dart:71:              color: isDark ? Colors.white : const Color(0xFF0F172A),`
+- `lib/features\chat\pages\chat_detail_group_info_widgets.dart:79:              color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\chat_detail_group_member_list.dart:58:                                  isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_group_member_list.dart:111:                              : (isDark ? Colors.white54 : Colors.black45),`
+- `lib/features\moments\pages\moments_page.dart:537:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:548:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:595:                color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:1966:      color: widget.isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF5F5F5),`
+- `lib/features\moments\pages\moments_page.dart:1989:                    ? const Color(0xFF2C2C2E)`
+- `lib/features\moments\pages\moments_page.dart:1990:                    : const Color(0xFFF5F5F5),`
+- `lib/features\moments\pages\moments_page.dart:2005:                  color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:2010:                  color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:2030:                ? const Color(0xFF2C2C2E)`
+- `lib/features\moments\pages\moments_page.dart:2031:                : const Color(0xFFF5F5F5),`
+- `lib/features\moments\pages\moments_page.dart:2054:                    ? const Color(0xFF2C2C2E)`
+- `lib/features\moments\pages\moments_page.dart:2055:                    : const Color(0xFFF5F5F5),`
+- `lib/features\moments\pages\moments_page.dart:2068:                  color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:2077:                      color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:2084:                        color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:2512:                        color: Colors.black45,`
+- `lib/features\moments\pages\moments_page.dart:2519:                              color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:2618:                          child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:2624:                            color: Colors.white54,`
+- `lib/features\moments\pages\moments_page.dart:2652:                  colors: [Colors.black54, Colors.transparent],`
+- `lib/features\moments\pages\moments_page.dart:2658:                    icon: const Icon(Icons.close, color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:2666:                        color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:2673:                    icon: const Icon(Icons.more_horiz, color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:2699:                          ? Colors.white`
+- `lib/features\moments\pages\moments_page.dart:2700:                          : Colors.white38,`
+- `lib/features\moments\pages\moments_page.dart:2946:        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:3029:        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:3137:            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:3474:        isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF5F5F5);`
+- `lib/features\moments\pages\moments_page.dart:3832:                              valueColor: AlwaysStoppedAnimation(Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:3838:                            color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4554:      backgroundColor: widget.isDark ? const Color(0xFF17212B) : Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4556:        backgroundColor: widget.isDark ? const Color(0xFF17212B) : Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4562:            color: widget.isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:4572:                  ? Colors.white10`
+- `lib/features\moments\pages\moments_page.dart:4629:                                color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4640:                                color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4789:                            widget.isDark ? Colors.white10 : Colors.grey[200],`
+- `lib/features\moments\pages\moments_page.dart:4948:                  ? const Color(0xFF2C2C2E)`
+- `lib/features\moments\pages\moments_page.dart:4949:                  : const Color(0xFFF5F5F5),`
+- `lib/features\moments\pages\moments_page.dart:4954:                      color: widget.isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\moments\pages\moments_page.dart:4966:                  color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:4975:                      color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:4985:                      style: const TextStyle(color: Colors.white, fontSize: 9),`
+- `lib/features\moments\pages\moments_page.dart:5000:                  color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:5006:                    const Icon(Icons.play_arrow, size: 12, color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:5010:                      style: const TextStyle(color: Colors.white, fontSize: 11),`
+- `lib/features\moments\pages\moments_page.dart:5030:                border: Border.all(color: Colors.white, width: 2),`
+- `lib/features\moments\pages\moments_page.dart:5045:                          color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:5118:                        child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:5124:                          color: Colors.white54,`
+- `lib/features\moments\pages\moments_page.dart:5145:                  color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:5148:                child: const Icon(Icons.close, color: Colors.white, size: 20),`
+- `lib/features\moments\pages\moments_page.dart:5166:                    color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:5171:                    style: const TextStyle(color: Colors.white, fontSize: 14),`
+- `lib/features\moments\pages\moments_page.dart:5307:                        color: Colors.white70,`
+- `lib/features\moments\pages\moments_page.dart:5397:          color: Colors.black12,`
+- `lib/features\moments\pages\moments_page.dart:5425:          color: Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:5442:                    color: Colors.black26,`
+- `lib/features\moments\pages\moments_page.dart:5444:                      child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:5448:                    color: Colors.black26,`
+- `lib/features\moments\pages\moments_page.dart:5451:                      color: Colors.white54,`
+- `lib/features\moments\pages\moments_page.dart:5458:            const CircularProgressIndicator(color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:5484:                      color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:5490:                      color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:5510:                        colors: [Colors.black54, Colors.transparent],`
+- `lib/features\moments\pages\moments_page.dart:5518:                            color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:5529:                            inactiveColor: Colors.white38,`
+- `lib/features\moments\pages\moments_page.dart:5540:                            color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6114:                                  Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6132:                                        : Colors.black26),`
+- `lib/features\moments\pages\moments_page.dart:6391:                      color: Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:6400:                          color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6411:                            color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6437:                      color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6460:                        color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6485:              color: Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:6499:                      color: widget.isDark ? Colors.white10 : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:6503:                          color: Colors.white38,`
+- `lib/features\moments\pages\moments_page.dart:6519:                      color: Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:6542:                            color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6553:                              color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:6580:                child: const Icon(Icons.close, size: 20, color: Colors.white),`
+- `lib/features\moments\pages\moments_page.dart:7599:                    color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:8824:                                    color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:8867:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:8888:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:9677:                  color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:9692:                  color: Colors.black,`
+- `lib/features\moments\pages\moments_page.dart:9708:                            color: isDark ? Colors.white10 : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:9711:                            color: isDark ? Colors.white10 : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:9717:                          color: isDark ? Colors.white10 : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:9731:                            color: Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:9754:                                color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:9765:                                  color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:9798:                                ? Colors.white10`
+- `lib/features\moments\pages\moments_page.dart:9803:                                ? Colors.white10`
+- `lib/features\moments\pages\moments_page.dart:9996:                      color: Colors.white,`
+- `lib/features\moments\pages\moments_page.dart:10016:                            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:10028:                            color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\moments\pages\moments_page.dart:10040:                        color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\moments\pages\moments_page.dart:10053:                color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\moments\pages\moments_page.dart:10154:                                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:10184:                          color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\moments\pages\moments_page.dart:10200:                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:10225:                    color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_header_actions.dart:81:        : (isDark ? Colors.black : Colors.white).withOpacity(0.5);`
+- `lib/features\chat\pages\chat_detail_header_actions.dart:92:            color: (isDark ? Colors.black : const Color(0xFF94A3B8))`
+- `lib/features\chat\pages\chat_detail_header_actions.dart:326:                  color: Colors.white,`
+- `lib/features\moments\OPTIMIZATION_EXAMPLES.md:333:                          color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\moments\OPTIMIZATION_EXAMPLES.md:340:                            color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\chat_detail_header_leave_actions.dart:50:                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_header_leave_actions.dart:67:                            color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_header_leave_actions.dart:76:                            color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\chat_detail_header_leave_actions.dart:85:                    color: isDark ? Colors.white12 : Colors.black12,`
+- `lib/features\chat\pages\chat_detail_header_leave_actions.dart:117:                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_header_menu_actions.dart:164:      color: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\chat\pages\chat_detail_header_menu_actions.dart:174:                  color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_header_menu_actions.dart:208:                color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_header_menu_actions.dart:222:                color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:303:      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:305:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:324:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:332:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:381:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:436:                                            ? Colors.white24`
+- `lib/features\wallet\pages\set_pay_password_page.dart:508:                                : (isDark ? Colors.white24 : Colors.grey[300]),`
+- `lib/features\wallet\pages\set_pay_password_page.dart:590:                    color: isDark ? Colors.white12 : Colors.grey[200]!,`
+- `lib/features\wallet\pages\set_pay_password_page.dart:606:                      color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\vip\pages\vip_center_page.dart:210:                  textColor: Colors.white,`
+- `lib/features\vip\pages\vip_center_page.dart:243:Color _vipCard(bool isDark) => isDark ? AppColors.darkCard : Colors.white;`
+- `lib/features\vip\pages\vip_center_page.dart:246:    isDark ? AppColors.darkControlBackground : const Color(0xFFF2F2F7);`
+- `lib/features\chat\pages\chat_detail_info_sheets.dart:156:              color: isDark ? const Color(0xFF151D2D) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_info_sheets.dart:195:                        color: isDark ? Colors.white : const Color(0xFF0F172A),`
+- `lib/features\chat\pages\chat_detail_input_access.dart:55:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_input_access.dart:58:            color: isDark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA),`
+- `lib/features\chat\pages\chat_detail_input_access.dart:99:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_input_access.dart:102:            color: isDark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA),`
+- `lib/features\chat\pages\chat_detail_input_access.dart:333:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_input_access.dart:336:            color: isDark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA),`
+- `lib/features\chat\pages\chat_detail_input_access.dart:348:              color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF2F2F7),`
+- `lib/features\chat\pages\chat_detail_input_composer.dart:92:                color: isDark ? Colors.white70 : const Color(0xFF9A3412),`
+- `lib/features\chat\pages\chat_detail_input_composer.dart:167:                        color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_input_composer.dart:194:                        ? Colors.white12`
+- `lib/features\chat\pages\chat_detail_input_composer.dart:201:                    color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:140:            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:196:                                          ? Colors.white`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:197:                                          : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:220:                                        ? Colors.white38`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:221:                                        : Colors.black38,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:24:                color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:35:                  color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:44:                  color: isDark ? Colors.white54 : Colors.black38,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:75:                              color: Colors.black54,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:81:                              color: Colors.white,`
+- `lib/features\chat\pages\chat_detail_input_pending_images.dart:103:        color: Colors.black12,`
+- `lib/features\chat\pages\chat_detail_media_actions.dart:108:              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_media_actions.dart:124:                  color: isDark ? Colors.white10 : const Color(0xFFEDEDED),`
+- `lib/features\chat\pages\chat_detail_media_actions.dart:136:                  color: isDark ? Colors.white10 : const Color(0xFFEDEDED),`
+- `lib/features\chat\pages\chat_detail_media_file_actions.dart:140:            color: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:56:                      color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:64:                      color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:72:              color: isDark ? Colors.white38 : Colors.black26,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:152:                    color: isDark ? Colors.white : const Color(0xFF111827),`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:162:                    color: isDark ? Colors.white70 : const Color(0xFF6B7280),`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:215:              color: isDark ? const Color(0xFF111827) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:238:                    color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:250:                    color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:16:          color: isDark ? Colors.white70 : const Color(0xFF3557C4),`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:87:                  color: isDark ? const Color(0xFF111827) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:109:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:121:                        color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:183:                                      isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:252:                                                      ? Colors.white`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:253:                                                      : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:266:                                                      ? Colors.white70`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:267:                                                      : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_prompt.dart:37:            color: isDark ? const Color(0xFF111827) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_prompt.dart:81:                        color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_prompt.dart:99:                  color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_meeting_invite_prompt.dart:127:                      color: isDark ? Colors.white : const Color(0xFF17368A),`
+- `lib/features\settings\pages\stickers_page.dart:166:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\stickers_page.dart:168:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:179:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:193:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:206:                color: isDark ? const Color(0xFF3A3A3C) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:219:              labelColor: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:262:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:314:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\settings\pages\stickers_page.dart:361:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:480:                color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:508:                            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:529:                    color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\settings\pages\stickers_page.dart:578:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:589:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\settings\pages\stickers_page.dart:614:                              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:700:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:719:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:835:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\stickers_page.dart:859:                          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\stickers_page.dart:982:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_message_list.dart:194:            color: (isDark ? Colors.black : Colors.white).withOpacity(0.85),`
+- `lib/features\chat\pages\chat_detail_message_list.dart:213:                      color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_message_list.dart:222:                        color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\chat_detail_message_list.dart:245:                          color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_message_list.dart:264:                              : (isDark ? Colors.white24 : Colors.black26),`
+- `lib/features\chat\pages\chat_detail_message_list.dart:277:                              : (isDark ? Colors.white24 : Colors.black26),`
+- `lib/features\chat\pages\chat_detail_message_list_helpers.dart:90:            color: Colors.white,`
+- `lib/features\chat\pages\chat_detail_message_list_helpers.dart:116:            style: const TextStyle(fontSize: 13, color: Colors.white70),`
+- `lib/features\settings\pages\device_login_confirm_page.dart:222:    final bgColor = isDark ? const Color(0xFF0E0E0E) : const Color(0xFFF6F7FB);`
+- `lib/features\settings\pages\device_login_confirm_page.dart:223:    final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;`
+- `lib/features\settings\pages\device_login_confirm_page.dart:285:              color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:320:              color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:356:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:405:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:420:            color: isDark ? Colors.white60 : Colors.black54,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:484:                          color: Colors.white,`
+- `lib/features\settings\pages\device_login_confirm_page.dart:539:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:815:                          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:1081:                  ? const Color(0xFF1C1C1E).withOpacity(0.9)`
+- `lib/features\settings\pages\settings_page.dart:1082:                  : const Color(0xFFF2F2F7).withOpacity(0.9),`
+- `lib/features\settings\pages\settings_page.dart:1117:                          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:1302:        : Colors.white;`
+- `lib/features\settings\pages\settings_page.dart:1664:              child: Icon(icon, color: Colors.white, size: 19),`
+- `lib/features\settings\pages\settings_page.dart:2085:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2138:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2191:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2285:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2299:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2401:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2415:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2542:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2556:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2576:                color: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\settings\pages\settings_page.dart:2588:              labelColor: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\settings_page.dart:2810:                          color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\settings_page.dart:2835:                  color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\settings_page.dart:2909:              color: isDark ? AppColors.darkTextTertiary : Colors.black12,`
+- `lib/features\settings\pages\settings_page.dart:2937:                          ? Colors.white10`
+- `lib/features\settings\pages\settings_page.dart:2948:                      color: Colors.black45,`
+- `lib/features\settings\pages\settings_page.dart:2953:                            color: Colors.white,`
+- `lib/features\settings\pages\settings_page.dart:3127:                                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\settings_page.dart:3174:                color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\devices_page.dart:385:    final bgColor = isDark ? const Color(0xFF000000) : const Color(0xFFF2F2F7);`
+- `lib/features\settings\pages\devices_page.dart:386:    final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;`
+- `lib/features\settings\pages\devices_page.dart:407:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\devices_page.dart:416:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\devices_page.dart:652:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\devices_page.dart:764:                color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\settings\pages\devices_page.dart:812:        child: const Icon(Icons.delete, color: Colors.white),`
+- `lib/features\settings\pages\devices_page.dart:869:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\devices_page.dart:1088:                            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\devices_page.dart:1098:                            color: isDark ? Colors.white60 : Colors.black54,`
+- `lib/features\settings\pages\devices_page.dart:1125:                                          ? Colors.white70`
+- `lib/features\settings\pages\devices_page.dart:1126:                                          : Colors.black54,`
+- `lib/features\settings\pages\devices_page.dart:1153:                                      color: Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:668:    [Color(0xFF111827), Color(0xFF27272A), Color(0xFF3F3F46)],`
+- `lib/features\settings\pages\chat_settings_page.dart:678:    [Color(0xFF020617), Color(0xFF111827), Color(0xFF374151)],`
+- `lib/features\settings\pages\chat_settings_page.dart:712:    [Color(0xFF111827), Color(0xFF374151), Color(0xFF6B7280)],`
+- `lib/features\settings\pages\chat_settings_page.dart:729:        color: widget.isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:925:                                  Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:945:                                  color: Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:1024:                Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:1042:      const Color(0xFFF5F5F5),`
+- `lib/features\settings\pages\chat_settings_page.dart:1115:    {'outgoing': Color(0xFFEFFEDD), 'incoming': Colors.white},`
+- `lib/features\settings\pages\chat_settings_page.dart:1155:    {'outgoing': Color(0xFFF1F5F9), 'incoming': Color(0xFFFFFFFF)},`
+- `lib/features\settings\pages\chat_settings_page.dart:1172:        color: widget.isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:1264:                          Colors.white,`
+- `lib/features\settings\pages\chat_settings_page.dart:1465:          color: Colors.black87,`
+- `lib/features\settings\pages\chat_settings_page.dart:1493:          color: isDark ? AppColors.darkCard : const Color(0xFFF5F5F5),`
+- `lib/features\settings\pages\chat_settings_page.dart:1531:        color: isDark ? AppColors.darkCard : Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:198:    final bgColor = isDark ? const Color(0xFF000000) : Colors.white;`
+- `lib/features\settings\pages\profile_page.dart:200:        isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);`
+- `lib/features\settings\pages\profile_page.dart:266:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:355:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:398:                      color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:404:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:471:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:507:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:650:              child: const Icon(Icons.check, color: Colors.white, size: 14),`
+- `lib/features\settings\pages\profile_page.dart:666:        child: const Icon(Icons.close, color: Colors.white, size: 14),`
+- `lib/features\settings\pages\profile_page.dart:696:          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:758:                color: isDark ? Colors.black26 : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\profile_page.dart:1211:                            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\profile_page.dart:1231:                            color: isDark ? Colors.white60 : Colors.black54,`
+- `lib/features\settings\pages\profile_page.dart:1292:                                    color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:1456:              child: Icon(icon, color: Colors.white, size: 16),`
+- `lib/features\settings\pages\profile_page.dart:1464:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\profile_page.dart:1501:        : (isDark ? Colors.white : Colors.black);`
+- `lib/features\settings\pages\profile_page.dart:1850:                                          color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:1854:                                              color: Colors.black`
+- `lib/features\settings\pages\profile_page.dart:1882:                                    color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:1901:                                            color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:1949:                                          color: Colors.black87,`
+- `lib/features\settings\pages\profile_page.dart:2023:                                                color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:2034:                                                color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:2043:                                                        color: Colors.black26,`
+- `lib/features\settings\pages\profile_page.dart:2064:                                                          Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:2289:        color: Colors.white,`
+- `lib/features\settings\pages\profile_page.dart:2307:                  color: Color(0xFF15171A),`
+- `lib/features\settings\pages\profile_page.dart:2524:      canvas.drawRRect(innerWhite, Paint()..color = Colors.white);`
+- `lib/features\settings\pages\profile_page.dart:2559:    canvas.drawRRect(alignInner, Paint()..color = Colors.white);`
+- `lib/features\settings\pages\profile_page.dart:3302:    final corePaint = Paint()..color = Colors.white;`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:85:    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:86:    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:91:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:103:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:111:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:116:                    isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF2F2F7),`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:150:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_search_messages.dart:210:                                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\blocked_users_page.dart:168:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\blocked_users_page.dart:170:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\blocked_users_page.dart:187:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\blocked_users_page.dart:252:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\blocked_users_page.dart:269:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:88:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\notification_settings_page.dart:90:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:101:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:509:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:522:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\settings\pages\notification_settings_page.dart:532:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:576:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:583:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:590:            color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\settings\pages\notification_settings_page.dart:652:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\notification_settings_page.dart:654:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:665:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:957:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:974:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:1042:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:1127:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:1178:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\notification_settings_page.dart:1226:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\notification_settings_page.dart:1284:                  color: titleColor ?? (isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\notification_settings_page.dart:1301:                color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\settings\pages\personalization_page.dart:192:          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\personalization_page.dart:195:            isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\personalization_page.dart:212:            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\personalization_page.dart:245:                                Colors.white, BlendMode.srcIn),`
+- `lib/features\settings\pages\personalization_page.dart:262:                                      Border.all(color: Colors.white, width: 3),`
+- `lib/features\settings\pages\personalization_page.dart:300:                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\settings\pages\personalization_page.dart:328:                                        isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\personalization_page.dart:334:                                  color: Colors.white, size: 22)`
+- `lib/features\settings\pages\personalization_page.dart:373:                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\settings\pages\personalization_page.dart:405:                                        isDark ? Colors.white : Colors.black87,`
+- `lib/features\settings\pages\personalization_page.dart:411:                                  color: Colors.white, size: 22)`
+- `lib/features\settings\pages\personalization_page.dart:443:              color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\personalization_page.dart:469:                            strokeWidth: 2, color: Colors.white))`
+- `lib/features\settings\pages\personalization_page.dart:529:            color: Colors.white,`
+- `lib/features\settings\pages\personalization_page.dart:551:            color: Colors.white,`
+- `lib/features\settings\pages\personalization_page.dart:553:              Shadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))`
+- `lib/features\settings\pages\personalization_page.dart:566:          Shadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:40:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:51:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:71:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:102:                              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:258:                        : (isDark ? Colors.white38 : Colors.black26),`
+- `lib/features\chat\pages\chat_detail_selection_actions.dart:263:                    ? const Icon(Icons.check, size: 16, color: Colors.white)`
+- `lib/features\settings\pages\faq_page.dart:525:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\faq_page.dart:527:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:543:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:574:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:586:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\faq_page.dart:648:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:681:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:755:            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:765:                  color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\settings\pages\faq_page.dart:779:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:788:                        color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\settings\pages\faq_page.dart:908:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:936:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:1034:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\faq_page.dart:1059:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:1109:                              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:1115:                          color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\settings\pages\faq_page.dart:1152:          foregroundColor: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\settings\pages\faq_page.dart:1153:          side: BorderSide(color: isDark ? Colors.white24 : Colors.black12),`
+- `lib/features\settings\pages\faq_page.dart:1205:                      color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\faq_page.dart:1220:              color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\settings\pages\privacy_settings_page.dart:643:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\privacy_settings_page.dart:645:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:656:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1061:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1080:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1203:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1212:          style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1220:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1246:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1271:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1483:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1499:          style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1509:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1540:              style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1710:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1728:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1768:          backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1779:            style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1792:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:1856:                style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:1876:                style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:2015:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2033:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2244:          backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2255:            style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:2269:                  color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2275:                style: TextStyle(color: isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:2297:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2557:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2605:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\privacy_settings_page.dart:2663:                  color: titleColor ?? (isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\privacy_settings_page.dart:2680:                color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:148:      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:181:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:192:                color: isDark ? Colors.white70 : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:208:      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:245:                          color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:453:          isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),`
+- `lib/features\settings\pages\data_storage_page.dart:455:        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:466:            color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:646:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:659:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:715:                      foregroundColor: Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:778:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:791:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:836:          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:849:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:863:                                    isDark ? Colors.white70 : Colors.black87)),`
+- `lib/features\settings\pages\data_storage_page.dart:867:                                color: isDark ? Colors.white : Colors.black)),`
+- `lib/features\settings\pages\data_storage_page.dart:877:                                    isDark ? Colors.white70 : Colors.black87)),`
+- `lib/features\settings\pages\data_storage_page.dart:881:                                color: isDark ? Colors.white : Colors.black)),`
+- `lib/features\settings\pages\data_storage_page.dart:891:                                    isDark ? Colors.white70 : Colors.black87)),`
+- `lib/features\settings\pages\data_storage_page.dart:901:                    Divider(color: isDark ? Colors.white10 : Colors.black12),`
+- `lib/features\settings\pages\data_storage_page.dart:990:              color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:1043:                  color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:1103:                          ? Colors.white10`
+- `lib/features\settings\pages\data_storage_page.dart:1200:                color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:1264:        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\settings\pages\data_storage_page.dart:1312:                    color: isDark ? Colors.white : Colors.black,`
+- `lib/features\settings\pages\data_storage_page.dart:1374:                  color: titleColor ?? (isDark ? Colors.white : Colors.black),`
+- `lib/features\settings\pages\data_storage_page.dart:1400:                color: isDark ? Colors.white24 : Colors.black26,`
+- `lib/features\chat\pages\chat_detail_translation_actions.dart:128:                      color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\chat_detail_translation_actions.dart:138:                        color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\chat_page.dart:395:                    : const Color(0xFF1D1D1F),`
+- `lib/features\chat\pages\chat_page.dart:539:                                    : const Color(0xFF1D1D1F),`
+- `lib/features\chat\pages\chat_page.dart:594:                                    : const Color(0xFF1D1D1F),`
+- `lib/features\chat\pages\chat_page.dart:1167:                  ? const Icon(Icons.check, size: 16, color: Colors.white)`
+- `lib/features\chat\pages\chat_page.dart:1601:                    color: isDark ? Colors.white12 : Colors.black12,`
+- `lib/features\chat\pages\chat_page.dart:1624:                        color: isDark ? Colors.white : Colors.black,`
+- `lib/features\chat\pages\chat_page.dart:1696:                                  color: Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:1880:        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:2103:        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:2502:                                          Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:2542:                                                      ? Colors.white`
+- `lib/features\chat\pages\chat_page.dart:2544:                                                      : Colors.black`
+- `lib/features\chat\pages\chat_page.dart:2574:                                                                  ? Colors.white`
+- `lib/features\chat\pages\chat_page.dart:2658:                                isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:2780:              valueColor: AlwaysStoppedAnimation(Colors.white70),`
+- `lib/features\chat\pages\chat_page.dart:2804:              color: isDark ? Colors.white70 : Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:2987:                    color: Colors.white,`
+- `lib/features\chat\pages\chat_page.dart:3179:    return luminance > 0.5 ? Colors.black87 : Colors.white;`
+- `lib/features\chat\pages\chat_page.dart:3206:      ..color = (isDark ? Colors.white : Colors.white).withOpacity(`
+- `lib/features\chat\pages\chat_page.dart:3350:        : (isDark ? Colors.white : Colors.black);`
+- `lib/features\chat\pages\chat_page.dart:3504:                                : const Color(0xFF1D1D1F)),`
+- `lib/features\chat\pages\emoji_store_page.dart:199:      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,`
+- `lib/features\chat\pages\emoji_store_page.dart:215:                    color: isDark ? Colors.white24 : Colors.black12,`
+- `lib/features\chat\pages\emoji_store_page.dart:256:                      color: isDark ? Colors.white70 : Colors.black54,`
+- `lib/features\chat\pages\emoji_store_page.dart:643:                                color: isDark ? Colors.white10 : Colors.black12,`
+- `lib/features\chat\pages\emoji_store_page.dart:668:                            color: isDark ? Colors.white54 : Colors.black45,`
+- `lib/features\chat\pages\favorite_messages_page.dart:267:                    color: Colors.black.withValues(alpha: 0.48),`
+- `lib/features\chat\pages\favorite_messages_page.dart:276:                        color: Colors.white,`
+- `lib/features\chat\pages\favorite_messages_page.dart:296:                    color: Colors.white,`
+- `lib/features\chat\pages\favorite_messages_page.dart:395:                            color: Colors.white,`
+- `lib/features\chat\pages\favorite_messages_page.dart:460:                                                          : Colors.black87,`
+- `lib/features\chat\pages\favorite_messages_page.dart:474:                                                        : Colors.black38,`
+- `lib/features\chat\pages\favorite_messages_page.dart:487:                                                    : Colors.black54,`
+- `lib/features\chat\pages\favorite_messages_page.dart:500:                                                    : Colors.black87,`
+- `lib/features\chat\pages\favorite_messages_page.dart:546:                                              : Colors.black45,`
+- `lib/features\chat\pages\group_edit_page.dart:523:                        size: 14, color: Colors.white),`
+- `lib/features\chat\pages\group_edit_page.dart:1331:                  color: isDark ? Colors.black26 : const Color(0xFFF2F2F7)),`
+- `lib/features\chat\pages\group_edit_page.dart:1381:                    : (isDark ? Colors.white : Colors.black),`
+- `lib/features\chat\pages\group_edit_page.dart:1629:                color: Colors.white,`
+- `lib/features\chat\pages\qr_scanner_page.dart:637:              color: Colors.white,`
+- `lib/features\chat\pages\qr_scanner_page.dart:671:                    foregroundColor: Colors.white,`
+- `lib/features\chat\pages\qr_scanner_page.dart:672:                    side: const BorderSide(color: Colors.white54),`
+- `lib/features\chat\pages\qr_scanner_page.dart:714:        foregroundColor: Colors.white,`
+- `lib/features\chat\pages\qr_scanner_page.dart:803:                    child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\qr_scanner_page.dart:1066:      ..color = Colors.white`
+- `lib/features\chat\pages\search_page.dart:880:              color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\search_page.dart:991:                color: isDark ? Colors.white54 : Colors.black54,`
+- `lib/features\chat\pages\search_page.dart:1060:                    color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\search_page.dart:1239:                            color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\search_page.dart:1262:                        color: isDark ? Colors.white60 : Colors.black54,`
+- `lib/features\chat\pages\search_page.dart:1339:              color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\chat\pages\group_profile_page.dart:34:const Color _groupProfileInk = Color(0xFF15171A);`
+- `lib/features\chat\pages\group_profile_page.dart:38:const Color _groupProfileCard = Colors.white;`
+- `lib/features\chat\pages\group_profile_page.dart:67:  Color(0xFFFFFFFF),`
+- `lib/features\chat\pages\group_profile_page.dart:367:    final headerColor = isDark ? AppColors.darkBackground : Colors.white;`
+- `lib/features\chat\pages\group_profile_page.dart:378:        isDark ? AppColors.primaryFor(context) : const Color(0xFF252932);`
+- `lib/features\chat\pages\group_profile_page.dart:446:                                      : Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:2561:            : const [Color(0xFFF4F6FA), Color(0xFFFFFFFF)]);`
+- `lib/features\chat\pages\group_profile_page.dart:2651:                  color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:3615:                      color: Colors.black54,`
+- `lib/features\chat\pages\group_profile_page.dart:3623:                          color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:3630:                              color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:4094:                      color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:4101:                      backgroundColor: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:4104:                        color: _groupProfileInk,`
+- `lib/features\chat\pages\group_profile_page.dart:4108:                        color: Colors.black,`
+- `lib/features\chat\pages\group_profile_page.dart:5172:                                        color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:5312:                      child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\group_profile_page.dart:5317:                        color: Colors.white54,`
+- `lib/features\chat\pages\group_profile_page.dart:5334:                    color: Colors.black54,`
+- `lib/features\chat\pages\group_profile_page.dart:5337:                  child: const Icon(Icons.close, color: Colors.white, size: 20),`
+- `lib/features\chat\pages\group_profile_page.dart:5405:                  : const CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\group_profile_page.dart:5417:                      color: Colors.black54,`
+- `lib/features\chat\pages\group_profile_page.dart:5422:                      color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:5441:                      color: Colors.black54,`
+- `lib/features\chat\pages\group_profile_page.dart:5448:                      color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:5466:                            color: Colors.white,`
+- `lib/features\chat\pages\group_profile_page.dart:5495:                            color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:955:        vipLevel == 1 ? const Color(0xFF24394F) : Colors.white;`
+- `lib/features\chat\pages\user_profile_page.dart:2426:                        color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:2437:                        backgroundColor: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:2648:                        color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:3617:                      color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\chat\pages\user_profile_page.dart:3651:        (lightStyle ? Colors.white : AppColors.primaryFor(context));`
+- `lib/features\chat\pages\user_profile_page.dart:3839:                            (isDark ? Colors.white : Colors.black).withOpacity(`
+- `lib/features\chat\pages\user_profile_page.dart:3887:            color: isDark ? Colors.white : const Color(0xFF111827),`
+- `lib/features\chat\pages\user_profile_page.dart:3929:    final valueColor = isDark ? Colors.white : const Color(0xFF111827);`
+- `lib/features\chat\pages\user_profile_page.dart:4167:                          color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\chat\pages\user_profile_page.dart:4172:                          color: isDark ? Colors.white38 : Colors.black38,`
+- `lib/features\chat\pages\user_profile_page.dart:4204:    final valueColor = isDark ? Colors.white : const Color(0xFF111827);`
+- `lib/features\chat\pages\user_profile_page.dart:4300:                              (isDark ? Colors.white : Colors.black),`
+- `lib/features\chat\pages\user_profile_page.dart:4308:                            (isDark ? Colors.white : Colors.black),`
+- `lib/features\chat\pages\user_profile_page.dart:4753:                      color: Colors.black54,`
+- `lib/features\chat\pages\user_profile_page.dart:4761:                          color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:4768:                              color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:6177:                      child: CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\user_profile_page.dart:6182:                        color: Colors.white54,`
+- `lib/features\chat\pages\user_profile_page.dart:6200:                    color: Colors.black54,`
+- `lib/features\chat\pages\user_profile_page.dart:6203:                  child: const Icon(Icons.close, color: Colors.white, size: 20),`
+- `lib/features\chat\pages\user_profile_page.dart:6276:                  : const CircularProgressIndicator(color: Colors.white),`
+- `lib/features\chat\pages\user_profile_page.dart:6290:                      color: Colors.black54,`
+- `lib/features\chat\pages\user_profile_page.dart:6295:                      color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:6315:                      color: Colors.black54,`
+- `lib/features\chat\pages\user_profile_page.dart:6322:                      color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:6341:                            color: Colors.white,`
+- `lib/features\chat\pages\user_profile_page.dart:6370:                            color: Colors.white,`
+
+## 暂列可保留命中 460
+
+- `lib/shared/widgets\avatar_crop_page.dart:57:    barrierColor: Colors.black,`
+- `lib/shared/widgets\avatar_crop_page.dart:132:      backgroundColor: Colors.black,`
+- `lib/shared/widgets\avatar_crop_page.dart:134:        backgroundColor: Colors.black,`
+- `lib/shared/widgets\avatar_crop_page.dart:198:              maskColor: Colors.black.withOpacity(0.7),`
+- `lib/shared/widgets\avatar_crop_page.dart:218:                  TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),`
+- `lib/features\discover\pages\discover_page.dart:553:                            color: Colors.white.withOpacity(`
+- `lib/features\call\widgets\call_overlay.dart:115:                color: Colors.black.withOpacity(0.3),`
+- `lib/features\call\widgets\call_overlay.dart:313:                            : Colors.white.withOpacity(0.7),`
+- `lib/features\call\widgets\call_overlay.dart:357:                Border.all(color: Colors.white.withOpacity(0.06), width: 0.5),`
+- `lib/features\call\widgets\call_overlay.dart:360:                color: Colors.black.withOpacity(0.25),`
+- `lib/features\home\pages\home_page.dart:97:        : Colors.white.withOpacity(0.30);`
+- `lib/features\home\pages\home_page.dart:99:        ? Colors.white.withOpacity(0.18)`
+- `lib/features\home\pages\home_page.dart:100:        : Colors.white.withOpacity(0.38);`
+- `lib/features\home\pages\home_page.dart:124:                          Colors.white.withOpacity(0.32),`
+- `lib/features\home\pages\home_page.dart:125:                          Colors.white.withOpacity(0.10),`
+- `lib/features\home\pages\home_page.dart:132:                    color: Colors.black.withOpacity(isDark ? 0.34 : 0.06),`
+- `lib/features\home\pages\home_page.dart:137:                    color: Colors.white.withOpacity(isDark ? 0.04 : 0.18),`
+- `lib/features\home\pages\home_page.dart:279:              color: Colors.black.withOpacity(0.035),`
+- `lib/features\home\pages\home_page.dart:338:                                    : Colors.white.withOpacity(0.95),`
+- `lib/features\auth\pages\login_page.dart:743:        isDark ? Colors.white10 : Colors.black.withOpacity(0.06);`
+- `lib/shared/widgets\desktop\desktop_layout.dart:302:                    : Colors.black.withOpacity(0.05))`
+- `lib/features\contacts\pages\new_contact_page.dart:420:                    : Colors.black.withOpacity(0.04),`
+- `lib/features\contacts\pages\new_contact_page.dart:801:                            ? Colors.white.withOpacity(0.1)`
+- `lib/features\contacts\pages\new_contact_page.dart:802:                            : Colors.black.withOpacity(0.05),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:97:                color: Colors.black.withOpacity(0.1),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:189:                color: Colors.white.withOpacity(0.08),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:201:                color: Colors.white.withOpacity(0.06),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:213:                color: Colors.white.withOpacity(0.05),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:236:                            color: Colors.black.withOpacity(0.15),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:275:                        color: Colors.white.withOpacity(0.85),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:286:                        color: Colors.white.withOpacity(0.1),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:310:                              color: Colors.white.withOpacity(0.1),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:333:                              color: Colors.white.withOpacity(0.1),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:379:            color: Colors.white.withOpacity(0.15),`
+- `lib/shared/widgets\desktop\auth_desktop_layout.dart:402:                  color: Colors.white.withOpacity(0.75),`
+- `lib/shared/widgets\avatar_widget.dart.bak:212:            color: Colors.white.withOpacity(0.9),`
+- `lib/shared/widgets\connection_status_banner.dart:257:        color: Colors.white.withOpacity(0.22),`
+- `lib/shared/widgets\platform_blur.dart:29:          (isDark ? Colors.black.withOpacity(0.92) : Colors.white.withOpacity(0.95));`
+- `lib/shared/widgets\platform_blur.dart:42:        (isDark ? Colors.black.withOpacity(0.7) : Colors.white.withOpacity(0.8));`
+- `lib/shared/widgets\platform_blur.dart:107:        (isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.05));`
+- `lib/shared/widgets\in_app_browser_native.dart:58:        barrierColor: Colors.black54,`
+- `lib/shared/widgets\in_app_browser_native.dart:451:        backgroundColor: Colors.black.withOpacity(0.5 * opacity),`
+- `lib/shared/widgets\in_app_browser_native.dart:467:                  color: Colors.black.withOpacity(0.3),`
+- `lib/shared/widgets\in_app_browser_native.dart:514:        : Colors.black.withOpacity(0.06);`
+- `lib/shared/widgets\in_app_browser_native.dart:558:                                  color: Colors.black.withOpacity(0.05),`
+- `lib/features\contacts\pages\contacts_page.dart:216:                          ? Colors.white.withOpacity(0.09)`
+- `lib/features\contacts\pages\contacts_page.dart:217:                          : Colors.white.withOpacity(0.58),`
+- `lib/features\contacts\pages\contacts_page.dart:221:                            ? Colors.white.withOpacity(0.08)`
+- `lib/features\contacts\pages\contacts_page.dart:222:                            : Colors.white.withOpacity(0.74),`
+- `lib/features\contacts\pages\contacts_page.dart:229:                                color: Colors.black.withOpacity(0.04),`
+- `lib/features\contacts\pages\contacts_page.dart:451:                                color: Colors.black.withOpacity(`
+- `lib/features\call\pages\call_page.dart:179:        backgroundColor: Colors.black,`
+- `lib/features\call\pages\call_page.dart:208:      backgroundColor: Colors.black,`
+- `lib/features\call\pages\call_page.dart:500:                    color: Colors.white.withOpacity(0.7),`
+- `lib/features\call\pages\call_page.dart:548:                    Colors.black.withOpacity(0.5),`
+- `lib/features\call\pages\call_page.dart:614:                              color: Colors.white.withOpacity(0.15),`
+- `lib/features\call\pages\call_page.dart:640:                    Border.all(color: Colors.white.withOpacity(0.1), width: 1),`
+- `lib/features\call\pages\call_page.dart:643:                    color: Colors.black.withOpacity(0.4),`
+- `lib/features\call\pages\call_page.dart:658:                            color: Colors.white.withOpacity(0.4),`
+- `lib/features\call\pages\call_page.dart:671:                              color: Colors.white.withOpacity(0.4),`
+- `lib/features\call\pages\call_page.dart:692:                    Colors.black.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:849:                            : Colors.white.withOpacity(0.15),`
+- `lib/features\call\pages\call_page.dart:873:                    color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:915:                    color: Colors.black.withOpacity(0.4),`
+- `lib/features\call\pages\call_page.dart:934:                            color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:946:                              color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:965:                            color: Colors.black.withOpacity(0.5),`
+- `lib/features\call\pages\call_page.dart:985:                                  color: Colors.white.withOpacity(0.7),`
+- `lib/features\call\pages\call_page.dart:1054:                      color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:1062:                    color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:1070:                    color: Colors.white.withOpacity(0.6),`
+- `lib/features\call\pages\call_page.dart:1116:              Colors.black.withOpacity(0.5),`
+- `lib/features\call\pages\call_page.dart:1142:                color: Colors.white.withOpacity(0.15),`
+- `lib/features\call\pages\call_page.dart:1212:              color: Colors.white.withOpacity(0.15),`
+- `lib/features\call\pages\call_page.dart:1238:                color: Colors.white.withOpacity(0.2),`
+- `lib/features\call\pages\call_page.dart:1337:              Colors.black.withOpacity(0.7),`
+- `lib/features\call\pages\call_page.dart:1451:                      isActive ? Colors.white : Colors.white.withOpacity(0.15),`
+- `lib/features\call\pages\call_page.dart:1466:                color: Colors.white.withOpacity(0.7),`
+- `lib/features\call\pages\call_page.dart:1521:                color: Colors.white.withOpacity(0.7),`
+- `lib/shared/widgets\official_badge.dart:122:      ..color = Colors.white.withOpacity(0.8)`
+- `lib/features\call\pages\incoming_call_page.dart:241:              color: Colors.black.withOpacity(0.4),`
+- `lib/features\call\pages\incoming_call_page.dart:261:                    color: Colors.white.withOpacity(0.7),`
+- `lib/features\call\pages\incoming_call_page.dart:295:                            color: Colors.white.withOpacity(0.3),`
+- `lib/features\call\pages\incoming_call_page.dart:555:                    color: Colors.white.withOpacity(0.7),`
+- `lib/shared/widgets\fancy_refresh_indicator.dart:116:        isDark ? const Color(0xCC1C1C1E) : Colors.white.withOpacity(0.72);`
+- `lib/shared/widgets\fancy_refresh_indicator.dart:130:            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),`
+- `lib/shared/widgets\link_preview_card.dart:46:        isOutgoing ? Colors.white.withOpacity(0.3) : AppColors.linkFor(context);`
+- `lib/shared/widgets\link_preview_card.dart:61:              color: Colors.black.withOpacity(0.05),`
+- `lib/shared/widgets\link_preview_card.dart:211:        isOutgoing ? Colors.white.withOpacity(0.5) : AppColors.linkFor(context);`
+- `lib/features\wallet\widgets\transfer_bubble.dart:97:                      color: Colors.white.withOpacity(0.2),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:109:                          color: Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:126:                            color: Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:134:                            color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:157:                    color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:169:                      color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:178:                        color: Colors.white.withOpacity(0.7),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:310:          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:335:                        color: Colors.white.withOpacity(0.6),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:347:                        color: Colors.white.withOpacity(0.3),`
+- `lib/features\wallet\widgets\transfer_bubble.dart:353:                      backgroundColor: Colors.white24,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:366:                                color: Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:391:                      color: Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:408:                      color: isDark ? Colors.white : Colors.black87,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:420:                            ? Colors.white.withOpacity(0.08)`
+- `lib/features\wallet\widgets\transfer_bubble.dart:428:                          color: isDark ? Colors.white60 : Colors.grey[600],`
+- `lib/features\wallet\widgets\transfer_bubble.dart:451:                              isDark ? Colors.white60 : Colors.grey[700],`
+- `lib/features\wallet\widgets\transfer_bubble.dart:453:                            color: isDark ? Colors.white24 : Colors.grey[300]!,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:479:                          foregroundColor: Colors.white,`
+- `lib/features\wallet\widgets\transfer_bubble.dart:642:    barrierColor: Colors.black54,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:89:                      color: Colors.white.withOpacity(0.15),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:99:                          color: Colors.white,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:115:                            color: Colors.white,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:126:                            color: Colors.white.withOpacity(0.75),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:155:                      color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:164:                        color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:329:                    color: Colors.white.withOpacity(0.6),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:342:                  color: Colors.white.withOpacity(0.3),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:348:                backgroundColor: Colors.white24,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:361:                          color: Colors.white,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:381:                color: Colors.white,`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:394:                  color: Colors.white.withOpacity(0.85),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:439:                                  color: Colors.white.withOpacity(0.7),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:526:                color: Colors.black.withOpacity(0.1),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:542:                    color: Colors.white.withOpacity(0.5),`
+- `lib/features\wallet\widgets\red_packet_bubble.dart:565:    barrierColor: Colors.black54,`
+- `lib/features\chat\widgets\chat_list_item.dart:729:                            ? Colors.white.withOpacity(0.07)`
+- `lib/features\chat\widgets\chat_list_item.dart:730:                            : Colors.black.withOpacity(0.045),`
+- `lib/features\chat\widgets\chat_list_item.dart:751:                                ? Colors.white.withOpacity(0.20)`
+- `lib/features\chat\widgets\chat_list_item.dart:752:                                : Colors.black.withOpacity(0.22))`
+- `lib/features\chat\widgets\chat_list_item.dart:1079:        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\wallet\widgets\pay_password_input.dart:122:            color: Colors.black.withOpacity(0.1),`
+- `lib/features\wallet\widgets\pay_password_input.dart:427:    barrierColor: Colors.black54,`
+- `lib/features\chat\widgets\chat_input_bar.dart:239:                              ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\widgets\chat_input_bar.dart:275:                                    ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\widgets\chat_input_bar.dart:276:                                    : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\widgets\chat_input_bar.dart:495:                      ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\widgets\chat_input_bar.dart:496:                      : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\widgets\chat_input_bar.dart:617:                    color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\widgets\chat_background.dart:239:                        color: Colors.black.withOpacity(0.1),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:225:                  color: Colors.black.withOpacity(0.28),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:230:              border: Border.all(color: Colors.white.withOpacity(0.08)),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:285:                              color: Colors.white.withOpacity(0.72),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:335:                        background: Colors.white.withOpacity(0.10),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:377:        color: Colors.white.withOpacity(0.08),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:383:          Icon(icon, size: 11, color: Colors.white.withOpacity(0.8)),`
+- `lib/features\meeting\widgets\meeting_overlay.dart:388:              color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\pages\withdraw_page.dart:621:                        color: Colors.black.withOpacity(0.04),`
+- `lib/features\wallet\pages\withdraw_page.dart:705:                        color: Colors.black.withOpacity(0.04),`
+- `lib/features\wallet\pages\withdraw_page.dart:799:                        color: Colors.black.withOpacity(0.04),`
+- `lib/features\chat\widgets\message_bubble_location.dart:61:                          color: Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_bubble_location.dart:70:                          color: Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_bubble_location.dart:101:                            color: Colors.black.withOpacity(0.46),`
+- `lib/features\wallet\utils\online_pay_launch.dart:65:                    data: wc ?? aq!, size: 200, backgroundColor: Colors.white),`
+- `lib/features\chat\widgets\message_bubble_contact.dart:42:                color: Colors.black.withOpacity(0.08),`
+- `lib/features\chat\widgets\message_bubble_image_preview.dart:82:      backgroundColor: Colors.black.withOpacity(_opacity * 0.9),`
+- `lib/features\wallet\pages\wallet_page.dart:170:                            color: Colors.white.withOpacity(0.8),`
+- `lib/features\wallet\pages\wallet_page.dart:186:                            color: Colors.white.withOpacity(0.7),`
+- `lib/features\wallet\pages\wallet_page.dart:214:                                  color: Colors.white.withOpacity(0.9),`
+- `lib/features\wallet\pages\wallet_page.dart:544:          color: Colors.white.withOpacity(0.2),`
+- `lib/features\wallet\pages\wallet_page.dart:572:            color: Colors.black.withOpacity(0.04),`
+- `lib/features\chat\widgets\message_bubble_call.dart:36:            color: Colors.black.withOpacity(0.06),`
+- `lib/features\chat\widgets\message_bubble_image.dart:18:              barrierColor: Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_image.dart:36:                color: Colors.black.withOpacity(0.1),`
+- `lib/features\chat\widgets\message_bubble_image.dart:59:                          Colors.black.withOpacity(0.5),`
+- `lib/features\meeting\pages\meeting_page.dart:1090:                      color: Colors.black.withOpacity(0.14),`
+- `lib/features\wallet\pages\transfer_page.dart:490:                        color: Colors.white.withOpacity(0.3),`
+- `lib/features\wallet\pages\transfer_page.dart:528:                            color: Colors.white.withOpacity(0.7),`
+- `lib/features\wallet\pages\transfer_page.dart:549:                      color: Colors.white.withOpacity(0.2),`
+- `lib/features\wallet\pages\transfer_page.dart:581:                      color: Colors.black.withOpacity(0.06),`
+- `lib/features\chat\widgets\message_bubble_burn.dart:25:            color: Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\voice_record_overlay.dart:117:                          ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\widgets\voice_record_overlay.dart:118:                          : Colors.black.withOpacity(0.05)),`
+- `lib/features\chat\widgets\voice_record_overlay.dart:367:                    ? Colors.white.withOpacity(0.2)`
+- `lib/features\chat\widgets\message_bubble.dart:427:                  ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\widgets\message_bubble.dart:428:                  : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_bubble.dart:432:                    ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\widgets\message_bubble.dart:433:                    : Colors.black.withOpacity(0.08),`
+- `lib/features\chat\widgets\message_bubble_file.dart:197:          barrierColor: Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_file.dart:486:                      color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\widgets\emoji_picker.dart:354:            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\emoji_picker.dart:626:          color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_bubble_video.dart:140:        barrierColor: Colors.black,`
+- `lib/features\chat\widgets\message_bubble_video.dart:213:                  color: Colors.black.withOpacity(0.08),`
+- `lib/features\chat\widgets\message_bubble_video.dart:263:                                  color: Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_bubble_video.dart:349:              color: Colors.white.withOpacity(0.3),`
+- `lib/features\chat\widgets\message_bubble_video.dart:356:                color: Colors.white.withOpacity(0.3),`
+- `lib/features\chat\widgets\message_bubble_video.dart:374:              Colors.black.withOpacity(0.3),`
+- `lib/features\chat\widgets\message_bubble_video.dart:377:              Colors.black.withOpacity(0.4),`
+- `lib/features\chat\widgets\message_bubble_video.dart:393:          color: Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_bubble_video.dart:406:                backgroundColor: Colors.white.withOpacity(0.3),`
+- `lib/features\chat\widgets\message_bubble_video.dart:431:              ? Colors.white.withOpacity(0.9)`
+- `lib/features\chat\widgets\message_bubble_video.dart:432:              : Colors.white.withOpacity(0.85),`
+- `lib/features\chat\widgets\message_bubble_video.dart:436:              color: Colors.black.withOpacity(0.25),`
+- `lib/features\chat\widgets\message_bubble_video.dart:444:          color: Colors.black.withOpacity(0.8),`
+- `lib/features\chat\widgets\message_bubble_video.dart:458:        color: Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_context_menu.dart:271:                      color: Colors.black.withOpacity(`
+- `lib/features\chat\widgets\message_context_menu.dart:426:            color: Colors.black.withOpacity(0.15),`
+- `lib/features\chat\widgets\message_context_menu.dart:474:                  : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:510:            color: Colors.black.withOpacity(0.15),`
+- `lib/features\chat\widgets\message_context_menu.dart:676:          hoverColor: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:721:                  : Colors.white.withOpacity(0.85),`
+- `lib/features\chat\widgets\message_context_menu.dart:725:                  color: Colors.black.withOpacity(0.12),`
+- `lib/features\chat\widgets\message_context_menu.dart:806:                      : Colors.black.withOpacity(0.05)),`
+- `lib/features\chat\widgets\message_context_menu.dart:880:                    color: Colors.black.withOpacity(0.1),`
+- `lib/features\chat\widgets\message_context_menu.dart:969:                color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:977:                color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:1019:                        : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:1026:                        : Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_context_menu.dart:1038:                  color: Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_context_menu.dart:1208:                        color: Colors.white.withOpacity(0.7),`
+- `lib/features\chat\widgets\message_context_menu.dart:1455:              color: Colors.black.withOpacity(0.15),`
+- `lib/features\chat\widgets\message_context_menu.dart:1490:        : (isDark ? Colors.white10 : Colors.black.withOpacity(0.045));`
+- `lib/features\chat\widgets\message_context_menu.dart:1801:              widget.isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\channel_page.dart:310:                  ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\channel_page.dart:311:                  : Colors.black.withOpacity(0.04),`
+- `lib/features\chat\pages\channel_page.dart:511:                          ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\channel_page.dart:512:                          : Colors.black.withOpacity(0.04),`
+- `lib/features\chat\pages\channel_page.dart:699:                    ? Colors.white.withOpacity(0.02)`
+- `lib/features\chat\pages\channel_page.dart:700:                    : Colors.black.withOpacity(0.02),`
+- `lib/features\chat\pages\channel_page.dart:823:              color: Colors.black.withOpacity(0.08),`
+- `lib/features\chat\widgets\message_bubble_text.dart:128:            color: Colors.black.withOpacity(0.05),`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:193:                            color: Colors.white.withOpacity(0.4),`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:205:                          color: Colors.white.withOpacity(0.7),`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:218:                    color: Colors.white.withOpacity(0.2),`
+- `lib/features\chat\widgets\message_bubble_wallet_transfer_detail.dart:252:                    color: Colors.white.withOpacity(0.85),`
+- `lib/features\chat\pages\channel_profile_page.dart:1690:              color: isDark ? Colors.white.withOpacity(0.78) : fg,`
+- `lib/features\chat\pages\channel_profile_page.dart:2364:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\channel_profile_page.dart:2377:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\channel_profile_page.dart:2825:      backgroundColor: Colors.black.withOpacity(_opacity),`
+- `lib/features\chat\pages\channel_profile_page.dart:2923:      backgroundColor: Colors.black,`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:137:                color: Colors.white.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:164:                color: Colors.white.withOpacity(0.3),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:170:              backgroundColor: Colors.white.withOpacity(0.2),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:233:              color: Colors.white.withOpacity(0.9),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:260:                color: Colors.white.withOpacity(0.8),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:282:                color: Colors.white.withOpacity(0.8),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:297:                color: Colors.white.withOpacity(0.8),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:312:                color: Colors.white.withOpacity(0.8),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:327:                      color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\widgets\message_bubble_wallet_red_packet_detail.dart:367:                  color: Colors.white.withOpacity(0.9),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:205:            backgroundColor: Colors.black87,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:279:          backgroundColor: Colors.black,`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:342:                          Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:345:                          Colors.black.withOpacity(0.7),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:412:                          color: Colors.black.withOpacity(0.5),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:449:                                inactiveTrackColor: Colors.white.withOpacity(`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:453:                                overlayColor: Colors.white.withOpacity(0.2),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:572:                color: Colors.white.withOpacity(0.1),`
+- `lib/features\chat\widgets\message_bubble_video_player.dart:595:                color: Colors.white.withOpacity(0.6),`
+- `lib/features\chat\pages\chat_detail_build.dart:101:                                      color: Colors.black.withOpacity(`
+- `lib/features\chat\pages\chat_detail_build.dart:242:                            color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\pages\chat_detail_common_widgets.dart:20:              color: Colors.black.withOpacity(0.1),`
+- `lib/features\portal\pages\custom_portal_content_native.dart:496:                      ? Colors.white.withOpacity(0.08)`
+- `lib/features\portal\pages\custom_portal_content_native.dart:497:                      : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:168:                    color: Colors.black.withOpacity(0.3 * anim1.value),`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:188:                                ? Colors.white.withOpacity(0.12)`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:189:                                : Colors.white.withOpacity(0.85),`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:193:                                  ? Colors.white.withOpacity(0.15)`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:194:                                  : Colors.white.withOpacity(0.5),`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:262:                                            ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\pages\chat_detail_edit_delete_actions.dart:263:                                            : Colors.black.withOpacity(0.05),`
+- `lib/features\wallet\pages\payment_result_page.dart:346:                        color: Colors.black.withOpacity(0.05),`
+- `lib/features\wallet\pages\recharge_page.dart:344:        barrierColor: Colors.black87,`
+- `lib/features\wallet\pages\recharge_page.dart:349:                backgroundColor: Colors.black87,`
+- `lib/features\wallet\pages\recharge_page.dart:600:                                          ? Colors.white.withOpacity(0.05)`
+- `lib/features\wallet\pages\recharge_page.dart:628:                                ? Colors.white.withOpacity(0.05)`
+- `lib/features\wallet\pages\recharge_page.dart:875:                                    ? Colors.white.withOpacity(0.05)`
+- `lib/features\chat\pages\chat_detail_feedback_widgets.dart:81:                      : Colors.white.withOpacity(0.95),`
+- `lib/features\chat\pages\chat_detail_feedback_widgets.dart:85:                      color: Colors.black.withOpacity(0.15),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:600:                                color: Colors.white.withOpacity(0.7),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:621:                          color: Colors.white.withOpacity(0.2),`
+- `lib/features\wallet\pages\send_red_packet_page.dart:655:                      color: Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:128:                                  ? Colors.white.withOpacity(0.04)`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:129:                                  : Colors.white.withOpacity(0.72),`
+- `lib/features\chat\pages\chat_detail_group_info_sheet.dart:155:                                        ? Colors.white.withOpacity(0.88)`
+- `lib/features\chat\pages\chat_detail_group_info_widgets.dart:50:        color: isDark ? Colors.white.withOpacity(0.05) : tone.withOpacity(0.08),`
+- `lib/features\moments\pages\moments_page.dart:636:                        : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:694:                    : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:740:                    ? Colors.white.withOpacity(0.08)`
+- `lib/features\moments\pages\moments_page.dart:741:                    : Colors.black.withOpacity(0.04),`
+- `lib/features\moments\pages\moments_page.dart:1822:                  color: Colors.black.withOpacity(widget.isDark ? 0.3 : 0.08),`
+- `lib/features\moments\pages\moments_page.dart:2539:        barrierColor: Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:3095:        barrierColor: Colors.black87,`
+- `lib/features\moments\pages\moments_page.dart:3710:                color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),`
+- `lib/features\moments\pages\moments_page.dart:4143:                ? Colors.black.withOpacity(0.6)`
+- `lib/features\moments\pages\moments_page.dart:4144:                : Colors.white.withOpacity(0.85),`
+- `lib/features\moments\pages\moments_page.dart:4148:                  ? Colors.white.withOpacity(0.1)`
+- `lib/features\moments\pages\moments_page.dart:4149:                  : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:4154:                color: Colors.black.withOpacity(0.15),`
+- `lib/features\moments\pages\moments_page.dart:4573:                  : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:5029:                    : Colors.black.withOpacity(0.3),`
+- `lib/features\moments\pages\moments_page.dart:5059:                ? Colors.white.withOpacity(0.2)`
+- `lib/features\moments\pages\moments_page.dart:5294:                        Colors.black.withOpacity(0.5),`
+- `lib/features\moments\pages\moments_page.dart:6040:            color: Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:6104:                                : Colors.black.withOpacity(0.05)),`
+- `lib/features\moments\pages\moments_page.dart:6431:                      color: Colors.black.withOpacity(0.6),`
+- `lib/features\moments\pages\moments_page.dart:6454:                      color: Colors.black.withOpacity(0.5),`
+- `lib/features\moments\pages\moments_page.dart:6513:                      color: Colors.white.withOpacity(0.9),`
+- `lib/features\moments\pages\moments_page.dart:6577:                  color: Colors.black.withOpacity(0.6),`
+- `lib/features\moments\pages\moments_page.dart:6845:                    ? Colors.white.withOpacity(0.08)`
+- `lib/features\moments\pages\moments_page.dart:6846:                    : Colors.black.withOpacity(0.04),`
+- `lib/features\moments\pages\moments_page.dart:7237:                                : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:7262:                                : Colors.black.withOpacity(0.04),`
+- `lib/features\moments\pages\moments_page.dart:7435:                                          : Colors.black.withOpacity(0.04)),`
+- `lib/features\moments\pages\moments_page.dart:7586:                  color: Colors.black.withOpacity(0.7),`
+- `lib/features\moments\pages\moments_page.dart:7734:                        : Colors.black.withOpacity(0.04)),`
+- `lib/features\moments\pages\moments_page.dart:8041:                  ? Colors.white.withOpacity(0.06)`
+- `lib/features\moments\pages\moments_page.dart:8042:                  : Colors.black.withOpacity(0.04),`
+- `lib/features\moments\pages\moments_page.dart:8543:                  ? Colors.white.withOpacity(0.06)`
+- `lib/features\moments\pages\moments_page.dart:8544:                  : Colors.black.withOpacity(0.04),`
+- `lib/features\moments\pages\moments_page.dart:8679:      barrierColor: Colors.black.withOpacity(0.3),`
+- `lib/features\moments\pages\moments_page.dart:8697:                        ? Colors.black.withOpacity(0.6)`
+- `lib/features\moments\pages\moments_page.dart:8698:                        : Colors.white.withOpacity(0.85),`
+- `lib/features\moments\pages\moments_page.dart:8702:                          ? Colors.white.withOpacity(0.15)`
+- `lib/features\moments\pages\moments_page.dart:8703:                          : Colors.black.withOpacity(0.08),`
+- `lib/features\moments\pages\moments_page.dart:8707:                        color: Colors.black.withOpacity(0.2),`
+- `lib/features\moments\pages\moments_page.dart:8778:                                          ? Colors.white.withOpacity(0.2)`
+- `lib/features\moments\pages\moments_page.dart:8779:                                          : Colors.black.withOpacity(0.1),`
+- `lib/features\moments\pages\moments_page.dart:8937:                        : Colors.white.withOpacity(0.9),`
+- `lib/features\moments\pages\moments_page.dart:8941:                        color: Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:9570:              color: Colors.black.withOpacity(isDark ? 0.15 : 0.03),`
+- `lib/features\moments\pages\moments_page.dart:9725:                            color: Colors.white.withOpacity(0.9),`
+- `lib/features\moments\pages\moments_page.dart:9799:                                : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:9804:                                : Colors.black.withOpacity(0.05),`
+- `lib/features\moments\pages\moments_page.dart:10123:              color: Colors.black.withOpacity(isDark ? 0.15 : 0.03),`
+- `lib/features\moments\pages\moments_page.dart:10211:                      ? Colors.white.withOpacity(0.05)`
+- `lib/features\moments\pages\moments_page.dart:10212:                      : Colors.black.withOpacity(0.03),`
+- `lib/features\wallet\pages\set_pay_password_page.dart:585:                : (isDark ? Colors.white.withOpacity(0.06) : Colors.grey[50]),`
+- `lib/features\vip\widgets\vip_badge.dart:62:            color: Colors.black.withOpacity(0.04),`
+- `lib/features\vip\widgets\vip_avatar_frame.dart:89:                  color: Colors.white.withOpacity(0.96),`
+- `lib/features\chat\pages\chat_detail_input_composer.dart:195:                        : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:144:                color: Colors.black.withOpacity(isDark ? 0.4 : 0.12),`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:160:                    ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\chat_detail_input_mentions.dart:161:                    : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_meeting_actions.dart:219:                  color: Colors.black.withOpacity(0.12),`
+- `lib/features\chat\pages\chat_detail_meeting_invite_picker.dart:91:                      color: Colors.black.withOpacity(0.14),`
+- `lib/features\chat\pages\chat_detail_meeting_invite_prompt.dart:41:                color: Colors.black.withOpacity(0.16),`
+- `lib/features\settings\pages\stickers_page.dart:199:                  ? Colors.white.withOpacity(0.08)`
+- `lib/features\settings\pages\stickers_page.dart:210:                    color: Colors.black.withOpacity(0.04),`
+- `lib/features\settings\pages\stickers_page.dart:384:                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),`
+- `lib/features\settings\pages\stickers_page.dart:403:                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),`
+- `lib/features\settings\pages\stickers_page.dart:909:                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_message_list.dart:197:                color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_message_list_helpers.dart:83:          color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\pages\chat_detail_message_list_helpers.dart:111:            color: Colors.black.withOpacity(0.15),`
+- `lib/features\settings\pages\device_login_confirm_page.dart:251:                      color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),`
+- `lib/features\settings\pages\device_login_confirm_page.dart:522:            isDark ? Colors.white.withOpacity(0.04) : const Color(0xFFF6F7FB),`
+- `lib/features\settings\pages\settings_page.dart:987:      color: Colors.white.withOpacity(0.92),`
+- `lib/features\settings\pages\settings_page.dart:1014:      color: Colors.white.withOpacity(0.92),`
+- `lib/features\settings\pages\settings_page.dart:1305:        : Colors.white.withOpacity(0.80);`
+- `lib/features\settings\pages\settings_page.dart:1393:                      Colors.black.withOpacity(hasImage ? 0.18 : 0.00),`
+- `lib/features\settings\pages\settings_page.dart:1394:                      Colors.black.withOpacity(hasImage ? 0.22 : 0.04),`
+- `lib/features\settings\pages\settings_page.dart:1448:                            color: Colors.white.withOpacity(`
+- `lib/features\settings\pages\settings_page.dart:1455:                              color: Colors.black.withOpacity(0.18),`
+- `lib/features\settings\pages\settings_page.dart:1499:                                color: Colors.white.withOpacity(0.22),`
+- `lib/features\settings\pages\settings_page.dart:1561:                        color: Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\settings_page.dart:1598:              color: Colors.black.withOpacity(0.025),`
+- `lib/features\settings\pages\settings_page.dart:2569:                  ? Colors.white.withOpacity(0.08)`
+- `lib/features\settings\pages\settings_page.dart:2570:                  : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\settings_page.dart:2580:                    color: Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\settings_page.dart:2745:              color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),`
+- `lib/features\settings\pages\settings_page.dart:2905:            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\settings_page.dart:2938:                          : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\settings_page.dart:3058:              color: Colors.black.withOpacity(isDark ? 0.15 : 0.03),`
+- `lib/features\settings\pages\settings_page.dart:3185:                      ? Colors.white.withOpacity(0.05)`
+- `lib/features\settings\pages\settings_page.dart:3186:                      : Colors.black.withOpacity(0.03),`
+- `lib/features\settings\pages\devices_page.dart:597:                  ? Colors.white.withOpacity(0.08)`
+- `lib/features\settings\pages\devices_page.dart:598:                  : Colors.black.withOpacity(0.06),`
+- `lib/features\settings\pages\devices_page.dart:1039:      barrierColor: Colors.black.withOpacity(0.4),`
+- `lib/features\settings\pages\devices_page.dart:1057:                        ? Colors.white.withOpacity(0.12)`
+- `lib/features\settings\pages\devices_page.dart:1058:                        : Colors.white.withOpacity(0.75),`
+- `lib/features\settings\pages\devices_page.dart:1062:                          ? Colors.white.withOpacity(0.2)`
+- `lib/features\settings\pages\devices_page.dart:1063:                          : Colors.white.withOpacity(0.8),`
+- `lib/features\settings\pages\devices_page.dart:1114:                                        ? Colors.white.withOpacity(0.1)`
+- `lib/features\settings\pages\chat_settings_page.dart:791:                  color: Colors.black.withOpacity(0.1),`
+- `lib/features\settings\pages\chat_settings_page.dart:1234:                  color: Colors.black.withOpacity(0.1),`
+- `lib/features\settings\pages\chat_settings_page.dart:1455:            color: Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\profile_page.dart:616:          ? Colors.white.withOpacity(0.1)`
+- `lib/features\settings\pages\profile_page.dart:617:          : Colors.black.withOpacity(0.1),`
+- `lib/features\settings\pages\profile_page.dart:1154:      barrierColor: Colors.black.withOpacity(0.5),`
+- `lib/features\settings\pages\profile_page.dart:1172:                        ? Colors.white.withOpacity(0.12)`
+- `lib/features\settings\pages\profile_page.dart:1173:                        : Colors.white.withOpacity(0.9),`
+- `lib/features\settings\pages\profile_page.dart:1177:                          ? Colors.white.withOpacity(0.2)`
+- `lib/features\settings\pages\profile_page.dart:1178:                          : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\profile_page.dart:1245:                                      ? Colors.white.withOpacity(0.1)`
+- `lib/features\settings\pages\profile_page.dart:1246:                                      : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\profile_page.dart:1804:                  color: Colors.white.withOpacity(0.28),`
+- `lib/features\settings\pages\profile_page.dart:1886:                                        color: Colors.black.withOpacity(0.12),`
+- `lib/features\settings\pages\profile_page.dart:1934:                                                Colors.black.withOpacity(0.72),`
+- `lib/features\settings\pages\profile_page.dart:2398:                        color: Colors.white.withOpacity(0.92),`
+- `lib/features\settings\pages\notification_settings_page.dart:1110:                      ? Colors.white.withOpacity(0.05)`
+- `lib/features\settings\pages\notification_settings_page.dart:1111:                      : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\notification_settings_page.dart:1187:              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\settings\pages\personalization_page.dart:265:                                      color: Colors.black.withOpacity(0.2),`
+- `lib/features\settings\pages\personalization_page.dart:447:                      ? Colors.white.withOpacity(0.1)`
+- `lib/features\settings\pages\personalization_page.dart:448:                      : Colors.black.withOpacity(0.05),`
+- `lib/features\settings\pages\faq_page.dart:579:                  ? Colors.white.withOpacity(0.08)`
+- `lib/features\settings\pages\faq_page.dart:580:                  : Colors.black.withOpacity(0.04),`
+- `lib/features\settings\pages\faq_page.dart:1090:                      isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\settings\pages\faq_page.dart:1188:              ? Colors.white.withOpacity(0.05)`
+- `lib/features\settings\pages\faq_page.dart:1189:              : Colors.black.withOpacity(0.03),`
+- `lib/features\settings\pages\privacy_settings_page.dart:2566:              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_detail_realtime_state.dart:262:                          ? Colors.white.withOpacity(0.08)`
+- `lib/features\settings\pages\data_storage_page.dart:1104:                          : Colors.black.withOpacity(0.06),`
+- `lib/features\settings\pages\data_storage_page.dart:1273:              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_page.dart:586:                                  ? Colors.white.withOpacity(0.12)`
+- `lib/features\chat\pages\chat_page.dart:587:                                  : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_page.dart:1336:        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_page.dart:1454:                              ? Colors.white.withOpacity(0.15)`
+- `lib/features\chat\pages\chat_page.dart:1455:                              : Colors.white.withOpacity(0.9))`
+- `lib/features\chat\pages\chat_page.dart:1457:                              ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\chat_page.dart:1492:                              ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\chat_page.dart:1584:      barrierColor: Colors.black54,`
+- `lib/features\chat\pages\chat_page.dart:1597:                      ? Colors.black.withOpacity(0.7)`
+- `lib/features\chat\pages\chat_page.dart:1598:                      : Colors.white.withOpacity(0.9),`
+- `lib/features\chat\pages\chat_page.dart:1651:                                    ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\pages\chat_page.dart:2421:                    color: Colors.black.withOpacity(0.4 * _fadeAnimation.value),`
+- `lib/features\chat\pages\chat_page.dart:2457:                                  color: Colors.black.withOpacity(0.3),`
+- `lib/features\chat\pages\chat_page.dart:2529:                                                ? Colors.black.withOpacity(0.5)`
+- `lib/features\chat\pages\chat_page.dart:2530:                                                : Colors.white.withOpacity(`
+- `lib/features\chat\pages\chat_page.dart:2772:            color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\pages\chat_page.dart:2792:            color: Colors.black.withOpacity(0.2),`
+- `lib/features\chat\pages\chat_page.dart:3012:                  color: Colors.black.withOpacity(0.06),`
+- `lib/features\chat\pages\chat_page.dart:3307:                ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\pages\chat_page.dart:3308:                : Colors.black.withOpacity(0.05))`
+- `lib/features\chat\pages\chat_page.dart:3389:          ? Colors.white.withOpacity(0.1)`
+- `lib/features\chat\pages\chat_page.dart:3390:          : Colors.black.withOpacity(0.08),`
+- `lib/features\chat\pages\chat_page.dart:3487:                            : Colors.black.withOpacity(0.05)),`
+- `lib/features\chat\pages\chat_page.dart:3516:                              ? Colors.white.withOpacity(0.10)`
+- `lib/features\chat\pages\chat_page.dart:3836:                  ? Colors.white.withOpacity(0.05)`
+- `lib/features\chat\pages\chat_page.dart:3837:                  : Colors.black.withOpacity(0.03)),`
+- `lib/features\chat\pages\emoji_store_page.dart:406:                  isDark ? Colors.white10 : Colors.black.withOpacity(0.04),`
+- `lib/features\chat\pages\qr_scanner_page.dart:645:                color: Colors.white.withOpacity(0.92),`
+- `lib/features\chat\pages\qr_scanner_page.dart:656:                  color: Colors.white.withOpacity(0.65),`
+- `lib/features\chat\pages\qr_scanner_page.dart:708:    final overlayColor = Colors.black.withOpacity(0.6);`
+- `lib/features\chat\pages\qr_scanner_page.dart:711:      backgroundColor: Colors.black,`
+- `lib/features\chat\pages\qr_scanner_page.dart:713:        backgroundColor: Colors.black,`
+- `lib/features\chat\pages\qr_scanner_page.dart:778:                      color: Colors.white.withOpacity(0.9),`
+- `lib/features\chat\pages\qr_scanner_page.dart:813:                    color: Colors.white.withOpacity(0.92),`
+- `lib/features\chat\pages\qr_scanner_page.dart:837:                      color: Colors.white.withOpacity(0.7),`
+- `lib/features\chat\pages\group_profile_page.dart:2443:              ? Colors.white.withOpacity(0.06)`
+- `lib/features\chat\pages\group_profile_page.dart:2444:              : Colors.white.withOpacity(0.8),`
+- `lib/features\chat\pages\group_profile_page.dart:2449:            color: Colors.black.withOpacity(`
+- `lib/features\chat\pages\group_profile_page.dart:2584:                        : Colors.white.withOpacity(0.85),`
+- `lib/features\chat\pages\group_profile_page.dart:2588:                      color: Colors.black.withOpacity(isDark ? 0.16 : 0.035),`
+- `lib/features\chat\pages\group_profile_page.dart:3834:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\group_profile_page.dart:3847:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\group_profile_page.dart:4058:                    color: Colors.black.withOpacity(isDark ? 0.22 : 0.08),`
+- `lib/features\chat\pages\group_profile_page.dart:5292:      backgroundColor: Colors.black.withOpacity(_opacity),`
+- `lib/features\chat\pages\group_profile_page.dart:5394:      backgroundColor: Colors.black,`
+- `lib/features\chat\pages\user_profile_page.dart:958:        : Colors.white.withOpacity(0.76);`
+- `lib/features\chat\pages\user_profile_page.dart:1057:                              color: Colors.white.withOpacity(`
+- `lib/features\chat\pages\user_profile_page.dart:1543:        barrierColor: Colors.black87,`
+- `lib/features\chat\pages\user_profile_page.dart:2430:                              ? Colors.white.withOpacity(0.08)`
+- `lib/features\chat\pages\user_profile_page.dart:3299:            isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF6F7FB),`
+- `lib/features\chat\pages\user_profile_page.dart:3563:        isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF6F7FB);`
+- `lib/features\chat\pages\user_profile_page.dart:4986:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\user_profile_page.dart:5000:          barrierColor: Colors.black87,`
+- `lib/features\chat\pages\user_profile_page.dart:6157:      backgroundColor: Colors.black.withOpacity(_opacity),`
+- `lib/features\chat\pages\user_profile_page.dart:6262:      backgroundColor: Colors.black,`

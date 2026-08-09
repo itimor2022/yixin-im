@@ -1,7 +1,10 @@
+// 文件用途：定义多语言资源、语言切换状态以及本地化文本读取接口。
+// 核心逻辑：围绕 AppLanguage 组织，完成输入校验、核心处理和结果回传。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// 关键声明：app localizations 是客户端文案入口，负责按当前语言读取稳定的本地化文本和格式化参数。
 /// 支持的语言
 enum AppLanguage {
   zhCN('zh_CN', '简体中文', Locale('zh', 'CN')),
@@ -25,6 +28,7 @@ enum AppLanguage {
 /// 语言状态管理
 class LanguageNotifier extends StateNotifier<AppLanguage> {
   LanguageNotifier() : super(AppLanguage.zhCN) {
+    AppLocalizations.setCurrentLanguage(state);
     _loadLanguage();
   }
 
@@ -32,10 +36,13 @@ class LanguageNotifier extends StateNotifier<AppLanguage> {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('app_language') ?? 'zh_CN';
     state = AppLanguage.fromCode(code);
+    AppLocalizations.setCurrentLanguage(state);
   }
 
+  // 流程逻辑：`setLanguage` 先校验输入和当前权限，进入操作中状态后执行副作用；成功同步服务端结果，失败恢复可重试状态并保留错误原因。
   Future<void> setLanguage(AppLanguage language) async {
     state = language;
+    AppLocalizations.setCurrentLanguage(language);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_language', language.code);
   }
@@ -50,18 +57,28 @@ final languageProvider = StateNotifierProvider<LanguageNotifier, AppLanguage>((
 /// 翻译类
 class AppLocalizations {
   final AppLanguage language;
+  static AppLanguage _currentLanguage = AppLanguage.zhCN;
 
-  AppLocalizations(this.language);
+  AppLocalizations(this.language) {
+    _currentLanguage = language;
+  }
+
+  static AppLanguage get currentLanguage => _currentLanguage;
+
+  static void setCurrentLanguage(AppLanguage language) {
+    _currentLanguage = language;
+  }
 
   static AppLocalizations of(BuildContext context) {
     return Localizations.of<AppLocalizations>(context, AppLocalizations) ??
-        AppLocalizations(AppLanguage.zhCN);
+        AppLocalizations(currentLanguage);
   }
 
   String get(String key) {
-    return _translations[language.code]?[key] ??
-        _translations['zh_CN']?[key] ??
-        key;
+    final localized = _translations[language.code]?[key];
+    if (localized != null) return localized;
+    if (language == AppLanguage.en) return key;
+    return _translations['zh_CN']?[key] ?? key;
   }
 
   // 简化调用的 getter
@@ -519,7 +536,7 @@ const Map<String, Map<String, String>> _translations = {
 };
 
 const Map<String, String> _zhCN = {
-  'app_name': '壹信',
+  'app_name': '通用IM',
 
   // 通用
   'confirm': '确认',
@@ -571,8 +588,14 @@ const Map<String, String> _zhCN = {
   'sticker': '贴纸',
   'reply': '回复',
   'forward': '转发',
+  'translate': '翻译',
+  'favorite': '收藏',
+  'revoke': '撤回',
   'select_action': '选择',
   'pin': '置顶',
+  'edited': '已编辑',
+  'burn_after_read_message': '阅后即焚消息',
+  'tap_to_view_burn_after_read': '点击查看，查看后 {seconds} 秒自动销毁',
   'unpin': '取消置顶',
   'mute': '静音',
   'unmute': '取消静音',
@@ -636,7 +659,6 @@ const Map<String, String> _zhCN = {
   'discover_subtitle': '这里展示后台配置的发现入口，点击后可直接在应用内访问',
   'discover_demo_notice': '当前页面内容已经接入后台配置，后续新增、修改或停用入口都可直接在后台管理。',
   'discover_open': '打开',
-  'discover_demo_tag': '演示',
   'discover_live_tag': '已接入',
   'discover_empty': '暂无发现入口',
   'new_post': '发布动态',
@@ -724,6 +746,7 @@ const Map<String, String> _zhCN = {
   'save_as': '存储到...',
   'show_in_folder': '在 Finder 中显示',
   'open_with': '使用默认应用打开',
+  'open_with_default_app': '使用默认应用打开',
   'download': '下载',
   'downloading': '下载中...',
   'downloaded': '已下载',
@@ -903,7 +926,7 @@ const Map<String, String> _zhCN = {
   'contact_support': '联系客服',
   'support_description': '在线客服或 QQ 客服，我们将尽快为您解答',
   'online_support': '在线客服',
-  'online_support_hint': '点击打开壹信客服系统，在线沟通',
+  'online_support_hint': '点击打开通用IM客服系统，在线沟通',
   'qq_support': 'QQ 客服',
   'questions_count': '个问题',
   'thank_you_feedback': '感谢您的反馈！',
@@ -949,7 +972,7 @@ const Map<String, String> _zhCN = {
 
   // 关于页
   'about_title': '关于',
-  'copyright': '© 2024 壹信网络',
+  'copyright': '通用版本',
 
   // 空状态
   'select_chat_to_start': '选择一个聊天开始消息',
@@ -1087,10 +1110,74 @@ const Map<String, String> _zhCN = {
   'false_info': '虚假信息',
   'violence': '暴力内容',
   'adult_content': '色情内容',
+  'red_packet': '红包',
+  'transfer': '转账',
+  'system_message': '系统消息',
+  'contact_card': '联系人名片',
+  'location': '位置',
+  'best_wishes_and_good_luck': '恭喜发财，大吉大利',
+  'manage_group': '管理群组',
+  'manage_channel': '管理频道',
+  'search_messages': '搜索消息',
+  'clear_chat_history': '清空聊天记录',
+  'edit_remark': '修改备注',
+  'remark_hint': '填写备注名，留空则显示昵称',
+  'remark_saved': '备注已保存',
+  'remark_save_failed': '备注保存失败，请重试',
+  'remove_contact_title': '从联系人中移除',
+  'remove_contact_confirm': '确定要将 {name} 从联系人中移除吗？',
+  'remove_contact_success': '已将 {name} 从联系人中移除',
+  'remove_contact_failed': '移除失败，请重试',
+  'add_contact_success': '已将 {name} 添加到联系人',
+  'add_contact_failed': '添加失败，请重试',
+  'share_contact': '分享联系人',
+  'contact_info_copied': '联系人信息已复制',
+  'copy_contact_info': '复制联系人信息',
+  'send_contact_card_to_friend': '发送名片给好友',
+  'send_contact_success': '已将 {name} 的名片发送给 {friend}',
+  'create_chat_failed': '创建会话失败',
+  'clear_chat_with_user': '清空与 {name} 的聊天记录？',
+  'cannot_undo': '此操作无法撤销',
+  'clear_for_me_only': '仅为我清空',
+  'clear_for_both': '为双方清空',
+  'chat_history_cleared': '聊天记录已清空',
+  'chat_history_cleared_for_both': '已为双方清空聊天记录',
+  'no_common_groups': '暂无共同群组',
+  'no_chat_history': '暂无聊天记录',
+  'block_user_title': '屏蔽 {name}？',
+  'block_user_message': '屏蔽后将无法收到对方的消息',
+  'block_success': '已屏蔽',
+  'block_failed': '屏蔽失败，请重试',
+  'unblock_title': '取消屏蔽',
+  'unblock_confirm': '确定要取消对 {name} 的屏蔽吗？',
+  'unblock_success': '已取消屏蔽',
+  'unblock_failed': '操作失败，请重试',
+  'pending_request_submitted': '已提交申请，等待审批',
+  'join_group': '加入群组',
+  'join_channel': '加入频道',
+  'burn_after_read_banner': '已开启阅后即焚，对方已读后自动销毁',
+  'only_text_messages_can_be_edited': '只能编辑文本消息',
+  'edit_time_limit_exceeded': '超过48小时的消息无法编辑',
+  'forward_to': '转发到...',
+  'forwarded_to': '已转发到 {name}',
+  'forward_failed': '转发失败',
+  'only_admin_can_post_forward': '仅管理员可发布内容，无法转发',
+  'group_muted_cannot_forward': '该群组已禁言，无法转发',
+  'file_not_found': '文件不存在',
+  'save_file': '保存文件',
+  'downloading_file': '正在下载文件...',
+  'open_failed': '打开失败',
+  'message_not_in_current_view': '消息不在当前视图中',
+  'delete_selected_messages': '删除 {count} 条消息',
+  'delete_selected_messages_desc': '这些消息将从您的聊天记录中删除，且无法恢复',
+  'selected_messages_count': '已选择 {count} 条消息',
+  'meeting': '会议',
+  'record_video': '录像',
+  'view_media': '查看媒体',
 };
 
 const Map<String, String> _zhTW = {
-  'app_name': '壹信',
+  'app_name': '通用IM',
 
   // 通用
   'confirm': '確認',
@@ -1142,8 +1229,14 @@ const Map<String, String> _zhTW = {
   'sticker': '貼圖',
   'reply': '回覆',
   'forward': '轉發',
+  'translate': '翻譯',
+  'favorite': '收藏',
+  'revoke': '收回',
   'select_action': '選擇',
   'pin': '置頂',
+  'edited': '已編輯',
+  'burn_after_read_message': '閱後即焚訊息',
+  'tap_to_view_burn_after_read': '點擊查看，查看後 {seconds} 秒自動銷毀',
   'unpin': '取消置頂',
   'mute': '靜音',
   'unmute': '取消靜音',
@@ -1207,7 +1300,6 @@ const Map<String, String> _zhTW = {
   'discover_subtitle': '這裡展示後台配置的發現入口，點擊後可直接在應用內訪問',
   'discover_demo_notice': '目前頁面內容已接入後台配置，之後新增、修改或停用入口都可直接在後台管理。',
   'discover_open': '打開',
-  'discover_demo_tag': '演示',
   'discover_live_tag': '已接入',
   'discover_empty': '暫無發現入口',
   'new_post': '發布動態',
@@ -1295,6 +1387,7 @@ const Map<String, String> _zhTW = {
   'save_as': '儲存至...',
   'show_in_folder': '在 Finder 中顯示',
   'open_with': '使用預設應用程式開啟',
+  'open_with_default_app': '使用預設應用程式開啟',
   'download': '下載',
   'downloading': '下載中...',
   'downloaded': '已下載',
@@ -1475,7 +1568,7 @@ const Map<String, String> _zhTW = {
   'contact_support': '聯絡客服',
   'support_description': '線上客服或 QQ 客服，我們將盡快為您解答',
   'online_support': '線上客服',
-  'online_support_hint': '點擊開啟壹信客服系統，線上溝通',
+  'online_support_hint': '點擊開啟通用IM客服系統，線上溝通',
   'qq_support': 'QQ 客服',
   'questions_count': '個問題',
   'thank_you_feedback': '感謝您的回饋！',
@@ -1521,7 +1614,7 @@ const Map<String, String> _zhTW = {
 
   // 關於頁
   'about_title': '關於',
-  'copyright': '© 2024 壹信網路',
+  'copyright': '通用版本',
 
   // 空狀態
   'select_chat_to_start': '選擇一個聊天開始訊息',
@@ -1659,10 +1752,74 @@ const Map<String, String> _zhTW = {
   'false_info': '虛假訊息',
   'violence': '暴力內容',
   'adult_content': '色情內容',
+  'red_packet': '紅包',
+  'transfer': '轉帳',
+  'system_message': '系統訊息',
+  'contact_card': '聯絡人名片',
+  'location': '位置',
+  'best_wishes_and_good_luck': '恭喜發財，大吉大利',
+  'manage_group': '管理群組',
+  'manage_channel': '管理頻道',
+  'search_messages': '搜尋訊息',
+  'clear_chat_history': '清空聊天記錄',
+  'edit_remark': '修改備註',
+  'remark_hint': '填寫備註名，留空則顯示暱稱',
+  'remark_saved': '備註已儲存',
+  'remark_save_failed': '備註儲存失敗，請重試',
+  'remove_contact_title': '從聯絡人中移除',
+  'remove_contact_confirm': '確定要將 {name} 從聯絡人中移除嗎？',
+  'remove_contact_success': '已將 {name} 從聯絡人中移除',
+  'remove_contact_failed': '移除失敗，請重試',
+  'add_contact_success': '已將 {name} 新增到聯絡人',
+  'add_contact_failed': '新增失敗，請重試',
+  'share_contact': '分享聯絡人',
+  'contact_info_copied': '聯絡人資訊已複製',
+  'copy_contact_info': '複製聯絡人資訊',
+  'send_contact_card_to_friend': '傳送名片給好友',
+  'send_contact_success': '已將 {name} 的名片傳送給 {friend}',
+  'create_chat_failed': '建立會話失敗',
+  'clear_chat_with_user': '清空與 {name} 的聊天記錄？',
+  'cannot_undo': '此操作無法復原',
+  'clear_for_me_only': '僅為我清空',
+  'clear_for_both': '為雙方清空',
+  'chat_history_cleared': '聊天記錄已清空',
+  'chat_history_cleared_for_both': '已為雙方清空聊天記錄',
+  'no_common_groups': '暫無共同群組',
+  'no_chat_history': '暫無聊天記錄',
+  'block_user_title': '封鎖 {name}？',
+  'block_user_message': '封鎖後將無法收到對方的消息',
+  'block_success': '已封鎖',
+  'block_failed': '封鎖失敗，請重試',
+  'unblock_title': '取消封鎖',
+  'unblock_confirm': '確定要取消對 {name} 的封鎖嗎？',
+  'unblock_success': '已取消封鎖',
+  'unblock_failed': '操作失敗，請重試',
+  'pending_request_submitted': '已提交申請，等待審批',
+  'join_group': '加入群組',
+  'join_channel': '加入頻道',
+  'burn_after_read_banner': '已開啟閱後即焚，對方已讀後自動銷毀',
+  'only_text_messages_can_be_edited': '只能編輯文字訊息',
+  'edit_time_limit_exceeded': '超過48小時的訊息無法編輯',
+  'forward_to': '轉發到...',
+  'forwarded_to': '已轉發到 {name}',
+  'forward_failed': '轉發失敗',
+  'only_admin_can_post_forward': '僅管理員可發布內容，無法轉發',
+  'group_muted_cannot_forward': '該群組已禁言，無法轉發',
+  'file_not_found': '檔案不存在',
+  'save_file': '儲存檔案',
+  'downloading_file': '正在下載檔案...',
+  'open_failed': '開啟失敗',
+  'message_not_in_current_view': '訊息不在目前視圖中',
+  'delete_selected_messages': '刪除 {count} 條訊息',
+  'delete_selected_messages_desc': '這些訊息將從您的聊天記錄中刪除，且無法復原',
+  'selected_messages_count': '已選擇 {count} 條訊息',
+  'meeting': '會議',
+  'record_video': '錄影',
+  'view_media': '查看媒體',
 };
 
 const Map<String, String> _en = {
-  'app_name': 'RanChat',
+  'app_name': '通用IM',
 
   // Common
   'confirm': 'Confirm',
@@ -1714,8 +1871,15 @@ const Map<String, String> _en = {
   'sticker': 'Sticker',
   'reply': 'Reply',
   'forward': 'Forward',
+  'translate': 'Translate',
+  'favorite': 'Favorite',
+  'revoke': 'Recall',
   'select_action': 'Select',
   'pin': 'Pin',
+  'edited': 'Edited',
+  'burn_after_read_message': 'Burn After Reading',
+  'tap_to_view_burn_after_read':
+      'Tap to view. It will auto-delete {seconds} seconds later.',
   'unpin': 'Unpin',
   'mute': 'Mute',
   'unmute': 'Unmute',
@@ -1774,13 +1938,16 @@ const Map<String, String> _en = {
   'discover_title': 'Discover',
   'portal_open': 'Open Website',
   'portal_open_hint': 'Tap to open the configured website inside the app',
-  'portal_external_hint': 'Desktop opens the configured website in your system browser',
+  'portal_external_hint':
+      'Desktop opens the configured website in your system browser',
   'portal_unavailable': 'This section is unavailable',
-  'portal_disabled_hint': 'The admin panel has not enabled this section or no website has been configured yet',
-  'discover_subtitle': 'This page shows backend-managed discovery entries that open directly inside the app',
-  'discover_demo_notice': 'This page is now connected to backend configuration. New, updated, or disabled entries can be managed from the admin panel.',
+  'portal_disabled_hint':
+      'The admin panel has not enabled this section or no website has been configured yet',
+  'discover_subtitle':
+      'This page shows backend-managed discovery entries that open directly inside the app',
+  'discover_demo_notice':
+      'This page is now connected to backend configuration. New, updated, or disabled entries can be managed from the admin panel.',
   'discover_open': 'Open',
-  'discover_demo_tag': 'Demo',
   'discover_live_tag': 'Live',
   'discover_empty': 'No discover items yet',
   'new_post': 'New Post',
@@ -1799,9 +1966,9 @@ const Map<String, String> _en = {
   'account': 'Account',
   'privacy': 'Privacy',
   'security': 'Security',
-  'notification_settings': 'Notifications and Sounds',
+  'notification_settings': 'Notifications',
   'chat_settings': 'Chat Settings',
-  'data_storage': 'Data and Storage',
+  'data_storage': 'Data & Storage',
   'language': 'Language',
   'appearance': 'Appearance',
   'dark_mode': 'Dark',
@@ -1809,7 +1976,7 @@ const Map<String, String> _en = {
   'system_mode': 'System',
   'font_size': 'Font Size',
   'chat_background': 'Chat Background',
-  'stickers_emoji': 'Stickers and Emoji',
+  'stickers_emoji': 'Stickers & Emoji',
   'devices': 'Devices',
   'faq': 'FAQ',
   'about': 'About',
@@ -1868,6 +2035,7 @@ const Map<String, String> _en = {
   'save_as': 'Save As...',
   'show_in_folder': 'Show in Finder',
   'open_with': 'Open with Default App',
+  'open_with_default_app': 'Open with Default App',
   'download': 'Download',
   'downloading': 'Downloading...',
   'downloaded': 'Downloaded',
@@ -1904,7 +2072,7 @@ const Map<String, String> _en = {
   'username_hint':
       'You can choose a username so others can find you.\n\nYou can use a-z, 0-9 and underscores. Minimum 5 characters.',
   'bio_hint': 'Add a few words about yourself.',
-  'no_phone_bound': 'No phone linked',
+  'no_phone_bound': 'No phone',
   'bind': 'Link',
   'change': 'Change',
   'your_color': 'Your Color',
@@ -1928,17 +2096,17 @@ const Map<String, String> _en = {
   'crop_avatar': 'Crop Avatar',
 
   // Notification Settings
-  'notifications_and_sounds': 'Notifications and Sounds',
+  'notifications_and_sounds': 'Notifications',
   'message_notifications': 'Message Notifications',
   'private_messages': 'Private Messages',
   'group_messages': 'Group Messages',
   'channel_messages': 'Channel Messages',
   'moment_notifications': 'Moment Notifications',
   'likes_comments_replies': 'Likes, comments, replies',
-  'notification_content': 'Notification Content',
+  'notification_content': 'Preview',
   'show_message_preview': 'Show Message Preview',
-  'show_message_in_notification': 'Show message content in notifications',
-  'sound_and_vibration': 'Sound and Vibration',
+  'show_message_in_notification': 'Show message text',
+  'sound_and_vibration': 'Sound & Vibration',
   'notification_sound': 'Notification Sound',
   'alert_tone': 'Alert Tone',
   'moment_sound': 'Moment Sound',
@@ -1946,7 +2114,7 @@ const Map<String, String> _en = {
   'in_app_notifications': 'In-App Notifications',
   'in_app_sound': 'In-App Sound',
   'in_app_vibration': 'In-App Vibration',
-  'reset_all_notification_settings': 'Reset All Notification Settings',
+  'reset_all_notification_settings': 'Reset Notifications',
   'select_alert_tone': 'Select Alert Tone',
   'tap_to_preview': 'Tap to preview',
   'reset_to_default': 'Reset to default',
@@ -1955,9 +2123,9 @@ const Map<String, String> _en = {
   'reset': 'Reset',
 
   // Data Storage
-  'data_and_storage': 'Data and Storage',
+  'data_and_storage': 'Data & Storage',
   'storage': 'Storage',
-  'used_storage_space': 'Used Storage Space',
+  'used_storage_space': 'Used Space',
   'manage_storage_space': 'Manage Storage',
   'clear_cache': 'Clear Cache',
   'calculating': 'Calculating...',
@@ -2007,13 +2175,13 @@ const Map<String, String> _en = {
   'scan_qr_code': 'Scan QR Code',
   'login_to_other_device': 'Log in to another device',
   'scan_qr_code_hint':
-      'Open RanChat on another device and tap "Scan QR Code" to log in quickly.',
-  'active_sessions': 'Active Sessions',
+      'Open 通用IM on another device and tap "Scan QR Code" to log in quickly.',
+  'active_sessions': 'Sessions',
   'devices_count': 'devices',
   'no_other_devices': 'No other devices logged in',
   'suspicious_device_hint':
       'If you notice a suspicious login, you can terminate that device\'s session to protect your account.',
-  'terminate_all_other_devices': 'Terminate All Other Devices',
+  'terminate_all_other_devices': 'Log Out Other Devices',
   'confirm_terminate_all':
       'Are you sure you want to terminate all other sessions? This will log out all other devices.',
   'terminate_all': 'Terminate All',
@@ -2107,11 +2275,11 @@ const Map<String, String> _en = {
 
   // About Page
   'about_title': 'About',
-  'copyright': '© 2024 GaoRan Network',
+  'copyright': 'Generic edition',
 
   // Empty State
   'select_chat_to_start': 'Select a chat to start messaging',
-  'press_to_start_chat': 'or press ⌘N to start a new chat',
+  'press_to_start_chat': 'or press Ctrl/Cmd+N for a new chat',
 
   // Additional translations
   'likes_comments_play_sound': 'Play sound for likes and comments',
@@ -2248,4 +2416,70 @@ const Map<String, String> _en = {
   'false_info': 'False Information',
   'violence': 'Violence',
   'adult_content': 'Adult Content',
+  'red_packet': 'Red Packet',
+  'transfer': 'Transfer',
+  'system_message': 'System Message',
+  'contact_card': 'Contact Card',
+  'location': 'Location',
+  'best_wishes_and_good_luck': 'Best wishes and good luck',
+  'manage_group': 'Manage Group',
+  'manage_channel': 'Manage Channel',
+  'search_messages': 'Search Messages',
+  'clear_chat_history': 'Clear Chat History',
+  'edit_remark': 'Edit Remark',
+  'remark_hint': 'Enter a remark name, leave blank to show nickname',
+  'remark_saved': 'Remark saved',
+  'remark_save_failed': 'Failed to save remark, please try again',
+  'remove_contact_title': 'Remove from Contacts',
+  'remove_contact_confirm': 'Remove {name} from contacts?',
+  'remove_contact_success': '{name} removed from contacts',
+  'remove_contact_failed': 'Failed to remove, please try again',
+  'add_contact_success': '{name} added to contacts',
+  'add_contact_failed': 'Failed to add, please try again',
+  'share_contact': 'Share Contact',
+  'contact_info_copied': 'Contact info copied',
+  'copy_contact_info': 'Copy Contact Info',
+  'send_contact_card_to_friend': 'Send Card to Friend',
+  'send_contact_success': '{name}\'s card sent to {friend}',
+  'create_chat_failed': 'Failed to create chat',
+  'clear_chat_with_user': 'Clear chat history with {name}?',
+  'cannot_undo': 'This action cannot be undone',
+  'clear_for_me_only': 'Clear for me only',
+  'clear_for_both': 'Clear for both',
+  'chat_history_cleared': 'Chat history cleared',
+  'chat_history_cleared_for_both': 'Chat history cleared for both',
+  'no_common_groups': 'No common groups yet',
+  'no_chat_history': 'No chat history yet',
+  'block_user_title': 'Block {name}?',
+  'block_user_message': 'You will no longer receive messages from this user',
+  'block_success': 'Blocked',
+  'block_failed': 'Block failed, please try again',
+  'unblock_title': 'Unblock',
+  'unblock_confirm': 'Unblock {name}?',
+  'unblock_success': 'Unblocked',
+  'unblock_failed': 'Operation failed, please try again',
+  'pending_request_submitted': 'Request submitted, waiting for approval',
+  'join_group': 'Join Group',
+  'join_channel': 'Join Channel',
+  'burn_after_read_banner':
+      'Burn after read enabled, message will self-destruct after being read',
+  'only_text_messages_can_be_edited': 'Only text messages can be edited',
+  'edit_time_limit_exceeded': 'Messages older than 48 hours cannot be edited',
+  'forward_to': 'Forward to...',
+  'forwarded_to': 'Forwarded to {name}',
+  'forward_failed': 'Forward failed',
+  'only_admin_can_post_forward': 'Only admins can post content, cannot forward',
+  'group_muted_cannot_forward': 'This group is muted, cannot forward',
+  'file_not_found': 'File not found',
+  'save_file': 'Save File',
+  'downloading_file': 'Downloading file...',
+  'open_failed': 'Open failed',
+  'message_not_in_current_view': 'Message is not in the current view',
+  'delete_selected_messages': 'Delete {count} messages',
+  'delete_selected_messages_desc':
+      'These messages will be removed from your chat history and cannot be restored',
+  'selected_messages_count': '{count} messages selected',
+  'meeting': 'Meeting',
+  'record_video': 'Record Video',
+  'view_media': 'View Media',
 };

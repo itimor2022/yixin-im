@@ -34,19 +34,14 @@
   import { useRoute } from 'vue-router'
   import { useAutoLayoutHeight } from '@/hooks/core/useLayoutHeight'
   import { useSettingStore } from '@/store/modules/setting'
-  import { useWorktabStore } from '@/store/modules/worktab'
 
   defineOptions({ name: 'ArtPageContent' })
 
   const route = useRoute()
-  const worktabStore = useWorktabStore()
   const { containerMinHeight } = useAutoLayoutHeight()
   const { pageTransition, containerWidth, refresh } = storeToRefs(useSettingStore())
 
-  const viewKey = computed(() => {
-    const currentTab = worktabStore.getCurrentTabByRoute(route)
-    return currentTab?.tabId || route.fullPath
-  })
+  const viewKey = computed(() => route.fullPath)
 
   const isRefresh = shallowRef(true)
   const isOpenRouteInfo = import.meta.env.VITE_OPEN_ROUTE_INFO

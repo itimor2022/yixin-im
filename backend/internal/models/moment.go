@@ -1,9 +1,11 @@
+// 文件用途：定义业务实体的 ORM 字段、关联关系和持久化约束。
+// 核心逻辑：统一描述字段映射、状态值、索引和表名，作为各层共享数据契约。
+
 package models
 
 import (
-	"time"
-
 	"gorm.io/gorm"
+	"time"
 )
 
 // 动态可见性
@@ -31,26 +33,26 @@ const (
 
 // Moment 动态
 type Moment struct {
-	ID               uint64         `gorm:"primaryKey" json:"id"`
+	ID               uint64         `gorm:"primaryKey;index:idx_moments_status_visibility_created,priority:4,sort:desc;index:idx_moments_user_status_created,priority:4,sort:desc;index:idx_moments_status_created,priority:3,sort:desc" json:"id"`
 	UUID             string         `gorm:"type:varchar(36);uniqueIndex" json:"uuid"`
-	UserID           uint64         `gorm:"index" json:"user_id"`
+	UserID           uint64         `gorm:"index;index:idx_moments_user_status_created,priority:1" json:"user_id"`
 	Content          string         `gorm:"type:text" json:"content"`
 	ContentType      int8           `gorm:"type:tinyint;default:1" json:"content_type"` // 1:文字 2:图片 3:视频
 	MediaUrls        JSON           `gorm:"type:json" json:"media_urls"`
 	VideoThumbnail   string         `gorm:"type:varchar(500)" json:"video_thumbnail"`
 	Topics           JSON           `gorm:"type:json" json:"topics"` // 话题标签数组
-	Visibility       int8           `gorm:"type:tinyint;default:1" json:"visibility"`
+	Visibility       int8           `gorm:"type:tinyint;default:1;index:idx_moments_status_visibility_created,priority:2" json:"visibility"`
 	SelectedContacts JSON           `gorm:"type:json" json:"selected_contacts"` // 选择可见的联系人ID
 	LikeCount        int            `gorm:"default:0" json:"like_count"`
 	CommentCount     int            `gorm:"default:0" json:"comment_count"`
 	ShareCount       int            `gorm:"default:0" json:"share_count"`
 	ViewCount        int            `gorm:"default:0" json:"view_count"`
-	Status           int8           `gorm:"type:tinyint" json:"status"` // 0:待审核 1:正常 2:隐藏 3:删除
+	Status           int8           `gorm:"type:tinyint;index:idx_moments_status_visibility_created,priority:1;index:idx_moments_user_status_created,priority:2;index:idx_moments_status_created,priority:1" json:"status"` // 0:待审核 1:正常 2:隐藏 3:删除
 	ReviewReason     string         `gorm:"type:varchar(500)" json:"review_reason"`
 	ReviewedBy       *uint64        `gorm:"index" json:"reviewed_by,omitempty"`
 	ReviewedAt       *time.Time     `gorm:"type:datetime" json:"reviewed_at,omitempty"`
 	Location         string         `gorm:"type:varchar(200)" json:"location"`
-	CreatedAt        time.Time      `json:"created_at"`
+	CreatedAt        time.Time      `gorm:"index:idx_moments_status_visibility_created,priority:3,sort:desc;index:idx_moments_user_status_created,priority:3,sort:desc;index:idx_moments_status_created,priority:2,sort:desc" json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
 

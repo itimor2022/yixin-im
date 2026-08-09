@@ -1,3 +1,6 @@
+// 文件用途：实现 backend 目录中的 session_state.go 模块。
+// 核心逻辑：围绕本文件的类型和函数完成输入处理、状态转换或辅助计算。
+
 package authsession
 
 import (
@@ -6,10 +9,9 @@ import (
 	"encoding/hex"
 	"strings"
 	"time"
-
-	"gaoranim/internal/cache"
-	"gaoranim/internal/config"
-	jwtpkg "gaoranim/pkg/jwt"
+	"genericim/internal/cache"
+	"genericim/internal/config"
+	jwtpkg "genericim/pkg/jwt"
 )
 
 func sessionVersionKey(userUUID string) string {
@@ -25,6 +27,7 @@ func passwordResetKey(userUUID string) string {
 }
 
 func tokenRevokedKey(userUUID, token string) string {
+
 	sum := sha256.Sum256([]byte(token))
 	return "user:token_revoked:" + userUUID + ":" + hex.EncodeToString(sum[:])
 }
@@ -35,6 +38,7 @@ func deviceLogoutAfterKey(userUUID, deviceID string) string {
 
 func authStateTTL() time.Duration {
 	cfg := config.GlobalConfig.JWT
+
 	ttl := cfg.Expire + cfg.RefreshExpire
 	if cfg.RefreshExpire <= 0 {
 		ttl = cfg.Expire + cfg.Expire
@@ -77,7 +81,6 @@ func MarkPasswordReset(ctx context.Context, c *cache.Cache, userUUID string) int
 	if c == nil || userUUID == "" {
 		return sessionVersion
 	}
-
 	ttl := authStateTTL()
 	_ = c.Set(ctx, passwordResetKey(userUUID), true, ttl)
 	_ = c.Set(ctx, sessionVersionKey(userUUID), sessionVersion, ttl)
@@ -89,7 +92,6 @@ func InvalidateUserSession(ctx context.Context, c *cache.Cache, userUUID string)
 	if c == nil || userUUID == "" {
 		return sessionVersion
 	}
-
 	ttl := authStateTTL()
 	_ = c.Set(ctx, logoutAfterKey(userUUID), sessionVersion, ttl)
 	_ = c.Set(ctx, sessionVersionKey(userUUID), sessionVersion, ttl)
@@ -106,12 +108,22 @@ func InvalidateDeviceSession(ctx context.Context, c *cache.Cache, userUUID, devi
 	return sessionVersion
 }
 
-func RevokeUserToken(ctx context.Context, c *cache.Cache, userUUID, rawToken string) {
-	rawToken = strings.TrimSpace(rawToken)
-	if c == nil || userUUID == "" || rawToken == "" {
+// ActivateDeviceSession clears a prior device termination only after a fresh
+// authentication flow has completed successfully.
+func ActivateDeviceSession(ctx context.Context, c *cache.Cache, userUUID, deviceID string) {
+	deviceID = strings.TrimSpace(deviceID)
+	if c == nil || userUUID == "" || deviceID == "" {
 		return
 	}
-	_ = c.Set(ctx, tokenRevokedKey(userUUID, rawToken), true, authStateTTL())
+	_ = c.Delete(ctx, deviceLogoutAfterKey(userUUID, deviceID))
+}
+
+func RevokeUserToken(ctx context.Context, c *cache.Cache, userUUID, rawToken string) error {
+	rawToken = strings.TrimSpace(rawToken)
+	if c == nil || userUUID == "" || rawToken == "" {
+		return nil
+	}
+	return c.Set(ctx, tokenRevokedKey(userUUID, rawToken), true, authStateTTL())
 }
 
 func ValidateUserTokenStateWithToken(ctx context.Context, c *cache.Cache, claims *jwtpkg.Claims, rawToken string) string {
@@ -130,15 +142,14 @@ func ValidateUserTokenStateWithToken(ctx context.Context, c *cache.Cache, claims
 }
 
 func ValidateUserTokenState(ctx context.Context, c *cache.Cache, claims *jwtpkg.Claims) string {
+
 	if c == nil || claims == nil {
 		return ""
 	}
-
 	frozenKey := "user:frozen:" + claims.UserID
 	if c.Exists(ctx, frozenKey) {
 		return "您的账号已被冻结"
 	}
-
 	if c.Exists(ctx, passwordResetKey(claims.UserID)) {
 		return "密码已被修改，请重新登录"
 	}
@@ -164,6 +175,5 @@ func ValidateUserTokenState(ctx context.Context, c *cache.Cache, claims *jwtpkg.
 			return "会话已更新，请重新登录"
 		}
 	}
-
 	return ""
 }

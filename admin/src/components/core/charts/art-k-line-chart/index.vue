@@ -112,6 +112,7 @@
         series: [
           {
             type: 'candlestick',
+            // ECharts K 线数据顺序固定为开盘、收盘、最低、最高。
             data: props.data.map((item) => [item.open, item.close, item.low, item.high]),
             itemStyle: {
               color: upColor,
@@ -130,6 +131,7 @@
             ...getAnimationConfig()
           }
         ],
+        // 内部缩放支持滚轮/手势，滑块提供同一窗口范围的可视控制。
         dataZoom: props.showDataZoom
           ? [
               {

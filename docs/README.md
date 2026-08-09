@@ -1,4 +1,4 @@
-# 壹信 IM 后端
+# 通用 IM 后端
 
 > IM 服务端，提供用户、好友、会话、消息、通话、动态、举报、钱包等 REST API 与 WebSocket，使用 MySQL + MongoDB + Redis，支持宝塔与 Docker 部署。
 
@@ -12,7 +12,7 @@
 - **会话与消息**：单聊/群聊/频道、成员管理、消息收发/同步/撤回/已读、消息搜索与媒体、消息队列与推送。
 - **好友与联系人**：好友列表、添加/删除、备注、加入请求与审核。
 - **动态与话题**：发动态、点赞评论、话题、违禁词、屏蔽。
-- **音视频通话**：声网 Agora 集成、通话创建/接听/拒绝/结束、通话记录。
+- **音视频通话**：Agora / LiveKit 双 RTC 集成、通话创建/接听/拒绝/结束、通话记录。
 - **钱包**：充值/提现方式、充值订单、红包/转账、支付密码、钱包锁定、定时退款任务。
 - **举报与安全**：用户举报、处理流程；系统设置、官方账号/群组/频道配置。
 - **管理端**：管理员登录、用户/会话/动态/举报/钱包/通话等管理接口（供 Admin 前端调用）。
@@ -30,7 +30,7 @@
 | 数据库         | MySQL 8（GORM）、MongoDB（消息存储）、Redis（缓存 + 队列） |
 | 认证           | JWT（`pkg/jwt`） |
 | 实时           | Gorilla WebSocket（`internal/ws`） |
-| 音视频         | 声网 Agora（可选，`internal/services/agora_service`） |
+| 音视频         | Agora / LiveKit（可选，`internal/services/agora_service`、`internal/services/livekit_service`） |
 | 配置           | YAML（`config.yaml` + `internal/config`） |
 
 ---
@@ -42,7 +42,7 @@
 - **MongoDB**：用于消息存储。
 - **Redis**：用于缓存与消息队列。
 
-无需单独安装 Agora；不配置时音视频相关接口可禁用（`config.yaml` 中 `agora.enabled: false`）。
+无需单独安装 Agora SDK 或 LiveKit 服务端在本机；不配置时音视频相关接口可禁用（`config.yaml` 中 `agora.enabled: false`、`livekit.enabled: false`）。
 
 ---
 
@@ -57,7 +57,7 @@
 - **redis**：addr、password（若有）
 - **jwt**：secret（生产务必更换）、expire
 - **server**：port（默认 8080）、mode（debug/release）、base_url（对外域名，用于生成链接）
-- **agora**（可选）：enabled、app_id、app_certificate、token_expire
+- **agora / livekit**（可选）：Agora App ID/证书、LiveKit Server URL/API Key/API Secret、Token 过期时间
 
 ### 4.2 安装依赖与运行
 
@@ -116,7 +116,7 @@ backend/
 | **用户与好友**   | `internal/handlers/auth_handler`、`user_handler`、`contact_handler`；模型 `internal/models/user.go` 等。 |
 | **会话与消息**   | `chat_handler`、`message_handler`；消息体存 MongoDB，元数据与已读等用 MySQL；队列与推送见 `internal/services`、`internal/mq`。 |
 | **动态与举报**   | `moment_handler`、`report_handler`；管理端 `moment_mgmt_handler`、举报处理。 |
-| **通话**         | `call_handler`、`call_admin_handler`；声网 Token 在 `agora_service`。 |
+| **通话**         | `call_handler`、`call_admin_handler`；Agora Token 在 `agora_service`，LiveKit Token 在 `livekit_service`。 |
 | **钱包**         | `wallet_handler`、`wallet_admin_handler`；定时任务 `wallet_cron_service`（红包/转账过期退款）。 |
 | **管理端**       | `admin_handler` 登录；`user_mgmt_handler`、`chat_mgmt_handler`、`setting_handler`、`wallet_admin_handler` 等；需管理员角色。 |
 | **上传**         | `upload_handler`；静态文件服务 `/uploads` 对应 `config.server.upload_dir`。 |

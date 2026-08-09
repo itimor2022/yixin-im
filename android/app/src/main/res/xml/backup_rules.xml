@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-   Android 12+ 备份规则配置
-   用于控制应用数据的自动备份行为
--->
 <full-backup-content>
-    <!-- 排除敏感数据，不进行备份 -->
-    <exclude domain="sharedpref" path="flutter_secure_storage.xml"/>
-    <exclude domain="sharedpref" path="flutter_secure_storage_keychain.xml"/>
-    
-    <!-- 排除临时文件 -->
-    <exclude domain="external" path="Android/data/com.yixinim.app/cache"/>
+    <!-- IM 本地数据、消息缓存、凭证与媒体索引不进入系统备份。 -->
+    <exclude domain="root" path="."/>
+    <exclude domain="file" path="."/>
+    <exclude domain="database" path="."/>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="external" path="."/>
 </full-backup-content>

@@ -49,6 +49,7 @@ const SPECIAL_COLUMNS: Record<string, { prop: string; label: string }> = {
  * 获取列的唯一标识
  */
 export const getColumnKey = <T>(col: ColumnOption<T>) =>
+  // 特殊列通常没有业务 prop，使用稳定占位键才能参与显隐和排序状态映射。
   SPECIAL_COLUMNS[col.type as keyof typeof SPECIAL_COLUMNS]?.prop ?? (col.prop as string)
 
 /**
@@ -154,6 +155,7 @@ export function useTableColumns<T = any>(
       const visibilityMap = new Map(
         columnChecks.value.map((c) => [getColumnKey(c), getColumnVisibility(c)])
       )
+      // 以列键迁移显隐状态，动态增删或重排时不会重置用户已有选择。
       const newChecks = getColumnChecks(newCols).map((c) => {
         const key = getColumnKey(c)
         const visibility = visibilityMap.has(key) ? visibilityMap.get(key) : getColumnVisibility(c)

@@ -1,5 +1,11 @@
+// 文件用途：提供 SnackBarType 相关工具函数与通用转换逻辑，属于跨模块共享能力。
+// 核心逻辑：提供 SnackBarType 的无状态转换或校验函数，集中处理平台差异、空值、格式和边界输入。
 import 'package:flutter/material.dart';
+// 流程逻辑：本文件没有可执行方法，关键行为由导出的常量、条件实现或模块声明决定；修改时需保持公共导出契约稳定。
 
+import '../../core/i18n/app_localizations.dart';
+
+// 关键声明：snackbar utils 提供无状态工具逻辑，集中处理格式、平台差异和边界输入，调用方无需重复实现校验。
 /// SnackBar 类型
 enum SnackBarType {
   info,
@@ -79,7 +85,7 @@ class AppSnackBar {
     BuildContext context, {
     required String message,
     required VoidCallback onRetry,
-    String retryLabel = '重试',
+    String? retryLabel,
   }) {
     show(
       context,
@@ -87,7 +93,7 @@ class AppSnackBar {
       type: SnackBarType.error,
       duration: const Duration(seconds: 5),
       action: SnackBarAction(
-        label: retryLabel,
+        label: retryLabel ?? AppLocalizations.of(context).retry,
         textColor: Colors.white,
         onPressed: onRetry,
       ),

@@ -90,13 +90,26 @@
     position: relative;
     box-sizing: border-box;
     height: 100vh;
+    overflow: hidden;
 
     @media only screen and (width <= 640px) {
       height: 100dvh;
     }
 
-    .el-menu {
+    .menu-scrollbar {
       height: 100%;
+    }
+
+    :deep(.menu-scrollbar .el-scrollbar__wrap) {
+      overscroll-behavior: contain;
+    }
+
+    :deep(.menu-scrollbar .el-scrollbar__view) {
+      min-height: 100%;
+    }
+
+    .el-menu {
+      min-height: calc(100vh - 60px);
     }
 
     &:hover {
@@ -170,17 +183,9 @@
 
   .el-menu {
     box-sizing: border-box;
-    height: calc(100vh - 60px);
-    overflow-y: auto;
-    // 防止菜单内的滚动影响整个页面滚动
-    overscroll-behavior: contain;
+    height: auto;
+    overflow: visible;
     border-right: 0;
-    scrollbar-width: none;
-    -ms-scroll-chaining: contain;
-
-    &::-webkit-scrollbar {
-      width: 0 !important;
-    }
   }
 
   .menu-model {
@@ -198,7 +203,7 @@
     }
 
     .el-menu {
-      height: calc(100vh - 60px);
+      min-height: calc(100dvh - 50px);
     }
 
     .el-menu--collapse {

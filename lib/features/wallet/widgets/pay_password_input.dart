@@ -1,11 +1,31 @@
+// 文件用途：提供 PayPasswordInput 可复用界面组件，服务于钱包与支付。
+// 核心逻辑：根据输入模型和状态渲染 PayPasswordInput，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 
+String _payDialogText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：pay password input 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 支付密码输入组件（6位数字）
 class PayPasswordInput extends StatefulWidget {
-  final String title;
+  final String? title;
   final String? subtitle;
   final String? amount;
   final ValueChanged<String> onCompleted;
@@ -16,7 +36,7 @@ class PayPasswordInput extends StatefulWidget {
 
   const PayPasswordInput({
     super.key,
-    this.title = '请输入支付密码',
+    this.title,
     this.subtitle,
     this.amount,
     required this.onCompleted,
@@ -37,6 +57,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -98,7 +119,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        color: AppColors.cardFor(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
@@ -119,7 +140,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
+                  color: AppColors.textTertiaryFor(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -140,7 +161,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                         child: Icon(
                           Icons.close,
                           size: 24,
-                          color: isDark ? Colors.white60 : Colors.grey[600],
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                     )
@@ -148,11 +169,17 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                     const SizedBox(width: 40),
                   const Spacer(),
                   Text(
-                    widget.title,
+                    widget.title ??
+                        _payDialogText(
+                          context,
+                          zhCN: '请输入支付密码',
+                          zhTW: '請輸入支付密碼',
+                          en: 'Enter Payment Password',
+                        ),
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                   const Spacer(),
@@ -165,8 +192,11 @@ class _PayPasswordInputState extends State<PayPasswordInput>
             if (widget.amount != null) ...[
               const SizedBox(height: 24),
               ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                shaderCallback: (bounds) => LinearGradient(
+                  colors: [
+                    AppColors.primaryFor(context),
+                    AppColors.linkEmphasisFor(context),
+                  ],
                 ).createShader(bounds),
                 child: Text(
                   widget.amount!,
@@ -188,7 +218,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                   widget.subtitle!,
                   style: TextStyle(
                     fontSize: 14,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
+                    color: AppColors.textSecondaryFor(context),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -201,9 +231,10 @@ class _PayPasswordInputState extends State<PayPasswordInput>
             AnimatedBuilder(
               animation: _shakeAnimation,
               builder: (context, child) {
-                final shake = _hasError 
-                    ? 10 * (1 - _shakeAnimation.value) * 
-                      ((_shakeAnimation.value * 4).floor() % 2 == 0 ? 1 : -1)
+                final shake = _hasError
+                    ? 10 *
+                        (1 - _shakeAnimation.value) *
+                        ((_shakeAnimation.value * 4).floor() % 2 == 0 ? 1 : -1)
                     : 0.0;
                 return Transform.translate(
                   offset: Offset(shake, 0),
@@ -216,7 +247,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                   final isFilled = index < _password.length;
                   final isError = _hasError || errorMsg != null;
                   final isActive = index == _password.length;
-                  
+
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: 48,
@@ -224,25 +255,27 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                     margin: const EdgeInsets.symmetric(horizontal: 6),
                     decoration: BoxDecoration(
                       color: isFilled
-                          ? (isError 
+                          ? (isError
                               ? Colors.red.withOpacity(0.1)
-                              : AppColors.primary.withOpacity(0.1))
-                          : (isDark ? Colors.white.withOpacity(0.05) : Colors.grey[50]),
+                              : AppColors.emphasisSoftFor(context))
+                          : AppColors.inputBackgroundFor(context),
                       border: Border.all(
                         color: isError
                             ? Colors.red
                             : (isFilled
-                                ? AppColors.primary
+                                ? AppColors.controlActiveFor(context)
                                 : (isActive
-                                    ? AppColors.primary.withOpacity(0.5)
-                                    : (isDark ? Colors.white12 : Colors.grey[300]!))),
+                                    ? AppColors.controlActiveFor(context)
+                                        .withOpacity(0.5)
+                                    : AppColors.dividerFor(context))),
                         width: isFilled || isActive ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: isFilled
                           ? [
                               BoxShadow(
-                                color: AppColors.primary.withOpacity(0.15),
+                                color: AppColors.controlActiveFor(context)
+                                    .withOpacity(0.15),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -261,7 +294,10 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                                   gradient: LinearGradient(
                                     colors: isError
                                         ? [Colors.red, Colors.redAccent]
-                                        : [const Color(0xFF667eea), const Color(0xFF764ba2)],
+                                        : [
+                                            AppColors.primaryFor(context),
+                                            AppColors.linkEmphasisFor(context),
+                                          ],
                                   ),
                                   shape: BoxShape.circle,
                                 ),
@@ -299,7 +335,9 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                 height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                  valueColor: AlwaysStoppedAnimation(
+                    AppColors.controlActiveFor(context),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -349,8 +387,8 @@ class _PayPasswordInputState extends State<PayPasswordInput>
       child: InkWell(
         onTap: () => _onKeyPressed(key),
         borderRadius: BorderRadius.circular(36),
-        splashColor: AppColors.primary.withOpacity(0.1),
-        highlightColor: AppColors.primary.withOpacity(0.05),
+        splashColor: AppColors.controlActiveFor(context).withOpacity(0.1),
+        highlightColor: AppColors.controlActiveFor(context).withOpacity(0.05),
         child: Container(
           width: 72,
           height: 56,
@@ -360,14 +398,14 @@ class _PayPasswordInputState extends State<PayPasswordInput>
                 ? Icon(
                     Icons.backspace_outlined,
                     size: 24,
-                    color: isDark ? Colors.white60 : Colors.grey[700],
+                    color: AppColors.textSecondaryFor(context),
                   )
                 : Text(
                     key,
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w500,
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
           ),
@@ -380,7 +418,7 @@ class _PayPasswordInputState extends State<PayPasswordInput>
 /// 显示支付密码输入弹窗
 Future<String?> showPayPasswordDialog({
   required BuildContext context,
-  String title = '请输入支付密码',
+  String? title,
   String? subtitle,
   String? amount,
 }) async {

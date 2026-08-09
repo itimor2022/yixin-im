@@ -1,4 +1,7 @@
 import request from '@/utils/http'
+
+// 本文件类型按后端 JSON 原字段建模（snake_case），页面层不要擅自改成 camelCase，
+// 否则表单回填、请求透传以及后端新增字段的兼容逻辑会产生隐式映射。
 export interface AdminLoginParams {
   username: string
   password: string
@@ -13,16 +16,35 @@ export interface AdminInfo {
   nickname: string
   email: string
   avatar: string
-  role: 'super_admin' | 'admin' | 'operator'
+  role: 'super_admin' | 'admin' | 'operator' | 'demo_admin'
   status: number
   last_login_at: string
+  last_login_ip: string
   created_at: string
+}
+
+export interface AdminCreateParams {
+  username: string
+  password: string
+  nickname: string
+  email?: string
+  role: 'admin' | 'operator' | 'demo_admin'
+}
+
+export type AdminRoleKey = 'super_admin' | 'admin' | 'operator' | 'demo_admin'
+
+export interface RolePermissionConfig {
+  enabled: boolean
+  roles: Partial<Record<AdminRoleKey, string[]>>
 }
 export interface UserListItem {
   id: number
   uuid: string
   username: string
   nickname: string
+  gender: 'male' | 'female' | 'unknown'
+  register_source: 'manual' | 'quick'
+  credentials_initialized: boolean
   phone: string | null
   avatar: string | null
   bio: string | null
@@ -127,66 +149,49 @@ export interface UserDiagnosticResponse {
   checks: UserDiagnosticCheck[]
 }
 
-export interface MembershipPlanItem {
-  id: number
-  name: string
-  slug: string
-  duration_days: number
-  price: number
-  original_price: number
-  badge_label: string
-  badge_color: string
-  description: string
-  features: string[]
-  status: number
-  sort?: number
-}
-
-export interface MembershipUserItem {
-  id: number
-  user_id: number
-  username: string
-  nickname: string
-  avatar: string
-  plan_name: string
-  status: string
-  source: string
-  start_at: string
-  expire_at: string
-  created_at: string
-}
-
-export interface MembershipOrderItem {
-  id: number
-  order_no: string
-  username: string
-  nickname: string
-  plan_name: string
-  amount: number
-  pay_channel: string
-  status: string
-  paid_at?: string
-  created_at: string
-}
-
-export interface MembershipSummary {
-  total_users: number
-  active_users: number
-  total_revenue: number
-  can_write: boolean
-}
 export interface UserSearchParams {
   page?: number
   page_size?: number
   keyword?: string
+  search_mode?: 'exact' | 'fuzzy'
   status?: string
+  gender?: 'male' | 'female' | 'unknown'
+  register_source?: 'manual' | 'quick'
+  credentials_status?: 'initialized' | 'pending'
   online_only?: boolean
 }
+export interface ClientEndpointConfig {
+  id: string
+  url: string
+  priority: number
+  region?: string
+  health_path?: string
+}
+
+export interface ClientBootstrapConfig {
+  enabled: boolean
+  version: number
+  ttl_seconds: number
+  api_endpoints: ClientEndpointConfig[]
+  ws_endpoints: ClientEndpointConfig[]
+  media_base_urls: string[]
+  strategy: {
+    connect_timeout_ms: number
+    health_timeout_ms: number
+    fail_threshold: number
+    cooldown_seconds: number
+    prefer_last_success: boolean
+  }
+}
+
 export interface UserStats {
   total_users: number
   active_users: number
   new_users_today: number
   online_users: number
+}
+export interface UserStatsDetail {
+  daily_new_users: { date: string; count: number }[]
 }
 export interface ChatListItem {
   id: number
@@ -196,23 +201,23 @@ export interface ChatListItem {
   avatar: string
   description: string
   owner_id: number
+  owner_name?: string
+  owner_avatar?: string
   member_count: number
-  online_count: number // 当前在线成员数
+  max_members?: number
   is_public: boolean
+  username?: string
   status: number
-  created_at: string
-  // 群组权限字段
-  can_send_message: boolean
-  can_send_media: boolean
-  can_send_links: boolean
-  can_add_members: boolean
-  can_pin_messages: boolean
-  member_protection: boolean
-  join_approval: boolean
-  // 待审核加入申请（群主/管理员可见）
-  pending_request?: boolean
-  pending_request_count?: number
   ban_reason?: string
+  banned_at?: string
+  can_send_message?: boolean
+  can_send_media?: boolean
+  can_send_links?: boolean
+  can_add_members?: boolean
+  can_pin_messages?: boolean
+  member_protection?: boolean
+  join_approval?: boolean
+  created_at: string
 }
 export interface ChatListResponse {
   list: ChatListItem[]
@@ -225,6 +230,12 @@ export interface ChatSearchParams {
   page_size?: number
   keyword?: string
   type?: number
+  status?: number
+}
+export interface ChatMemberSearchParams {
+  page?: number
+  page_size?: number
+  keyword?: string
 }
 export interface ChatDetailResponse {
   chat: ChatListItem
@@ -238,13 +249,37 @@ export interface ChatMemberItem {
   user_uuid: string
   username: string
   nickname: string
+  nickname_in_chat?: string
   avatar: string
   role: number // 1: member, 2: admin, 3: owner
+  is_muted?: boolean
+  mute_end_time?: string | null
   joined_at: string
   last_online_at: string | null
 }
+export interface ChatJoinRequestItem {
+  id: number
+  chat_id: number
+  user_id: number
+  user_uuid: string
+  username: string
+  nickname: string
+  avatar: string
+  message: string
+  status: number
+  status_text: string
+  reviewed_at?: string | null
+  created_at: string
+  updated_at: string
+}
 export interface ChatMembersResponse {
   list: ChatMemberItem[]
+  total: number
+  page: number
+  page_size: number
+}
+export interface ChatJoinRequestsResponse {
+  list: ChatJoinRequestItem[]
   total: number
   page: number
   page_size: number
@@ -253,11 +288,71 @@ export interface ChatStatsResponse {
   group_count: number
   channel_count: number
   banned_count: number
+  group_banned_count: number
+  channel_banned_count: number
   today_group_count: number
   today_channel_count: number
   hot_groups: ChatListItem[]
   hot_channels: ChatListItem[]
 }
+
+export interface UpdateChatInfoParams {
+  name?: string
+  avatar?: string
+  description?: string
+  username?: string
+  max_members?: number
+  is_public?: boolean
+  can_send_message?: boolean
+  can_send_media?: boolean
+  can_send_links?: boolean
+  can_add_members?: boolean
+  can_pin_messages?: boolean
+  member_protection?: boolean
+  join_approval?: boolean
+}
+export interface AddChatMembersParams {
+  user_ids?: number[]
+  user_uuids?: string[]
+  usernames?: string[]
+  identifiers?: string[]
+}
+
+export type CloudStorageProvider = 'local' | 'aliyun' | 'qiniu' | 's3'
+
+// 后端返回完整 provider 结构用于切换供应商时保留表单值；真正生效的配置由 provider 指定。
+export interface CloudStorageConfig {
+  provider: CloudStorageProvider
+  local: {
+    base_url: string
+  }
+  aliyun: {
+    endpoint: string
+    bucket: string
+    access_key_id: string
+    access_key_secret: string
+    public_base_url: string
+    use_https: boolean
+  }
+  qiniu: {
+    upload_url: string
+    bucket: string
+    access_key: string
+    secret_key: string
+    public_base_url: string
+    use_https: boolean
+  }
+  s3: {
+    region: string
+    bucket: string
+    access_key_id: string
+    secret_access_key: string
+    public_base_url: string
+    endpoint: string
+    use_path_style: boolean
+  }
+}
+
 export interface DashboardStats {
   total_users: number
   online_users: number
@@ -294,6 +389,226 @@ export interface RuntimeStatus {
   queue_dead: number
 }
 
+export type HealthStatus = 'ok' | 'warning' | 'error'
+
+export interface StorageStatusResponse {
+  provider: CloudStorageProvider | string
+  source: string
+  valid: boolean
+  public_base_url: string
+  bucket: string
+  endpoint: string
+  local_base_url: string
+  masked: boolean
+  // 阶段指标是服务进程启动后的内存累计值，只用于定位上传链路瓶颈，不是历史审计记录。
+  upload_stages?: {
+    started_at: string
+    stages: Array<{
+      stage: string
+      count: number
+      failed: number
+      average_ms: number
+      max_ms: number
+      last_ms: number
+      last_success: boolean
+      last_recorded_at: string
+    }>
+  }
+  aliyun?: {
+    endpoint: string
+    bucket: string
+    public_base_url: string
+    use_https: boolean
+    access_key_id_set: boolean
+    access_key_secret_set: boolean
+  }
+  qiniu?: {
+    upload_url: string
+    bucket: string
+    public_base_url: string
+    use_https: boolean
+    access_key_set: boolean
+    secret_key_set: boolean
+  }
+  s3?: {
+    region: string
+    bucket: string
+    public_base_url: string
+    endpoint: string
+    use_path_style: boolean
+    access_key_id_set: boolean
+    secret_access_key_set: boolean
+    credentials_source: string
+  }
+  access_key_configured?: boolean
+  access_secret_configured?: boolean
+  secret_key_configured?: boolean
+  status?: HealthStatus
+  error?: string
+}
+
+export interface StorageTestUploadResponse {
+  ok: boolean
+  provider: CloudStorageProvider | string
+  source: string
+  url: string
+  http_status: number
+  duration_ms: number
+  cleaned: boolean
+  error?: string
+}
+
+export interface HealthComponent {
+  name: string
+  status: HealthStatus
+  error?: string
+  [key: string]: unknown
+}
+
+export interface SystemHealthDetailResponse {
+  status: HealthStatus
+  server_time: string
+  started_at: string
+  uptime_text: string
+  runtime: {
+    go_version: string
+    os: string
+    arch: string
+    goroutines: number
+    cpu_num: number
+    memory_alloc_mb: number
+    memory_sys_mb: number
+    heap_inuse_mb: number
+    gc_count: number
+  }
+  components: HealthComponent[]
+  summary: {
+    mysql_status: HealthStatus
+    mongo_status: HealthStatus
+    redis_status: HealthStatus
+    storage: HealthComponent
+    upload: HealthComponent
+    websocket: HealthComponent
+    push: HealthComponent
+    queue: HealthComponent
+    check_window: string
+  }
+}
+
+export interface HealthMetricSnapshotItem {
+  id: number
+  status: HealthStatus
+  mysql_status: HealthStatus
+  mongo_status: HealthStatus
+  redis_status: HealthStatus
+  storage_status: HealthStatus
+  upload_status: HealthStatus
+  websocket_status: HealthStatus
+  push_status: HealthStatus
+  queue_status: HealthStatus
+  queue_message_send: number
+  queue_message_sync: number
+  queue_push_notify: number
+  queue_delayed: number
+  queue_dead: number
+  upload_total: number
+  upload_failed: number
+  push_total: number
+  push_failed: number
+  ws_online_connections: number
+  ws_online_users: number
+  ws_total_disconnects: number
+  ws_dropped_messages: number
+  goroutines: number
+  memory_alloc_mb: number
+  created_at: string
+}
+
+export interface HealthTrendResponse {
+  hours: number
+  sample_interval_minutes: number
+  list: HealthMetricSnapshotItem[]
+}
+
+export interface AdminLoginLogItem {
+  id: number
+  admin_id: number
+  username: string
+  ip: string
+  user_agent: string
+  status: 0 | 1
+  failure_reason: string
+  throttle_applied: boolean
+  created_at: string
+}
+
+export interface AdminLoginLogListResponse {
+  list: AdminLoginLogItem[]
+  total: number
+  page: number
+  page_size: number
+  summary: {
+    total_24h: number
+    success_24h: number
+    failed_24h: number
+    throttled_24h: number
+  }
+  throttle_policy: {
+    window_minutes: number
+    ip_limit: number
+    account_limit: number
+  }
+}
+
+export interface UploadLogItem {
+  id: number
+  actor_type: string
+  user_id: number
+  admin_id: number
+  media_type: string
+  provider: string
+  object_key: string
+  url: string
+  file_name: string
+  content_type: string
+  size: number
+  success: boolean
+  error: string
+  duration_ms: number
+  ip: string
+  created_at: string
+}
+
+export interface UploadLogListResponse {
+  list: UploadLogItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminSecurityEventItem {
+  id: number
+  admin_id: number
+  admin_username: string
+  admin_role: string
+  event_type: string
+  action: string
+  target: string
+  success: boolean
+  error: string
+  metadata: string
+  ip: string
+  user_agent: string
+  created_at: string
+}
+
+export interface AdminSecurityEventListResponse {
+  list: AdminSecurityEventItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export function adminLogin(params: AdminLoginParams) {
   return request.post<AdminLoginResponse>({
     url: '/admin/login',
@@ -305,9 +620,67 @@ export function getAdminMe() {
     url: '/admin/me'
   })
 }
+export function getAdminList() {
+  return request.get<AdminInfo[]>({
+    url: '/admin/list'
+  })
+}
+export function createAdmin(params: AdminCreateParams) {
+  return request.post<AdminInfo>({
+    url: '/admin/create',
+    params
+  })
+}
+export function deleteAdmin(id: number) {
+  return request.del({
+    url: `/admin/${id}`
+  })
+}
 export function updateAdminPassword(params: { old_password: string; new_password: string }) {
   return request.put({
     url: '/admin/password',
+    params
+  })
+}
+export function getAdminLoginLogs(params?: {
+  page?: number
+  page_size?: number
+  username?: string
+  ip?: string
+  status?: string
+  throttled?: string
+}) {
+  return request.get<AdminLoginLogListResponse>({
+    url: '/admin/login-logs',
+    params
+  })
+}
+
+export function getUploadLogs(params?: {
+  page?: number
+  page_size?: number
+  media_type?: string
+  provider?: string
+  success?: string
+  user_id?: number | string
+  actor_type?: string
+}) {
+  return request.get<UploadLogListResponse>({
+    url: '/admin/upload/logs',
+    params
+  })
+}
+
+export function getAdminSecurityEvents(params?: {
+  page?: number
+  page_size?: number
+  event_type?: string
+  action?: string
+  admin_username?: string
+  success?: string
+}) {
+  return request.get<AdminSecurityEventListResponse>({
+    url: '/admin/security-events',
     params
   })
 }
@@ -391,6 +764,12 @@ export function updateChatStatus(id: number, status: number) {
     params: { status }
   })
 }
+export function updateChatInfo(id: number, params: UpdateChatInfoParams) {
+  return request.put<ChatListItem>({
+    url: `/admin/chats/${id}`,
+    params
+  })
+}
 export function deleteChat(id: number) {
   return request.del({
     url: `/admin/chats/${id}`
@@ -417,8 +796,33 @@ export function dissolveChat(id: number) {
     url: `/admin/chats/${id}/dissolve`
   })
 }
-export function getChatMembers(id: number, params?: { page?: number; page_size?: number }) {
+export function getChatMembers(id: number, params?: ChatMemberSearchParams) {
   return request.get<ChatMembersResponse>({
+    url: `/admin/chats/${id}/members`,
+    params
+  })
+}
+export function getChatJoinRequests(
+  id: number,
+  params?: ChatMemberSearchParams & { status?: number }
+) {
+  return request.get<ChatJoinRequestsResponse>({
+    url: `/admin/chats/${id}/join-requests`,
+    params
+  })
+}
+export function reviewChatJoinRequest(chatId: number, requestId: number, approve: boolean) {
+  return request.post({
+    url: `/admin/chats/${chatId}/join-requests/${requestId}/review`,
+    params: { approve }
+  })
+}
+export function addChatMembers(id: number, params: AddChatMembersParams) {
+  return request.post<{
+    message: string
+    added_count: number
+    skipped_count: number
+  }>({
     url: `/admin/chats/${id}/members`,
     params
   })
@@ -426,6 +830,28 @@ export function getChatMembers(id: number, params?: { page?: number; page_size?:
 export function removeChatMember(chatId: number, memberId: number) {
   return request.del({
     url: `/admin/chats/${chatId}/members/${memberId}`
+  })
+}
+export function updateChatMemberRole(chatId: number, memberId: number, role: 1 | 2) {
+  return request.put({
+    url: `/admin/chats/${chatId}/members/${memberId}/role`,
+    params: { role }
+  })
+}
+export function updateChatMemberMute(
+  chatId: number,
+  memberId: number,
+  params: { is_muted: boolean; minutes?: number }
+) {
+  return request.put({
+    url: `/admin/chats/${chatId}/members/${memberId}/mute`,
+    params
+  })
+}
+export function transferChatOwner(chatId: number, memberId: number) {
+  return request.put({
+    url: `/admin/chats/${chatId}/owner`,
+    params: { member_id: memberId }
   })
 }
 export function getChatStats() {
@@ -445,7 +871,7 @@ export function getRuntimeStatus() {
 }
 
 export function getUserStatsDetail(days?: number) {
-  return request.get({
+  return request.get<UserStatsDetail>({
     url: '/admin/stats/users',
     params: days ? { days } : undefined
   })
@@ -609,15 +1035,52 @@ export function deleteBannedWord(id: number) {
     url: `/admin/banned-words/${id}`
   })
 }
+export interface ChatAttachmentMenuSettings {
+  enabled: boolean
+  album: boolean
+  camera: boolean
+  call: boolean
+  location: boolean
+  red_packet: boolean
+  transfer: boolean
+  favorite: boolean
+  file: boolean
+}
+
+export interface IOSComplianceSettings {
+  enabled: boolean
+  vip_enabled: boolean
+  wallet_enabled: boolean
+  wallet_recharge_enabled: boolean
+  moment_video_enabled: boolean
+  custom_portal_enabled: boolean
+}
+
 export interface SystemSettings {
   app_version_ios: string
   app_version_android: string
+  latest_version_ios?: string
+  latest_version_android?: string
   register_base_url?: string
+  support_online_url?: string
+  support_qq?: string
   app_force_update: boolean
   app_update_url: string
+  app_update_url_ios?: string
+  app_update_url_android?: string
+  min_supported_version_ios?: string
+  min_supported_version_android?: string
   app_update_message: string
+  splash_enabled?: boolean
+  splash_image_url?: string
+  splash_duration_ms?: number
   allow_register: boolean
+  allow_quick_register: boolean
+  quick_register_device_limit: number
+  quick_register_ip_limit: number
+  force_keep_alive_enabled?: boolean
   require_invite_code: boolean
+  require_gender_on_register: boolean
   require_phone_bind: boolean
   enable_moment_post: boolean
   moment_post_review_enabled?: boolean
@@ -626,11 +1089,15 @@ export interface SystemSettings {
   new_user_join_group: boolean
   new_user_join_channel: boolean
   group_invite_require_friend: boolean
+  // 可选字段用于兼容尚未返回该配置的旧后端，页面回填时统一降级为 approval。
+  friend_add_mode?: 'direct' | 'approval' | 'disabled'
+  ios_compliance?: IOSComplianceSettings
   custom_portal_enabled: boolean
   custom_portal_title: string
   custom_portal_url: string
   custom_portal_icon_url: string
   burn_after_read_enabled?: boolean
+  chat_attachment_menu?: ChatAttachmentMenuSettings
   message_crypto_mode?: 'plain' | 'compatible' | 'strict'
   group_max_members: number
   channel_max_members: number
@@ -638,10 +1105,31 @@ export interface SystemSettings {
   ip_rate_limit?: number
   user_rate_limit?: number
   heartbeat_timeout?: number
+  voice_transcribe_provider?: string
+  // 这些字段控制客户端是否具备直传资格；实际启用还受平台、稳定分桶和存储供应商共同约束。
+  chat_image_direct_upload_enabled?: boolean
+  chat_image_direct_upload_platforms?: string[]
+  chat_image_direct_upload_rollout_percent?: number
+  chat_image_direct_upload_max_concurrency?: number
+  voice_transcribe_url?: string
+  voice_transcribe_token?: string
+  voice_transcribe_language?: string
+  openai_api_key?: string
+  openai_transcribe_model?: string
+  openai_transcribe_url?: string
+  deepseek_api_key?: string
+  deepseek_base_url?: string
+  deepseek_model?: string
+  rtc_provider?: 'agora' | 'livekit'
   agora_enabled: boolean
   agora_app_id: string
   agora_app_certificate: string
   agora_token_expire: number
+  livekit_enabled?: boolean
+  livekit_server_url?: string
+  livekit_api_key?: string
+  livekit_api_secret?: string
+  livekit_token_expire?: number
   apns_enabled: boolean
   apns_bundle_id: string
   apns_key_id: string
@@ -654,6 +1142,23 @@ export interface SystemSettings {
   hms_enabled: boolean
   hms_app_id: string
   hms_app_secret: string
+  jpush_enabled: boolean
+  jpush_app_key: string
+  jpush_master_secret: string
+  push_default_title: string
+  push_chat_enabled: boolean
+  push_friend_enabled: boolean
+  push_system_enabled: boolean
+  push_category_chat: string
+  push_category_service: string
+  push_category_marketing: string
+  push_primary_provider: string
+  push_fallback_provider: string
+  push_rate_limit_per_min: number
+  push_marketing_daily_limit: number
+  push_quiet_hours_enabled: boolean
+  push_quiet_hours_start: string
+  push_quiet_hours_end: string
   xiaomi_push_enabled: boolean
   xiaomi_package_name: string
   xiaomi_app_secret: string
@@ -664,6 +1169,9 @@ export interface SystemSettings {
   max_video_size: number
   max_file_size: number
   max_voice_size: number
+  cloud_storage?: CloudStorageConfig | string
+  client_bootstrap?: ClientBootstrapConfig | string
+  role_permissions?: RolePermissionConfig | string
   user_agreement?: string
   privacy_policy?: string
   system_name?: string
@@ -675,10 +1183,257 @@ export function getSystemSettings() {
     url: '/admin/settings'
   })
 }
+export type PublicAppSettings = Pick<
+  SystemSettings,
+  'system_name' | 'system_version' | 'allow_register'
+>
+export function getPublicAppSettings() {
+  return request.get<PublicAppSettings>({
+    url: '/app/settings',
+    showErrorMessage: false
+  })
+}
 export function updateSystemSettings(settings: Partial<SystemSettings>) {
   return request.put({
     url: '/admin/settings',
     params: settings
+  })
+}
+
+export function getStorageStatus() {
+  return request.get<StorageStatusResponse>({
+    url: '/admin/storage/status'
+  })
+}
+
+export function testStorageUpload() {
+  return request.post<StorageTestUploadResponse>({
+    url: '/admin/storage/test-upload',
+    timeout: 60000,
+    showErrorMessage: false
+  })
+}
+
+export function getSystemHealthDetail() {
+  return request.get<SystemHealthDetailResponse>({
+    url: '/admin/system/health-detail'
+  })
+}
+
+export function getSystemHealthTrend(params?: { hours?: number }) {
+  return request.get<HealthTrendResponse>({
+    url: '/admin/system/health-trend',
+    params
+  })
+}
+
+export interface PushTestParams {
+  user_id?: number
+  device_id?: number
+  scene?: string
+  title?: string
+  body?: string
+  data?: Record<string, unknown>
+}
+
+export interface PushTestResponse {
+  submitted_devices: number
+  scene: string
+  submitted_at: string
+}
+
+export function sendPushTest(params: PushTestParams) {
+  return request.post<PushTestResponse>({
+    url: '/admin/push/test',
+    params
+  })
+}
+
+export interface PushLogItem {
+  id: number
+  user_id: number
+  device_id: number
+  device_key: string
+  channel: string
+  provider: string
+  scene: string
+  request_id: string
+  success: boolean
+  error: string
+  title: string
+  body: string
+  occurred_at: string
+}
+
+export interface PushLogListResponse {
+  list: PushLogItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface PushAggregateItem {
+  name: string
+  total: number
+  success: number
+  failed: number
+  rate: number
+}
+
+export interface PushRecentFailureItem {
+  id: number
+  user_id: number
+  device_id: number
+  device_key: string
+  channel: string
+  scene: string
+  error: string
+  occurred_at: string
+}
+
+export interface PushStatsResponse {
+  hours: number
+  total: number
+  success: number
+  failed: number
+  success_rate: number
+  invalid_device_count: number
+  invalid_token_failures: number
+  unhealthy_channels: number
+  channel_stats: PushAggregateItem[]
+  scene_stats: PushAggregateItem[]
+  app_version_stats: PushAggregateItem[]
+  recent_failures: PushRecentFailureItem[]
+}
+
+export interface PushDeviceUser {
+  id: number
+  uuid: string
+  username: string
+  nickname: string
+  status: number
+}
+
+export interface PushDeviceLastPush {
+  id: number
+  channel: string
+  scene: string
+  success: boolean
+  error: string
+  occurred_at: string
+}
+
+export interface PushDeviceItem {
+  id: number
+  user_id: number
+  device_id: string
+  device_type: string
+  brand: string
+  model: string
+  push_channel: string
+  device_name: string
+  app_version: string
+  push_token_bound: boolean
+  push_token_length: number
+  push_token_updated_at: string
+  ip: string
+  last_active: string
+  created_at: string
+  failed_7d: number
+  user?: PushDeviceUser
+  last_push?: PushDeviceLastPush
+}
+
+export interface PushDeviceListResponse {
+  list: PushDeviceItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface PushDisableDeviceTokenResponse {
+  id: number
+  user_id?: number
+  device_key?: string
+  channel?: string
+  disabled: boolean
+  disabled_at?: string
+  message?: string
+}
+
+export interface PushCleanupInvalidTokensResponse {
+  dry_run: boolean
+  hours: number
+  min_failures: number
+  channel: string
+  matched_count: number
+  cleared_count: number
+  items: Array<{
+    id: number
+    user_id: number
+    device_key: string
+    channel: string
+    failure_count: number
+    last_active: string
+    token_updated_at: string
+    push_token_length: number
+  }>
+}
+
+export function getPushLogs(params?: {
+  page?: number
+  page_size?: number
+  user_id?: number | string
+  device_id?: number | string
+  channel?: string
+  success?: string
+}) {
+  return request.get<PushLogListResponse>({
+    url: '/admin/push/logs',
+    params,
+    showErrorMessage: false
+  })
+}
+
+export function getPushDevices(params?: {
+  page?: number
+  page_size?: number
+  user_id?: number | string
+  channel?: string
+  bound?: string
+  keyword?: string
+}) {
+  return request.get<PushDeviceListResponse>({
+    url: '/admin/push/devices',
+    params,
+    showErrorMessage: false
+  })
+}
+
+export function disablePushDeviceToken(id: number) {
+  return request.post<PushDisableDeviceTokenResponse>({
+    url: `/admin/push/devices/${id}/disable-token`
+  })
+}
+
+export function cleanupInvalidPushTokens(params: {
+  hours?: number
+  min_failures?: number
+  channel?: string
+  confirm?: boolean
+  dry_run?: boolean
+}) {
+  return request.post<PushCleanupInvalidTokensResponse>({
+    url: '/admin/push/invalid-tokens/cleanup',
+    params
+  })
+}
+
+export function getPushStats(params?: { hours?: number }) {
+  return request.get<PushStatsResponse>({
+    url: '/admin/push/stats',
+    params,
+    showErrorMessage: false
   })
 }
 
@@ -1013,65 +1768,6 @@ export interface WalletStats {
   transfer_count: number
   transfer_amount: number
 }
-export function getMembershipSummary() {
-  return request.get<MembershipSummary>({
-    url: '/admin/wallet/membership/summary'
-  })
-}
-
-export function getMembershipPlans() {
-  return request.get<MembershipPlanItem[]>({
-    url: '/admin/wallet/membership/plans'
-  })
-}
-
-export function saveMembershipPlan(data: Partial<MembershipPlanItem>) {
-  return request.post({
-    url: '/admin/wallet/membership/plans',
-    params: data
-  })
-}
-
-export function getMembershipUsers(params: {
-  page?: number
-  page_size?: number
-  keyword?: string
-}) {
-  return request.get<{
-    list: MembershipUserItem[]
-    total: number
-    page: number
-    page_size: number
-  }>({
-    url: '/admin/wallet/membership/users',
-    params
-  })
-}
-
-export function grantMembership(userId: number, planId: number, days?: number) {
-  return request.post({
-    url: `/admin/wallet/membership/user/${userId}/grant`,
-    params: { plan_id: planId, days }
-  })
-}
-
-export function cancelMembership(id: number) {
-  return request.post({
-    url: `/admin/wallet/membership/${id}/cancel`
-  })
-}
-
-export function getMembershipOrders(params: { page?: number; page_size?: number }) {
-  return request.get<{
-    list: MembershipOrderItem[]
-    total: number
-    page: number
-    page_size: number
-  }>({
-    url: '/admin/wallet/membership/orders',
-    params
-  })
-}
 export function getWalletStats() {
   return request.get<WalletStats>({
     url: '/admin/wallet/stats'
@@ -1269,6 +1965,9 @@ export function refundTransfer(id: string) {
 export interface CallRecord {
   id: number
   channel_name?: string
+  room_name?: string
+  provider?: 'agora' | 'livekit'
+  rtc_provider?: 'agora' | 'livekit'
   type: string
   status: string
   caller_id: string
@@ -1278,9 +1977,15 @@ export interface CallRecord {
   callee_name: string
   callee_avatar?: string
   duration: number
+  end_reason?: string
+  connect_time?: string | null
+  last_heartbeat_at?: string | null
+  released_by_cleanup?: boolean
+  replaced_by_new_call?: boolean
   started_at?: string
   ended_at?: string
   created_at: string
+  recent_events?: CallEvent[]
 }
 export interface CallListResponse {
   list: CallRecord[]
@@ -1320,6 +2025,7 @@ export interface CallStats {
   today_calls: number
   today_connected: number
   today_duration: number
+  observability?: CallObservabilitySnapshot
 }
 export function getCallStats() {
   return request.get<CallStats>({
@@ -1335,6 +2041,94 @@ export function getUserCallHistory(userId: string, params?: { page?: number; pag
 export function deleteCall(id: number) {
   return request.del({
     url: `/admin/calls/${id}`
+  })
+}
+export function forceEndCall(id: number) {
+  return request.post({
+    url: `/admin/calls/${id}/force-end`
+  })
+}
+export interface CallMetricLatency {
+  count: number
+  avg: number
+  p95: number
+  p99: number
+  max: number
+}
+export interface CallObservabilitySnapshot {
+  counters: Record<string, number>
+  release_latency_ms: CallMetricLatency
+  sample_window: number
+}
+export interface CallMetricsResponse {
+  metrics: CallObservabilitySnapshot
+  db_active_calls: number
+  stale_ringing: number
+  stale_connected: number
+  stale_candidates: number
+  cleanup_interval: string
+  ringing_timeout: string
+  heartbeat_timeout: string
+}
+export interface CallEvent {
+  id: number
+  call_id: number
+  event_type: string
+  actor_id?: number | null
+  caller_id: number
+  callee_id: number
+  old_status: string
+  new_status: string
+  reason: string
+  duration: number
+  latency_ms: number
+  request_id: string
+  payload?: unknown
+  created_at: string
+}
+export interface CallEventListResponse {
+  list: CallEvent[]
+  total: number
+  page: number
+  page_size: number
+}
+export function getCallMetrics() {
+  return request.get<CallMetricsResponse>({
+    url: '/admin/calls/metrics'
+  })
+}
+export function getCallEvents(params?: {
+  page?: number
+  page_size?: number
+  call_id?: number
+  user_id?: string
+  event_type?: string
+  reason?: string
+  request_id?: string
+}) {
+  return request.get<CallEventListResponse>({
+    url: '/admin/calls/events',
+    params
+  })
+}
+export function getUserActiveCall(userId: string) {
+  return request.get<CallRecord & { active: boolean; role?: 'caller' | 'callee' }>({
+    url: `/admin/calls/active-user/${userId}`
+  })
+}
+export function forceEndUserActiveCall(userId: string) {
+  return request.post({
+    url: `/admin/calls/force-user/${userId}`
+  })
+}
+export function cleanupStaleCalls(params?: {
+  ringing_seconds?: number
+  connected_seconds?: number
+  limit?: number
+}) {
+  return request.post({
+    url: '/admin/calls/cleanup-stale',
+    params
   })
 }
 export function batchDeleteCalls(ids: number[]) {
@@ -1653,3 +2447,166 @@ export function deleteEmojiStorePack(id: number) {
   })
 }
 
+export interface VipEntitlements {
+  can_create_group: boolean
+  can_create_channel: boolean
+  max_owned_groups: number
+  max_owned_channels: number
+  max_group_members: number
+  max_channel_members: number
+  max_pinned_chats: number
+  upload_image_limit_mb: number
+  upload_video_limit_mb: number
+  upload_voice_limit_mb: number
+  upload_file_limit_mb: number
+  can_set_public_username: boolean
+  can_enable_member_protection: boolean
+  badge: string
+  badge_icon: string
+}
+
+export interface VipPlanItem {
+  id: number
+  code: string
+  name: string
+  level: number
+  level_name: string
+  duration_days: number
+  price: number
+  original_price: number
+  benefits: VipEntitlements
+  description: string
+  sort: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface VipPlanPayload {
+  code?: string
+  name: string
+  level: number
+  duration_days: number
+  price: number
+  original_price: number
+  benefits: VipEntitlements
+  description?: string
+  sort?: number
+  enabled?: boolean
+}
+
+export interface VipUserItem {
+  id: number
+  uuid: string
+  username: string
+  nickname: string
+  avatar?: string
+  phone?: string | null
+  level: number
+  level_name: string
+  vip_status: string
+  is_active: boolean
+  expired_at?: string | null
+  plan_id?: number | null
+  plan_name?: string | null
+}
+
+export interface VipUserListResponse {
+  list: VipUserItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface VipOrderItem {
+  id: number
+  order_no: string
+  user_id: number
+  user_uuid: string
+  username: string
+  nickname: string
+  plan_id: number
+  plan_name: string
+  plan_level: number
+  amount: number
+  pay_method: string
+  status: string
+  paid_at?: string | null
+  transaction_id?: string
+  remark?: string
+  created_at: string
+}
+
+export interface VipOrderListResponse {
+  list: VipOrderItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export function getVipPlans(params?: { enabled?: boolean }) {
+  return request.get<VipPlanItem[]>({ url: '/admin/vip/plans', params })
+}
+
+export function getVipFreeEntitlements() {
+  return request.get<VipEntitlements>({ url: '/admin/vip/free-entitlements' })
+}
+
+export function updateVipFreeEntitlements(payload: VipEntitlements) {
+  return request.put<VipEntitlements>({ url: '/admin/vip/free-entitlements', params: payload })
+}
+
+export function createVipPlan(payload: VipPlanPayload) {
+  return request.post<VipPlanItem>({ url: '/admin/vip/plans', params: payload })
+}
+
+export function updateVipPlan(id: number, payload: VipPlanPayload) {
+  return request.put<VipPlanItem>({ url: `/admin/vip/plans/${id}`, params: payload })
+}
+
+export function getVipUsers(params?: {
+  page?: number
+  page_size?: number
+  keyword?: string
+  level?: string
+  status?: string
+}) {
+  return request.get<VipUserListResponse>({ url: '/admin/vip/users', params })
+}
+
+export function grantVip(userId: string | number, planId: number, days?: number, remark?: string) {
+  return request.post({
+    url: `/admin/vip/users/${userId}/grant`,
+    params: { plan_id: planId, days, remark }
+  })
+}
+
+export function cancelVip(userId: string | number, remark?: string) {
+  return request.post({
+    url: `/admin/vip/users/${userId}/cancel`,
+    params: { remark }
+  })
+}
+
+export function freezeVip(userId: string | number, remark?: string) {
+  return request.post({
+    url: `/admin/vip/users/${userId}/freeze`,
+    params: { remark }
+  })
+}
+
+export function unfreezeVip(userId: string | number, remark?: string) {
+  return request.post({
+    url: `/admin/vip/users/${userId}/unfreeze`,
+    params: { remark }
+  })
+}
+
+export function getVipOrders(params?: {
+  page?: number
+  page_size?: number
+  status?: string
+  keyword?: string
+}) {
+  return request.get<VipOrderListResponse>({ url: '/admin/vip/orders', params })
+}

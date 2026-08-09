@@ -68,6 +68,7 @@ export class RoutePermissionValidator {
       // 标准化路径并添加到集合
       const menuPath = menuItem.path.startsWith('/') ? menuItem.path : `/${menuItem.path}`
       pathSet.add(menuPath)
+      this.addAliasesToPathSet(menuItem.alias, pathSet)
 
       // 递归处理子菜单
       if (menuItem.children?.length) {
@@ -76,6 +77,23 @@ export class RoutePermissionValidator {
     }
 
     return pathSet
+  }
+
+  private static addAliasesToPathSet(
+    aliases: string | string[] | undefined,
+    pathSet: Set<string>
+  ): void {
+    if (!aliases) {
+      return
+    }
+
+    const aliasList = Array.isArray(aliases) ? aliases : [aliases]
+    aliasList.forEach((aliasPath) => {
+      if (typeof aliasPath !== 'string' || !aliasPath) {
+        return
+      }
+      pathSet.add(aliasPath.startsWith('/') ? aliasPath : `/${aliasPath}`)
+    })
   }
 
   /**

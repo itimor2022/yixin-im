@@ -1,5 +1,7 @@
+// 文件用途：实现 _ProfileShareTarget 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 _ProfileShareTarget 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:universal_io/io.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,10 +12,15 @@ import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/premium_theme_tokens.dart';
+import '../../../core/theme/system_ui_styles.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
+import '../../../core/utils/qr_payload.dart';
+import '../../../core/utils/profile_share_link.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../home/pages/home_desktop_page.dart';
 import '../../../core/services/api/api_client.dart';
@@ -22,16 +29,164 @@ import '../../../core/services/api/chat_service.dart' as api;
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/services/api/websocket_service.dart';
 import '../../../core/services/call_service.dart';
+import '../../../core/services/voice_playback_audio_context.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
 import '../../../shared/widgets/page_transitions.dart';
-import '../../../shared/widgets/premium_widgets.dart';
 import '../../contacts/providers/contact_provider.dart';
+import '../../vip/models/vip_profile_summary.dart';
+import '../../vip/widgets/vip_avatar_frame.dart';
+import '../../vip/widgets/vip_badge.dart';
 import '../providers/chat_provider.dart';
 import '../providers/message_provider.dart';
 import 'chat_detail_page.dart' show ChatType;
+import 'message_search_page.dart';
+import 'report_page.dart';
+
+String _userProfileText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _userProfileServerMessage(
+  String? raw, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  return localizeServerMessage(
+    raw,
+    fallbackZhCN: zhCN,
+    fallbackZhTW: zhTW,
+    fallbackEn: en,
+  );
+}
+
+String _fallbackUserName(BuildContext context, [String? value]) {
+  if (value != null && value.trim().isNotEmpty) {
+    return value.trim();
+  }
+  return _userProfileText(
+    context,
+    zhCN: '用户',
+    zhTW: '用戶',
+    en: 'User',
+  );
+}
+
+String _fallbackThisUserName(BuildContext context, [String? value]) {
+  if (value != null && value.trim().isNotEmpty) {
+    return value.trim();
+  }
+  return _userProfileText(
+    context,
+    zhCN: '该用户',
+    zhTW: '該用戶',
+    en: 'This user',
+  );
+}
+
+String _fallbackGroupName(BuildContext context, [String? value]) {
+  if (value != null && value.trim().isNotEmpty) {
+    return value.trim();
+  }
+  return _userProfileText(
+    context,
+    zhCN: '群组',
+    zhTW: '群組',
+    en: 'Group',
+  );
+}
+
+// 关键声明：user profile page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
+class _ProfileShareTarget {
+  final String webUrl;
+  final String qrPayload;
+
+  const _ProfileShareTarget({
+    required this.webUrl,
+    required this.qrPayload,
+  });
+
+  String get primaryText => webUrl.isNotEmpty ? webUrl : qrPayload;
+  bool get isAvailable => primaryText.isNotEmpty;
+}
+
+String _groupMembersText(BuildContext context, int count) {
+  final l10n = AppLocalizations.of(context);
+  if (l10n.language == AppLanguage.en) {
+    return count == 1 ? '1 member' : '$count members';
+  }
+  return '$count ${l10n.get('members_count')}';
+}
+
+String _reportReasonTitle(BuildContext context, String reasonId) {
+  switch (reasonId) {
+    case 'spam':
+      return _userProfileText(
+        context,
+        zhCN: '垃圾信息',
+        zhTW: '垃圾訊息',
+        en: 'Spam',
+      );
+    case 'fake':
+      return _userProfileText(
+        context,
+        zhCN: '虚假信息/诈骗',
+        zhTW: '虛假資訊／詐騙',
+        en: 'False Information / Scam',
+      );
+    case 'violence':
+      return _userProfileText(
+        context,
+        zhCN: '暴力或危险内容',
+        zhTW: '暴力或危險內容',
+        en: 'Violence or Dangerous Content',
+      );
+    case 'porn':
+      return _userProfileText(
+        context,
+        zhCN: '色情内容',
+        zhTW: '色情內容',
+        en: 'Sexual Content',
+      );
+    case 'harassment':
+      return _userProfileText(
+        context,
+        zhCN: '骚扰或欺凌',
+        zhTW: '騷擾或霸凌',
+        en: 'Harassment or Bullying',
+      );
+    case 'copyright':
+      return _userProfileText(
+        context,
+        zhCN: '侵犯版权',
+        zhTW: '侵犯版權',
+        en: 'Copyright Infringement',
+      );
+    case 'other':
+    default:
+      return _userProfileText(
+        context,
+        zhCN: '其他',
+        zhTW: '其他',
+        en: 'Other',
+      );
+  }
+}
 
 /// 用户资料页面
 class UserProfilePage extends ConsumerStatefulWidget {
@@ -59,6 +214,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   bool _isContact = false;
   List<Map<String, dynamic>> _commonGroups = [];
   bool _loadingGroups = true;
+  int _commonGroupCount = 0;
+  int _commonContactCount = 0;
+  List<Map<String, dynamic>> _commonContacts = [];
+  bool _loadingCommonInfo = true;
 
   // 用户详细信息
   String? _realUsername;
@@ -66,8 +225,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   String? _realBio;
   String? _realAvatar;
   String? _nicknameColor; // 用户背景颜色
-  String? _premiumType; // 会员类型
   String? _emojiAvatar; // 表情状态
+  VipProfileSummary _vip = VipProfileSummary.inactive;
   String? _userUuid; // 用户 UUID（用于官方用户检查）
   String? _contactRemark;
   bool _isOnline = false;
@@ -89,6 +248,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   Function(dynamic)? _userStatusHandler;
   Function(dynamic)? _userProfileHandler;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -104,6 +264,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     // 延迟加载非必要数据，优化页面打开速度
     Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) _loadCommonGroups();
+    });
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (mounted) _loadCommonInfo();
     });
     Future.delayed(const Duration(milliseconds: 900), () {
       if (mounted) _findPrivateChatAndLoadCounts();
@@ -170,8 +333,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         _realBio = data['bio']?.toString() ?? _realBio;
         _realAvatar = avatarUrl ?? _realAvatar;
         _nicknameColor = data['nickname_color']?.toString() ?? _nicknameColor;
-        _premiumType = data['premium_type']?.toString() ?? _premiumType;
         _emojiAvatar = data['emoji_avatar']?.toString() ?? _emojiAvatar;
+        if (data.containsKey('vip')) {
+          _vip = VipProfileSummary.fromJson(data['vip']);
+        }
       });
     };
     ws.registerHandler('user_profile', _userProfileHandler!);
@@ -203,7 +368,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         }
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[UserProfile] Load block status error: $e');
+      debugPrint('[UserProfile] Load block status error: $e');
     } finally {
       if (mounted && _loadingBlockStatus) {
         setState(() => _loadingBlockStatus = false);
@@ -213,24 +378,58 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
   /// 切换屏蔽/取消屏蔽
   Future<void> _toggleBlock(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     if (_isBlocked) {
       // 取消屏蔽
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('取消屏蔽'),
+          title: Text(
+            _translate(
+              context,
+              'unblock_title',
+              _userProfileText(
+                context,
+                zhCN: '取消屏蔽',
+                zhTW: '取消封鎖',
+                en: 'Unblock',
+              ),
+            ),
+          ),
           content: Text(
-            '确定要取消对 "${_realNickname ?? widget.name ?? '该用户'}" 的屏蔽吗？',
+            _translate(
+              context,
+              'unblock_confirm',
+              _userProfileText(
+                context,
+                zhCN: '确定要取消对 "{name}" 的屏蔽吗？',
+                zhTW: '確定要取消對「{name}」的封鎖嗎？',
+                en: 'Unblock "{name}"?',
+              ),
+              {
+                'name':
+                    _fallbackThisUserName(context, _realNickname ?? widget.name)
+              },
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(l10n.cancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(
-                '取消屏蔽',
+                _translate(
+                  context,
+                  'unblock_title',
+                  _userProfileText(
+                    context,
+                    zhCN: '取消屏蔽',
+                    zhTW: '取消封鎖',
+                    en: 'Unblock',
+                  ),
+                ),
                 style: TextStyle(color: Theme.of(context).colorScheme.primary),
               ),
             ),
@@ -247,17 +446,58 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           setState(() => _isBlocked = false);
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('已取消屏蔽')));
+          ).showSnackBar(
+            SnackBar(
+              content: Text(
+                _translate(
+                  context,
+                  'unblock_success',
+                  _userProfileText(
+                    context,
+                    zhCN: '已取消屏蔽',
+                    zhTW: '已取消封鎖',
+                    en: 'Unblocked',
+                  ),
+                ),
+              ),
+            ),
+          );
         } else {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(response.message)));
+          ).showSnackBar(
+            SnackBar(
+              content: Text(
+                _userProfileServerMessage(
+                  response.message,
+                  zhCN: '操作失败，请重试',
+                  zhTW: '操作失敗，請重試',
+                  en: 'Operation failed. Please try again.',
+                ),
+              ),
+            ),
+          );
         }
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('操作失败，请重试')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _translate(
+                context,
+                'unblock_failed',
+                _userProfileText(
+                  context,
+                  zhCN: '操作失败，请重试',
+                  zhTW: '操作失敗，請稍後重試',
+                  en: 'Operation failed, please try again',
+                ),
+              ),
+            ),
+          ),
+        );
       }
     } else {
       // 屏蔽用户
@@ -381,8 +621,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           _realBio = response.data['bio'];
           _realAvatar = avatarUrl;
           _nicknameColor = response.data['nickname_color'];
-          _premiumType = response.data['premium_type'];
           _emojiAvatar = response.data['emoji_avatar'];
+          _vip = response.data.containsKey('vip')
+              ? VipProfileSummary.fromJson(response.data['vip'])
+              : matchedContact?.vip ?? _vip;
           _userUuid = response.data['id']?.toString();
           _contactRemark = inferredRemark;
           _isOnline = response.data['status'] == 1;
@@ -422,6 +664,35 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
   }
 
+  Future<void> _loadCommonInfo() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final response = await api.get('/user/${widget.userId}/common-info');
+      if (!mounted) return;
+      if (response.isSuccess && response.data != null) {
+        final contactsData = response.data['common_contacts'];
+        setState(() {
+          _commonGroupCount = int.tryParse(
+                response.data['common_group_count']?.toString() ?? '',
+              ) ??
+              0;
+          _commonContactCount = int.tryParse(
+                response.data['common_contact_count']?.toString() ?? '',
+              ) ??
+              0;
+          _commonContacts = contactsData is List
+              ? List<Map<String, dynamic>>.from(contactsData)
+              : [];
+          _loadingCommonInfo = false;
+        });
+      } else {
+        setState(() => _loadingCommonInfo = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingCommonInfo = false);
+    }
+  }
+
   bool get _isCurrentUser {
     final currentUser = ref.read(authServiceProvider).user;
     return currentUser?.uuid == widget.userId;
@@ -429,29 +700,143 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
   /// 显示名称（优先 nickname）
   String get _displayName {
-    if (_contactRemark != null && _contactRemark!.trim().isNotEmpty) {
+    if (_isContact &&
+        _contactRemark != null &&
+        _contactRemark!.trim().isNotEmpty) {
       return _contactRemark!.trim();
     }
     if (_realNickname != null && _realNickname!.isNotEmpty) {
       return _realNickname!;
     }
-    return widget.name ?? '用户';
+    return _fallbackUserName(context, widget.name);
+  }
+
+  bool get _hasRemark =>
+      _isContact && _contactRemark?.trim().isNotEmpty == true;
+
+  String _remarkTagsValue(BuildContext context) {
+    if (!_isContact) {
+      return _userProfileText(
+        context,
+        zhCN: '非联系人',
+        zhTW: '非聯絡人',
+        en: 'Not a contact',
+      );
+    }
+    final remark = _contactRemark?.trim();
+    if (remark != null && remark.isNotEmpty) return remark;
+    return _userProfileText(
+      context,
+      zhCN: '未设置',
+      zhTW: '未設定',
+      en: 'Not set',
+    );
+  }
+
+  String _translate(
+    BuildContext context,
+    String key,
+    String fallback, [
+    Map<String, String> variables = const {},
+  ]) {
+    var text = AppLocalizations.of(context).get(key);
+    if (text == key) {
+      text = fallback;
+    }
+    for (final entry in variables.entries) {
+      text = text.replaceAll('{${entry.key}}', entry.value);
+    }
+    return text;
   }
 
   /// 在线状态文本
-  String get _onlineStatusText {
-    if (_loadingUserInfo) return '加载中...';
-    if (_isOnline) return '在线';
+  String _onlineStatusText(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isEnglish = l10n.language == AppLanguage.en;
+    if (_loadingUserInfo) return l10n.loading;
+    if (_isOnline) return l10n.online;
     if (_lastSeen != null) {
       final now = DateTime.now();
       final diff = now.difference(_lastSeen!);
-      if (diff.inMinutes < 1) return '刚刚在线';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前在线';
-      if (diff.inHours < 24) return '${diff.inHours}小时前在线';
-      if (diff.inDays < 7) return '${diff.inDays}天前在线';
-      return '很久没上线';
+      if (diff.inMinutes < 1) {
+        return isEnglish
+            ? '${l10n.justNow} ${l10n.online}'
+            : '${l10n.justNow}${l10n.online}';
+      }
+      if (diff.inMinutes < 60) {
+        return isEnglish
+            ? '${diff.inMinutes} ${l10n.minutesAgo} ${l10n.online}'
+            : '${diff.inMinutes}${l10n.minutesAgo}${l10n.online}';
+      }
+      if (diff.inHours < 24) {
+        return isEnglish
+            ? '${diff.inHours} ${l10n.hoursAgo} ${l10n.online}'
+            : '${diff.inHours}${l10n.hoursAgo}${l10n.online}';
+      }
+      if (diff.inDays < 7) {
+        return isEnglish
+            ? '${diff.inDays} ${l10n.daysAgo} ${l10n.online}'
+            : '${diff.inDays}${l10n.daysAgo}${l10n.online}';
+      }
+      return l10n.longTimeAgo;
     }
-    return '离线';
+    return l10n.offline;
+  }
+
+  DateTime? _recentInteractionTime(ChatListState chatState) {
+    final chatId = _privateChatId ?? widget.chatId;
+    final allChats = [...chatState.pinnedChats, ...chatState.regularChats];
+    for (final chat in allChats) {
+      if (chat.type != ChatItemType.private) continue;
+      final matchesChatId =
+          chatId != null && chatId.isNotEmpty && chat.id == chatId;
+      final matchesUser = chat.targetUserId == widget.userId ||
+          chat.targetUserUuid == widget.userId ||
+          chat.targetUserId == _userUuid ||
+          chat.targetUserUuid == _userUuid;
+      if (matchesChatId || matchesUser) {
+        return chat.lastMessageTime;
+      }
+    }
+    return null;
+  }
+
+  String _recentInteractionText(BuildContext context, DateTime? time) {
+    if (time == null) {
+      return _userProfileText(
+        context,
+        zhCN: '暂无互动',
+        zhTW: '暫無互動',
+        en: 'No activity',
+      );
+    }
+    final local = time.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    if (day == today) {
+      return _userProfileText(
+        context,
+        zhCN: '今天 ${DateFormat('HH:mm').format(local)}',
+        zhTW: '今天 ${DateFormat('HH:mm').format(local)}',
+        en: 'Today ${DateFormat('HH:mm').format(local)}',
+      );
+    }
+    if (day == today.subtract(const Duration(days: 1))) {
+      return _userProfileText(
+        context,
+        zhCN: '昨天 ${DateFormat('HH:mm').format(local)}',
+        zhTW: '昨天 ${DateFormat('HH:mm').format(local)}',
+        en: 'Yesterday ${DateFormat('HH:mm').format(local)}',
+      );
+    }
+    return DateFormat('yyyy/MM/dd').format(local);
+  }
+
+  int get _sharedMediaTotal {
+    final counts = _mediaCounts;
+    if (counts == null) return 0;
+    return counts.media + counts.file + counts.link + counts.voice;
   }
 
   // 个人资料页背景渐变色（与 personalization_page.dart 保持一致）
@@ -485,14 +870,19 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
   /// 获取用户背景渐变色
   List<Color> _getUserBackgroundGradient() {
-    if (_premiumType != null && _premiumType!.isNotEmpty) {
-      if (_premiumType == 'yearly') {
-        return const [Color(0xFF111827), Color(0xFF7C2D12), Color(0xFFF59E0B)];
+    if (_vip.visible) {
+      if (_vip.level >= 2) {
+        return const [
+          Color(0xFF18130C),
+          Color(0xFF5B4521),
+          Color(0xFFD2B06A),
+        ];
       }
-      if (_premiumType == 'quarterly') {
-        return const [Color(0xFF1E1B4B), Color(0xFF4338CA), Color(0xFF06B6D4)];
-      }
-      return const [Color(0xFF0F172A), Color(0xFF312E81), Color(0xFF7C3AED)];
+      return const [
+        Color(0xFFDDE7F2),
+        Color(0xFFA9BCD2),
+        Color(0xFF7F9BB9),
+      ];
     }
     if (_nicknameColor != null && _nicknameColor!.isNotEmpty) {
       // 解析格式 "bg:0,name:0"
@@ -514,20 +904,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
-    final separatorColor =
-        isDark ? const Color(0xFF38383A) : const Color(0xFFC6C6C8);
-
+    final bgColor = AppColors.backgroundFor(context);
+    final cardColor = AppColors.cardFor(context);
+    final separatorColor = AppColors.dividerFor(context);
     // 监听联系人列表变化
     ref.listen(contactListProvider, (_, contacts) {
-      final isContact = contacts.any(
-        (c) => c.id == widget.userId || c.uuid == widget.userId,
-      );
-      if (isContact != _isContact) {
-        setState(() => _isContact = isContact);
-      }
-
       ContactItem? matchedContact;
       for (final contact in contacts) {
         if (contact.id == widget.userId || contact.uuid == widget.userId) {
@@ -535,39 +916,75 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           break;
         }
       }
-      if (matchedContact == null) return;
+      if (matchedContact == null) {
+        if (_isContact || _contactRemark != null) {
+          setState(() {
+            _isContact = false;
+            _contactRemark = null;
+          });
+        }
+        return;
+      }
 
       final nextName = matchedContact.name;
       final nextAvatar = matchedContact.avatar;
       final nextNicknameColor = matchedContact.nicknameColor;
-      final nextPremiumType = matchedContact.premiumType;
       final nextEmojiAvatar = matchedContact.emojiAvatar;
+      final nextVip = matchedContact.vip;
       final nextRemark = matchedContact.remark;
-      final nextNickname = nextRemark?.trim().isNotEmpty == true
-          ? _realNickname
-          : nextName;
+      final nextNickname =
+          nextRemark?.trim().isNotEmpty == true ? _realNickname : nextName;
 
-      if (_realNickname == nextNickname &&
+      if (_isContact &&
+          _realNickname == nextNickname &&
           _realAvatar == nextAvatar &&
           _nicknameColor == nextNicknameColor &&
-          _premiumType == nextPremiumType &&
           _emojiAvatar == nextEmojiAvatar &&
+          _vip == nextVip &&
           _contactRemark == nextRemark) {
         return;
       }
 
       setState(() {
+        _isContact = true;
         _realNickname = nextNickname;
         _realAvatar = nextAvatar;
         _nicknameColor = nextNicknameColor;
-        _premiumType = nextPremiumType;
         _emojiAvatar = nextEmojiAvatar;
+        _vip = nextVip;
         _contactRemark = nextRemark;
       });
     });
 
     final profileBgGradient = _getUserBackgroundGradient();
-    final profileBgColor = profileBgGradient[0];
+    final vipLevel = _vip.visible ? _vip.level : 0;
+    final isVip = vipLevel > 0;
+    final isSvip = vipLevel >= 2;
+    const headerForeground = Colors.white;
+    final headerMutedForeground = Colors.white.withOpacity(0.78);
+    final patternOpacity = isSvip ? 0.09 : (isVip ? 0.10 : 0.12);
+    final mediaQuery = MediaQuery.of(context);
+    final viewportWidth = mediaQuery.size.width;
+    final viewportHeight = mediaQuery.size.height;
+    final isNarrowScreen = viewportWidth < 360;
+    final isShortScreen = viewportHeight < 700;
+    final isCompactHeader = isNarrowScreen || isShortScreen;
+    final isWideProfile =
+        widget.isDesktopPanel || PlatformUtils.useDesktopLayout(context);
+    final fixedHeaderContentHeight = isCompactHeader
+        ? 300.0
+        : isWideProfile
+            ? 304.0
+            : 312.0;
+    final headerBodyHeight = fixedHeaderContentHeight - kToolbarHeight;
+    final avatarSize = isCompactHeader ? 76.0 : (isWideProfile ? 80.0 : 84.0);
+    final actionButtonSize = isCompactHeader ? 44.0 : 48.0;
+    final headerTopGap = isCompactHeader ? 8.0 : 10.0;
+    final headerNameGap = isCompactHeader ? 7.0 : 9.0;
+    final headerBottomGap = isCompactHeader ? 8.0 : 10.0;
+    final headerNameFontSize = isNarrowScreen ? 20.0 : 22.0;
+    final profileHeaderHeight =
+        mediaQuery.padding.top + fixedHeaderContentHeight;
 
     Widget content = Scaffold(
       backgroundColor: bgColor, // 页面背景
@@ -578,26 +995,45 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
             top: 0,
             left: 0,
             right: 0,
-            height: 450,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: profileBgGradient,
-                ),
-              ),
-              child: Opacity(
-                opacity: 0.2,
-                child: SvgPicture.asset(
-                  'assets/images/backgrounds/bg5.svg',
-                  fit: BoxFit.cover,
-                  colorFilter: const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.srcIn,
+            height: profileHeaderHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: profileBgGradient,
+                    ),
                   ),
                 ),
-              ),
+                Opacity(
+                  opacity: patternOpacity,
+                  child: SvgPicture.asset(
+                    'assets/images/backgrounds/bg5.svg',
+                    fit: BoxFit.cover,
+                    colorFilter: const ColorFilter.mode(
+                      Colors.white,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0, 0.54, 1],
+                      colors: [
+                        Color(0x52000000),
+                        Color(0x24000000),
+                        Color(0x70000000),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           // 主内容
@@ -613,11 +1049,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                 backgroundColor: Colors.transparent,
                 elevation: 0,
                 scrolledUnderElevation: 0,
+                systemOverlayStyle: AppSystemUiStyles.onDarkBackground,
                 leading: IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.arrow_back_ios,
                     size: 20,
-                    color: Colors.white,
+                    color: headerForeground,
                   ),
                   onPressed: () {
                     if (widget.isDesktopPanel) {
@@ -633,14 +1070,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                   if (_isCurrentUser)
                     TextButton(
                       onPressed: () => context.push('/settings/profile'),
-                      child: const Text(
-                        '编辑',
-                        style: TextStyle(color: Colors.white, fontSize: 17),
+                      child: Text(
+                        AppLocalizations.of(context).edit,
+                        style: TextStyle(
+                          color: headerForeground,
+                          fontSize: 17,
+                        ),
                       ),
                     )
                   else
                     IconButton(
-                      icon: const Icon(Icons.more_horiz, color: Colors.white),
+                      icon: Icon(Icons.more_horiz, color: headerForeground),
                       onPressed: () => _showMoreOptions(context),
                     ),
                 ],
@@ -648,229 +1088,237 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
               // 头像、名字、在线状态和操作按钮（透明背景，由底层提供图案）
               SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    // 头像
-                    GestureDetector(
-                      onTap: () => _showAvatarFullScreen(context),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withOpacity(
-                              _premiumType?.isNotEmpty == true ? 0.0 : 1.0,
-                            ),
-                            width: _premiumType?.isNotEmpty == true ? 0 : 4,
-                          ),
-                        ),
-                        child: Hero(
-                          tag: 'avatar_${widget.userId}',
-                          child: AvatarWidget(
-                            name: _displayName,
-                            avatar: _realAvatar ?? widget.avatar,
-                            userId: widget.userId,
-                            size: 100,
-                            premiumType: _premiumType,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // 名称 + 表情状态 + 官方标识
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final officialUsersAsync = ref.watch(
-                          officialUsersProvider,
-                        );
-                        final officialUsers =
-                            officialUsersAsync.valueOrNull ?? {};
-                        // 使用 _userUuid 来检查是否是官方用户，如果还没加载完则尝试 widget.userId
-                        final userUuidToCheck = _userUuid ?? widget.userId;
-                        final isOfficial = officialUsers.contains(
-                          userUuidToCheck,
-                        );
-
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ColoredNameWidget(
-                              name: _displayName,
-                              nicknameColor: _nicknameColor,
-                              premiumType: _premiumType,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w600,
-                              defaultColor: Colors.white,
-                            ),
-                            if (_emojiAvatar != null &&
-                                _emojiAvatar!.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              EmojiStatusWidget(emoji: _emojiAvatar!, size: 26),
-                            ],
-                            // 官方认证标识
-                            if (isOfficial) ...[
-                              const SizedBox(width: 6),
-                              const OfficialBadge(size: 22),
-                            ],
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    // 在线状态
-                    Text(
-                      _onlineStatusText,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: _isOnline ? Colors.white : Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // 操作按钮（不显示给自己）
-                    if (!_isCurrentUser)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _TGActionButton(
-                              icon: Icons.chat_bubble_outline,
-                              label: l10n.get('message') ?? '消息',
-                              onTap: () => _startChat(context),
-                              isLoading: _isLoading,
-                              lightStyle: true,
-                            ),
-                            _TGActionButton(
-                              icon: Icons.call_outlined,
-                              label: l10n.get('call') ?? '通话',
-                              onTap: () => _startCall(context, CallType.voice),
-                              lightStyle: true,
-                            ),
-                            _TGActionButton(
-                              icon: Icons.videocam_outlined,
-                              label: l10n.get('video') ?? '视频',
-                              onTap: () => _startCall(context, CallType.video),
-                              lightStyle: true,
-                            ),
-                            _TGActionButton(
-                              icon: _isMuted
-                                  ? Icons.volume_up_outlined
-                                  : Icons.volume_off_outlined,
-                              label: _isMuted
-                                  ? (l10n.get('unmute') ?? '取消静音')
-                                  : (l10n.get('mute') ?? '静音'),
-                              onTap: () => _toggleMute(),
-                              lightStyle: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_isCurrentUser) const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                      child: PremiumCard(
-                        isDark: true,
-                        premiumType: _premiumType,
-                        padding: const EdgeInsets.all(18),
-                        borderRadius: BorderRadius.circular(24),
-                        colors: profileBgGradient,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_awesome_rounded,
-                                  color: Colors.white.withOpacity(0.95),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  PremiumThemeTokens.isPremium(_premiumType)
-                                      ? 'Premium Profile'
-                                      : 'Profile Snapshot',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
+                child: SizedBox(
+                  height: headerBodyHeight,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: Column(
+                      children: [
+                        SizedBox(height: headerTopGap),
+                        // 头像
+                        GestureDetector(
+                          onTap: () => _showAvatarFullScreen(context),
+                          child: VipAvatarFrame(
+                            level: vipLevel,
+                            size: avatarSize,
+                            isCircle: true,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(
+                                    isVip ? 0.96 : 1,
                                   ),
+                                  width: isVip ? 2 : 4,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              (_realBio != null && _realBio!.isNotEmpty)
-                                  ? _realBio!
-                                  : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.84),
-                                fontSize: 14,
-                                height: 1.45,
+                              ),
+                              child: Hero(
+                                tag: 'avatar_${widget.userId}',
+                                child: AvatarWidget(
+                                  name: _displayName,
+                                  avatar: _realAvatar ?? widget.avatar,
+                                  userId: widget.userId,
+                                  size: avatarSize,
+                                  isCircle: true,
+                                ),
                               ),
                             ),
-                            if (_realUsername != null &&
-                                _realUsername!.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              PremiumContainer(
-                                premiumType: _premiumType,
-                                borderRadius: BorderRadius.circular(14),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
+                          ),
+                        ),
+                        SizedBox(height: headerNameGap),
+                        // 第一行只展示昵称和官方认证；会员与状态放到第二行。
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final officialUsersAsync = ref.watch(
+                              officialUsersProvider,
+                            );
+                            final officialUsers =
+                                officialUsersAsync.valueOrNull ?? {};
+                            final userUuidToCheck = _userUuid ?? widget.userId;
+                            final isOfficial = officialUsers.contains(
+                              userUuidToCheck,
+                            );
+                            final hasVip = _vip.visible;
+                            final hasEmoji = _emojiAvatar != null &&
+                                _emojiAvatar!.isNotEmpty;
+
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(
-                                        Icons.alternate_email,
-                                        size: 16,
-                                        color: Colors.white.withOpacity(0.92),
+                                      Flexible(
+                                        child: ColoredNameWidget(
+                                          name: _displayName,
+                                          nicknameColor: null,
+                                          fontSize: headerNameFontSize,
+                                          fontWeight: FontWeight.w700,
+                                          defaultColor: headerForeground,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        '@$_realUsername',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
+                                      if (isOfficial) ...[
+                                        const SizedBox(width: 6),
+                                        const OfficialBadge(size: 20),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (hasVip)
+                                        VipProfileBadge(
+                                          level: _vip.level,
+                                          height: 18,
+                                        ),
+                                      if (hasVip && hasEmoji)
+                                        const SizedBox(width: 6),
+                                      if (hasEmoji)
+                                        EmojiStatusWidget(
+                                          emoji: _emojiAvatar!,
+                                          size: 18,
+                                        ),
+                                      if (hasVip || hasEmoji)
+                                        const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          _onlineStatusText(context),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            height: 1.15,
+                                            color: _isOnline
+                                                ? headerForeground
+                                                : headerMutedForeground,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
-                          ],
+                            );
+                          },
                         ),
-                      ),
+                        const Spacer(),
+                        // 操作按钮（不显示给自己）
+                        if (!_isCurrentUser)
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              isNarrowScreen ? 8 : 12,
+                              0,
+                              isNarrowScreen ? 8 : 12,
+                              headerBottomGap,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _TGActionButton(
+                                    icon: Icons.chat_bubble_outline,
+                                    label: l10n.get('message') ??
+                                        _userProfileText(
+                                          context,
+                                          zhCN: '消息',
+                                          zhTW: '訊息',
+                                          en: 'Message',
+                                        ),
+                                    onTap: () => _startChat(context),
+                                    isLoading: _isLoading,
+                                    lightStyle: true,
+                                    foregroundColor: headerForeground,
+                                    buttonSize: actionButtonSize,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _TGActionButton(
+                                    icon: Icons.call_outlined,
+                                    label: l10n.get('call') ??
+                                        _userProfileText(
+                                          context,
+                                          zhCN: '通话',
+                                          zhTW: '通話',
+                                          en: 'Call',
+                                        ),
+                                    onTap: () =>
+                                        _startCall(context, CallType.voice),
+                                    lightStyle: true,
+                                    foregroundColor: headerForeground,
+                                    buttonSize: actionButtonSize,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _TGActionButton(
+                                    icon: Icons.videocam_outlined,
+                                    label: l10n.get('video') ??
+                                        _userProfileText(
+                                          context,
+                                          zhCN: '视频',
+                                          zhTW: '影片',
+                                          en: 'Video',
+                                        ),
+                                    onTap: () =>
+                                        _startCall(context, CallType.video),
+                                    lightStyle: true,
+                                    foregroundColor: headerForeground,
+                                    buttonSize: actionButtonSize,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _TGActionButton(
+                                    icon: Icons.search_rounded,
+                                    label: l10n.get('search') ??
+                                        _userProfileText(
+                                          context,
+                                          zhCN: '搜索',
+                                          zhTW: '搜尋',
+                                          en: 'Search',
+                                        ),
+                                    onTap: () => _searchMessages(context),
+                                    lightStyle: true,
+                                    foregroundColor: headerForeground,
+                                    buttonSize: actionButtonSize,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_isCurrentUser) SizedBox(height: headerBottomGap),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
 
               // 间距
-              SliverToBoxAdapter(child: SizedBox(height: 20)),
+              SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              // 用户信息卡片
+              // 资料信息
               SliverToBoxAdapter(
-                child: _TGSection(
+                child: _ProfileDetailsCard(
                   cardColor: cardColor,
-                  separatorColor: separatorColor,
-                  children: [
-                    if (_realUsername != null && _realUsername!.isNotEmpty)
-                      _TGInfoCell(
-                        title: '@$_realUsername',
-                        subtitle: l10n.username,
-                        onTap: () => _copyToClipboard('@$_realUsername'),
-                      ),
-                    _TGInfoCell(
-                      title: (_realBio != null && _realBio!.isNotEmpty)
-                          ? _realBio!
-                          : (l10n.get('no_bio') ?? '这个人很懒，什么都没留下'),
-                      subtitle: l10n.bio,
-                    ),
-                  ],
+                  isDark: isDark,
+                  bioLabel: l10n.bio,
+                  bio: (_realBio != null && _realBio!.isNotEmpty)
+                      ? _realBio!
+                      : (l10n.get('no_bio') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '这个人很懒，什么都没留下',
+                            zhTW: '這個人很懶，什麼都沒留下',
+                            en: 'No bio yet',
+                          )),
+                  usernameLabel: l10n.username,
+                  username: _realUsername?.trim(),
+                  onUsernameTap: (_realUsername?.trim().isNotEmpty == true)
+                      ? () => _copyToClipboard('@${_realUsername!.trim()}')
+                      : null,
+                  onQrTap: () => _showProfileQrCard(context),
                 ),
               ),
 
@@ -884,53 +1332,101 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                   children: [
                     _TGCell(
                       icon: Icons.photo_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('photos_and_videos') ?? '照片和视频',
+                      iconColor: AppColors.primaryFor(context),
+                      title: l10n.get('photos_and_videos') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '照片和视频',
+                            zhTW: '照片和影片',
+                            en: 'Photos & Videos',
+                          ),
                       trailing: _buildCountTrailing(
                         '${_mediaCounts?.media ?? 0}',
                       ),
                       onTap: () => _showMediaList(
                         context,
-                        l10n.get('photos_and_videos') ?? '照片和视频',
+                        l10n.get('photos_and_videos') ??
+                            _userProfileText(
+                              context,
+                              zhCN: '照片和视频',
+                              zhTW: '照片和影片',
+                              en: 'Photos & Videos',
+                            ),
                         'media',
                       ),
                     ),
                     _TGCell(
                       icon: Icons.link,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('shared_links') ?? '共享链接',
+                      iconColor: AppColors.primaryFor(context),
+                      title: l10n.get('shared_links') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '共享链接',
+                            zhTW: '共享連結',
+                            en: 'Shared Links',
+                          ),
                       trailing: _buildCountTrailing(
                         '${_mediaCounts?.link ?? 0}',
                       ),
                       onTap: () => _showMediaList(
                         context,
-                        l10n.get('shared_links') ?? '共享链接',
+                        l10n.get('shared_links') ??
+                            _userProfileText(
+                              context,
+                              zhCN: '共享链接',
+                              zhTW: '共享連結',
+                              en: 'Shared Links',
+                            ),
                         'link',
                       ),
                     ),
                     _TGCell(
                       icon: Icons.insert_drive_file_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('files') ?? '文件',
+                      iconColor: AppColors.primaryFor(context),
+                      title: l10n.get('files') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '文件',
+                            zhTW: '檔案',
+                            en: 'Files',
+                          ),
                       trailing: _buildCountTrailing(
                         '${_mediaCounts?.file ?? 0}',
                       ),
                       onTap: () => _showMediaList(
                         context,
-                        l10n.get('files') ?? '文件',
+                        l10n.get('files') ??
+                            _userProfileText(
+                              context,
+                              zhCN: '文件',
+                              zhTW: '檔案',
+                              en: 'Files',
+                            ),
                         'file',
                       ),
                     ),
                     _TGCell(
                       icon: Icons.mic_outlined,
-                      iconColor: AppColors.primary,
-                      title: l10n.get('voice_messages') ?? '语音消息',
+                      iconColor: AppColors.primaryFor(context),
+                      title: l10n.get('voice_messages') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '语音消息',
+                            zhTW: '語音訊息',
+                            en: 'Voice Messages',
+                          ),
                       trailing: _buildCountTrailing(
                         '${_mediaCounts?.voice ?? 0}',
                       ),
                       onTap: () => _showMediaList(
                         context,
-                        l10n.get('voice_messages') ?? '语音消息',
+                        l10n.get('voice_messages') ??
+                            _userProfileText(
+                              context,
+                              zhCN: '语音消息',
+                              zhTW: '語音訊息',
+                              en: 'Voice Messages',
+                            ),
                         'voice',
                       ),
                     ),
@@ -949,9 +1445,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                     _TGCell(
                       icon: Icons.group_outlined,
                       iconColor: Colors.green,
-                      title: l10n.get('common_groups') ?? '共同群组',
+                      title: l10n.get('common_groups') ??
+                          _userProfileText(
+                            context,
+                            zhCN: '共同群组',
+                            zhTW: '共同群組',
+                            en: 'Groups in Common',
+                          ),
                       titlePrefix:
-                          '${_commonGroups.length} ${l10n.get('count_suffix') ?? '个'}',
+                          '${_commonGroups.length} ${l10n.get('count_suffix') ?? _userProfileText(context, zhCN: '个', zhTW: '個', en: '')}',
                       trailing: _buildArrowTrailing(),
                       onTap: () => _showCommonGroups(context),
                     ),
@@ -959,7 +1461,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                 ),
               ),
 
-              // 危险操作（不显示给自己）
+              // 隐私操作（不显示给自己）
               if (!_isCurrentUser) ...[
                 SliverToBoxAdapter(child: SizedBox(height: 20)),
                 SliverToBoxAdapter(
@@ -968,9 +1470,60 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                     separatorColor: separatorColor,
                     children: [
                       _TGCell(
+                        icon: _isMuted
+                            ? Icons.notifications_off_outlined
+                            : Icons.notifications_active_outlined,
+                        iconColor: AppColors.primaryFor(context),
+                        title: _userProfileText(
+                          context,
+                          zhCN: '消息免打扰',
+                          zhTW: '訊息免打擾',
+                          en: 'Mute Notifications',
+                        ),
+                        trailing: Switch.adaptive(
+                          value: _isMuted,
+                          activeColor: AppColors.primaryFor(context),
+                          onChanged: (_) => _toggleMute(),
+                        ),
+                        onTap: () => _toggleMute(),
+                      ),
+                      _TGCell(
+                        icon: Icons.delete_sweep_outlined,
+                        iconColor: Colors.orange,
+                        title: _translate(
+                          context,
+                          'clear_chat_history',
+                          _userProfileText(
+                            context,
+                            zhCN: '清空聊天记录',
+                            zhTW: '清空聊天記錄',
+                            en: 'Clear Chat History',
+                          ),
+                        ),
+                        titleColor: Colors.orange,
+                        trailing: _buildArrowTrailing(),
+                        onTap: () => _showClearChatDialog(context),
+                      ),
+                      _TGCell(
+                        icon: _isBlocked
+                            ? Icons.lock_open_outlined
+                            : Icons.block_outlined,
+                        iconColor: _isBlocked ? Colors.orange : Colors.red,
                         title: _isBlocked
-                            ? (l10n.get('unblock_user') ?? '取消屏蔽')
-                            : (l10n.get('block_user') ?? '屏蔽用户'),
+                            ? (l10n.get('unblock_user') ??
+                                _userProfileText(
+                                  context,
+                                  zhCN: '取消屏蔽',
+                                  zhTW: '取消封鎖',
+                                  en: 'Unblock User',
+                                ))
+                            : (l10n.get('block_user') ??
+                                _userProfileText(
+                                  context,
+                                  zhCN: '屏蔽用户',
+                                  zhTW: '封鎖用戶',
+                                  en: 'Block User',
+                                )),
                         titleColor: _isBlocked ? Colors.orange : Colors.red,
                         trailing: _loadingBlockStatus
                             ? SizedBox(
@@ -986,7 +1539,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                             : () => _toggleBlock(context),
                       ),
                       _TGCell(
-                        title: l10n.get('report') ?? '举报',
+                        icon: Icons.report_gmailerrorred_outlined,
+                        iconColor: Colors.red,
+                        title: l10n.get('report') ??
+                            _userProfileText(
+                              context,
+                              zhCN: '举报',
+                              zhTW: '檢舉',
+                              en: 'Report',
+                            ),
                         titleColor: Colors.red,
                         onTap: () => _showReportPage(context),
                       ),
@@ -1008,7 +1569,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
 
     // 桌面端全屏模式：限制最大宽度并居中
-    if (PlatformUtils.isDesktop) {
+    if (PlatformUtils.useDesktopLayout(context)) {
       return Scaffold(
         backgroundColor: bgColor,
         body: Center(
@@ -1041,7 +1602,33 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   void _showFeatureNotAvailable(BuildContext context, String feature) {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('$feature 功能暂未开放')));
+    ).showSnackBar(
+      SnackBar(
+        content: Text(
+          _userProfileText(
+            context,
+            zhCN: '$feature 功能暂未开放',
+            zhTW: '$feature 功能暫未開放',
+            en: '$feature is not available yet',
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showContactRequiredForRemark(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _userProfileText(
+            context,
+            zhCN: '添加为联系人后可设置备注和标签',
+            zhTW: '加入聯絡人後可設定備註和標籤',
+            en: 'Add as a contact to set remarks and tags',
+          ),
+        ),
+      ),
+    );
   }
 
   void _showAvatarFullScreen(BuildContext context) {
@@ -1072,16 +1659,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final chat =
           await ref.read(chatListProvider.notifier).createPrivateChatFromServer(
                 targetUserId: widget.userId,
-                targetUserName: widget.name ?? '用户',
+                targetUserName: _fallbackUserName(context, widget.name),
                 avatar: widget.avatar,
               );
       if (chat != null && mounted) {
         // 桌面端：选中聊天并关闭资料面板
-        if (widget.isDesktopPanel || PlatformUtils.isDesktop) {
+        if (widget.isDesktopPanel || PlatformUtils.useDesktopLayout(context)) {
           ref.read(selectedChatIdProvider.notifier).state = chat.id;
           ref.read(selectedChatInfoProvider.notifier).state = SelectedChatInfo(
             id: chat.id,
-            name: widget.name ?? '用户',
+            name: _fallbackUserName(context, widget.name),
             avatar: widget.avatar,
             chatType: ChatType.private,
           );
@@ -1089,7 +1676,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
               DesktopProfileInfo.none;
         } else {
           context.push(
-            '/chat/${chat.id}?name=${Uri.encodeComponent(widget.name ?? '用户')}&type=private',
+            '/chat/${chat.id}?name=${Uri.encodeComponent(_fallbackUserName(context, widget.name))}&type=private',
           );
         }
       }
@@ -1100,6 +1687,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
   /// 直接发起通话（无需先跳转聊天页）
   void _startCall(BuildContext context, CallType callType) async {
+    if (_isBlocked) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '已屏蔽该用户，无法发起通话',
+                zhTW: '已封鎖該用戶，無法發起通話',
+                en: 'This user is blocked and cannot be called',
+              ),
+            ),
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -1108,7 +1714,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       // 直接发起通话
       final success = await callService.startCall(
         targetUserId: widget.userId,
-        targetName: widget.name ?? '用户',
+        targetName: _fallbackUserName(context, widget.name),
         targetAvatar: widget.avatar,
         type: callType,
       );
@@ -1118,7 +1724,59 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         context.push('/call');
       } else if (mounted) {
         // 显示错误信息
-        final errorMsg = ref.read(callServiceProvider).errorMessage;
+        final failedState = ref.read(callServiceProvider);
+        if (failedState.permissionIssue != null) {
+          final issue = failedState.permissionIssue!;
+          final canUseVoice = callType == CallType.video &&
+              callPermissionSupportsVoiceFallback(issue);
+          final action = await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(
+                _userProfileText(
+                  context,
+                  zhCN: '通话权限未开启',
+                  zhTW: '通話權限未開啟',
+                  en: 'Call permission required',
+                ),
+              ),
+              content: Text(failedState.errorMessage ?? ''),
+              actions: [
+                if (canUseVoice)
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop('voice'),
+                    child: Text(
+                      _userProfileText(
+                        context,
+                        zhCN: '改用语音',
+                        zhTW: '改用語音',
+                        en: 'Use voice',
+                      ),
+                    ),
+                  ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop('settings'),
+                  child: Text(
+                    _userProfileText(
+                      context,
+                      zhCN: '前往设置',
+                      zhTW: '前往設定',
+                      en: 'Open settings',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+          if (!mounted) return;
+          if (action == 'voice') {
+            _startCall(context, CallType.voice);
+          } else if (action == 'settings') {
+            await callService.openCallPermissionSettings();
+          }
+          return;
+        }
+        final errorMsg = failedState.errorMessage;
         if (errorMsg != null) {
           ScaffoldMessenger.of(
             context,
@@ -1161,7 +1819,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final chat =
           await ref.read(chatListProvider.notifier).createPrivateChatFromServer(
                 targetUserId: widget.userId,
-                targetUserName: widget.name ?? '用户',
+                targetUserName: _fallbackUserName(context, widget.name),
                 avatar: widget.avatar,
               );
       if (chat != null) {
@@ -1180,20 +1838,63 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         setState(() => _isMuted = newMuteState);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newMuteState ? '已静音' : '已取消静音'),
+            content: Text(
+              newMuteState
+                  ? (AppLocalizations.of(context).get('muted') ??
+                      _userProfileText(
+                        context,
+                        zhCN: '已静音',
+                        zhTW: '已靜音',
+                        en: 'Muted',
+                      ))
+                  : _userProfileText(
+                      context,
+                      zhCN: '已取消静音',
+                      zhTW: '已取消靜音',
+                      en: 'Unmuted',
+                    ),
+            ),
             duration: const Duration(seconds: 1),
           ),
         );
       } else if (mounted) {
+        final localizedError = _userProfileServerMessage(
+          response.message,
+          zhCN: '设置失败',
+          zhTW: '設定失敗',
+          en: 'Update failed',
+        );
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('设置失败: ${response.message}')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '设置失败: $localizedError',
+                zhTW: '設定失敗：$localizedError',
+                en: 'Failed to update: $localizedError',
+              ),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('操作失败')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '操作失败',
+                zhTW: '操作失敗',
+                en: 'Operation failed',
+              ),
+            ),
+          ),
+        );
       }
     }
   }
@@ -1201,11 +1902,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   void _copyToClipboard(String text) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制'), duration: Duration(seconds: 1)),
+      SnackBar(
+        content: Text(AppLocalizations.of(context).get('copied')),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 
   void _showMoreOptions(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1213,7 +1918,27 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         actions: [
           // 添加/移除联系人
           _TGActionSheetItem(
-            title: _isContact ? '从联系人中移除' : '添加到联系人',
+            title: _isContact
+                ? _translate(
+                    context,
+                    'remove_contact_title',
+                    _userProfileText(
+                      context,
+                      zhCN: '从联系人中移除',
+                      zhTW: '從聯絡人中移除',
+                      en: 'Remove from Contacts',
+                    ),
+                  )
+                : _translate(
+                    context,
+                    'add_contact',
+                    _userProfileText(
+                      context,
+                      zhCN: '添加到联系人',
+                      zhTW: '加入聯絡人',
+                      en: 'Add to Contacts',
+                    ),
+                  ),
             isDestructive: _isContact,
             onTap: () {
               Navigator.pop(context);
@@ -1222,97 +1947,139 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           ),
           if (_isContact)
             _TGActionSheetItem(
-              title: '修改备注',
+              title: _userProfileText(
+                context,
+                zhCN: '编辑联系人信息',
+                zhTW: '編輯聯絡人資訊',
+                en: 'Edit Contact Info',
+              ),
               onTap: () {
                 Navigator.pop(context);
-                _showEditRemarkDialog();
+                _openEditContactInfoPage();
               },
             ),
           _TGActionSheetItem(
-            title: '分享联系人',
+            title: _translate(
+              context,
+              'share_contact',
+              _userProfileText(
+                context,
+                zhCN: '分享联系人',
+                zhTW: '分享聯絡人',
+                en: 'Share Contact',
+              ),
+            ),
             onTap: () {
               Navigator.pop(context);
-              _shareContact(context);
+              // The action-sheet context is disposed as soon as this route is
+              // closed. Open the next sheet from this page's live context.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _shareContact();
+              });
             },
           ),
           _TGActionSheetItem(
-            title: '搜索消息',
+            title: _translate(
+              context,
+              'search_messages',
+              _userProfileText(
+                context,
+                zhCN: '搜索消息',
+                zhTW: '搜尋訊息',
+                en: 'Search Messages',
+              ),
+            ),
             onTap: () {
               Navigator.pop(context);
               _searchMessages(context);
             },
           ),
-          _TGActionSheetItem(
-            title: '清空聊天记录',
-            isDestructive: true,
-            onTap: () {
-              Navigator.pop(context);
-              _showClearChatDialog(context);
-            },
-          ),
         ],
-        cancelText: '取消',
+        cancelText: l10n.cancel,
       ),
     );
   }
 
-  Future<void> _showEditRemarkDialog() async {
-    final controller = TextEditingController(text: _contactRemark ?? '');
-    final remark = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改备注'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 30,
-          decoration: const InputDecoration(
-            hintText: '填写备注名，留空则显示昵称',
-          ),
+  Future<void> _openEditContactInfoPage() async {
+    if (!_isContact) {
+      _showContactRequiredForRemark(context);
+      return;
+    }
+
+    final nickname = _realNickname?.trim().isNotEmpty == true
+        ? _realNickname!.trim()
+        : _fallbackUserName(context, widget.name);
+    final result = await Navigator.of(context).push<_EditContactInfoResult>(
+      MaterialPageRoute(
+        builder: (_) => _EditContactInfoPage(
+          displayName: nickname,
+          username: _realUsername,
+          userId: _userUuid ?? widget.userId,
+          initialRemark: _contactRemark?.trim() ?? '',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
-    controller.dispose();
+    if (result == null || !mounted) return;
 
-    if (remark == null) return;
-    final userUuid = _userUuid ?? widget.userId;
+    await _applyEditedContactRemark(_userUuid ?? widget.userId, result.remark);
+  }
+
+  Future<void> _applyEditedContactRemark(
+    String userUuid,
+    String remark,
+  ) async {
+    final nextRemark = remark.trim();
+    if ((_contactRemark?.trim() ?? '') == nextRemark) return;
+
     final success = await ref
         .read(contactListProvider.notifier)
-        .updateRemark(userUuid, remark);
+        .updateRemark(userUuid, nextRemark);
     if (!mounted) return;
     if (success) {
-      setState(() => _contactRemark = remark);
+      setState(() => _contactRemark = nextRemark);
       final fallbackName = _realNickname?.trim().isNotEmpty == true
           ? _realNickname!.trim()
-          : (widget.name?.trim().isNotEmpty == true ? widget.name!.trim() : '用户');
-      final nextDisplayName = remark.trim().isNotEmpty
-          ? remark.trim()
-          : fallbackName;
+          : (widget.name?.trim().isNotEmpty == true
+              ? widget.name!.trim()
+              : _fallbackUserName(context));
+      final nextDisplayName = nextRemark.isNotEmpty ? nextRemark : fallbackName;
       ref.read(chatListProvider.notifier).updatePrivateChatDisplayName(
             userId: userUuid,
             name: nextDisplayName,
           );
       ref.read(chatListProvider.notifier).silentRefresh(bypassDebounce: true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('备注已保存'),
+        SnackBar(
+          content: Text(
+            _translate(
+              context,
+              'remark_saved',
+              _userProfileText(
+                context,
+                zhCN: '备注已保存',
+                zhTW: '備註已儲存',
+                en: 'Remark saved',
+              ),
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('备注保存失败，请重试'),
+        SnackBar(
+          content: Text(
+            _translate(
+              context,
+              'remark_save_failed',
+              _userProfileText(
+                context,
+                zhCN: '备注保存失败，请重试',
+                zhTW: '備註儲存失敗，請稍後重試',
+                en: 'Failed to save remark, please try again',
+              ),
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.error,
         ),
@@ -1321,6 +2088,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   }
 
   Future<void> _toggleContact() async {
+    final l10n = AppLocalizations.of(context);
     // 使用UUID进行API调用，优先使用 _userUuid
     final userUuid = _userUuid ?? widget.userId;
 
@@ -1329,17 +2097,47 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('移除联系人'),
-          content: Text('确定要将 ${_displayName} 从联系人中移除吗？'),
+          title: Text(
+            _translate(
+              context,
+              'remove_contact_title',
+              _userProfileText(
+                context,
+                zhCN: '从联系人中移除',
+                zhTW: '從聯絡人中移除',
+                en: 'Remove from Contacts',
+              ),
+            ),
+          ),
+          content: Text(
+            _translate(
+              context,
+              'remove_contact_confirm',
+              _userProfileText(
+                context,
+                zhCN: '确定要将 {name} 从联系人中移除吗？',
+                zhTW: '確定要將 {name} 從聯絡人中移除嗎？',
+                en: 'Remove {name} from your contacts?',
+              ),
+              {'name': _displayName},
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
+              child: Text(l10n.cancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
               style: TextButton.styleFrom(foregroundColor: AppColors.error),
-              child: const Text('移除'),
+              child: Text(
+                _userProfileText(
+                  context,
+                  zhCN: '移除',
+                  zhTW: '移除',
+                  en: 'Remove',
+                ),
+              ),
             ),
           ],
         ),
@@ -1350,38 +2148,211 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       final success =
           await ref.read(contactListProvider.notifier).removeContact(userUuid);
       if (success && mounted) {
-        setState(() => _isContact = false);
+        setState(() {
+          _isContact = false;
+          _contactRemark = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已将 ${_displayName} 从联系人中移除'),
+            content: Text(
+              _translate(
+                context,
+                'remove_contact_success',
+                _userProfileText(
+                  context,
+                  zhCN: '已将 {name} 从联系人中移除',
+                  zhTW: '已將 {name} 從聯絡人中移除',
+                  en: 'Removed {name} from contacts',
+                ),
+                {'name': _displayName},
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('移除失败，请重试'),
+          SnackBar(
+            content: Text(
+              _translate(
+                context,
+                'remove_contact_failed',
+                _userProfileText(
+                  context,
+                  zhCN: '移除失败，请重试',
+                  zhTW: '移除失敗，請稍後重試',
+                  en: 'Remove failed, please try again',
+                ),
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.error,
           ),
         );
       }
     } else {
-      // 添加联系人
-      final success =
-          await ref.read(contactListProvider.notifier).addContact(userUuid);
-      if (success && mounted) {
-        setState(() => _isContact = true);
+      final friendAddMode =
+          ref.read(systemSettingsProvider).valueOrNull?.friendAddMode ??
+              FriendAddMode.approval;
+      if (friendAddMode == FriendAddMode.disabled) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已将 ${_displayName} 添加到联系人'),
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '管理员已关闭添加好友功能',
+                zhTW: '管理員已關閉新增好友功能',
+                en: 'Adding friends has been disabled by the administrator.',
+              ),
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+      if (friendAddMode == FriendAddMode.direct) {
+        final success =
+            await ref.read(contactListProvider.notifier).addContact(userUuid);
+        if (!mounted) return;
+        if (success) {
+          setState(() {
+            _isContact = true;
+            _contactRemark = null;
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? _userProfileText(
+                      context,
+                      zhCN: '已添加为好友',
+                      zhTW: '已新增為好友',
+                      en: 'Friend added',
+                    )
+                  : _userProfileText(
+                      context,
+                      zhCN: '添加失败，请重试',
+                      zhTW: '新增失敗，請重試',
+                      en: 'Failed to add friend. Please try again.',
+                    ),
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: success ? null : AppColors.error,
+          ),
+        );
+        return;
+      }
+
+      final controller = TextEditingController(
+        text: _userProfileText(
+          context,
+          zhCN: '你好，我想添加你为好友',
+          zhTW: '你好，我想加你為好友',
+          en: 'Hi, I would like to add you as a friend.',
+        ),
+      );
+      final verification = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            _userProfileText(
+              context,
+              zhCN: '发送好友申请',
+              zhTW: '傳送好友申請',
+              en: 'Send Friend Request',
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 200,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: _userProfileText(
+                context,
+                zhCN: '验证消息',
+                zhTW: '驗證訊息',
+                en: 'Verification message',
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                dialogContext,
+                controller.text.trim(),
+              ),
+              child: Text(
+                _userProfileText(
+                  context,
+                  zhCN: '发送',
+                  zhTW: '傳送',
+                  en: 'Send',
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (verification == null || !mounted) return;
+
+      final result = await ref
+          .read(contactListProvider.notifier)
+          .sendFriendRequest(userUuid, message: verification);
+      if (result != null && mounted) {
+        final accepted =
+            result.autoAccepted || result.request.status == 'accepted';
+        if (accepted) {
+          setState(() {
+            _isContact = true;
+            _contactRemark = null;
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              accepted
+                  ? _userProfileText(
+                      context,
+                      zhCN: '双方已互相申请，已成为好友',
+                      zhTW: '雙方已互相申請，已成為好友',
+                      en: 'You both sent requests and are now contacts.',
+                    )
+                  : result.created
+                      ? _userProfileText(
+                          context,
+                          zhCN: '好友申请已发送',
+                          zhTW: '好友申請已傳送',
+                          en: 'Friend request sent',
+                        )
+                      : _userProfileText(
+                          context,
+                          zhCN: '好友申请正在等待对方处理',
+                          zhTW: '好友申請正在等待對方處理',
+                          en: 'The friend request is already pending.',
+                        ),
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('添加失败，请重试'),
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '好友申请发送失败，请重试',
+                zhTW: '好友申請傳送失敗，請重試',
+                en: 'Failed to send friend request. Please try again.',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.error,
           ),
@@ -1390,304 +2361,618 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     }
   }
 
-  void _shareContact(BuildContext context) {
+  void _shareContact() {
+    final pageContext = context;
+    final l10n = AppLocalizations.of(pageContext);
     final username = _realUsername ?? '';
-    final contactInfo = '''
-$_displayName
-${username.isNotEmpty ? '@$username' : ''}
-${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
-'''
-        .trim();
+    final isDark = Theme.of(pageContext).brightness == Brightness.dark;
+    final cardColor = AppColors.cardFor(pageContext);
 
+    showModalBottomSheet(
+      context: pageContext,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _userProfileText(
+                        sheetContext,
+                        zhCN: '个人名片',
+                        zhTW: '個人名片',
+                        en: 'Profile Card',
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondaryFor(sheetContext),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _ProfileSharePreview(
+                      name: _displayName,
+                      username: username,
+                      avatar: _realAvatar ?? widget.avatar,
+                      userId: widget.userId,
+                      nicknameColor: _nicknameColor,
+                      bio: _realBio,
+                      isDark: isDark,
+                    ),
+                    const SizedBox(height: 16),
+                    GridView.count(
+                      crossAxisCount: 4,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 0.82,
+                      children: [
+                        _ProfileShareAction(
+                          icon: Icons.ios_share_rounded,
+                          label: _userProfileText(
+                            sheetContext,
+                            zhCN: '分享名片',
+                            zhTW: '分享名片',
+                            en: 'Share',
+                          ),
+                          color: AppColors.primaryFor(context),
+                          isDark: isDark,
+                          onTap: () async {
+                            // Invoke the platform share while this click still
+                            // owns browser user activation, then close the sheet.
+                            await _shareProfileCard(pageContext);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          },
+                        ),
+                        _ProfileShareAction(
+                          icon: Icons.qr_code_2_rounded,
+                          label: _userProfileText(
+                            sheetContext,
+                            zhCN: '二维码名片',
+                            zhTW: 'QR 名片',
+                            en: 'QR Card',
+                          ),
+                          color: Colors.teal,
+                          isDark: isDark,
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) _showProfileQrCard(pageContext);
+                            });
+                          },
+                        ),
+                        _ProfileShareAction(
+                          icon: Icons.link_rounded,
+                          label: _userProfileText(
+                            sheetContext,
+                            zhCN: '复制链接',
+                            zhTW: '複製連結',
+                            en: 'Copy Link',
+                          ),
+                          color: AppColors.primaryLight,
+                          isDark: isDark,
+                          onTap: () async {
+                            // Clipboard writes on web must happen directly in
+                            // the click callback, before user activation expires.
+                            await _copyAccountLink(pageContext);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          },
+                        ),
+                        _ProfileShareAction(
+                          icon: Icons.send_rounded,
+                          label: _userProfileText(
+                            sheetContext,
+                            zhCN: '发送给好友',
+                            zhTW: '傳送好友',
+                            en: 'Send',
+                          ),
+                          color: Colors.green,
+                          isDark: isDark,
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) _sendContactCard(pageContext);
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => Navigator.pop(sheetContext),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    l10n.cancel,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryFor(context),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _profileCardText(_ProfileShareTarget target) {
+    final username = _realUsername ?? '';
+    final lines = <String>[
+      _userProfileText(
+        context,
+        zhCN: '这是 $_displayName 的个人名片',
+        zhTW: '這是 $_displayName 的個人名片',
+        en: 'Profile card for $_displayName',
+      ),
+      if (username.isNotEmpty) '@$username',
+      if ((_realBio ?? '').trim().isNotEmpty) _realBio!.trim(),
+      if (target.webUrl.isNotEmpty) target.webUrl,
+      if (target.webUrl.isEmpty && target.qrPayload.isNotEmpty)
+        target.qrPayload,
+    ];
+    return lines.join('\n');
+  }
+
+  _ProfileShareTarget _buildProfileShareTarget() {
+    final userUuid = _userUuid ?? widget.userId;
+    final qrPayload = buildUserQrPayload(userUuid);
+    // Do not wait for network settings here. Web clipboard/share APIs require
+    // an immediate user gesture; the app deep-link is a safe local fallback.
+    final settings = ref.read(systemSettingsProvider).valueOrNull;
+
+    const compiledPublicH5Url = String.fromEnvironment(
+      'GENERIC_IM_PUBLIC_H5_URL',
+    );
+    final webUrl = buildUserProfileShareUrl(
+      userId: userUuid,
+      name: _displayName,
+      avatar: _realAvatar ?? widget.avatar,
+      configuredBaseUrl: settings?.registerBaseUrl ?? '',
+      compiledPublicH5Url: compiledPublicH5Url,
+      currentWebUri: kIsWeb ? Uri.base : null,
+    );
+    return _ProfileShareTarget(webUrl: webUrl, qrPayload: qrPayload);
+  }
+
+  Future<void> _shareProfileCard(BuildContext context) async {
+    try {
+      final target = _buildProfileShareTarget();
+      if (!mounted) return;
+      if (!target.isAvailable) {
+        _showShareUnavailable(context);
+        return;
+      }
+      final renderBox = context.findRenderObject();
+      final shareOrigin = renderBox is RenderBox && renderBox.hasSize
+          ? renderBox.localToGlobal(Offset.zero) & renderBox.size
+          : null;
+      await Share.share(
+        _profileCardText(target),
+        subject: _userProfileText(
+          context,
+          zhCN: '分享名片',
+          zhTW: '分享名片',
+          en: 'Share Profile Card',
+        ),
+        sharePositionOrigin: shareOrigin,
+      );
+    } catch (_) {
+      if (mounted) {
+        _showShareUnavailable(context);
+      }
+    }
+  }
+
+  Future<void> _copyAccountLink(BuildContext context) async {
+    try {
+      final target = _buildProfileShareTarget();
+      if (!mounted) return;
+      if (!target.isAvailable) {
+        _showShareUnavailable(context);
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: target.primaryText));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _userProfileText(
+              context,
+              zhCN: target.webUrl.isNotEmpty ? '账号链接已复制' : '二维码内容已复制',
+              zhTW: target.webUrl.isNotEmpty ? '帳號連結已複製' : 'QR 內容已複製',
+              en: target.webUrl.isNotEmpty
+                  ? 'Account link copied'
+                  : 'QR code content copied',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        _showShareUnavailable(context);
+      }
+    }
+  }
+
+  void _showShareUnavailable(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _userProfileText(
+            context,
+            zhCN: '名片暂不可用，请稍后重试',
+            zhTW: '名片暫不可用，請稍後重試',
+            en: 'Profile card is unavailable. Please try again later.',
+          ),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.error,
+      ),
+    );
+  }
+
+  void _showProfileQrCard(BuildContext context) {
+    final pageContext = context;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final userUuid = _userUuid ?? widget.userId;
+    final username = _realUsername ?? '';
+    final qrData = buildUserQrPayload(userUuid);
 
-    // 显示分享选项
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 名片预览
-            PremiumCard(
-              isDark: isDark,
-              premiumType: _premiumType,
-              padding: const EdgeInsets.all(16),
-              borderRadius: BorderRadius.circular(14),
-              colors: isDark
-                  ? const [Color(0xFF2C2C2E), Color(0xFF1F2937)]
-                  : const [Colors.white, Color(0xFFF8FAFF)],
-              child: Column(
-                children: [
-                  // 标题
-                  Text(
-                    '分享联系人',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white60 : Colors.black45,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                decoration: BoxDecoration(
+                  color: AppColors.cardFor(context),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _userProfileText(
+                        context,
+                        zhCN: '二维码名片',
+                        zhTW: 'QR 名片',
+                        en: 'QR Profile Card',
+                      ),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryFor(context),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 名片预览
-                  PremiumCard(
-                    isDark: isDark,
-                    premiumType: _premiumType,
-                    padding: const EdgeInsets.all(12),
-                    borderRadius: BorderRadius.circular(12),
-                    colors: isDark
-                        ? [
-                            Colors.white.withOpacity(0.05),
-                            Colors.white.withOpacity(0.02),
-                          ]
-                        : const [Color(0xFFF8FAFF), Color(0xFFF3F4F6)],
-                    child: Row(
-                      children: [
-                        AvatarWidget(
-                          avatar: _realAvatar ?? widget.avatar,
-                          name: _displayName,
-                          userId: widget.userId,
-                          size: 48,
-                          premiumType: _premiumType,
+                    const SizedBox(height: 18),
+                    AvatarWidget(
+                      avatar: _realAvatar ?? widget.avatar,
+                      name: _displayName,
+                      userId: widget.userId,
+                      size: 68,
+                      isCircle: true,
+                    ),
+                    const SizedBox(height: 10),
+                    ColoredNameWidget(
+                      name: _displayName,
+                      nicknameColor: _nicknameColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      defaultColor: AppColors.textPrimaryFor(context),
+                    ),
+                    if (username.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '@$username',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondaryFor(context),
                         ),
-                        const SizedBox(width: 12),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    Container(
+                      width: 232,
+                      height: 232,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.08)
+                              : const Color(0xFFE5E7EB),
+                        ),
+                      ),
+                      child: QrImageView(
+                        data: qrData,
+                        version: QrVersions.auto,
+                        backgroundColor: Colors.white,
+                        eyeStyle: QrEyeStyle(
+                          eyeShape: QrEyeShape.square,
+                          color: AppColors.primaryFor(context),
+                        ),
+                        dataModuleStyle: QrDataModuleStyle(
+                          dataModuleShape: QrDataModuleShape.square,
+                          color: AppColors.primaryFor(context),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      _userProfileText(
+                        context,
+                        zhCN: '扫码添加好友或打开资料页',
+                        zhTW: '掃碼新增好友或開啟資料頁',
+                        en: 'Scan to add friend or open profile',
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondaryFor(context),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ColoredNameWidget(
-                                name: _displayName,
-                                nicknameColor: _nicknameColor,
-                                premiumType: _premiumType,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                defaultColor:
-                                    isDark ? Colors.white : Colors.black87,
+                          child: TextButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _sendContactCard(pageContext);
+                            },
+                            icon: const Icon(Icons.ios_share_rounded, size: 20),
+                            label: Text(
+                              _userProfileText(
+                                context,
+                                zhCN: '分享名片',
+                                zhTW: '分享名片',
+                                en: 'Share Card',
                               ),
-                              if (username.isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  '@$username',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: isDark
-                                        ? Colors.white60
-                                        : Colors.black54,
-                                  ),
-                                ),
-                              ],
-                            ],
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.onPrimaryFor(context),
+                              backgroundColor: AppColors.primaryFor(context),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _copyAccountLink(pageContext);
+                            },
+                            icon: const Icon(Icons.link_rounded, size: 20),
+                            label: Text(
+                              _userProfileText(
+                                context,
+                                zhCN: '复制链接',
+                                zhTW: '複製連結',
+                                en: 'Copy Link',
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.primaryFor(context),
+                              backgroundColor:
+                                  AppColors.primaryWithOpacity(context, 0.12),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  // 复制按钮
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Clipboard.setData(ClipboardData(text: contactInfo));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Row(
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                SizedBox(width: 8),
-                                Text('联系人信息已复制'),
-                              ],
-                            ),
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: AppColors.success,
-                          ),
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: isDark
-                            ? Colors.white.withOpacity(0.1)
-                            : Colors.grey[100],
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.copy_rounded,
-                            size: 20,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '复制联系人信息',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // 发送名片按钮
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _sendContactCard(context);
-                      },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: AppColors.primary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.send_rounded,
-                            size: 20,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            '发送名片给好友',
-                            style: TextStyle(fontSize: 16, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // 取消按钮
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor:
-                      isDark ? const Color(0xFF2C2C2E) : Colors.white,
-                  shape: RoundedRectangleBorder(
+                  decoration: BoxDecoration(
+                    color: AppColors.cardFor(context),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                ),
-                child: Text(
-                  '取消',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.primary,
+                  child: Text(
+                    AppLocalizations.of(context).cancel,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.linkFor(context),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
-            ),
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   /// 发送联系人名片
-  void _sendContactCard(BuildContext context) {
-    // 显示好友选择器
+  Future<void> _sendContactCard(BuildContext context) async {
+    final pageContext = context;
+    // Start a refresh, but do not block opening the selector. A slow request
+    // previously made the button look completely unresponsive on all clients.
+    final refreshFuture = ref.read(contactListProvider.notifier).refresh();
+    if (!mounted) return;
+
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _FriendSelectorSheet(
-        onSelect: (friendId, friendName) async {
+        onSelect: (friendId, friendName, friendAvatar) async {
           Navigator.pop(context);
 
-          // 使用UUID
           final userUuid = _userUuid ?? widget.userId;
-
-          // 创建与好友的私聊并发送名片
-          final api = ref.read(apiClientProvider);
+          if (userUuid.trim().isEmpty || friendId.trim().isEmpty) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(pageContext).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _userProfileText(
+                    pageContext,
+                    zhCN: '名片信息不完整，发送失败',
+                    zhTW: '名片資訊不完整，傳送失敗',
+                    en: 'Profile card is incomplete and cannot be sent.',
+                  ),
+                ),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppColors.error,
+              ),
+            );
+            return;
+          }
 
           try {
-            final chatResponse = await api.post(
-              '/chat/create',
-              data: {
-                'type': 1,
-                'member_ids': [friendId],
-              },
+            final chat = await ref
+                .read(chatListProvider.notifier)
+                .createPrivateChatFromServer(
+                  targetUserId: friendId,
+                  targetUserName: friendName,
+                  avatar: friendAvatar,
+                );
+
+            if (!mounted) return;
+            if (chat == null) {
+              ScaffoldMessenger.of(pageContext).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _userProfileText(
+                      pageContext,
+                      zhCN: '创建会话失败',
+                      zhTW: '建立會話失敗',
+                      en: 'Failed to create chat',
+                    ),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppColors.error,
+                ),
+              );
+              return;
+            }
+
+            final contact = api.ContactCardInfo(
+              userId: userUuid,
+              nickname: _displayName,
+              username: (_realUsername ?? '').trim().isEmpty
+                  ? null
+                  : _realUsername!.trim(),
+              avatar: (_realAvatar ?? widget.avatar ?? '').trim().isEmpty
+                  ? null
+                  : (_realAvatar ?? widget.avatar)!.trim(),
+              bio: (_realBio ?? '').trim().isEmpty ? null : _realBio!.trim(),
+              nicknameColor: (_nicknameColor ?? '').trim().isEmpty
+                  ? null
+                  : _nicknameColor!.trim(),
+              emojiAvatar: (_emojiAvatar ?? '').trim().isEmpty
+                  ? null
+                  : _emojiAvatar!.trim(),
             );
 
-            if (chatResponse.isSuccess && chatResponse.data != null) {
-              final chatId = chatResponse.data['uuid'];
+            final sendResponse =
+                await ref.read(api.chatServiceProvider).sendMessage(
+                      chatId: chat.id,
+                      type: 10,
+                      content: api.MessageContent(contact: contact),
+                    );
 
-              // 发送联系人名片消息
-              final sendResponse = await api.post(
-                '/message/send',
-                data: {
-                  'chat_id': chatId,
-                  'type': 10, // 名片类型
-                  'content': {
-                    'contact': {
-                      'user_id': userUuid,
-                      'nickname': _displayName,
-                      'username': _realUsername ?? '',
-                      'avatar': _realAvatar ?? widget.avatar ?? '',
-                      'bio': _realBio ?? '',
-                      'nickname_color': _nicknameColor ?? '',
-                      'emoji_avatar': _emojiAvatar ?? '',
-                      'premium_type': _premiumType ?? '',
-                    },
-                  },
-                },
-              );
+            if (!mounted) return;
+            if (sendResponse.isSuccess && sendResponse.data != null) {
+              ref
+                  .read(messageListProvider(chat.id).notifier)
+                  .handleRealtimeMessage(sendResponse.data!,
+                      source: 'profile_card_send');
+              await ref.read(chatListProvider.notifier).refresh();
 
-              if (mounted) {
-                if (sendResponse.isSuccess) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Row(
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text('已将 $_displayName 的名片发送给 $friendName'),
-                        ],
-                      ),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: AppColors.success,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(sendResponse.message ?? '发送失败'),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                }
-              }
-            } else if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              if (!mounted) return;
+              ScaffoldMessenger.of(pageContext).showSnackBar(
                 SnackBar(
-                  content: Text(chatResponse.message ?? '创建会话失败'),
+                  content: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          _translate(
+                            pageContext,
+                            'send_contact_success',
+                            _userProfileText(
+                              pageContext,
+                              zhCN: '已将 {name} 的名片发送给 {friend}',
+                              zhTW: '已將 {name} 的名片傳送給 {friend}',
+                              en: 'Sent {name}\'s contact card to {friend}',
+                            ),
+                            {'name': _displayName, 'friend': friendName},
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppColors.success,
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(pageContext).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _userProfileServerMessage(
+                      sendResponse.message,
+                      zhCN: '发送失败',
+                      zhTW: '發送失敗',
+                      en: AppLocalizations.of(pageContext).failed,
+                    ),
+                  ),
                   behavior: SnackBarBehavior.floating,
                   backgroundColor: AppColors.error,
                 ),
@@ -1695,9 +2980,16 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
             }
           } catch (e) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('发送失败，请重试'),
+              ScaffoldMessenger.of(pageContext).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _userProfileText(
+                      pageContext,
+                      zhCN: '发送失败，请重试',
+                      zhTW: '發送失敗，請稍後重試',
+                      en: 'Send failed, please try again',
+                    ),
+                  ),
                   behavior: SnackBarBehavior.floating,
                   backgroundColor: AppColors.error,
                 ),
@@ -1707,6 +2999,10 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
         },
       ),
     );
+
+    try {
+      await refreshFuture;
+    } catch (_) {}
   }
 
   void _searchMessages(BuildContext context) {
@@ -1714,24 +3010,54 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
     Navigator.push(
       context,
       createPageRoute(
-        builder: (context) => _SearchMessagesPage(
-          userId: widget.userId,
-          userName: widget.name ?? '用户',
+        builder: (context) => MessageSearchPage(
+          targetUserId: widget.userId,
+          chatName: _fallbackUserName(context, widget.name),
+          chatType: 'private',
         ),
       ),
     );
   }
 
   void _showClearChatDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _TGActionSheet(
-        title: '清空与 ${widget.name ?? '该用户'} 的聊天记录？',
-        message: '此操作无法撤销',
+        title: _translate(
+          context,
+          'clear_chat_with_user',
+          _userProfileText(
+            context,
+            zhCN: '清空与 {name} 的聊天记录？',
+            zhTW: '清空與 {name} 的聊天記錄？',
+            en: 'Clear chat history with {name}?',
+          ),
+          {'name': _fallbackThisUserName(context, widget.name)},
+        ),
+        message: _translate(
+          context,
+          'cannot_undo',
+          _userProfileText(
+            context,
+            zhCN: '此操作无法撤销',
+            zhTW: '此操作無法復原',
+            en: 'This action cannot be undone',
+          ),
+        ),
         actions: [
           _TGActionSheetItem(
-            title: '仅为我清空',
+            title: _translate(
+              context,
+              'clear_for_me_only',
+              _userProfileText(
+                context,
+                zhCN: '仅为我清空',
+                zhTW: '僅為我清空',
+                en: 'Clear for Me',
+              ),
+            ),
             isDestructive: true,
             onTap: () async {
               Navigator.pop(context);
@@ -1739,7 +3065,16 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
             },
           ),
           _TGActionSheetItem(
-            title: '为双方清空',
+            title: _translate(
+              context,
+              'clear_for_both',
+              _userProfileText(
+                context,
+                zhCN: '为双方清空',
+                zhTW: '為雙方清空',
+                en: 'Clear for Both',
+              ),
+            ),
             isDestructive: true,
             onTap: () async {
               Navigator.pop(context);
@@ -1747,7 +3082,7 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
             },
           ),
         ],
-        cancelText: '取消',
+        cancelText: l10n.cancel,
       ),
     );
   }
@@ -1775,7 +3110,18 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
           if (mounted) {
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(const SnackBar(content: Text('清空失败，请重试')));
+            ).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _userProfileText(
+                    context,
+                    zhCN: '清空失败，请重试',
+                    zhTW: '清空失敗，請重試',
+                    en: 'Clear failed, please try again',
+                  ),
+                ),
+              ),
+            );
           }
           return;
         }
@@ -1786,6 +3132,9 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
             : await chatService.clearChatHistory(chatId.toString());
 
         if (clearResponse.isSuccess && mounted) {
+          ref
+              .read(chatListProvider.notifier)
+              .clearHistoryPreview(chatId.toString());
           // 刷新当前会话消息缓存（若会话页仍在栈中可立即生效）
           ref.invalidate(messageListProvider(chatId.toString()));
           // 刷新聊天列表
@@ -1794,11 +3143,44 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(
-            SnackBar(content: Text(forBoth ? '已为双方清空聊天记录' : '聊天记录已清空')),
+            SnackBar(
+              content: Text(
+                forBoth
+                    ? _translate(
+                        context,
+                        'chat_history_cleared_for_both',
+                        _userProfileText(
+                          context,
+                          zhCN: '已为双方清空聊天记录',
+                          zhTW: '已為雙方清空聊天記錄',
+                          en: 'Chat history cleared for both sides',
+                        ),
+                      )
+                    : _translate(
+                        context,
+                        'chat_history_cleared',
+                        _userProfileText(
+                          context,
+                          zhCN: '聊天记录已清空',
+                          zhTW: '聊天記錄已清空',
+                          en: 'Chat history cleared',
+                        ),
+                      ),
+              ),
+            ),
           );
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(clearResponse.message ?? '清空失败')),
+            SnackBar(
+              content: Text(
+                _userProfileServerMessage(
+                  clearResponse.message,
+                  zhCN: '清空失败',
+                  zhTW: '清空失敗',
+                  en: 'Clear failed',
+                ),
+              ),
+            ),
           );
         }
       }
@@ -1806,7 +3188,18 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('清空失败，请重试')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '清空失败，请重试',
+                zhTW: '清空失敗，請重試',
+                en: 'Clear failed, please try again',
+              ),
+            ),
+          ),
+        );
       }
     }
   }
@@ -1815,7 +3208,22 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
     if (_commonGroups.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('暂无共同群组')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              context,
+              'no_common_groups',
+              _userProfileText(
+                context,
+                zhCN: '暂无共同群组',
+                zhTW: '暫無共同群組',
+                en: 'No common groups yet',
+              ),
+            ),
+          ),
+        ),
+      );
       return;
     }
 
@@ -1824,7 +3232,172 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
       createPageRoute(
         builder: (context) => _CommonGroupsPage(
           groups: _commonGroups,
-          userName: widget.name ?? '用户',
+          userName: _fallbackUserName(context, widget.name),
+        ),
+      ),
+    );
+  }
+
+  void _showCommonContacts(BuildContext context) {
+    if (_commonContactCount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _userProfileText(
+              context,
+              zhCN: '暂无共同联系人',
+              zhTW: '暫無共同聯絡人',
+              en: 'No mutual contacts yet',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppColors.cardFor(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _userProfileText(
+                        context,
+                        zhCN: '共同联系人',
+                        zhTW: '共同聯絡人',
+                        en: 'Mutual Contacts',
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondaryFor(context),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_commonContacts.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        child: Text(
+                          _userProfileText(
+                            context,
+                            zhCN: '共有 $_commonContactCount 位共同联系人',
+                            zhTW: '共有 $_commonContactCount 位共同聯絡人',
+                            en: '$_commonContactCount mutual contacts',
+                          ),
+                          style: TextStyle(
+                            color: AppColors.textSecondaryFor(context),
+                            fontSize: 16,
+                          ),
+                        ),
+                      )
+                    else
+                      ..._commonContacts.map((item) {
+                        final name = (item['nickname'] ??
+                                item['username'] ??
+                                _userProfileText(
+                                  context,
+                                  zhCN: '联系人',
+                                  zhTW: '聯絡人',
+                                  en: 'Contact',
+                                ))
+                            .toString();
+                        final username = item['username']?.toString() ?? '';
+                        final userId = item['id']?.toString() ?? '';
+                        final avatar = item['avatar']?.toString();
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: AvatarWidget(
+                            avatar: avatar,
+                            name: name,
+                            userId: userId,
+                            size: 42,
+                          ),
+                          title: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textPrimaryFor(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: username.isEmpty
+                              ? null
+                              : Text(
+                                  '@$username',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          onTap: userId.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  context.push(
+                                    '/user/$userId?name=${Uri.encodeComponent(name)}',
+                                  );
+                                },
+                        );
+                      }),
+                    if (_commonContactCount > _commonContacts.length)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _userProfileText(
+                            context,
+                            zhCN:
+                                '还有 ${_commonContactCount - _commonContacts.length} 位共同联系人',
+                            zhTW:
+                                '還有 ${_commonContactCount - _commonContacts.length} 位共同聯絡人',
+                            en: '${_commonContactCount - _commonContacts.length} more mutual contacts',
+                          ),
+                          style: TextStyle(
+                            color: AppColors.textSecondaryFor(context),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    AppLocalizations.of(context).cancel,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.linkFor(context),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1834,7 +3407,22 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
     if (_privateChatId == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('暂无聊天记录')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              context,
+              'no_chat_history',
+              _userProfileText(
+                context,
+                zhCN: '暂无聊天记录',
+                zhTW: '暫無聊天記錄',
+                en: 'No chat history yet',
+              ),
+            ),
+          ),
+        ),
+      );
       return;
     }
     Navigator.push(
@@ -1847,17 +3435,46 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
   }
 
   void _showBlockDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     // 提前保存页面级 context，防止被 builder 参数遮蔽后失效
     final pageContext = context;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => _TGActionSheet(
-        title: '屏蔽 ${widget.name ?? '该用户'}？',
-        message: '屏蔽后将无法收到对方的消息',
+        title: _translate(
+          context,
+          'block_user_title',
+          _userProfileText(
+            context,
+            zhCN: '屏蔽 {name}？',
+            zhTW: '封鎖 {name}？',
+            en: 'Block {name}?',
+          ),
+          {'name': _fallbackThisUserName(context, widget.name)},
+        ),
+        message: _translate(
+          context,
+          'block_user_message',
+          _userProfileText(
+            context,
+            zhCN: '屏蔽后将无法收到对方的消息',
+            zhTW: '封鎖後將無法收到對方的訊息',
+            en: 'You will no longer receive messages from this user after blocking',
+          ),
+        ),
         actions: [
           _TGActionSheetItem(
-            title: '屏蔽',
+            title: _translate(
+              context,
+              'block_user',
+              _userProfileText(
+                context,
+                zhCN: '屏蔽用户',
+                zhTW: '封鎖用戶',
+                en: 'Block User',
+              ),
+            ),
             isDestructive: true,
             onTap: () async {
               Navigator.pop(sheetContext);
@@ -1869,26 +3486,71 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
                   data: {'user_id': userUuid},
                 );
                 if (!mounted) return;
-                if (response.isSuccess || response.message == '已经屏蔽该用户') {
+                if (response.isSuccess ||
+                    response.message.contains('已经屏蔽该用户') ||
+                    response.message.contains('已屏蔽该用户') ||
+                    (response.message.toLowerCase().contains('already') &&
+                        response.message.toLowerCase().contains('block'))) {
                   setState(() => _isBlocked = true);
                   ScaffoldMessenger.of(
                     pageContext,
-                  ).showSnackBar(const SnackBar(content: Text('已屏蔽')));
+                  ).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _translate(
+                          pageContext,
+                          'block_success',
+                          _userProfileText(
+                            pageContext,
+                            zhCN: '已屏蔽',
+                            zhTW: '已封鎖',
+                            en: 'Blocked',
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
                 } else {
                   ScaffoldMessenger.of(
                     pageContext,
-                  ).showSnackBar(SnackBar(content: Text(response.message)));
+                  ).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _userProfileServerMessage(
+                          response.message,
+                          zhCN: '屏蔽失败，请重试',
+                          zhTW: '封鎖失敗，請重試',
+                          en: 'Block failed. Please try again.',
+                        ),
+                      ),
+                    ),
+                  );
                 }
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(
                   pageContext,
-                ).showSnackBar(const SnackBar(content: Text('屏蔽失败，请重试')));
+                ).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      _translate(
+                        pageContext,
+                        'block_failed',
+                        _userProfileText(
+                          pageContext,
+                          zhCN: '屏蔽失败，请重试',
+                          zhTW: '封鎖失敗，請稍後重試',
+                          en: 'Block failed, please try again',
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               }
             },
           ),
         ],
-        cancelText: '取消',
+        cancelText: l10n.cancel,
       ),
     );
   }
@@ -1897,10 +3559,376 @@ ${(_realBio != null && _realBio!.isNotEmpty) ? _realBio : ''}
     Navigator.push(
       context,
       createPageRoute(
-        builder: (context) => _ReportPage(
+        builder: (context) => ReportPage(
           targetId: widget.userId,
           targetType: 'user',
-          targetName: widget.name ?? '用户',
+          targetName: _fallbackUserName(context, widget.name),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileSharePreview extends StatelessWidget {
+  final String name;
+  final String username;
+  final String? avatar;
+  final String userId;
+  final String? nicknameColor;
+  final String? bio;
+  final bool isDark;
+
+  const _ProfileSharePreview({
+    required this.name,
+    required this.username,
+    required this.avatar,
+    required this.userId,
+    required this.nicknameColor,
+    required this.bio,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subColor = AppColors.textSecondaryFor(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color:
+            isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF6F7FB),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          AvatarWidget(
+            avatar: avatar,
+            name: name,
+            userId: userId,
+            size: 54,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ColoredNameWidget(
+                  name: name,
+                  nicknameColor: nicknameColor,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  defaultColor: AppColors.textPrimaryFor(context),
+                ),
+                if (username.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    '@$username',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: subColor),
+                  ),
+                ],
+                if ((bio ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    bio!.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: subColor),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileShareAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _ProfileShareAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox.expand(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(isDark ? 0.24 : 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: color, size: 23),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.15,
+                    color: AppColors.textSecondaryFor(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommonInfoGrid extends StatelessWidget {
+  final bool isDark;
+  final bool isLoading;
+  final int commonGroupCount;
+  final int commonContactCount;
+  final List<String> commonContactNames;
+  final String recentInteraction;
+  final int sharedMediaTotal;
+  final VoidCallback onCommonGroupsTap;
+  final VoidCallback onCommonContactsTap;
+  final VoidCallback onSharedMediaTap;
+
+  const _CommonInfoGrid({
+    required this.isDark,
+    required this.isLoading,
+    required this.commonGroupCount,
+    required this.commonContactCount,
+    required this.commonContactNames,
+    required this.recentInteraction,
+    required this.sharedMediaTotal,
+    required this.onCommonGroupsTap,
+    required this.onCommonContactsTap,
+    required this.onSharedMediaTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final contactHint = commonContactNames.isEmpty
+        ? _userProfileText(
+            context,
+            zhCN: '暂无共同联系人',
+            zhTW: '暫無共同聯絡人',
+            en: 'No mutual contacts',
+          )
+        : commonContactNames.take(2).join('、');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _userProfileText(
+              context,
+              zhCN: '共同信息',
+              zhTW: '共同資訊',
+              en: 'Relationship',
+            ),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondaryFor(context),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.95,
+            children: [
+              _CommonInfoTile(
+                icon: Icons.groups_2_outlined,
+                color: Colors.green,
+                title: _userProfileText(
+                  context,
+                  zhCN: '共同群聊',
+                  zhTW: '共同群聊',
+                  en: 'Groups',
+                ),
+                value: isLoading ? '--' : '$commonGroupCount',
+                hint: _userProfileText(
+                  context,
+                  zhCN: '个群聊',
+                  zhTW: '個群聊',
+                  en: 'in common',
+                ),
+                isDark: isDark,
+                onTap: onCommonGroupsTap,
+              ),
+              _CommonInfoTile(
+                icon: Icons.contacts_outlined,
+                color: Colors.blue,
+                title: _userProfileText(
+                  context,
+                  zhCN: '共同联系人',
+                  zhTW: '共同聯絡人',
+                  en: 'Contacts',
+                ),
+                value: isLoading ? '--' : '$commonContactCount',
+                hint: contactHint,
+                isDark: isDark,
+                onTap: onCommonContactsTap,
+              ),
+              _CommonInfoTile(
+                icon: Icons.schedule_rounded,
+                color: Colors.orange,
+                title: _userProfileText(
+                  context,
+                  zhCN: '最近互动',
+                  zhTW: '最近互動',
+                  en: 'Last Activity',
+                ),
+                value: recentInteraction,
+                hint: _userProfileText(
+                  context,
+                  zhCN: '私聊消息',
+                  zhTW: '私聊訊息',
+                  en: 'Private chat',
+                ),
+                isDark: isDark,
+              ),
+              _CommonInfoTile(
+                icon: Icons.perm_media_outlined,
+                color: AppColors.primaryFor(context),
+                title: _userProfileText(
+                  context,
+                  zhCN: '共享媒体',
+                  zhTW: '共享媒體',
+                  en: 'Shared Media',
+                ),
+                value: isLoading ? '--' : '$sharedMediaTotal',
+                hint: _userProfileText(
+                  context,
+                  zhCN: '项内容',
+                  zhTW: '項內容',
+                  en: 'items',
+                ),
+                isDark: isDark,
+                onTap: onSharedMediaTap,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommonInfoTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String value;
+  final String hint;
+  final bool isDark;
+  final VoidCallback? onTap;
+
+  const _CommonInfoTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.value,
+    required this.hint,
+    required this.isDark,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor =
+        isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF6F7FB);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: color.withOpacity(isDark ? 0.22 : 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 19),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondaryFor(context),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: value.length > 8 ? 14 : 18,
+                      color: AppColors.textPrimaryFor(context),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    hint,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.black38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1914,6 +3942,8 @@ class _TGActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isLoading;
   final bool lightStyle; // 浅色样式，用于彩色背景
+  final Color? foregroundColor;
+  final double buttonSize;
 
   const _TGActionButton({
     required this.icon,
@@ -1921,23 +3951,27 @@ class _TGActionButton extends StatelessWidget {
     required this.onTap,
     this.isLoading = false,
     this.lightStyle = false,
+    this.foregroundColor,
+    this.buttonSize = 50,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveForeground = foregroundColor ??
+        (lightStyle ? Colors.white : AppColors.primaryFor(context));
     final bgColor = lightStyle
-        ? Colors.white.withOpacity(0.2)
-        : AppColors.primary.withOpacity(0.1);
-    final iconColor = lightStyle ? Colors.white : AppColors.primary;
-    final textColor = lightStyle ? Colors.white : AppColors.primary;
+        ? Colors.black.withOpacity(0.26)
+        : AppColors.primaryWithOpacity(context, 0.1);
+    final iconColor = effectiveForeground;
+    final textColor = effectiveForeground;
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
       child: Column(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: buttonSize,
+            height: buttonSize,
             decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
             child: isLoading
                 ? Center(
@@ -1950,10 +3984,23 @@ class _TGActionButton extends StatelessWidget {
                       ),
                     ),
                   )
-                : Icon(icon, color: iconColor, size: 26),
+                : Icon(
+                    icon,
+                    color: iconColor,
+                    size: (buttonSize * 0.5).clamp(22.0, 26.0),
+                  ),
           ),
           const SizedBox(height: 6),
-          Text(label, style: TextStyle(fontSize: 12, color: textColor)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: textColor),
+            ),
+          ),
         ],
       ),
     );
@@ -2027,7 +4074,7 @@ class _TGInfoCell extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontSize: 17,
-                      color: isDark ? Colors.white : Colors.black,
+                      color: AppColors.textPrimaryFor(context),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2040,6 +4087,497 @@ class _TGInfoCell extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ProfileDetailsCard extends StatelessWidget {
+  final Color cardColor;
+  final bool isDark;
+  final String bioLabel;
+  final String bio;
+  final String usernameLabel;
+  final String? username;
+  final VoidCallback? onUsernameTap;
+  final VoidCallback onQrTap;
+
+  const _ProfileDetailsCard({
+    required this.cardColor,
+    required this.isDark,
+    required this.bioLabel,
+    required this.bio,
+    required this.usernameLabel,
+    required this.username,
+    required this.onUsernameTap,
+    required this.onQrTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmedUsername = username?.trim() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _ProfileDetailsText(
+              value: bio,
+              label: bioLabel,
+              isDark: isDark,
+              maxLines: 3,
+            ),
+            if (trimmedUsername.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                child: Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: AppColors.dividerFor(context),
+                ),
+              ),
+              GestureDetector(
+                onTap: onUsernameTap,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ProfileDetailsText(
+                        value: '@$trimmedUsername',
+                        label: usernameLabel,
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    IconButton(
+                      onPressed: onQrTap,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 42,
+                        height: 42,
+                      ),
+                      icon: Icon(
+                        Icons.qr_code_2_rounded,
+                        color:
+                            (isDark ? Colors.white : Colors.black).withOpacity(
+                          0.48,
+                        ),
+                        size: 28,
+                      ),
+                      tooltip: _userProfileText(
+                        context,
+                        zhCN: '二维码名片',
+                        zhTW: 'QR 名片',
+                        en: 'QR Card',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileDetailsText extends StatelessWidget {
+  final String value;
+  final String label;
+  final bool isDark;
+  final int maxLines;
+
+  const _ProfileDetailsText({
+    required this.value,
+    required this.label,
+    required this.isDark,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondaryFor(context),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 17,
+            height: 1.35,
+            color: isDark ? Colors.white : const Color(0xFF111827),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TGProfileInfoCell extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final int maxLines;
+  final Color? valueColor;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  const _TGProfileInfoCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.maxLines = 1,
+    this.valueColor,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconBg = isDark
+        ? AppColors.primaryWithOpacity(context, 0.18)
+        : const Color(0xFFF0F3FF);
+    final valueColor = isDark ? Colors.white : const Color(0xFF111827);
+    final labelColor = AppColors.textTertiaryFor(context);
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: AppColors.primaryFor(context)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: labelColor,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    value,
+                    maxLines: maxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      height: 1.35,
+                      color: this.valueColor ?? valueColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 13),
+                child: trailing!,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditContactInfoResult {
+  final String remark;
+
+  const _EditContactInfoResult({required this.remark});
+}
+
+class _EditContactInfoPage extends StatefulWidget {
+  final String displayName;
+  final String? username;
+  final String userId;
+  final String initialRemark;
+
+  const _EditContactInfoPage({
+    required this.displayName,
+    required this.username,
+    required this.userId,
+    required this.initialRemark,
+  });
+
+  @override
+  State<_EditContactInfoPage> createState() => _EditContactInfoPageState();
+}
+
+class _EditContactInfoPageState extends State<_EditContactInfoPage> {
+  late final TextEditingController _remarkController;
+
+  @override
+  void initState() {
+    super.initState();
+    _remarkController = TextEditingController(text: widget.initialRemark);
+  }
+
+  @override
+  void dispose() {
+    _remarkController.dispose();
+    super.dispose();
+  }
+
+  void _finish() {
+    Navigator.pop(
+      context,
+      _EditContactInfoResult(remark: _remarkController.text.trim()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = AppColors.backgroundFor(context);
+    final cardColor = AppColors.cardFor(context);
+    final separatorColor = AppColors.dividerFor(context);
+    final valueColor = AppColors.textPrimaryFor(context);
+    final labelColor = AppColors.textTertiaryFor(context);
+    final username = widget.username?.trim();
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: bgColor,
+        foregroundColor: AppColors.textPrimaryFor(context),
+        centerTitle: true,
+        title: Text(
+          _userProfileText(
+            context,
+            zhCN: '编辑联系人信息',
+            zhTW: '編輯聯絡人資訊',
+            en: 'Edit Contact Info',
+          ),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _finish,
+            child: Text(
+              _userProfileText(
+                context,
+                zhCN: '完成',
+                zhTW: '完成',
+                en: 'Done',
+              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            _TGSection(
+              cardColor: cardColor,
+              separatorColor: separatorColor,
+              children: [
+                _EditContactReadonlyRow(
+                  icon: Icons.person_outline,
+                  label: _userProfileText(
+                    context,
+                    zhCN: '昵称',
+                    zhTW: '暱稱',
+                    en: 'Nickname',
+                  ),
+                  value: widget.displayName,
+                ),
+                if (username != null && username.isNotEmpty)
+                  _EditContactReadonlyRow(
+                    icon: Icons.alternate_email_rounded,
+                    label: _userProfileText(
+                      context,
+                      zhCN: '用户名',
+                      zhTW: '使用者名稱',
+                      en: 'Username',
+                    ),
+                    value: username,
+                  ),
+                _EditContactReadonlyRow(
+                  icon: Icons.tag_outlined,
+                  label: 'ID',
+                  value: widget.userId,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 13, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.edit_note_rounded,
+                          size: 18,
+                          color: AppColors.primaryFor(context),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _userProfileText(
+                            context,
+                            zhCN: '备注名',
+                            zhTW: '備註名稱',
+                            en: 'Remark Name',
+                          ),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: labelColor,
+                            height: 1.15,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _remarkController,
+                      autofocus: true,
+                      maxLength: 30,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(30),
+                      ],
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _finish(),
+                      style: TextStyle(fontSize: 16, color: valueColor),
+                      decoration: InputDecoration(
+                        hintText: _userProfileText(
+                          context,
+                          zhCN: '填写备注名，留空则显示昵称',
+                          zhTW: '填寫備註名稱，留空則顯示暱稱',
+                          en: 'Enter a remark name. Leave empty to show the nickname.',
+                        ),
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.black38,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        counterStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.black38,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditContactReadonlyRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _EditContactReadonlyRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconBg = isDark
+        ? AppColors.primaryWithOpacity(context, 0.18)
+        : const Color(0xFFF0F3FF);
+    final valueColor = isDark ? Colors.white : const Color(0xFF111827);
+    final labelColor = AppColors.textTertiaryFor(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.primaryFor(context)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: labelColor,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    height: 1.35,
+                    color: valueColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2130,7 +4668,7 @@ class _TGActionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
+    final bgColor = AppColors.cardFor(context);
 
     return SafeArea(
       child: Padding(
@@ -2181,9 +4719,7 @@ class _TGActionSheet extends StatelessWidget {
                     Divider(
                       height: 0.5,
                       thickness: 0.5,
-                      color: isDark
-                          ? const Color(0xFF38383A)
-                          : const Color(0xFFC6C6C8),
+                      color: AppColors.dividerFor(context),
                     ),
                   ...actions.map(
                     (action) => Column(
@@ -2200,7 +4736,7 @@ class _TGActionSheet extends StatelessWidget {
                                 fontSize: 20,
                                 color: action.isDestructive
                                     ? Colors.red
-                                    : AppColors.primary,
+                                    : AppColors.linkFor(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -2210,9 +4746,7 @@ class _TGActionSheet extends StatelessWidget {
                           Divider(
                             height: 0.5,
                             thickness: 0.5,
-                            color: isDark
-                                ? const Color(0xFF38383A)
-                                : const Color(0xFFC6C6C8),
+                            color: AppColors.dividerFor(context),
                           ),
                       ],
                     ),
@@ -2235,7 +4769,7 @@ class _TGActionSheet extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -2286,6 +4820,7 @@ class _AvatarFullScreen extends StatelessWidget {
               avatar: avatar,
               userId: userId,
               size: 280,
+              isCircle: true,
             ),
           ),
         ),
@@ -2411,15 +4946,16 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        backgroundColor: AppColors.surfaceFor(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -2427,7 +4963,7 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         centerTitle: true,
@@ -2449,7 +4985,12 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
             Icon(_getEmptyIcon(), size: 64, color: Colors.grey),
             const SizedBox(height: 16),
             Text(
-              '暂无${widget.title}',
+              _userProfileText(
+                context,
+                zhCN: '暂无${widget.title}',
+                zhTW: '暫無${widget.title}',
+                en: 'No ${widget.title}',
+              ),
               style: const TextStyle(fontSize: 17, color: Colors.grey),
             ),
           ],
@@ -2594,23 +5135,27 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Column(
             children: urls
                 .map(
                   (url) => ListTile(
-                    leading: Icon(Icons.link, color: AppColors.primary),
+                    leading:
+                        Icon(Icons.link, color: AppColors.linkFor(context)),
                     title: Text(
                       url,
-                      style: TextStyle(color: AppColors.primary, fontSize: 14),
+                      style: TextStyle(
+                          color: AppColors.linkFor(context), fontSize: 14),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
                       '${item.senderName ?? ''} · ${_formatDate(item.createdAt)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiaryFor(context)),
                     ),
                     onTap: () => _openUrl(url),
                   ),
@@ -2642,7 +5187,7 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(10),
           ),
           child: ListTile(
@@ -2650,26 +5195,33 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primaryWithOpacity(context, 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 _getFileIcon(item.fileName),
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
               ),
             ),
             title: Text(
-              item.fileName ?? '未知文件',
+              item.fileName ??
+                  _userProfileText(
+                    context,
+                    zhCN: '未知文件',
+                    zhTW: '未知檔案',
+                    en: 'Unknown File',
+                  ),
               style: TextStyle(
                 fontSize: 15,
-                color: isDark ? Colors.white : Colors.black,
+                color: AppColors.textPrimaryFor(context),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
               '${_formatFileSize(item.fileSize ?? 0)} · ${item.senderName ?? ''} · ${_formatDate(item.createdAt)}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 12, color: AppColors.textTertiaryFor(context)),
             ),
             onTap: () => _downloadFile(item),
           ),
@@ -2699,7 +5251,7 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+            color: AppColors.cardFor(context),
             borderRadius: BorderRadius.circular(10),
           ),
           child: ListTile(
@@ -2708,31 +5260,39 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
               height: 44,
               decoration: BoxDecoration(
                 color: isThisPlaying
-                    ? AppColors.primary
-                    : AppColors.primary.withOpacity(0.1),
+                    ? AppColors.primaryFor(context)
+                    : AppColors.primaryWithOpacity(context, 0.12),
                 borderRadius: BorderRadius.circular(22),
               ),
               child: Icon(
                 isThisPlaying ? Icons.graphic_eq : Icons.mic,
-                color: isThisPlaying ? Colors.white : AppColors.primary,
+                color: isThisPlaying
+                    ? AppColors.onPrimaryFor(context)
+                    : AppColors.primaryFor(context),
               ),
             ),
             title: Text(
-              '语音消息 ${_formatDuration(item.duration ?? 0)}',
+              '${_userProfileText(
+                context,
+                zhCN: '语音消息',
+                zhTW: '語音訊息',
+                en: 'Voice Message',
+              )} ${_formatDuration(item.duration ?? 0)}',
               style: TextStyle(
                 fontSize: 15,
-                color: isDark ? Colors.white : Colors.black,
+                color: AppColors.textPrimaryFor(context),
               ),
             ),
             subtitle: Text(
               '${item.senderName ?? ''} · ${_formatDate(item.createdAt)}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 12, color: AppColors.textTertiaryFor(context)),
             ),
             trailing: GestureDetector(
               onTap: () => _playVoice(item),
               child: Icon(
                 isThisPlaying ? Icons.stop_circle : Icons.play_circle,
-                color: AppColors.primary,
+                color: AppColors.primaryFor(context),
                 size: 36,
               ),
             ),
@@ -2795,6 +5355,7 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
       // 播放新语音
       try {
         await _audioPlayer.stop();
+        await configureVoicePlaybackAudio(_audioPlayer);
         await _audioPlayer.play(UrlSource(voiceUrl));
         setState(() {
           _playingVoiceId = item.id;
@@ -2802,7 +5363,17 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
         });
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('播放失败'), duration: Duration(seconds: 1)),
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '播放失败',
+                zhTW: '播放失敗',
+                en: 'Playback failed',
+              ),
+            ),
+            duration: const Duration(seconds: 1),
+          ),
         );
       }
     }
@@ -2811,7 +5382,17 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
   void _openUrl(String url) {
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('链接已复制'), duration: Duration(seconds: 1)),
+      SnackBar(
+        content: Text(
+          _userProfileText(
+            context,
+            zhCN: '链接已复制',
+            zhTW: '連結已複製',
+            en: 'Link copied',
+          ),
+        ),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 
@@ -2820,8 +5401,15 @@ class _MediaListPageState extends ConsumerState<_MediaListPage> {
     if (fileUrl != null) {
       Clipboard.setData(ClipboardData(text: fileUrl));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('文件链接已复制'),
+        SnackBar(
+          content: Text(
+            _userProfileText(
+              context,
+              zhCN: '文件链接已复制',
+              zhTW: '檔案連結已複製',
+              en: 'File link copied',
+            ),
+          ),
           duration: Duration(seconds: 1),
         ),
       );
@@ -2911,7 +5499,7 @@ class _SearchMessagesPage extends ConsumerStatefulWidget {
 
 class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
   final _searchController = TextEditingController();
-  List<Map<String, dynamic>> _results = [];
+  List<api.SearchMessageItem> _results = [];
   bool _isSearching = false;
   String? _chatId;
 
@@ -2955,17 +5543,13 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
     setState(() => _isSearching = true);
 
     try {
-      final api = ref.read(apiClientProvider);
-      final response = await api.get(
-        '/chat/$_chatId/search',
-        queryParameters: {'keyword': query},
-      );
+      final chatService = ref.read(api.chatServiceProvider);
+      final response = await chatService.searchMessages(_chatId!, query);
 
       if (response.isSuccess && response.data != null && mounted) {
-        final list = response.data['list'] as List? ?? [];
         setState(() {
           _isSearching = false;
-          _results = list.map((e) => e as Map<String, dynamic>).toList();
+          _results = response.data!.list;
         });
       } else if (mounted) {
         setState(() {
@@ -2983,27 +5567,55 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
     }
   }
 
+  void _openMessage(api.SearchMessageItem result) {
+    final chatId = _chatId;
+    if (chatId == null || chatId.isEmpty) {
+      return;
+    }
+    context.push(
+      '/chat/$chatId?name=${Uri.encodeComponent(widget.userName)}&type=private&messageId=${Uri.encodeComponent(result.id)}&messageSeq=${result.seq}',
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
+      return DateFormat('HH:mm').format(date);
+    } else if (date.year == now.year) {
+      return DateFormat('MM-dd HH:mm').format(date);
+    }
+    return DateFormat('yyyy-MM-dd HH:mm').format(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
+    final bgColor = AppColors.backgroundFor(context);
+    final cardColor = AppColors.cardFor(context);
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        backgroundColor: AppColors.surfaceFor(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '搜索消息',
+          _userProfileText(
+            context,
+            zhCN: '搜索消息',
+            zhTW: '搜尋訊息',
+            en: 'Search Messages',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         centerTitle: true,
@@ -3012,19 +5624,23 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
         children: [
           // 搜索框
           Container(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+            color: AppColors.surfaceFor(context),
             padding: const EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
-                color:
-                    isDark ? const Color(0xFF3A3A3C) : const Color(0xFFF2F2F7),
+                color: AppColors.inputBackgroundFor(context),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: TextField(
                 controller: _searchController,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: '在与 ${widget.userName} 的对话中搜索',
+                  hintText: _userProfileText(
+                    context,
+                    zhCN: '在与 ${widget.userName} 的对话中搜索',
+                    zhTW: '在與 ${widget.userName} 的對話中搜尋',
+                    en: 'Search in your chat with ${widget.userName}',
+                  ),
                   hintStyle: TextStyle(color: Colors.grey.shade500),
                   prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
                   suffixIcon: _searchController.text.isNotEmpty
@@ -3048,7 +5664,7 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
                 ),
                 style: TextStyle(
                   fontSize: 17,
-                  color: isDark ? Colors.white : Colors.black,
+                  color: AppColors.textPrimaryFor(context),
                 ),
                 onChanged: _search,
               ),
@@ -3071,8 +5687,18 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
                             const SizedBox(height: 16),
                             Text(
                               _searchController.text.isEmpty
-                                  ? '输入关键词搜索消息'
-                                  : '未找到相关消息',
+                                  ? _userProfileText(
+                                      context,
+                                      zhCN: '输入关键词搜索消息',
+                                      zhTW: '輸入關鍵字搜尋訊息',
+                                      en: 'Enter keywords to search messages',
+                                    )
+                                  : _userProfileText(
+                                      context,
+                                      zhCN: '未找到相关消息',
+                                      zhTW: '找不到相關訊息',
+                                      en: 'No related messages found',
+                                    ),
                               style:
                                   TextStyle(fontSize: 17, color: Colors.grey),
                             ),
@@ -3093,11 +5719,13 @@ class _SearchMessagesPageState extends ConsumerState<_SearchMessagesPage> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: ListTile(
-                              title: Text(result['content'] ?? ''),
-                              subtitle: Text(result['time'] ?? ''),
-                              onTap: () {
-                                // TODO: 跳转到消息位置
-                              },
+                              title: Text(
+                                result.text,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(_formatDate(result.createdAt)),
+                              onTap: () => _openMessage(result),
                             ),
                           );
                         },
@@ -3119,23 +5747,24 @@ class _CommonGroupsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        backgroundColor: AppColors.surfaceFor(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '与 $userName 的共同群组',
+          '${l10n.commonGroups} · $userName',
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         centerTitle: true,
@@ -3148,7 +5777,7 @@ class _CommonGroupsPage extends StatelessWidget {
                   Icon(Icons.group_outlined, size: 64, color: Colors.grey),
                   const SizedBox(height: 16),
                   Text(
-                    '暂无共同群组',
+                    l10n.get('no_common_groups'),
                     style: TextStyle(fontSize: 17, color: Colors.grey),
                   ),
                 ],
@@ -3158,7 +5787,10 @@ class _CommonGroupsPage extends StatelessWidget {
               itemCount: groups.length,
               itemBuilder: (context, index) {
                 final group = groups[index];
-                final groupName = group['name'] ?? '群组';
+                final groupName = _fallbackGroupName(
+                  context,
+                  group['name']?.toString(),
+                );
                 // 处理头像 URL（相对路径需要加上服务器地址）
                 String? groupAvatar = group['avatar'] as String?;
                 if (groupAvatar != null && groupAvatar.isNotEmpty) {
@@ -3176,7 +5808,7 @@ class _CommonGroupsPage extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                    color: AppColors.cardFor(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: ListTile(
@@ -3190,14 +5822,14 @@ class _CommonGroupsPage extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppColors.textPrimaryFor(context),
                       ),
                     ),
                     subtitle: Text(
-                      '$memberCount 位成员',
+                      _groupMembersText(context, memberCount),
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark ? Colors.white60 : Colors.black54,
+                        color: AppColors.textSecondaryFor(context),
                       ),
                     ),
                     trailing: Icon(
@@ -3239,13 +5871,13 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
   bool _isSubmitting = false;
 
   final List<Map<String, dynamic>> _reasons = [
-    {'id': 'spam', 'title': '垃圾信息', 'icon': Icons.mail_outline},
-    {'id': 'fake', 'title': '虚假信息/诈骗', 'icon': Icons.warning_amber_outlined},
-    {'id': 'violence', 'title': '暴力或危险内容', 'icon': Icons.dangerous_outlined},
-    {'id': 'porn', 'title': '色情内容', 'icon': Icons.block},
-    {'id': 'harassment', 'title': '骚扰或欺凌', 'icon': Icons.person_off_outlined},
-    {'id': 'copyright', 'title': '侵犯版权', 'icon': Icons.copyright},
-    {'id': 'other', 'title': '其他', 'icon': Icons.more_horiz},
+    {'id': 'spam', 'icon': Icons.mail_outline},
+    {'id': 'fake', 'icon': Icons.warning_amber_outlined},
+    {'id': 'violence', 'icon': Icons.dangerous_outlined},
+    {'id': 'porn', 'icon': Icons.block},
+    {'id': 'harassment', 'icon': Icons.person_off_outlined},
+    {'id': 'copyright', 'icon': Icons.copyright},
+    {'id': 'other', 'icon': Icons.more_horiz},
   ];
 
   @override
@@ -3258,7 +5890,18 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
     if (_selectedReason == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请选择举报原因')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            _userProfileText(
+              context,
+              zhCN: '请选择举报原因',
+              zhTW: '請選擇檢舉原因',
+              en: 'Please select a report reason',
+            ),
+          ),
+        ),
+      );
       return;
     }
 
@@ -3280,19 +5923,45 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('举报已提交，我们会尽快处理')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(
+              _userProfileText(
+                context,
+                zhCN: '举报已提交，我们会尽快处理',
+                zhTW: '檢舉已提交，我們會盡快處理',
+                en: 'Report submitted. We will review it as soon as possible.',
+              ),
+            ),
+          ),
+        );
       } else {
         // 显示具体的错误信息
-        final errorMsg = response.message ?? '提交失败，请重试';
+        final errorMsg = _userProfileServerMessage(
+          response.message,
+          zhCN: '提交失败，请重试',
+          zhTW: '提交失敗，請重試',
+          en: 'Submission failed. Please try again.',
+        );
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(errorMsg)));
       }
     } catch (e) {
       // 解析错误信息
-      String errorMsg = '提交失败，请重试';
+      String errorMsg = _userProfileText(
+        context,
+        zhCN: '提交失败，请重试',
+        zhTW: '提交失敗，請重試',
+        en: 'Submission failed. Please try again.',
+      );
       if (e.toString().contains('400')) {
-        errorMsg = '您已举报过该内容，请等待处理';
+        errorMsg = _userProfileText(
+          context,
+          zhCN: '您已举报过该内容，请等待处理',
+          zhTW: '您已檢舉過此內容，請等待處理',
+          en: 'You have already reported this content. Please wait for review.',
+        );
       }
       ScaffoldMessenger.of(
         context,
@@ -3305,26 +5974,31 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final cardColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
-    final separatorColor =
-        isDark ? const Color(0xFF38383A) : const Color(0xFFC6C6C8);
+    final bgColor = AppColors.backgroundFor(context);
+    final cardColor = AppColors.cardFor(context);
+    final separatorColor = AppColors.dividerFor(context);
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        backgroundColor: AppColors.surfaceFor(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, size: 20, color: AppColors.primary),
+          icon: Icon(Icons.arrow_back_ios,
+              size: 20, color: AppColors.primaryFor(context)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '举报',
+          _userProfileText(
+            context,
+            zhCN: '举报',
+            zhTW: '檢舉',
+            en: 'Report',
+          ),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
+            color: AppColors.textPrimaryFor(context),
           ),
         ),
         centerTitle: true,
@@ -3338,8 +6012,14 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
-                    '提交',
-                    style: TextStyle(color: AppColors.primary, fontSize: 17),
+                    _userProfileText(
+                      context,
+                      zhCN: '提交',
+                      zhTW: '提交',
+                      en: 'Submit',
+                    ),
+                    style: TextStyle(
+                        color: AppColors.linkFor(context), fontSize: 17),
                   ),
           ),
         ],
@@ -3372,7 +6052,12 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '举报对象',
+                          _userProfileText(
+                            context,
+                            zhCN: '举报对象',
+                            zhTW: '檢舉對象',
+                            en: 'Reported Target',
+                          ),
                           style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
                         const SizedBox(height: 4),
@@ -3380,7 +6065,7 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                           widget.targetName,
                           style: TextStyle(
                             fontSize: 17,
-                            color: isDark ? Colors.white : Colors.black,
+                            color: AppColors.textPrimaryFor(context),
                           ),
                         ),
                       ],
@@ -3394,7 +6079,12 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(32, 8, 16, 8),
               child: Text(
-                '选择举报原因',
+                _userProfileText(
+                  context,
+                  zhCN: '选择举报原因',
+                  zhTW: '選擇檢舉原因',
+                  en: 'Select a Report Reason',
+                ),
                 style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
             ),
@@ -3434,17 +6124,20 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                               const SizedBox(width: 16),
                               Expanded(
                                 child: Text(
-                                  reason['title'] as String,
+                                  _reportReasonTitle(
+                                    context,
+                                    reason['id'] as String,
+                                  ),
                                   style: TextStyle(
                                     fontSize: 17,
-                                    color: isDark ? Colors.white : Colors.black,
+                                    color: AppColors.textPrimaryFor(context),
                                   ),
                                 ),
                               ),
                               if (isSelected)
                                 Icon(
                                   Icons.check,
-                                  color: AppColors.primary,
+                                  color: AppColors.primaryFor(context),
                                   size: 22,
                                 ),
                             ],
@@ -3470,7 +6163,12 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(32, 24, 16, 8),
               child: Text(
-                '补充说明（可选）',
+                _userProfileText(
+                  context,
+                  zhCN: '补充说明（可选）',
+                  zhTW: '補充說明（選填）',
+                  en: 'Additional Details (Optional)',
+                ),
                 style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
             ),
@@ -3488,7 +6186,12 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                   maxLines: 4,
                   maxLength: 500,
                   decoration: InputDecoration(
-                    hintText: '请详细描述问题，帮助我们更好地处理...',
+                    hintText: _userProfileText(
+                      context,
+                      zhCN: '请详细描述问题，帮助我们更好地处理...',
+                      zhTW: '請詳細描述問題，幫助我們更好地處理...',
+                      en: 'Please describe the issue in detail to help us review it.',
+                    ),
                     hintStyle: TextStyle(color: Colors.grey.shade500),
                     filled: true,
                     fillColor: cardColor,
@@ -3501,7 +6204,7 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
                   ),
                   style: TextStyle(
                     fontSize: 16,
-                    color: isDark ? Colors.white : Colors.black,
+                    color: AppColors.textPrimaryFor(context),
                     height: 1.4,
                   ),
                 ),
@@ -3531,7 +6234,12 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                '我们会对举报内容进行审核，如确认违规将采取相应措施。感谢您帮助维护社区环境。',
+                _userProfileText(
+                  context,
+                  zhCN: '我们会对举报内容进行审核，如确认违规将采取相应措施。感谢您帮助维护社区环境。',
+                  zhTW: '我們會審核檢舉內容，如確認違規將採取相應措施。感謝您協助維護社群環境。',
+                  en: 'We will review the reported content and take action if violations are confirmed. Thank you for helping keep the community safe.',
+                ),
                 style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
             ),
@@ -3544,7 +6252,8 @@ class _ReportPageState extends ConsumerState<_ReportPage> {
 
 /// 好友选择器底部弹窗
 class _FriendSelectorSheet extends ConsumerWidget {
-  final Function(String friendId, String friendName) onSelect;
+  final void Function(String friendId, String friendName, String? friendAvatar)
+      onSelect;
 
   const _FriendSelectorSheet({required this.onSelect});
 
@@ -3561,7 +6270,10 @@ class _FriendSelectorSheet extends ConsumerWidget {
 
     // 先添加联系人
     for (final contact in contacts) {
-      final id = contact.uuid ?? contact.id;
+      final id =
+          (contact.uuid?.trim().isNotEmpty == true ? contact.uuid : contact.id)
+              ?.trim();
+      if (id == null || id.isEmpty) continue;
       final name = contact.name;
       if (!seenIds.contains(id) && !seenNames.contains(name)) {
         seenIds.add(id);
@@ -3580,8 +6292,11 @@ class _FriendSelectorSheet extends ConsumerWidget {
     // 再添加最近私聊（私聊）
     final chats = [...chatState.pinnedChats, ...chatState.regularChats];
     for (final chat in chats) {
-      if (chat.type == ChatItemType.private && chat.targetUserId != null) {
-        final id = chat.targetUserUuid ?? chat.targetUserId!;
+      final targetId = chat.targetUserUuid?.trim().isNotEmpty == true
+          ? chat.targetUserUuid!.trim()
+          : (chat.targetUserId ?? '').trim();
+      if (chat.type == ChatItemType.private && targetId.isNotEmpty) {
+        final id = targetId;
         final name = chat.name;
         if (!seenIds.contains(id) && !seenNames.contains(name)) {
           seenIds.add(id);
@@ -3591,98 +6306,125 @@ class _FriendSelectorSheet extends ConsumerWidget {
       }
     }
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          // 拖动条
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(top: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(2),
+    return Material(
+      color: AppColors.surfaceFor(context),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: Column(
+          children: [
+            // 拖动条
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          // 标题
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Text(
-                  '选择好友',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close, color: Colors.grey),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // 联系人列表
-          Expanded(
-            child: friends.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.people_outline,
-                          size: 48,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '暂无可发送的好友',
-                          style: TextStyle(color: Colors.grey, fontSize: 16),
-                        ),
-                      ],
+            // 标题
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    _userProfileText(
+                      context,
+                      zhCN: '选择好友',
+                      zhTW: '選擇好友',
+                      en: 'Select a friend',
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: friends.length,
-                    itemBuilder: (context, index) {
-                      final friend = friends[index];
-                      return ListTile(
-                        leading: AvatarWidget(
-                          name: friend.name,
-                          avatar: friend.avatar,
-                          userId: friend.id,
-                          size: 44,
-                        ),
-                        title: Text(
-                          friend.name,
-                          style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black,
-                          ),
-                        ),
-                        subtitle: friend.username != null
-                            ? Text(
-                                '@${friend.username}',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 13,
-                                ),
-                              )
-                            : null,
-                        onTap: () => onSelect(friend.id, friend.name),
-                      );
-                    },
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimaryFor(context),
+                    ),
                   ),
-          ),
-        ],
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () =>
+                        ref.read(contactListProvider.notifier).refresh(),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      _userProfileText(
+                        context,
+                        zhCN: '刷新',
+                        zhTW: '重新整理',
+                        en: 'Refresh',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // 联系人列表
+            Expanded(
+              child: friends.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.people_outline,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _userProfileText(
+                              context,
+                              zhCN: '暂无可发送的好友，请先添加好友或点刷新',
+                              zhTW: '暫無可發送的好友，請先新增好友或點重新整理',
+                              en: 'No friends available. Add friends or refresh.',
+                            ),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: friends.length,
+                      itemBuilder: (context, index) {
+                        final friend = friends[index];
+                        return ListTile(
+                          leading: AvatarWidget(
+                            name: friend.name,
+                            avatar: friend.avatar,
+                            userId: friend.id,
+                            size: 44,
+                          ),
+                          title: Text(
+                            friend.name,
+                            style: TextStyle(
+                              color: AppColors.textPrimaryFor(context),
+                            ),
+                          ),
+                          subtitle: friend.username != null
+                              ? Text(
+                                  '@${friend.username}',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 13,
+                                  ),
+                                )
+                              : null,
+                          onTap: () =>
+                              onSelect(friend.id, friend.name, friend.avatar),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3759,58 +6501,63 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black.withOpacity(_opacity),
-      body: GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        onVerticalDragUpdate: _onVerticalDragUpdate,
-        onVerticalDragEnd: _onVerticalDragEnd,
-        child: Stack(
-          children: [
-            Center(
-              child: Transform.translate(
-                offset: Offset(0, _dragOffset),
-                child: Transform.scale(
-                  scale: _scale,
-                  child: PhotoView(
-                    imageProvider: CachedNetworkImageProvider(widget.imageUrl),
-                    minScale: PhotoViewComputedScale.contained,
-                    maxScale: PhotoViewComputedScale.covered * 3,
-                    backgroundDecoration: const BoxDecoration(
-                      color: Colors.transparent,
-                    ),
-                    loadingBuilder: (context, event) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Icon(
-                        Icons.broken_image,
-                        color: Colors.white54,
-                        size: 64,
+    return DarkSystemUiScope(
+      child: Scaffold(
+        backgroundColor: Colors.black.withOpacity(_opacity),
+        body: GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          onVerticalDragUpdate: _onVerticalDragUpdate,
+          onVerticalDragEnd: _onVerticalDragEnd,
+          child: Stack(
+            children: [
+              Center(
+                child: Transform.translate(
+                  offset: Offset(0, _dragOffset),
+                  child: Transform.scale(
+                    scale: _scale,
+                    child: PhotoView(
+                      imageProvider:
+                          CachedNetworkImageProvider(widget.imageUrl),
+                      minScale: PhotoViewComputedScale.contained,
+                      maxScale: PhotoViewComputedScale.covered * 3,
+                      backgroundDecoration: const BoxDecoration(
+                        color: Colors.transparent,
+                      ),
+                      loadingBuilder: (context, event) => const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(
+                        child: Icon(
+                          Icons.broken_image,
+                          color: Colors.white54,
+                          size: 64,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            // 关闭按钮
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(18),
+              // 关闭按钮
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 16,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child:
+                        const Icon(Icons.close, color: Colors.white, size: 20),
                   ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 20),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3843,7 +6590,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
         });
         _controller.play();
       }).catchError((e) {
-        if (kDebugMode) debugPrint('[Video] Init error: $e');
+        debugPrint('[Video] Init error: $e');
       });
     _controller.addListener(() {
       if (mounted) setState(() {});
@@ -3864,125 +6611,127 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () {
-          setState(() => _showControls = !_showControls);
-        },
-        child: Stack(
-          children: [
-            // 视频
-            Center(
-              child: _isInitialized
-                  ? AspectRatio(
-                      aspectRatio: _controller.value.aspectRatio,
-                      child: VideoPlayer(_controller),
-                    )
-                  : const CircularProgressIndicator(color: Colors.white),
-            ),
-            // 控制栏
-            if (_showControls) ...[
-              // 关闭按钮
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 16,
-                left: 16,
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-              // 播放/暂停按钮
+    return DarkSystemUiScope(
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          onTap: () {
+            setState(() => _showControls = !_showControls);
+          },
+          child: Stack(
+            children: [
+              // 视频
               Center(
-                child: GestureDetector(
-                  onTap: () {
-                    if (_controller.value.isPlaying) {
-                      _controller.pause();
-                    } else {
-                      _controller.play();
-                    }
-                  },
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                    child: Icon(
-                      _controller.value.isPlaying
-                          ? Icons.pause
-                          : Icons.play_arrow,
-                      color: Colors.white,
-                      size: 36,
-                    ),
-                  ),
-                ),
+                child: _isInitialized
+                    ? AspectRatio(
+                        aspectRatio: _controller.value.aspectRatio,
+                        child: VideoPlayer(_controller),
+                      )
+                    : const CircularProgressIndicator(color: Colors.white),
               ),
-              // 底部进度条
-              if (_isInitialized)
+              // 控制栏
+              if (_showControls) ...[
+                // 关闭按钮
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: MediaQuery.of(context).padding.bottom + 20,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Text(
-                          _formatDuration(_controller.value.position),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: _controller.value.position.inMilliseconds
-                                .toDouble()
-                                .clamp(
-                                  0,
-                                  _controller.value.duration.inMilliseconds
-                                      .toDouble(),
-                                ),
-                            min: 0,
-                            max: _controller.value.duration.inMilliseconds
-                                .toDouble()
-                                .clamp(1, double.infinity),
-                            activeColor: AppColors.primary,
-                            inactiveColor: Colors.white38,
-                            onChanged: (value) {
-                              _controller.seekTo(
-                                Duration(milliseconds: value.toInt()),
-                              );
-                            },
-                          ),
-                        ),
-                        Text(
-                          _formatDuration(_controller.value.duration),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                  top: MediaQuery.of(context).padding.top + 16,
+                  left: 16,
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
+                // 播放/暂停按钮
+                Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      if (_controller.value.isPlaying) {
+                        _controller.pause();
+                      } else {
+                        _controller.play();
+                      }
+                    },
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(32),
+                      ),
+                      child: Icon(
+                        _controller.value.isPlaying
+                            ? Icons.pause
+                            : Icons.play_arrow,
+                        color: Colors.white,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                ),
+                // 底部进度条
+                if (_isInitialized)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: MediaQuery.of(context).padding.bottom + 20,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Text(
+                            _formatDuration(_controller.value.position),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _controller.value.position.inMilliseconds
+                                  .toDouble()
+                                  .clamp(
+                                    0,
+                                    _controller.value.duration.inMilliseconds
+                                        .toDouble(),
+                                  ),
+                              min: 0,
+                              max: _controller.value.duration.inMilliseconds
+                                  .toDouble()
+                                  .clamp(1, double.infinity),
+                              activeColor: AppColors.primaryFor(context),
+                              inactiveColor: AppColors.darkTextTertiary,
+                              onChanged: (value) {
+                                _controller.seekTo(
+                                  Duration(milliseconds: value.toInt()),
+                                );
+                              },
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(_controller.value.duration),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

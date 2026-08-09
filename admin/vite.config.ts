@@ -15,20 +15,21 @@ export default ({ mode }: { mode: string }) => {
   const root = process.cwd()
   const env = loadEnv(mode, root)
   const { VITE_VERSION, VITE_PORT, VITE_BASE_URL, VITE_API_URL, VITE_API_PROXY_URL } = env
+  const devPort = Number(VITE_PORT || 8082)
 
-  console.log(`🚀 API_URL = ${VITE_API_URL}`)
-  console.log(`🚀 VERSION = ${VITE_VERSION}`)
+  console.log(`[vite] API_URL = ${VITE_API_URL}`)
+  console.log(`[vite] VERSION = ${VITE_VERSION}`)
 
   return defineConfig({
     define: {
       __APP_VERSION__: JSON.stringify(VITE_VERSION)
     },
-    base: VITE_BASE_URL,
+    base: VITE_BASE_URL || '/',
     server: {
-      port: Number(VITE_PORT),
+      port: Number.isFinite(devPort) ? devPort : 8082,
       proxy: {
         '/api': {
-          target: VITE_API_PROXY_URL,
+          target: VITE_API_PROXY_URL || 'http://127.0.0.1:8080',
           changeOrigin: true
         }
       },
@@ -56,7 +57,10 @@ export default ({ mode }: { mode: string }) => {
           // 生产环境去除 console
           drop_console: true,
           // 生产环境去除 debugger
-          drop_debugger: true
+          drop_debugger: true,
+          // 避免 vue-draggable-plus 的生命周期枚举被压缩成不存在的变量
+          hoist_props: false,
+          reduce_vars: false
         }
       },
       dynamicImportVarsOptions: {

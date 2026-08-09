@@ -1,3 +1,5 @@
+// 文件用途：提供 custom portal content 在原生平台的实现，服务于门户内容。
+// 核心逻辑：实现 CustomPortalContent 的原生平台分支，封装系统权限或文件能力，并保持跨平台调用契约一致。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -5,11 +7,28 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-import 'package:webview_windows/webview_windows.dart';
+import 'package:webview_flutter_windows/webview_flutter_windows.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/platform_utils.dart';
 
+String _portalText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：custom portal content native 是原生平台实现，集中处理系统权限、文件或窗口能力，避免业务层散落平台判断。
 class CustomPortalContent extends StatelessWidget {
   final String title;
   final String url;
@@ -42,7 +61,11 @@ class CustomPortalContent extends StatelessWidget {
       title: title,
       url: url,
       isDesktopSidebar: isDesktopSidebar,
-      message: '当前设备暂不支持内嵌网站，可直接打开',
+      message: _portalText(
+        zhCN: '当前设备暂不支持内嵌网站，可直接打开',
+        zhTW: '目前裝置暫不支援內嵌網站，可直接開啟',
+        en: 'This device does not support embedded web pages. Open it directly instead.',
+      ),
     );
   }
 }
@@ -61,6 +84,7 @@ class _PortalWebViewState extends State<_PortalWebView> {
   bool _isLoading = true;
   double _progress = 0;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -188,8 +212,8 @@ class _PortalWebViewState extends State<_PortalWebView> {
               value: _progress == 0 ? null : _progress,
               minHeight: 2,
               backgroundColor: Colors.transparent,
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                AppColors.primary,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                AppColors.primaryFor(context),
               ),
             )
           else
@@ -260,7 +284,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
       if (version == null || version.trim().isEmpty) {
         setState(() {
           _isLoading = false;
-          _errorMessage = '当前电脑缺少 WebView2 运行环境';
+          _errorMessage = _portalText(
+            zhCN: '当前电脑缺少 WebView2 运行环境',
+            zhTW: '目前電腦缺少 WebView2 執行環境',
+            en: 'WebView2 runtime is missing on this computer',
+          );
         });
         return;
       }
@@ -280,7 +308,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
         _errorSub = _controller.onLoadError.listen((_) {
           if (!mounted) return;
           setState(() {
-            _errorMessage = '页面加载失败，可直接打开网站';
+            _errorMessage = _portalText(
+              zhCN: '页面加载失败，可直接打开网站',
+              zhTW: '頁面載入失敗，可直接開啟網站',
+              en: 'Page failed to load. Open the website directly instead.',
+            );
             _isLoading = false;
           });
         });
@@ -289,7 +321,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
         if (!mounted) return;
         setState(() {
           _isLoading = false;
-          _errorMessage = '页面加载失败，可直接打开网站';
+          _errorMessage = _portalText(
+            zhCN: '页面加载失败，可直接打开网站',
+            zhTW: '頁面載入失敗，可直接開啟網站',
+            en: 'Page failed to load. Open the website directly instead.',
+          );
         });
       }
     } finally {
@@ -303,7 +339,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = '未配置可打开的网址';
+        _errorMessage = _portalText(
+          zhCN: '未配置可打开的网址',
+          zhTW: '未設定可開啟的網址',
+          en: 'No website URL is configured',
+        );
       });
       return;
     }
@@ -370,11 +410,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
             right: 0,
             top: 0,
             child: _isLoading
-                ? const LinearProgressIndicator(
+                ? LinearProgressIndicator(
                     minHeight: 2,
                     backgroundColor: Colors.transparent,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primary,
+                      AppColors.primaryFor(context),
                     ),
                   )
                 : const SizedBox(height: 2),
@@ -383,7 +423,11 @@ class _PortalWindowsWebViewState extends State<_PortalWindowsWebView> {
             right: 12,
             bottom: 12,
             child: Tooltip(
-              message: '在系统浏览器打开',
+              message: _portalText(
+                zhCN: '在系统浏览器打开',
+                zhTW: '在系統瀏覽器開啟',
+                en: 'Open in system browser',
+              ),
               child: FilledButton.tonal(
                 onPressed: _openExternally,
                 style: FilledButton.styleFrom(
@@ -433,7 +477,13 @@ class _PortalExternalFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final resolvedTitle = title.isEmpty ? '打开网站' : title;
+    final resolvedTitle = title.isEmpty
+        ? _portalText(
+            zhCN: '打开网站',
+            zhTW: '開啟網站',
+            en: 'Open Website',
+          )
+        : title;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, isDesktopSidebar ? 12 : 20, 16, 20),
@@ -481,11 +531,17 @@ class _PortalExternalFallback extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: _openPortal,
                       icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                      label: const Text('直接打开'),
+                      label: Text(
+                        _portalText(
+                          zhCN: '直接打开',
+                          zhTW: '直接開啟',
+                          en: 'Open Directly',
+                        ),
+                      ),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(46),
-                        foregroundColor: Colors.white,
-                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimaryFor(context),
+                        backgroundColor: AppColors.primaryFor(context),
                       ),
                     ),
                   ],

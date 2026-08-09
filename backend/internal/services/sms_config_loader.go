@@ -1,17 +1,21 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
 	"encoding/json"
-	"strings"
-
-	"gaoranim/internal/config"
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
+	"strings"
+	"genericim/internal/config"
+	"genericim/internal/models"
 )
 
 // LoadSMSForRuntime 合并 system_settings.sms_gateway 与 yaml。
 func LoadSMSForRuntime(db *gorm.DB, yamlCfg config.SMSConfig) config.SMSConfig {
+	if yamlCfg.RuntimeOverride {
+		return yamlCfg
+	}
 	if db == nil {
 		return yamlCfg
 	}
@@ -92,7 +96,7 @@ func smsFillZeros(db, yaml config.SMSConfig) config.SMSConfig {
 }
 
 // SMSSendReady 是否已配置可发送（用于 App 展示「可发短信」）。
-func SMSSendReady(db *gorm.DB, yamlCfg config.SMSConfig) bool {
+func SMSSendReady(db *gorm.DB, yamlCfg config.SMSConfig, serverMode string) bool {
 	c := LoadSMSForRuntime(db, yamlCfg)
 	if !c.Enabled {
 		return false
@@ -106,6 +110,8 @@ func SMSSendReady(db *gorm.DB, yamlCfg config.SMSConfig) bool {
 	case "tencent":
 		t := c.Tencent
 		return t.SecretID != "" && t.SecretKey != "" && t.SdkAppID != "" && t.SignName != "" && t.TemplateID != ""
+	case "console":
+		return strings.EqualFold(strings.TrimSpace(serverMode), "debug")
 	default:
 		return false
 	}

@@ -146,6 +146,8 @@
 
   defineOptions({ name: 'WithdrawList' })
 
+  type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
   const loading = ref(false)
   const list = ref<WithdrawRequest[]>([])
   const stats = reactive<WithdrawStats>({
@@ -158,9 +160,13 @@
   const filters = reactive({ status: '' })
   const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-  const statusColor = (s: string) =>
-    ({ pending: 'warning', approved: 'primary', rejected: 'danger', completed: 'success' })[s] ||
-    'info'
+  const statusTagMap: Record<string, TagType> = {
+    pending: 'warning',
+    approved: 'primary',
+    rejected: 'danger',
+    completed: 'success'
+  }
+  const statusColor = (s: string): TagType => statusTagMap[s] || 'info'
   const statusText = (s: string) =>
     ({ pending: '待审核', approved: '已通过', rejected: '已拒绝', completed: '已完成' })[s] || s
 
@@ -182,6 +188,7 @@
   }
 
   const fetchStats = async () => {
+    // 汇总统计不受当前列表状态筛选影响，使用独立接口维护全局口径。
     try {
       const res = await getWithdrawStats()
       Object.assign(stats, res)
@@ -201,6 +208,7 @@
       })
       await reviewWithdraw(row.id, action, remark)
       ElMessage.success(`${actionText}成功`)
+      // 审核动作同时影响当前列表和全局统计，两类数据分别刷新。
       fetchList()
       fetchStats()
     } catch (e: any) {

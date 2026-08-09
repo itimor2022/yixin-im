@@ -1,5 +1,26 @@
+// 文件用途：提供 EmptyStateType 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 EmptyStateType，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 
+import '../../core/i18n/app_localizations.dart';
+
+String _emptyStateText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：empty state 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 空状态类型
 enum EmptyStateType {
   chat,
@@ -31,6 +52,7 @@ class EmptyState extends StatelessWidget {
     this.iconSize = 80,
   });
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -39,8 +61,8 @@ class EmptyState extends StatelessWidget {
     final subtitleColor = isDark ? Colors.grey.shade500 : Colors.grey.shade500;
 
     final displayIcon = icon ?? _getDefaultIcon();
-    final displayTitle = title ?? _getDefaultTitle();
-    final displaySubtitle = subtitle ?? _getDefaultSubtitle();
+    final displayTitle = title ?? _getDefaultTitle(context);
+    final displaySubtitle = subtitle ?? _getDefaultSubtitle(context);
 
     return Center(
       child: Padding(
@@ -116,43 +138,118 @@ class EmptyState extends StatelessWidget {
     }
   }
 
-  String _getDefaultTitle() {
+  String _getDefaultTitle(BuildContext context) {
     switch (type) {
       case EmptyStateType.chat:
-        return '暂无会话';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无会话',
+          zhTW: '暫無會話',
+          en: 'No chats yet',
+        );
       case EmptyStateType.contact:
-        return '暂无联系人';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无联系人',
+          zhTW: '暫無聯絡人',
+          en: 'No contacts yet',
+        );
       case EmptyStateType.message:
-        return '暂无消息';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无消息',
+          zhTW: '暫無訊息',
+          en: 'No messages yet',
+        );
       case EmptyStateType.moment:
-        return '暂无动态';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无动态',
+          zhTW: '暫無動態',
+          en: 'No moments yet',
+        );
       case EmptyStateType.search:
-        return '未找到结果';
+        return _emptyStateText(
+          context,
+          zhCN: '未找到结果',
+          zhTW: '找不到結果',
+          en: 'No results found',
+        );
       case EmptyStateType.notification:
-        return '暂无通知';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无通知',
+          zhTW: '暫無通知',
+          en: 'No notifications yet',
+        );
       case EmptyStateType.file:
-        return '暂无文件';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无文件',
+          zhTW: '暫無檔案',
+          en: 'No files yet',
+        );
       case EmptyStateType.generic:
-        return '暂无内容';
+        return _emptyStateText(
+          context,
+          zhCN: '暂无内容',
+          zhTW: '暫無內容',
+          en: 'No content yet',
+        );
     }
   }
 
-  String _getDefaultSubtitle() {
+  String _getDefaultSubtitle(BuildContext context) {
     switch (type) {
       case EmptyStateType.chat:
-        return '开始一段新的对话吧';
+        return _emptyStateText(
+          context,
+          zhCN: '开始一段新的对话吧',
+          zhTW: '開始一段新的對話吧',
+          en: 'Start a new conversation',
+        );
       case EmptyStateType.contact:
-        return '添加好友开始聊天';
+        return _emptyStateText(
+          context,
+          zhCN: '添加好友开始聊天',
+          zhTW: '新增好友開始聊天',
+          en: 'Add friends to start chatting',
+        );
       case EmptyStateType.message:
-        return '发送第一条消息吧';
+        return _emptyStateText(
+          context,
+          zhCN: '发送第一条消息吧',
+          zhTW: '發送第一則訊息吧',
+          en: 'Send the first message',
+        );
       case EmptyStateType.moment:
-        return '分享你的精彩瞬间';
+        return _emptyStateText(
+          context,
+          zhCN: '分享你的精彩瞬间',
+          zhTW: '分享你的精彩瞬間',
+          en: 'Share your best moments',
+        );
       case EmptyStateType.search:
-        return '试试其他关键词';
+        return _emptyStateText(
+          context,
+          zhCN: '试试其他关键词',
+          zhTW: '試試其他關鍵字',
+          en: 'Try different keywords',
+        );
       case EmptyStateType.notification:
-        return '新消息会显示在这里';
+        return _emptyStateText(
+          context,
+          zhCN: '新消息会显示在这里',
+          zhTW: '新訊息會顯示在這裡',
+          en: 'New notifications will appear here',
+        );
       case EmptyStateType.file:
-        return '文件会显示在这里';
+        return _emptyStateText(
+          context,
+          zhCN: '文件会显示在这里',
+          zhTW: '檔案會顯示在這裡',
+          en: 'Files will appear here',
+        );
       case EmptyStateType.generic:
         return '';
     }
@@ -163,13 +260,13 @@ class EmptyState extends StatelessWidget {
 class ErrorState extends StatelessWidget {
   final String? message;
   final VoidCallback? onRetry;
-  final String retryLabel;
+  final String? retryLabel;
 
   const ErrorState({
     super.key,
     this.message,
     this.onRetry,
-    this.retryLabel = '重试',
+    this.retryLabel,
   });
 
   @override
@@ -199,7 +296,12 @@ class ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              '加载失败',
+              _emptyStateText(
+                context,
+                zhCN: '加载失败',
+                zhTW: '載入失敗',
+                en: 'Load failed',
+              ),
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -222,7 +324,15 @@ class ErrorState extends StatelessWidget {
               TextButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
-                label: Text(retryLabel),
+                label: Text(
+                  retryLabel ??
+                      _emptyStateText(
+                        context,
+                        zhCN: '重试',
+                        zhTW: '重試',
+                        en: 'Retry',
+                      ),
+                ),
                 style: TextButton.styleFrom(
                   foregroundColor: Theme.of(context).primaryColor,
                 ),

@@ -13,6 +13,7 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "build/**"
+    - "release-archives/**"
     - ".dart_tool/**"
   errors:
     unused_import: ignore

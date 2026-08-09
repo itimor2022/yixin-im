@@ -52,6 +52,7 @@
   } = useChartComponent({
     props,
     checkEmpty: () => {
+      // 每个 value 按 [x, y] 解释；全部点都位于原点时视为无有效分布。
       return !props.data?.length || props.data.every((item) => item.value.every((val) => val === 0))
     },
     watchSources: [() => props.data, () => props.colors, () => props.symbolSize],
@@ -69,6 +70,7 @@
         tooltip: props.showTooltip
           ? getTooltipStyle('item', {
               formatter: (params: { value: [number, number] }) => {
+                // 提示框保持与散点输入契约一致，依次展示横轴和纵轴值。
                 const [x, y] = params.value
                 return `X: ${x}<br/>Y: ${y}`
               }

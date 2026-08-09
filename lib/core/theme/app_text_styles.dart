@@ -1,5 +1,9 @@
+// 文件用途：定义 AppTextStyles 相关主题、颜色或视觉样式，供应用界面统一使用。
+// 核心逻辑：定义 AppTextStyles 的颜色、字体或组件样式，供主题构建和系统 UI 适配统一复用。
 import 'package:flutter/material.dart';
+// 流程逻辑：本文件没有可执行方法，关键行为由导出的常量、条件实现或模块声明决定；修改时需保持公共导出契约稳定。
 
+// 关键声明：app text styles 统一提供视觉参数或主题对象，避免页面直接写死颜色、字体和尺寸。
 /// 现代风格文字样式
 class AppTextStyles {
   AppTextStyles._();

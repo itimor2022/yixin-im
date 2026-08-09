@@ -14,10 +14,6 @@
 
           <div class="w-75 mx-auto mt-7.5 text-left">
             <div class="mt-2.5">
-              <ArtSvgIcon icon="ri:mail-line" class="text-g-700" />
-              <span class="ml-2 text-sm">yixin@qq.com</span>
-            </div>
-            <div class="mt-2.5">
               <ArtSvgIcon icon="ri:user-3-line" class="text-g-700" />
               <span class="ml-2 text-sm">系统管理员</span>
             </div>
@@ -59,9 +55,6 @@
             <ElRow>
               <ElFormItem label="昵称" prop="nikeName">
                 <ElInput v-model="form.nikeName" :disabled="!isEdit" />
-              </ElFormItem>
-              <ElFormItem label="邮箱" prop="email" class="ml-5">
-                <ElInput v-model="form.email" :disabled="!isEdit" />
               </ElFormItem>
             </ElRow>
 
@@ -163,7 +156,6 @@
   const form = reactive({
     realName: '管理员',
     nikeName: '管理员',
-    email: 'admin@example.com',
     mobile: '18888888888',
     address: '中国',
     sex: '1',
@@ -217,7 +209,6 @@
       { required: true, message: '请输入昵称', trigger: 'blur' },
       { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
     ],
-    email: [{ required: true, message: '请输入邮箱', trigger: 'blur' }],
     mobile: [{ required: true, message: '请输入手机号码', trigger: 'blur' }],
     address: [{ required: true, message: '请输入地址', trigger: 'blur' }],
     sex: [{ required: true, message: '请选择性别', trigger: 'blur' }]
@@ -274,6 +265,7 @@
       if (!valid) return
 
       pwdLoading.value = true
+      // 密码字段只在校验通过并确认保存时发送，不进入普通用户资料表单。
       await updateAdminPassword({
         old_password: pwdForm.password,
         new_password: pwdForm.newPassword
@@ -297,6 +289,7 @@
    */
   const cancelEditPwd = () => {
     isEditPwd.value = false
+    // 离开编辑态时同时清空敏感值和历史校验结果，避免下次打开时残留。
     pwdForm.password = ''
     pwdForm.newPassword = ''
     pwdForm.confirmPassword = ''

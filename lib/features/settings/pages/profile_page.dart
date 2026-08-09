@@ -1,20 +1,26 @@
+// 文件用途：实现 ProfilePage 页面及其交互流程，属于应用设置。
+// 核心逻辑：维护 ProfilePage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:universal_io/io.dart';
 import 'dart:math' as math;
 import 'dart:ui';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lottie/lottie.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/premium_theme_tokens.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/system_settings_service.dart';
@@ -23,11 +29,41 @@ import '../../../core/services/upload_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/avatar_crop_page.dart';
-import '../../../shared/widgets/premium_widgets.dart';
 import '../../home/pages/home_desktop_page.dart';
 import 'personalization_page.dart';
 import 'bind_phone_page.dart';
 
+String _profileText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+String _profileServerMessage(
+  String? raw, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  return localizeServerMessage(
+    raw,
+    fallbackZhCN: zhCN,
+    fallbackZhTW: zhTW,
+    fallbackEn: en,
+  );
+}
+
+// 关键声明：profile page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 个人资料页面
 class ProfilePage extends ConsumerStatefulWidget {
   final bool isDesktopPanel;
@@ -42,7 +78,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _bioController;
+  String _selectedGender = '';
   bool _isLoading = false;
+  bool _isAvatarOperationInProgress = false;
+  bool _saveAfterAvatarOperation = false;
 
   // 用户名验证状态
   String? _originalUsername;
@@ -51,6 +90,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   String? _usernameMessage;
   Timer? _usernameCheckTimer;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -58,6 +98,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     _nameController = TextEditingController(text: user?.nickname ?? '');
     _usernameController = TextEditingController(text: user?.username ?? '');
     _bioController = TextEditingController(text: user?.bio ?? '');
+    _selectedGender =
+        user?.gender == 'male' || user?.gender == 'female' ? user!.gender! : '';
     _originalUsername = user?.username ?? '';
 
     // 监听用户名变化
@@ -126,13 +168,23 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         setState(() {
           _isCheckingUsername = false;
           _isUsernameAvailable = response.data['available'] == true;
-          _usernameMessage = response.data['message'];
+          _usernameMessage = localizeServerMessage(
+            response.data['message']?.toString(),
+            fallbackZhCN: '用户名状态获取失败',
+            fallbackZhTW: '取得使用者名稱狀態失敗',
+            fallbackEn: 'Failed to check username status.',
+          );
         });
       } else {
         setState(() {
           _isCheckingUsername = false;
           _isUsernameAvailable = false;
-          _usernameMessage = response.message;
+          _usernameMessage = _profileServerMessage(
+            response.message,
+            zhCN: '用户名状态获取失败',
+            zhTW: '取得使用者名稱狀態失敗',
+            en: 'Failed to check username status.',
+          );
         });
       }
     } catch (e) {
@@ -183,7 +235,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: AppColors.primary,
+                    color: AppColors.linkFor(context),
                   ),
                 ),
               ),
@@ -215,7 +267,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,
             size: 20,
-            color: AppColors.primary,
+            color: AppColors.linkFor(context),
           ),
           onPressed: () => Navigator.pop(context),
         ),
@@ -236,7 +288,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w400,
-                color: AppColors.primary,
+                color: AppColors.linkFor(context),
               ),
             ),
           ),
@@ -272,65 +324,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         children: [
           const SizedBox(height: 20),
 
-          if (user?.premiumType != null &&
-              (user!.premiumType as String).isNotEmpty)
-            PremiumCard(
-              isDark: isDark,
-              premiumType: user.premiumType,
-              padding: const EdgeInsets.all(18),
-              borderRadius: BorderRadius.circular(24),
-              colors: PremiumThemeTokens.isYearly(user.premiumType)
-                  ? const [
-                      Color(0xFF111827),
-                      Color(0xFF7C2D12),
-                      Color(0xFFF59E0B),
-                    ]
-                  : user.premiumType == 'quarterly'
-                      ? const [
-                          Color(0xFF1E1B4B),
-                          Color(0xFF4338CA),
-                          Color(0xFF06B6D4),
-                        ]
-                      : const [
-                          Color(0xFF0F172A),
-                          Color(0xFF312E81),
-                          Color(0xFF7C3AED),
-                        ],
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.auto_awesome_rounded,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Premium Identity',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '你的头像、昵称与聊天消息已启用高级会员视觉效果。',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.82),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
           // 头像
           Center(
             child: GestureDetector(
@@ -341,21 +334,23 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     name: displayName,
                     avatar: avatar,
                     size: 90,
-                    premiumType: user?.premiumType,
+                    isCircle: true,
                   ),
                   const SizedBox(height: 12),
                   ColoredNameWidget(
                     name: displayName,
                     nicknameColor: user?.nicknameColor,
-                    premiumType: user?.premiumType,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    defaultColor: isDark ? Colors.white : Colors.black,
+                    defaultColor: AppColors.textPrimaryFor(context),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     l10n.setNewPhoto,
-                    style: TextStyle(fontSize: 16, color: AppColors.primary),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.linkFor(context),
+                    ),
                   ),
                 ],
               ),
@@ -376,7 +371,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 hintText: l10n.name,
                 hintStyle: TextStyle(
                   fontSize: 17,
-                  color: isDark ? Colors.white30 : Colors.black26,
+                  color: AppColors.inputHintFor(context),
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
@@ -424,7 +419,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       hintText: l10n.username,
                       hintStyle: TextStyle(
                         fontSize: 17,
-                        color: isDark ? Colors.white30 : Colors.black26,
+                        color: AppColors.inputHintFor(context),
                       ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(
@@ -463,7 +458,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     child: Icon(
                       Icons.copy_rounded,
                       size: 20,
-                      color: isDark ? Colors.white38 : Colors.black26,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ),
@@ -476,6 +471,69 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           const SizedBox(height: 8),
 
           _buildHintText(l10n.usernameHint, isDark),
+
+          const SizedBox(height: 24),
+
+          _buildInputCard(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      _profileText(
+                        context,
+                        zhCN: '性别',
+                        zhTW: '性別',
+                        en: 'Gender',
+                      ),
+                      style: TextStyle(
+                        fontSize: 17,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: SegmentedButton<String>(
+                      segments: [
+                        ButtonSegment(
+                          value: 'male',
+                          label: Text(_profileText(
+                            context,
+                            zhCN: '男生',
+                            zhTW: '男生',
+                            en: 'Male',
+                          )),
+                        ),
+                        ButtonSegment(
+                          value: 'female',
+                          label: Text(_profileText(
+                            context,
+                            zhCN: '女生',
+                            zhTW: '女生',
+                            en: 'Female',
+                          )),
+                        ),
+                      ],
+                      selected: _selectedGender.isEmpty
+                          ? <String>{}
+                          : {_selectedGender},
+                      emptySelectionAllowed: true,
+                      showSelectedIcon: false,
+                      onSelectionChanged: (values) {
+                        setState(() {
+                          _selectedGender = values.isEmpty ? '' : values.first;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            isDark: isDark,
+            cardColor: cardColor,
+          ),
 
           const SizedBox(height: 24),
 
@@ -492,7 +550,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 hintText: l10n.bio,
                 hintStyle: TextStyle(
                   fontSize: 17,
-                  color: isDark ? Colors.white30 : Colors.black26,
+                  color: AppColors.inputHintFor(context),
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
@@ -532,7 +590,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       user?.phone != null && user!.phone!.isNotEmpty
                           ? l10n.change
                           : l10n.bind,
-                      style: TextStyle(fontSize: 17, color: AppColors.primary),
+                      style: TextStyle(
+                        fontSize: 17,
+                        color: AppColors.linkFor(context),
+                      ),
                     ),
                   ),
                 ],
@@ -571,7 +632,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             children: [
               _ActionItem(
                 icon: Icons.qr_code_2_rounded,
-                iconBg: AppColors.primary,
+                iconBg: AppColors.primaryFor(context),
                 title: l10n.qrCode,
                 isDark: isDark,
                 onTap: _showQRCode,
@@ -641,7 +702,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         height: 20,
         child: CircularProgressIndicator(
           strokeWidth: 2,
-          color: AppColors.primary,
+          color: AppColors.linkFor(context),
         ),
       );
     }
@@ -693,7 +754,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         style: TextStyle(
           fontSize: 13,
           height: 1.35,
-          color: isDark ? Colors.white38 : Colors.black38,
+          color: AppColors.textTertiaryFor(context),
         ),
       ),
     );
@@ -720,13 +781,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 width: 36,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2.5),
                 ),
               ),
               const SizedBox(height: 16),
               _SheetItem(
-                title: '拍照',
+                title: _profileText(
+                  context,
+                  zhCN: '拍照',
+                  zhTW: '拍照',
+                  en: 'Take Photo',
+                ),
                 icon: Icons.camera_alt_rounded,
                 isDark: isDark,
                 onTap: () {
@@ -735,7 +801,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 },
               ),
               _SheetItem(
-                title: '相册',
+                title: _profileText(
+                  context,
+                  zhCN: '相册',
+                  zhTW: '相簿',
+                  en: 'Photo Library',
+                ),
                 icon: Icons.photo_rounded,
                 isDark: isDark,
                 onTap: () {
@@ -744,7 +815,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 },
               ),
               _SheetItem(
-                title: '删除照片',
+                title: _profileText(
+                  context,
+                  zhCN: '删除照片',
+                  zhTW: '刪除照片',
+                  en: 'Delete Photo',
+                ),
                 icon: Icons.delete_rounded,
                 isDark: isDark,
                 isDestructive: true,
@@ -758,7 +834,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 color: isDark ? Colors.black26 : const Color(0xFFF2F2F7),
               ),
               _SheetItem(
-                title: '取消',
+                title: _profileText(
+                  context,
+                  zhCN: '取消',
+                  zhTW: '取消',
+                  en: 'Cancel',
+                ),
                 isDark: isDark,
                 onTap: () => Navigator.pop(context),
                 isBold: true,
@@ -805,7 +886,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       context: context,
       imagePath: kIsWeb ? null : image.path,
       imageBytes: imageBytes,
-      title: '裁剪头像',
+      title: _profileText(
+        context,
+        zhCN: '裁剪头像',
+        zhTW: '裁剪頭像',
+        en: 'Crop Avatar',
+      ),
     );
 
     if (croppedPath != null) {
@@ -821,14 +907,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   Future<void> _uploadAvatarBytes(Uint8List bytes) async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isAvatarOperationInProgress = true;
+    });
     final oldAvatarUrl = ref.read(authServiceProvider).user?.avatar;
+    var updated = false;
     try {
       final uploadService = ref.read(uploadServiceProvider);
       final xfile = XFile.fromData(
         bytes,
-        name: 'avatar.jpg',
-        mimeType: 'image/jpeg',
+        name: 'avatar.png',
+        mimeType: 'image/png',
       );
       final avatarUrl = await uploadService.uploadAvatar(xfile);
       if (avatarUrl != null) {
@@ -840,25 +930,54 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         final response = await ref
             .read(authServiceProvider.notifier)
             .updateProfile(avatar: avatarUrl);
-        if (response != null && mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('头像更新成功')));
+        updated = response.isSuccess;
+        if (response.isSuccess && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _profileText(
+                  context,
+                  zhCN: '头像更新成功',
+                  zhTW: '頭像更新成功',
+                  en: 'Avatar updated successfully',
+                ),
+              ),
+            ),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('上传失败: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _profileText(
+                context,
+                zhCN: '上传失败，请重试',
+                zhTW: '上傳失敗，請重試',
+                en: 'Upload failed. Please try again.',
+              ),
+            ),
+          ),
+        );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isAvatarOperationInProgress = false;
+        });
+      }
+      await _continuePendingSaveAfterAvatarOperation(updated);
     }
   }
 
   Future<void> _uploadAvatar(XFile image) async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isAvatarOperationInProgress = true;
+    });
+    var updated = false;
 
     // 获取旧头像URL，用于后续清除缓存
     final oldAvatarUrl = ref.read(authServiceProvider).user?.avatar;
@@ -883,7 +1002,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         if (mounted && !response.isSuccess) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response.message ?? '更新头像失败'),
+              content: Text(
+                _profileServerMessage(
+                  response.message,
+                  zhCN: '更新头像失败',
+                  zhTW: '更新頭像失敗',
+                  en: 'Failed to update avatar',
+                ),
+              ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
@@ -892,6 +1018,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
           );
         } else if (response.isSuccess) {
+          updated = true;
           // 新头像用完整 URL 预取，设置页/个人资料等立即从缓存读
           final fullUrl = ApiConfig.getMediaUrl(avatarUrl) ?? avatarUrl;
           AvatarCacheManager.prefetch(fullUrl);
@@ -901,7 +1028,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('上传头像失败'),
+              content: Text(
+                _profileText(
+                  context,
+                  zhCN: '上传头像失败',
+                  zhTW: '上傳頭像失敗',
+                  en: 'Avatar upload failed',
+                ),
+              ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
@@ -915,7 +1049,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('上传失败: $e'),
+            content: Text(
+              _profileText(
+                context,
+                zhCN: '上传失败，请重试',
+                zhTW: '上傳失敗，請重試',
+                en: 'Upload failed. Please try again.',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.error,
             shape: RoundedRectangleBorder(
@@ -926,24 +1067,40 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isAvatarOperationInProgress = false;
+        });
       }
+      await _continuePendingSaveAfterAvatarOperation(updated);
     }
   }
 
   Future<void> _deleteAvatar() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isAvatarOperationInProgress = true;
+    });
+    var updated = false;
 
     try {
       final response = await ref
           .read(authServiceProvider.notifier)
           .updateProfile(avatar: '');
+      updated = response.isSuccess;
 
       if (mounted) {
         if (response.isSuccess) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('头像已删除'),
+              content: Text(
+                _profileText(
+                  context,
+                  zhCN: '头像已删除',
+                  zhTW: '頭像已刪除',
+                  en: 'Avatar removed',
+                ),
+              ),
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 1),
               shape: RoundedRectangleBorder(
@@ -955,23 +1112,77 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isAvatarOperationInProgress = false;
+        });
       }
+      await _continuePendingSaveAfterAvatarOperation(updated);
     }
   }
 
+  Future<void> _continuePendingSaveAfterAvatarOperation(bool updated) async {
+    if (!_saveAfterAvatarOperation) return;
+    _saveAfterAvatarOperation = false;
+    if (!updated || !mounted) return;
+    await _saveProfile();
+  }
+
+  void _closeProfilePage() {
+    if (!mounted) return;
+    final routeSettings = ModalRoute.of(context)?.settings;
+    if (routeSettings is Page && context.canPop()) {
+      context.pop();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
   Future<void> _saveProfile() async {
+    if (_isAvatarOperationInProgress) {
+      _saveAfterAvatarOperation = true;
+      return;
+    }
     if (_isLoading) return;
 
     final newUsername = _usernameController.text.trim();
     final usernameChanged =
         newUsername != _originalUsername && newUsername.isNotEmpty;
 
+    if (_selectedGender != 'male' && _selectedGender != 'female') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _profileText(
+              context,
+              zhCN: '请选择性别',
+              zhTW: '請選擇性別',
+              en: 'Please select a gender',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.error,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+      return;
+    }
+
     // 如果用户名改变且不可用，阻止保存
     if (usernameChanged && _isUsernameAvailable != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_usernameMessage ?? '请先验证用户名'),
+          content: Text(
+            _usernameMessage ??
+                _profileText(
+                  context,
+                  zhCN: '请先验证用户名',
+                  zhTW: '請先驗證使用者名稱',
+                  en: 'Please verify the username first',
+                ),
+          ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
@@ -998,6 +1209,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 nickname: _nameController.text.trim(),
                 username: newUsername,
                 bio: _bioController.text.trim(),
+                gender: _selectedGender,
               );
 
       if (mounted) {
@@ -1023,13 +1235,20 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   DesktopProfileInfo.none;
             });
           } else {
-            Navigator.of(context, rootNavigator: true).pop();
+            _closeProfilePage();
           }
           return; // 成功路径提前返回，finally 不再重置 _isLoading
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response.message ?? '更新失败'),
+              content: Text(
+                _profileServerMessage(
+                  response.message,
+                  zhCN: '更新失败',
+                  zhTW: '更新失敗',
+                  en: 'Update failed',
+                ),
+              ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
@@ -1043,7 +1262,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('更新失败: $e'),
+            content: Text(
+              _profileText(
+                context,
+                zhCN: '更新失败，请重试',
+                zhTW: '更新失敗，請重試',
+                en: 'Update failed. Please try again.',
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.error,
             shape: RoundedRectangleBorder(
@@ -1067,7 +1293,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final result = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '确认修改',
+      barrierLabel: _profileText(
+        context,
+        zhCN: '确认修改',
+        zhTW: '確認修改',
+        en: 'Confirm change',
+      ),
       barrierColor: Colors.black.withOpacity(0.5),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -1116,7 +1347,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          '确认修改用户名？',
+                          _profileText(
+                            context,
+                            zhCN: '确认修改用户名？',
+                            zhTW: '確認修改使用者名稱？',
+                            en: 'Confirm username change?',
+                          ),
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -1125,7 +1361,17 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '修改用户名后，您的登录账号也会随之改变。\n\n新用户名: @${_usernameController.text.trim()}',
+                          '${_profileText(
+                            context,
+                            zhCN: '修改用户名后，您的登录账号也会随之改变。',
+                            zhTW: '修改使用者名稱後，您的登入帳號也會隨之改變。',
+                            en: 'After changing your username, your login account will change as well.',
+                          )}\n\n${_profileText(
+                            context,
+                            zhCN: '新用户名',
+                            zhTW: '新使用者名稱',
+                            en: 'New username',
+                          )}: @${_usernameController.text.trim()}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -1151,13 +1397,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                   ),
                                 ),
                                 child: Text(
-                                  '取消',
+                                  _profileText(
+                                    context,
+                                    zhCN: '取消',
+                                    zhTW: '取消',
+                                    en: 'Cancel',
+                                  ),
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black54,
+                                    color: AppColors.textSecondaryFor(context),
                                   ),
                                 ),
                               ),
@@ -1170,13 +1419,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 14,
                                   ),
-                                  backgroundColor: AppColors.primary,
+                                  backgroundColor:
+                                      AppColors.primaryFor(context),
+                                  foregroundColor:
+                                      AppColors.onPrimaryFor(context),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: const Text(
-                                  '确认修改',
+                                child: Text(
+                                  _profileText(
+                                    context,
+                                    zhCN: '确认修改',
+                                    zhTW: '確認修改',
+                                    en: 'Confirm',
+                                  ),
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -1208,12 +1465,33 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('更换手机号'),
-          content: const Text('已绑定手机号的更换流程需联系管理员处理。'),
+          title: Text(
+            _profileText(
+              context,
+              zhCN: '更换手机号',
+              zhTW: '更換手機號',
+              en: 'Change Phone Number',
+            ),
+          ),
+          content: Text(
+            _profileText(
+              context,
+              zhCN: '已绑定手机号的更换流程需联系管理员处理。',
+              zhTW: '已綁定手機號的更換流程需聯繫管理員處理。',
+              en: 'Changing a linked phone number currently requires administrator assistance.',
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('知道了'),
+              child: Text(
+                _profileText(
+                  context,
+                  zhCN: '知道了',
+                  zhTW: '知道了',
+                  en: 'OK',
+                ),
+              ),
             ),
           ],
         ),
@@ -1231,11 +1509,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     HapticFeedback.selectionClick();
     Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.black87,
-        barrierDismissible: true,
+        opaque: true,
         pageBuilder: (context, animation, _) =>
-            _QRCodePage(animation: animation),
+            ProfileQRCodePage(animation: animation),
         transitionsBuilder: (context, animation, _, child) =>
             FadeTransition(opacity: animation, child: child),
       ),
@@ -1262,7 +1538,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     if (inviteLink.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('请先在后台配置邀请注册链接域名'),
+          content: Text(
+            _profileText(
+              context,
+              zhCN: '请先在后台配置邀请注册链接域名',
+              zhTW: '請先在後台配置邀請註冊連結網域',
+              en: 'Configure the invite registration domain in the admin panel first',
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1332,7 +1615,7 @@ class _ActionItem extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: isDark ? Colors.white24 : Colors.black26,
+              color: AppColors.textTertiaryFor(context),
               size: 22,
             ),
           ],
@@ -1392,18 +1675,95 @@ class _SheetItem extends StatelessWidget {
   }
 }
 
-class _QRCodePage extends ConsumerStatefulWidget {
-  final Animation<double> animation;
+class ProfileQRCodePage extends ConsumerStatefulWidget {
+  final Animation<double>? animation;
+  final String? userUuid;
+  final String? displayName;
+  final String? username;
+  final String? avatar;
+  final bool? isSelfEntry;
 
-  const _QRCodePage({required this.animation});
+  const ProfileQRCodePage({
+    super.key,
+    this.animation,
+    this.userUuid,
+    this.displayName,
+    this.username,
+    this.avatar,
+    this.isSelfEntry,
+  });
 
   @override
-  ConsumerState<_QRCodePage> createState() => _QRCodePageState();
+  ConsumerState<ProfileQRCodePage> createState() => _QRCodePageState();
 }
 
-class _QRCodePageState extends ConsumerState<_QRCodePage>
+class _QrCardStyle {
+  final String label;
+  final String emoji;
+  final Color primary;
+  final Color secondary;
+  final Color backgroundStart;
+  final Color backgroundEnd;
+
+  const _QrCardStyle({
+    required this.label,
+    required this.emoji,
+    required this.primary,
+    required this.secondary,
+    required this.backgroundStart,
+    required this.backgroundEnd,
+  });
+}
+
+const List<_QrCardStyle> _qrCardStyles = [
+  _QrCardStyle(
+    label: 'Classic',
+    emoji: '🏠',
+    primary: Color(0xFF69B45B),
+    secondary: Color(0xFF2E9678),
+    backgroundStart: Color(0xFFE9F5B8),
+    backgroundEnd: Color(0xFF96D3A6),
+  ),
+  _QrCardStyle(
+    label: 'Fresh',
+    emoji: '🐤',
+    primary: Color(0xFF75B95D),
+    secondary: Color(0xFF3A9D7D),
+    backgroundStart: Color(0xFFE4F7C9),
+    backgroundEnd: Color(0xFFAAD9B6),
+  ),
+  _QrCardStyle(
+    label: 'Ice',
+    emoji: '⛄',
+    primary: Color(0xFF64A7E8),
+    secondary: Color(0xFF7B84E8),
+    backgroundStart: Color(0xFFE2F4FF),
+    backgroundEnd: Color(0xFFC2D5FF),
+  ),
+  _QrCardStyle(
+    label: 'Gem',
+    emoji: '💎',
+    primary: Color(0xFFC48BE8),
+    secondary: Color(0xFF8FA7F8),
+    backgroundStart: Color(0xFFF2DDF8),
+    backgroundEnd: Color(0xFFD4E9FF),
+  ),
+  _QrCardStyle(
+    label: 'Ocean',
+    emoji: '🌊',
+    primary: Color(0xFF4AA8C8),
+    secondary: Color(0xFF3D8CE1),
+    backgroundStart: Color(0xFFDDF6F8),
+    backgroundEnd: Color(0xFFAED8F2),
+  ),
+];
+
+class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
     with SingleTickerProviderStateMixin {
   late AnimationController _rotationController;
+  final GlobalKey _qrCardKey = GlobalKey();
+  int _selectedStyleIndex = 0;
+  bool _isSharing = false;
 
   @override
   void initState() {
@@ -1420,279 +1780,693 @@ class _QRCodePageState extends ConsumerState<_QRCodePage>
     super.dispose();
   }
 
+  String _shortUserId(String value) {
+    final text = value.trim();
+    if (text.length <= 8) return text;
+    return text.substring(0, 6);
+  }
+
+  String _fallbackTargetName(BuildContext context, String userUuid) {
+    final shortId = _shortUserId(userUuid);
+    if (shortId.isEmpty) {
+      return _profileText(
+        context,
+        zhCN: '\u8be5\u7528\u6237',
+        zhTW: '\u8a72\u7528\u6236',
+        en: 'This user',
+      );
+    }
+    return _profileText(
+      context,
+      zhCN: '\u7528\u6237 $shortId',
+      zhTW: '\u7528\u6236 $shortId',
+      en: 'User $shortId',
+    );
+  }
+
+  String _qrPageTitle(
+    BuildContext context, {
+    required bool isSelfEntry,
+    required String targetName,
+  }) {
+    if (isSelfEntry) {
+      return _profileText(
+        context,
+        zhCN: '\u6211\u7684\u4e8c\u7ef4\u7801',
+        zhTW: '\u6211\u7684\u4e8c\u7dad\u78bc',
+        en: 'My QR Code',
+      );
+    }
+    final name = targetName.trim();
+    if (name.isEmpty) {
+      return _profileText(
+        context,
+        zhCN: '\u4e8c\u7ef4\u7801\u540d\u7247',
+        zhTW: '\u4e8c\u7dad\u78bc\u540d\u7247',
+        en: 'QR Contact Card',
+      );
+    }
+    switch (AppLocalizations.of(context).language) {
+      case AppLanguage.en:
+        return "$name's QR Code";
+      case AppLanguage.zhTW:
+        return '$name\u7684\u4e8c\u7dad\u78bc';
+      case AppLanguage.zhCN:
+        return '$name\u7684\u4e8c\u7ef4\u7801';
+    }
+  }
+
+  String _qrHintText(
+    BuildContext context, {
+    required bool isSelfEntry,
+    required String targetName,
+  }) {
+    if (isSelfEntry) {
+      return _profileText(
+        context,
+        zhCN:
+            '\u626b\u63cf\u4e8c\u7ef4\u7801\u6dfb\u52a0\u6211\u4e3a\u597d\u53cb',
+        zhTW: '\u6383\u63cf\u4e8c\u7dad\u78bc\u52a0\u6211\u70ba\u597d\u53cb',
+        en: 'Scan the QR code to add me as a friend',
+      );
+    }
+    final name = targetName.trim();
+    if (name.isEmpty) {
+      return _profileText(
+        context,
+        zhCN:
+            '\u626b\u63cf\u4e8c\u7ef4\u7801\u6dfb\u52a0\u8be5\u7528\u6237\u4e3a\u597d\u53cb',
+        zhTW:
+            '\u6383\u63cf\u4e8c\u7dad\u78bc\u65b0\u589e\u8a72\u7528\u6236\u70ba\u597d\u53cb',
+        en: 'Scan the QR code to add this user as a friend',
+      );
+    }
+    switch (AppLocalizations.of(context).language) {
+      case AppLanguage.en:
+        return 'Scan the QR code to add $name as a friend';
+      case AppLanguage.zhTW:
+        return '\u6383\u63cf\u4e8c\u7dad\u78bc\u65b0\u589e $name \u70ba\u597d\u53cb';
+      case AppLanguage.zhCN:
+        return '\u626b\u63cf\u4e8c\u7ef4\u7801\u6dfb\u52a0 $name \u4e3a\u597d\u53cb';
+    }
+  }
+
+  String _shareText({
+    required BuildContext context,
+    required bool isSelfEntry,
+    required String displayName,
+    required String qrPayload,
+  }) {
+    if (isSelfEntry) {
+      return _profileText(
+        context,
+        zhCN: '$displayName\u7684\u4e8c\u7ef4\u7801\u540d\u7247\n$qrPayload',
+        zhTW: '$displayName\u7684\u4e8c\u7dad\u78bc\u540d\u7247\n$qrPayload',
+        en: "$displayName's QR contact card\n$qrPayload",
+      );
+    }
+    return _profileText(
+      context,
+      zhCN: '$displayName\u7684\u4e8c\u7ef4\u7801\u540d\u7247\n$qrPayload',
+      zhTW: '$displayName\u7684\u4e8c\u7dad\u78bc\u540d\u7247\n$qrPayload',
+      en: "$displayName's QR contact card\n$qrPayload",
+    );
+  }
+
+  Future<void> _shareQrCard({
+    required bool isSelfEntry,
+    required String displayName,
+    required String qrPayload,
+  }) async {
+    if (_isSharing) return;
+    HapticFeedback.mediumImpact();
+
+    final shareText = _shareText(
+      context: context,
+      isSelfEntry: isSelfEntry,
+      displayName: displayName,
+      qrPayload: qrPayload,
+    );
+
+    if (qrPayload.isEmpty) {
+      await Share.share(shareText);
+      return;
+    }
+
+    setState(() => _isSharing = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary = _qrCardKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        await Share.share(shareText);
+        return;
+      }
+
+      final image = await boundary.toImage(pixelRatio: 3);
+      final byteData = await image.toByteData(format: ImageByteFormat.png);
+      final bytes = byteData?.buffer.asUint8List();
+      if (bytes == null || bytes.isEmpty) {
+        await Share.share(shareText);
+        return;
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final safeName = displayName
+          .replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
+      final file = File(
+        '${tempDir.path}/genericim_qr_${safeName.isEmpty ? 'user' : safeName}_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        text: shareText,
+      );
+    } catch (e) {
+      debugPrint('[ProfileQRCode] Share failed: $e');
+      await Share.share(shareText);
+    } finally {
+      if (mounted) {
+        setState(() => _isSharing = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authServiceProvider);
     final user = authState.user;
-    final displayName = user?.nickname ?? user?.username ?? '未登录';
-    final username = user?.username ?? '';
-    final qrPayload = user?.uuid != null && user!.uuid.isNotEmpty
-        ? buildUserQrPayload(user.uuid)
-        : '';
-    final avatar = user?.avatar;
+    String? nonEmpty(String? value) {
+      final text = value?.trim() ?? '';
+      return text.isEmpty ? null : text;
+    }
+
+    String? usernameValue(String? value) {
+      final text = nonEmpty(value);
+      if (text == null) return null;
+      return text.startsWith('@') ? nonEmpty(text.substring(1)) : text;
+    }
+
+    final explicitUserUuid = nonEmpty(widget.userUuid);
+    final isSelfEntry = widget.isSelfEntry ?? explicitUserUuid == null;
+    final authUserUuid = nonEmpty(user?.uuid);
+    final userUuid = isSelfEntry
+        ? (authUserUuid ?? explicitUserUuid ?? '')
+        : (explicitUserUuid ?? '');
+    final fallbackName = isSelfEntry
+        ? _profileText(
+            context,
+            zhCN: '未登录',
+            zhTW: '未登入',
+            en: 'Not signed in',
+          )
+        : _fallbackTargetName(context, userUuid);
+    final displayName = isSelfEntry
+        ? (nonEmpty(widget.displayName) ??
+            nonEmpty(user?.nickname) ??
+            usernameValue(user?.username) ??
+            fallbackName)
+        : (nonEmpty(widget.displayName) ??
+            usernameValue(widget.username) ??
+            fallbackName);
+    final username = isSelfEntry
+        ? (usernameValue(widget.username) ?? usernameValue(user?.username))
+        : usernameValue(widget.username);
+    final qrPayload = userUuid.isNotEmpty ? buildUserQrPayload(userUuid) : '';
+    final avatar = isSelfEntry
+        ? (nonEmpty(widget.avatar) ?? user?.avatar)
+        : nonEmpty(widget.avatar);
+    final secondaryText = username != null
+        ? '@$username'
+        : (userUuid.isNotEmpty ? _shortUserId(userUuid) : displayName);
+    final titleText = _qrPageTitle(
+      context,
+      isSelfEntry: isSelfEntry,
+      targetName: displayName,
+    );
+    final hintText = _qrHintText(
+      context,
+      isSelfEntry: isSelfEntry,
+      targetName: displayName,
+    );
+    final pageAnimation =
+        widget.animation ?? const AlwaysStoppedAnimation<double>(1);
+    final selectedStyle =
+        _qrCardStyles[_selectedStyleIndex.clamp(0, _qrCardStyles.length - 1)];
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: selectedStyle.backgroundEnd,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
-              const Color(0xFF1A73E8),
+              selectedStyle.backgroundStart,
+              selectedStyle.backgroundEnd,
             ],
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // 顶部栏
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const SizedBox(width: 48),
-                    const Text(
-                      '我的二维码',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ],
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _QrDoodleBackgroundPainter(
+                  color: Colors.white.withOpacity(0.28),
                 ),
               ),
-              const Spacer(flex: 2),
-              // 二维码卡片
-              ScaleTransition(
-                scale: CurvedAnimation(
-                  parent: widget.animation,
-                  curve: Curves.easeOutBack,
-                ),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 40,
-                        offset: const Offset(0, 20),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(height: 32),
-                      // 头像
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.primary,
-                              const Color(0xFF1A73E8),
+            ),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final pageWidth = constraints.maxWidth;
+                  final isNarrowScreen = pageWidth < 360;
+                  final isShortScreen = constraints.maxHeight < 720;
+                  final horizontalGutter = pageWidth < 320
+                      ? 10.0
+                      : (pageWidth * 0.055).clamp(16.0, 28.0);
+                  final cardWidth = math.min(
+                    400.0,
+                    math.max(0.0, pageWidth - horizontalGutter * 2),
+                  );
+                  final qrSize = math.min(
+                    isShortScreen ? 232.0 : 268.0,
+                    math.max(
+                      0.0,
+                      cardWidth - (isNarrowScreen ? 48 : 64),
+                    ),
+                  );
+                  final avatarFrameSize =
+                      isShortScreen || isNarrowScreen ? 66.0 : 74.0;
+                  final avatarSize = avatarFrameSize - 12;
+                  final compactGap = isShortScreen ? 10.0 : 16.0;
+
+                  return SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight),
+                      child: IntrinsicHeight(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            children: [
+                              // 顶部栏
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const SizedBox(width: 48),
+                                    Expanded(
+                                      child: Text(
+                                        titleText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF182033),
+                                        ),
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.pop(context),
+                                      child: Container(
+                                        width: 36,
+                                        height: 36,
+                                        margin: const EdgeInsets.only(right: 8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.06),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Icon(
+                                          Icons.close_rounded,
+                                          color: Color(0xFF5D6A85),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(height: isShortScreen ? 2 : 8),
+                              // 二维码卡片
+                              ScaleTransition(
+                                scale: CurvedAnimation(
+                                  parent: pageAnimation,
+                                  curve: Curves.easeOutBack,
+                                ),
+                                child: RepaintBoundary(
+                                  key: _qrCardKey,
+                                  child: Container(
+                                    width: cardWidth,
+                                    margin: EdgeInsets.only(
+                                      top: isShortScreen ? 8 : 14,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(
+                                        isNarrowScreen ? 24 : 30,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.12),
+                                          blurRadius: 24,
+                                          offset: const Offset(0, 12),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Transform.translate(
+                                          offset: Offset(
+                                            0,
+                                            -(avatarFrameSize * 0.3),
+                                          ),
+                                          child: Container(
+                                            width: avatarFrameSize,
+                                            height: avatarFrameSize,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: selectedStyle.primary,
+                                                width: 4,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: selectedStyle.primary
+                                                      .withOpacity(0.24),
+                                                  blurRadius: 16,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(3),
+                                              child: AvatarWidget(
+                                                name: displayName,
+                                                avatar: avatar,
+                                                size: avatarSize,
+                                                isCircle: true,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Transform.translate(
+                                          offset: Offset(
+                                            0,
+                                            isShortScreen ? -9 : -11,
+                                          ),
+                                          child: Text(
+                                            '通用IM客服',
+                                            style: TextStyle(
+                                              fontSize: isShortScreen ? 16 : 18,
+                                              color: Colors.black
+                                                  .withOpacity(0.72),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          height: isShortScreen ? 0 : 2,
+                                        ),
+                                        // 名字
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                          ),
+                                          child: Text(
+                                            displayName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: isShortScreen ? 20 : 22,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        // 用户名
+                                        GestureDetector(
+                                          onTap: username == null
+                                              ? null
+                                              : () {
+                                                  HapticFeedback.lightImpact();
+                                                  Clipboard.setData(
+                                                    ClipboardData(
+                                                        text: secondaryText),
+                                                  );
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        _profileText(
+                                                          context,
+                                                          zhCN: '用户名已复制',
+                                                          zhTW: '使用者名稱已複製',
+                                                          en: 'Username copied',
+                                                        ),
+                                                      ),
+                                                      behavior: SnackBarBehavior
+                                                          .floating,
+                                                      duration: const Duration(
+                                                          seconds: 1),
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(10),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.emphasisSoftFor(
+                                                context,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              secondaryText,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color:
+                                                    AppColors.linkFor(context),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(height: compactGap),
+                                        // 真实二维码
+                                        SizedBox(
+                                          width: qrSize,
+                                          child: AspectRatio(
+                                            aspectRatio: 1,
+                                            child: Container(
+                                              padding: EdgeInsets.all(
+                                                isNarrowScreen ? 8 : 10,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                  isNarrowScreen ? 20 : 24,
+                                                ),
+                                                border: Border.all(
+                                                  color: selectedStyle.primary
+                                                      .withOpacity(0.12),
+                                                ),
+                                              ),
+                                              child: qrPayload.isEmpty
+                                                  ? const Center(
+                                                      child: Icon(
+                                                        Icons.qr_code_2_rounded,
+                                                        size: 96,
+                                                        color: Colors.black26,
+                                                      ),
+                                                    )
+                                                  : QrImageView(
+                                                      data: qrPayload,
+                                                      version: QrVersions.auto,
+                                                      eyeStyle: QrEyeStyle(
+                                                        eyeShape:
+                                                            QrEyeShape.circle,
+                                                        color: selectedStyle
+                                                            .primary,
+                                                      ),
+                                                      dataModuleStyle:
+                                                          QrDataModuleStyle(
+                                                        dataModuleShape:
+                                                            QrDataModuleShape
+                                                                .square,
+                                                        color: selectedStyle
+                                                            .secondary,
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.white,
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                        6,
+                                                      ),
+                                                      gapless: true,
+                                                      semanticsLabel: hintText,
+                                                    ),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          height: isShortScreen ? 8 : 12,
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                          ),
+                                          child: Text(
+                                            username != null
+                                                ? '@${username.toUpperCase()}'
+                                                : '@GENERICIM',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize:
+                                                  isNarrowScreen ? 20 : 22,
+                                              letterSpacing: 0.3,
+                                              color: selectedStyle.secondary,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(height: compactGap),
+                                        // 提示文字
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.qr_code_scanner_rounded,
+                                                size: 16,
+                                                color: Colors.grey[400],
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Flexible(
+                                                child: Text(
+                                                  hintText,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color: Colors.grey[500],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          height: isShortScreen ? 20 : 26,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: isShortScreen ? 12 : 18),
+                              _QRStylePicker(
+                                styles: _qrCardStyles,
+                                selectedIndex: _selectedStyleIndex,
+                                onSelected: (index) {
+                                  HapticFeedback.selectionClick();
+                                  setState(() => _selectedStyleIndex = index);
+                                },
+                              ),
+                              SizedBox(height: isShortScreen ? 10 : 14),
+                              Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: horizontalGutter + 4,
+                                ),
+                                child: _QRPrimaryButton(
+                                  label: _profileText(
+                                    context,
+                                    zhCN: '分享二维码',
+                                    zhTW: '分享二維碼',
+                                    en: 'Share QR Code',
+                                  ),
+                                  isLoading: _isSharing,
+                                  onTap: () => _shareQrCard(
+                                    isSelfEntry: isSelfEntry,
+                                    displayName: displayName,
+                                    qrPayload: qrPayload,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: isShortScreen ? 10 : 18),
+                              TextButton.icon(
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  Navigator.pop(context);
+                                },
+                                icon: Icon(
+                                  Icons.qr_code_scanner_rounded,
+                                  color: selectedStyle.primary,
+                                ),
+                                label: Text(
+                                  _profileText(
+                                    context,
+                                    zhCN: '扫描二维码',
+                                    zhTW: '掃描二維碼',
+                                    en: 'Scan QR Code',
+                                  ),
+                                  style: TextStyle(
+                                    color: selectedStyle.primary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              const SizedBox(height: 14),
                             ],
                           ),
                         ),
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                          ),
-                          child: AvatarWidget(
-                            name: displayName,
-                            avatar: avatar,
-                            size: 72,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // 名字
-                      Text(
-                        displayName,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // 用户名
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          Clipboard.setData(ClipboardData(text: '@$username'));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('用户名已复制'),
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '@$username',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // 真实二维码
-                      SizedBox(
-                        width: 240,
-                        height: 240,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // 动态光点边框（不旋转边框本身）
-                            AnimatedBuilder(
-                              animation: _rotationController,
-                              builder: (context, child) {
-                                return CustomPaint(
-                                  painter: _AnimatedQRBorderPainter(
-                                    progress: _rotationController.value,
-                                    primaryColor: AppColors.primary,
-                                  ),
-                                  size: const Size(240, 240),
-                                );
-                              },
-                            ),
-                            // 二维码内容
-                            Container(
-                              width: 200,
-                              height: 200,
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: qrPayload.isEmpty
-                                  ? const Center(
-                                      child: Icon(
-                                        Icons.qr_code_2_rounded,
-                                        size: 96,
-                                        color: Colors.black26,
-                                      ),
-                                    )
-                                  : QrImageView(
-                                      data: qrPayload,
-                                      version: QrVersions.auto,
-                                      eyeStyle: QrEyeStyle(
-                                        eyeShape: QrEyeShape.square,
-                                        color: AppColors.primary,
-                                      ),
-                                      dataModuleStyle: QrDataModuleStyle(
-                                        dataModuleShape:
-                                            QrDataModuleShape.square,
-                                        color: AppColors.primary,
-                                      ),
-                                      backgroundColor: Colors.white,
-                                      padding: const EdgeInsets.all(10),
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // 提示文字
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.qr_code_scanner_rounded,
-                            size: 16,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '扫描二维码添加好友',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
-                ),
-              ),
-              const Spacer(flex: 2),
-              // 底部按钮
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _QRActionButton(
-                        icon: Icons.share_rounded,
-                        label: '分享',
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          Navigator.pop(context);
-                        },
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _QRActionButton(
-                        icon: Icons.download_rounded,
-                        label: '保存图片',
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
-              const SizedBox(height: 40),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1717,19 +2491,29 @@ class _QRActionButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
+          color: AppColors.inputBackgroundFor(context),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+          border: Border.all(
+            color: AppColors.controlBorderFor(context),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6F8FD8).withOpacity(0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: Colors.white, size: 20),
+            Icon(icon, color: AppColors.linkFor(context), size: 20),
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.linkFor(context),
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
@@ -1738,6 +2522,266 @@ class _QRActionButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _QRPrimaryButton extends StatelessWidget {
+  final String label;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _QRPrimaryButton({
+    required this.label,
+    this.isLoading = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.controlActiveFor(context),
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: isLoading ? null : onTap,
+        child: SizedBox(
+          height: 58,
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.onControlActiveFor(context),
+                      ),
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: AppColors.onControlActiveFor(context),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QRStylePicker extends StatelessWidget {
+  final List<_QrCardStyle> styles;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  const _QRStylePicker({
+    required this.styles,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 0),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                _profileText(
+                  context,
+                  zhCN: '二维码',
+                  zhTW: '二維碼',
+                  en: 'QR Code',
+                ),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF15171A),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF4F7FA),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.nights_stay_rounded,
+                  color: Color(0xFF4EA3E5),
+                  size: 22,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: styles.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final style = styles[index];
+                return _QRStyleThumbnail(
+                  style: style,
+                  selected: index == selectedIndex,
+                  onTap: () => onSelected(index),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QRStyleThumbnail extends StatelessWidget {
+  final _QrCardStyle style;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _QRStyleThumbnail({
+    required this.style,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 86,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: selected ? const Color(0xFF4EA3E5) : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [style.backgroundStart, style.backgroundEnd],
+                    ),
+                  ),
+                ),
+              ),
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.92),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.qr_code_2_rounded,
+                        color: style.primary,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      style.emoji,
+                      textScaler: TextScaler.noScaling,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QrDoodleBackgroundPainter extends CustomPainter {
+  final Color color;
+
+  const _QrDoodleBackgroundPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+
+    const spacing = 92.0;
+    for (double y = -20; y < size.height + spacing; y += spacing) {
+      for (double x = -24; x < size.width + spacing; x += spacing) {
+        final shift = ((x + y) ~/ spacing).isEven ? 0.0 : 36.0;
+        final center = Offset(x + shift, y);
+        canvas.drawCircle(center, 16, paint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: center + const Offset(42, 24),
+              width: 28,
+              height: 18,
+            ),
+            const Radius.circular(6),
+          ),
+          paint,
+        );
+        final path = Path()
+          ..moveTo(center.dx - 28, center.dy + 36)
+          ..quadraticBezierTo(
+            center.dx - 8,
+            center.dy + 18,
+            center.dx + 10,
+            center.dy + 38,
+          )
+          ..quadraticBezierTo(
+            center.dx + 24,
+            center.dy + 54,
+            center.dx + 42,
+            center.dy + 34,
+          );
+        canvas.drawPath(path, paint);
+        canvas.drawLine(
+          center + const Offset(-42, -18),
+          center + const Offset(-22, -34),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _QrDoodleBackgroundPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 

@@ -1,45 +1,42 @@
 <!-- 最新注册用户列表 -->
 <template>
-  <div class="art-card p-5 mb-5 max-sm:mb-4">
-    <div class="flex-cb mb-4">
-      <h4 class="text-base font-medium">最新注册用户</h4>
-      <RouterLink to="/user/list" class="text-sm text-primary hover:underline">
-        查看全部
-      </RouterLink>
+  <div class="art-card ops-panel" v-loading="loading">
+    <div class="panel-head">
+      <div>
+        <h4>最新注册用户</h4>
+        <p>最近 {{ users.length }} 位注册记录</p>
+      </div>
+      <RouterLink to="/user/list" class="panel-link">全部用户</RouterLink>
     </div>
 
-    <div v-if="loading" class="h-64 flex-cc">
-      <ElSkeleton :rows="5" animated />
+    <div class="list-head">
+      <span>用户</span>
+      <span>手机号</span>
+      <span>状态</span>
+      <span>注册时间</span>
     </div>
 
-    <div v-else-if="users.length === 0" class="h-64 flex-cc text-g-400"> 暂无用户数据 </div>
+    <div v-if="users.length === 0 && !loading" class="empty-state">暂无注册记录</div>
 
-    <div v-else class="space-y-3">
-      <div
-        v-for="user in users"
-        :key="user.id"
-        class="flex items-center p-3 rounded-lg hover:bg-g-100 dark:hover:bg-g-800 transition-colors"
-      >
-        <!-- 头像 -->
-        <ElImage
-          class="size-10 rounded-full flex-shrink-0"
-          :src="getAvatarUrl(user.avatar, user.id)"
-          fit="cover"
-        />
-
-        <!-- 用户信息 -->
-        <div class="ml-3 flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-medium truncate">{{ user.nickname || user.username }}</span>
-            <span v-if="user.isOnline" class="inline-block size-2 rounded-full bg-green-500"></span>
+    <div v-else class="user-list">
+      <div v-for="row in users.slice(0, 8)" :key="row.id" class="user-row">
+        <div class="user-cell">
+          <ElImage class="avatar" :src="getAvatarUrl(row.avatar, row.id)" fit="cover" lazy />
+          <div class="min-w-0">
+            <div class="name-line">
+              <span class="truncate">{{ row.nickname || row.username }}</span>
+              <span v-if="row.is_online" class="online-dot"></span>
+            </div>
+            <div class="sub-line">@{{ row.username }}</div>
           </div>
-          <p class="text-xs text-g-400 truncate">@{{ user.username }}</p>
         </div>
-
-        <!-- 注册时间 -->
-        <div class="text-xs text-g-400 flex-shrink-0">
-          {{ formatTime(user.createdAt) }}
+        <div class="cell muted">{{ row.phone || '-' }}</div>
+        <div class="cell">
+          <ElTag :type="row.status === 1 ? 'success' : 'danger'" size="small" effect="plain">
+            {{ row.status === 1 ? '正常' : '禁用' }}
+          </ElTag>
         </div>
+        <div class="cell time-text">{{ formatTime(row.created_at) }}</div>
       </div>
     </div>
   </div>
@@ -47,40 +44,22 @@
 
 <script setup lang="ts">
   import { getUserList } from '@/api/admin'
-  import { fixImageUrl } from '@/utils/url'
+  import type { UserListItem } from '@/api/admin'
+  import { fixImageUrl, getLocalAvatarDataUrl } from '@/utils/url'
 
-  // 获取头像URL
-  const getAvatarUrl = (avatar: string | null, id: number): string => {
-    if (avatar) {
-      return fixImageUrl(avatar)
-    }
-    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`
-  }
-
-  interface UserItem {
-    id: number
-    username: string
-    nickname: string
-    avatar: string | null
-    isOnline: boolean
-    createdAt: string
-  }
-
-  const users = ref<UserItem[]>([])
+  const users = ref<UserListItem[]>([])
   const loading = ref(true)
+
+  const getAvatarUrl = (avatar: string | null, id: number): string => {
+    if (avatar) return fixImageUrl(avatar)
+    return getLocalAvatarDataUrl(id)
+  }
 
   const loadUsers = async () => {
     try {
       loading.value = true
-      const response = await getUserList({ page: 1, page_size: 10 })
-      users.value = response.list.map((item) => ({
-        id: item.id,
-        username: item.username,
-        nickname: item.nickname,
-        avatar: item.avatar,
-        isOnline: item.is_online,
-        createdAt: item.created_at
-      }))
+      const response = await getUserList({ page: 1, page_size: 12 })
+      users.value = response.list
     } catch (error) {
       console.error('加载用户列表失败:', error)
     } finally {
@@ -88,7 +67,8 @@
     }
   }
 
-  const formatTime = (timeStr: string) => {
+  const formatTime = (timeStr?: string | null) => {
+    if (!timeStr) return '-'
     const date = new Date(timeStr)
     const now = new Date()
     const diff = now.getTime() - date.getTime()
@@ -103,7 +83,149 @@
     return date.toLocaleDateString()
   }
 
-  onMounted(() => {
-    loadUsers()
-  })
+  onMounted(loadUsers)
 </script>
+
+<style scoped lang="scss">
+  .ops-panel {
+    padding: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+
+    h4 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    p {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .panel-link {
+    font-size: 13px;
+    color: var(--el-color-primary);
+  }
+
+  .list-head,
+  .user-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.4fr) minmax(96px, 0.8fr) 76px 96px;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .list-head {
+    padding: 10px 18px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-extra-light);
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+
+  .user-list {
+    min-height: 282px;
+  }
+
+  .user-row {
+    min-height: 52px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    &:hover {
+      background: var(--el-fill-color-extra-light);
+    }
+  }
+
+  .user-cell {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    border-radius: 50%;
+  }
+
+  .name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .sub-line,
+  .time-text {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .cell {
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .muted {
+    color: var(--el-text-color-secondary);
+  }
+
+  .online-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 50%;
+    background: var(--el-color-success);
+  }
+
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 282px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  @media (max-width: 768px) {
+    .list-head {
+      display: none;
+    }
+
+    .user-row {
+      grid-template-columns: 1fr auto;
+    }
+
+    .cell {
+      display: none;
+    }
+
+    .time-text {
+      display: block;
+    }
+  }
+</style>

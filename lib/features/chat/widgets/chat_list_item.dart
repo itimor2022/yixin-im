@@ -1,16 +1,52 @@
+// 文件用途：提供 SwipeAction 可复用界面组件，服务于聊天与消息。
+// 核心逻辑：根据输入模型和状态渲染 SwipeAction，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lottie/lottie.dart';
+import '../../../shared/widgets/web_safe_lottie.dart';
+import 'package:universal_io/io.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/emoji_animations.dart';
+import '../../../core/services/media_cache_manager.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/animated_gif_image.dart';
 import '../../../shared/widgets/colored_name_widget.dart';
 import '../../../shared/widgets/emoji_status_widget.dart';
 import '../../../shared/widgets/official_badge.dart';
+import '../../../shared/widgets/sticker_image.dart';
+import '../../vip/widgets/vip_avatar_frame.dart';
+import '../../vip/widgets/vip_badge.dart';
 import '../providers/chat_provider.dart';
+import '../services/emoji_store_service.dart';
+import '../utils/call_preview_formatter.dart';
 
+String _chatListText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+@visibleForTesting
+String formatUnreadBadgeCount(int count) {
+  if (count <= 0) return '';
+  return count > 99 ? '99+' : count.toString();
+}
+
+// 关键声明：chat list item 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 左滑操作类型
 enum SwipeAction { pin, mute, read, delete }
 
@@ -44,6 +80,8 @@ class ChatListItem extends StatefulWidget {
 
 class _ChatListItemState extends State<ChatListItem>
     with TickerProviderStateMixin {
+  static const Color _groupTitleColor = Color(0xFFE5484D);
+
   late AnimationController _controller;
   late AnimationController _deleteController; // 删除确认动画控制器
   double _dragExtent = 0;
@@ -59,6 +97,7 @@ class _ChatListItemState extends State<ChatListItem>
       ? _actionButtonWidth * 2.3 // 删除确认模式（更紧凑）
       : _deleteMaxDragExtent;
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -154,8 +193,20 @@ class _ChatListItemState extends State<ChatListItem>
         // 标记已读
         _ActionButton(
           icon: Icons.done_all,
-          label: widget.chat.unreadCount > 0 ? '已读' : '未读',
-          color: AppColors.primary,
+          label: widget.chat.unreadCount > 0
+              ? _chatListText(
+                  context,
+                  zhCN: '已读',
+                  zhTW: '已讀',
+                  en: 'Read',
+                )
+              : _chatListText(
+                  context,
+                  zhCN: '未读',
+                  zhTW: '未讀',
+                  en: 'Unread',
+                ),
+          color: AppColors.linkFor(context),
           onTap: () => _handleAction(SwipeAction.read),
         ),
         // 静音/取消静音
@@ -163,21 +214,50 @@ class _ChatListItemState extends State<ChatListItem>
           icon: widget.chat.isMuted
               ? Icons.notifications_active_outlined
               : Icons.notifications_off_outlined,
-          label: widget.chat.isMuted ? '取消静音' : '静音',
+          label: widget.chat.isMuted
+              ? _chatListText(
+                  context,
+                  zhCN: '取消静音',
+                  zhTW: '取消靜音',
+                  en: 'Unmute',
+                )
+              : _chatListText(
+                  context,
+                  zhCN: '静音',
+                  zhTW: '靜音',
+                  en: 'Mute',
+                ),
           color: const Color(0xFFFF9500),
           onTap: () => _handleAction(SwipeAction.mute),
         ),
         // 置顶/取消置顶
         _ActionButton(
           icon: widget.chat.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
-          label: widget.chat.isPinned ? '取消置顶' : '置顶',
+          label: widget.chat.isPinned
+              ? _chatListText(
+                  context,
+                  zhCN: '取消置顶',
+                  zhTW: '取消置頂',
+                  en: 'Unpin',
+                )
+              : _chatListText(
+                  context,
+                  zhCN: '置顶',
+                  zhTW: '置頂',
+                  en: 'Pin',
+                ),
           color: const Color(0xFF8E8E93),
           onTap: () => _handleAction(SwipeAction.pin),
         ),
         // 删除（点击后展开确认）
         _ActionButton(
           icon: Icons.delete_outline,
-          label: '删除',
+          label: _chatListText(
+            context,
+            zhCN: '删除',
+            zhTW: '刪除',
+            en: 'Delete',
+          ),
           color: const Color(0xFFFF3B30),
           onTap: _showDeleteConfirmation,
         ),
@@ -200,14 +280,19 @@ class _ChatListItemState extends State<ChatListItem>
           child: Container(
             width: _actionButtonWidth * 2.3,
             color: const Color(0xFFFF3B30),
-            child: const Column(
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.delete_forever, color: Colors.white, size: 24),
-                SizedBox(height: 2),
+                const Icon(Icons.delete_forever, color: Colors.white, size: 24),
+                const SizedBox(height: 2),
                 Text(
-                  '删除',
-                  style: TextStyle(
+                  _chatListText(
+                    context,
+                    zhCN: '删除',
+                    zhTW: '刪除',
+                    en: 'Delete',
+                  ),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -239,7 +324,7 @@ class _ChatListItemState extends State<ChatListItem>
     return Column(
       children: [
         SizedBox(
-          height: 76,
+          height: 78,
           child: GestureDetector(
             onTap: widget.onTap,
             onSecondaryTapUp: (details) =>
@@ -248,9 +333,7 @@ class _ChatListItemState extends State<ChatListItem>
               cursor: SystemMouseCursors.click,
               child: Container(
                 color: widget.isSelected
-                    ? (isDark
-                        ? AppColors.primary.withOpacity(0.15)
-                        : AppColors.primary.withOpacity(0.1))
+                    ? AppColors.emphasisSoftFor(context)
                     : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -284,7 +367,7 @@ class _ChatListItemState extends State<ChatListItem>
         position.dx + 1,
         position.dy + 1,
       ),
-      color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+      color: AppColors.cardFor(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       items: [
         PopupMenuItem(
@@ -296,10 +379,24 @@ class _ChatListItemState extends State<ChatListItem>
                     ? Icons.mark_chat_read
                     : Icons.mark_chat_unread,
                 size: 20,
-                color: AppColors.primary,
+                color: AppColors.linkFor(context),
               ),
               const SizedBox(width: 12),
-              Text(widget.chat.unreadCount > 0 ? '标为已读' : '标为未读'),
+              Text(
+                widget.chat.unreadCount > 0
+                    ? _chatListText(
+                        context,
+                        zhCN: '标为已读',
+                        zhTW: '標為已讀',
+                        en: 'Mark as read',
+                      )
+                    : _chatListText(
+                        context,
+                        zhCN: '标为未读',
+                        zhTW: '標為未讀',
+                        en: 'Mark as unread',
+                      ),
+              ),
             ],
           ),
         ),
@@ -313,7 +410,21 @@ class _ChatListItemState extends State<ChatListItem>
                 color: Colors.grey,
               ),
               const SizedBox(width: 12),
-              Text(widget.chat.isPinned ? '取消置顶' : '置顶'),
+              Text(
+                widget.chat.isPinned
+                    ? _chatListText(
+                        context,
+                        zhCN: '取消置顶',
+                        zhTW: '取消置頂',
+                        en: 'Unpin',
+                      )
+                    : _chatListText(
+                        context,
+                        zhCN: '置顶',
+                        zhTW: '置頂',
+                        en: 'Pin',
+                      ),
+              ),
             ],
           ),
         ),
@@ -329,7 +440,21 @@ class _ChatListItemState extends State<ChatListItem>
                 color: Colors.orange,
               ),
               const SizedBox(width: 12),
-              Text(widget.chat.isMuted ? '取消静音' : '静音'),
+              Text(
+                widget.chat.isMuted
+                    ? _chatListText(
+                        context,
+                        zhCN: '取消静音',
+                        zhTW: '取消靜音',
+                        en: 'Unmute',
+                      )
+                    : _chatListText(
+                        context,
+                        zhCN: '静音',
+                        zhTW: '靜音',
+                        en: 'Mute',
+                      ),
+              ),
             ],
           ),
         ),
@@ -340,7 +465,15 @@ class _ChatListItemState extends State<ChatListItem>
             children: [
               const Icon(Icons.delete_outline, size: 20, color: Colors.red),
               const SizedBox(width: 12),
-              const Text('删除', style: TextStyle(color: Colors.red)),
+              Text(
+                _chatListText(
+                  context,
+                  zhCN: '删除',
+                  zhTW: '刪除',
+                  en: 'Delete',
+                ),
+                style: const TextStyle(color: Colors.red),
+              ),
             ],
           ),
         ),
@@ -357,7 +490,7 @@ class _ChatListItemState extends State<ChatListItem>
     return Column(
       children: [
         SizedBox(
-          height: 76, // 统一高度
+          height: 78, // 缁熶竴楂樺害
           child: Stack(
             children: [
               // 背景操作按钮
@@ -389,15 +522,13 @@ class _ChatListItemState extends State<ChatListItem>
                   offset: Offset(-_dragExtent, 0),
                   child: Container(
                     color: widget.isSelected
-                        ? (isDark
-                            ? AppColors.primary.withOpacity(0.15)
-                            : AppColors.primary.withOpacity(0.1))
+                        ? AppColors.emphasisSoftFor(context)
                         : (isDark
                             ? AppColors.darkSurface
                             : AppColors.lightSurface),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 10,
+                      vertical: 11,
                     ),
                     child: _buildContent(isDark),
                   ),
@@ -408,11 +539,12 @@ class _ChatListItemState extends State<ChatListItem>
         ),
         // 分隔线
         Padding(
-          padding: const EdgeInsets.only(left: 82),
+          padding: const EdgeInsets.only(left: 84),
           child: Divider(
             height: 1,
             thickness: 0.5,
-            color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
+            color: (isDark ? AppColors.darkDivider : AppColors.lightDivider)
+                .withOpacity(0.58),
           ),
         ),
       ],
@@ -421,20 +553,38 @@ class _ChatListItemState extends State<ChatListItem>
 
   /// 构建列表项内容（头像、名称、消息等）
   Widget _buildContent(bool isDark) {
+    const avatarRadius = 12.0;
+    final vipLevel = widget.chat.vipVisible ? widget.chat.vipLevel : 0;
+    final avatarUserId = widget.chat.type == ChatItemType.private
+        ? (widget.chat.targetUserId ?? widget.chat.id)
+        : widget.chat.id;
+    final avatar = vipLevel > 0
+        ? VipAvatarFrame(
+            level: vipLevel,
+            size: 48,
+            frameWidth: 2,
+            borderRadius: avatarRadius,
+            child: AvatarWidget(
+              name: widget.chat.name,
+              avatar: widget.chat.avatar,
+              userId: avatarUserId,
+              size: 48,
+              borderRadius: avatarRadius,
+            ),
+          )
+        : AvatarWidget(
+            name: widget.chat.name,
+            avatar: widget.chat.avatar,
+            userId: avatarUserId,
+            size: 52,
+            borderRadius: avatarRadius,
+          );
     return Row(
       children: [
         // 头像
         Stack(
           children: [
-            AvatarWidget(
-              name: widget.chat.name,
-              avatar: widget.chat.avatar,
-              userId: widget.chat.type == ChatItemType.private
-                  ? (widget.chat.targetUserId ?? widget.chat.id)
-                  : widget.chat.id,
-              size: 54,
-              premiumType: widget.chat.premiumType,
-            ),
+            avatar,
             // 在线状态
             if (widget.chat.isOnline)
               Positioned(
@@ -450,7 +600,7 @@ class _ChatListItemState extends State<ChatListItem>
                       color: isDark
                           ? AppColors.darkBackground
                           : AppColors.lightBackground,
-                      width: 2,
+                      width: 2.5,
                     ),
                   ),
                 ),
@@ -470,16 +620,24 @@ class _ChatListItemState extends State<ChatListItem>
                   Expanded(
                     child: Row(
                       children: [
+                        if (widget.chat.type == ChatItemType.group) ...[
+                          _buildTypeTag(isDark),
+                          const SizedBox(width: 4),
+                        ],
                         Flexible(
                           child: ColoredNameWidget(
                             name: widget.chat.name,
-                            nicknameColor: widget.chat.nicknameColor,
-                            premiumType: widget.chat.premiumType,
+                            nicknameColor:
+                                widget.chat.type == ChatItemType.group
+                                    ? null
+                                    : widget.chat.nicknameColor,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            defaultColor: isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary,
+                            defaultColor: widget.chat.type == ChatItemType.group
+                                ? (isDark
+                                    ? AppColors.textPrimaryFor(context)
+                                    : _groupTitleColor)
+                                : AppColors.textPrimaryFor(context),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -498,26 +656,21 @@ class _ChatListItemState extends State<ChatListItem>
                           const SizedBox(width: 4),
                           const OfficialBadge(size: 16),
                         ],
+                        if (widget.chat.vipVisible) ...[
+                          const SizedBox(width: 5),
+                          VipBadge(
+                            level: widget.chat.vipLevel,
+                            text: widget.chat.vipBadge,
+                            iconUrl: widget.chat.vipBadgeIcon,
+                            height: 18,
+                            compact: true,
+                          ),
+                        ],
                         // 类型标签（放在名字后面）
-                        if (widget.chat.type != ChatItemType.private)
-                          Container(
-                            margin: const EdgeInsets.only(left: 6),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _getTagBackgroundColor(isDark),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              _getTypeLabel(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: _getTagTextColor(isDark),
-                              ),
-                            ),
+                        if (widget.chat.type == ChatItemType.channel)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: _buildTypeTag(isDark),
                           ),
                         if (widget.showPendingApprovalDot) ...[
                           const SizedBox(width: 6),
@@ -544,7 +697,7 @@ class _ChatListItemState extends State<ChatListItem>
                             child: Icon(
                               Icons.volume_off_rounded,
                               size: 16,
-                              color: isDark ? Colors.white38 : Colors.black38,
+                              color: AppColors.textTertiaryFor(context),
                             ),
                           ),
                         // 认证标志
@@ -554,7 +707,7 @@ class _ChatListItemState extends State<ChatListItem>
                             child: Icon(
                               Icons.verified,
                               size: 16,
-                              color: AppColors.primary,
+                              color: AppColors.linkFor(context),
                             ),
                           ),
                       ],
@@ -564,10 +717,9 @@ class _ChatListItemState extends State<ChatListItem>
                   Text(
                     widget.chat.time,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : AppColors.lightTextTertiary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textTertiaryFor(context),
                     ),
                   ),
                 ],
@@ -576,38 +728,81 @@ class _ChatListItemState extends State<ChatListItem>
               // 第二行：最后消息 + 置顶/未读
               Row(
                 children: [
-                  Expanded(child: _buildLastMessage(isDark)),
+                  Expanded(child: _buildLastMessage(context, isDark)),
                   const SizedBox(width: 8),
+                  if (widget.chat.hasMention) ...[
+                    Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 20,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF9500),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _chatListText(
+                          context,
+                          zhCN: '@我',
+                          zhTW: '@我',
+                          en: '@Me',
+                        ),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   // 置顶图标
-                  if (widget.chat.isPinned && widget.chat.unreadCount == 0)
-                    Icon(
-                      Icons.push_pin,
-                      size: 16,
-                      color: isDark
-                          ? AppColors.darkTextTertiary
-                          : AppColors.lightTextTertiary,
+                  if (widget.chat.isPinned &&
+                      widget.chat.unreadCount == 0 &&
+                      !widget.chat.hasMention)
+                    Container(
+                      width: 20,
+                      height: 20,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.07)
+                            : Colors.black.withOpacity(0.045),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.push_pin,
+                        size: 12,
+                        color: AppColors.textTertiaryFor(context),
+                      ),
                     )
                   // 未读数 - TG 风格
                   else if (widget.chat.unreadCount > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
                       ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: widget.chat.isMuted
-                            ? (isDark ? Colors.white24 : Colors.black26)
-                            : AppColors.success,
+                            ? (isDark
+                                ? Colors.white.withOpacity(0.20)
+                                : Colors.black.withOpacity(0.22))
+                            : const Color(0xFFFF3B30),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        widget.chat.unreadCount > 999
-                            ? '${(widget.chat.unreadCount / 1000).toStringAsFixed(1)}K'
-                            : widget.chat.unreadCount.toString(),
+                        formatUnreadBadgeCount(widget.chat.unreadCount),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 11.5,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -620,7 +815,31 @@ class _ChatListItemState extends State<ChatListItem>
     );
   }
 
+  Widget _buildTypeTag(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 5,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: _getTagBackgroundColor(isDark),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        _getTypeLabel(context),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: _getTagTextColor(isDark),
+        ),
+      ),
+    );
+  }
+
   Color _getTagBackgroundColor(bool isDark) {
+    if (widget.chat.type == ChatItemType.group) {
+      return const Color(0xFF3478F6);
+    }
     if (isDark) {
       return widget.chat.type == ChatItemType.channel
           ? const Color(0xFF1E3A4C)
@@ -632,6 +851,9 @@ class _ChatListItemState extends State<ChatListItem>
   }
 
   Color _getTagTextColor(bool isDark) {
+    if (widget.chat.type == ChatItemType.group) {
+      return Colors.white;
+    }
     if (isDark) {
       return widget.chat.type == ChatItemType.channel
           ? const Color(0xFF65AADD)
@@ -642,20 +864,30 @@ class _ChatListItemState extends State<ChatListItem>
         : AppColors.groupTagText;
   }
 
-  String _getTypeLabel() {
+  String _getTypeLabel(BuildContext context) {
     switch (widget.chat.type) {
       case ChatItemType.group:
-        return '群组';
+        return _chatListText(
+          context,
+          zhCN: '群聊',
+          zhTW: '群聊',
+          en: 'Group',
+        );
       case ChatItemType.channel:
-        return '频道';
+        return _chatListText(
+          context,
+          zhCN: '频道',
+          zhTW: '頻道',
+          en: 'Channel',
+        );
       default:
         return '';
     }
   }
 
-  Widget _buildLastMessage(bool isDark) {
-    final textColor =
-        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+  Widget _buildLastMessage(BuildContext context, bool isDark) {
+    final textColor = AppColors.textSecondaryFor(context);
+    final thumbnailUrl = _lastMessageThumbnailUrl();
 
     if (widget.typingText != null && widget.typingText!.isNotEmpty) {
       return Text(
@@ -670,10 +902,47 @@ class _ChatListItemState extends State<ChatListItem>
       );
     }
 
-    final senderText = widget.chat.type == ChatItemType.group &&
-            widget.chat.lastMessageSender != null
-        ? '${widget.chat.lastMessageSender}: '
-        : '';
+    final lastMessageSender = widget.chat.lastMessageSender?.trim() ?? '';
+    final senderText =
+        widget.chat.type == ChatItemType.group && lastMessageSender.isNotEmpty
+            ? '$lastMessageSender: '
+            : '';
+
+    if (widget.chat.lastMessageFailed) {
+      final message = widget.chat.lastMessage ?? '';
+      return Row(
+        children: [
+          Icon(Icons.error_outline, size: 16, color: AppColors.error),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: _chatListText(
+                      context,
+                      zhCN: '发送失败 · ',
+                      zhTW: '傳送失敗 · ',
+                      en: 'Failed · ',
+                    ),
+                    style: TextStyle(
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '$senderText$message',
+                    style: TextStyle(color: textColor),
+                  ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      );
+    }
 
     // 草稿
     if (widget.chat.draft != null && widget.chat.draft!.isNotEmpty) {
@@ -683,7 +952,12 @@ class _ChatListItemState extends State<ChatListItem>
         text: TextSpan(
           children: [
             TextSpan(
-              text: '草稿: ',
+              text: _chatListText(
+                context,
+                zhCN: '草稿: ',
+                zhTW: '草稿：',
+                en: 'Draft: ',
+              ),
               style: TextStyle(color: AppColors.error, fontSize: 14),
             ),
             TextSpan(
@@ -702,74 +976,248 @@ class _ChatListItemState extends State<ChatListItem>
     if (msgType != null) {
       if (msgType == MessageContentType.photo) {
         prefixIcon = Icon(Icons.photo, size: 16, color: textColor);
-        typeText = '[图片]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[图片]',
+          zhTW: '[圖片]',
+          en: '[Photo]',
+        );
       } else if (msgType == MessageContentType.video) {
         prefixIcon = Icon(Icons.videocam, size: 16, color: textColor);
-        typeText = '[视频]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[视频]',
+          zhTW: '[影片]',
+          en: '[Video]',
+        );
       } else if (msgType == MessageContentType.voice) {
         prefixIcon = Icon(Icons.mic, size: 16, color: textColor);
-        typeText = '[语音]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[语音]',
+          zhTW: '[語音]',
+          en: '[Voice]',
+        );
       } else if (msgType == MessageContentType.file) {
         prefixIcon = Icon(Icons.insert_drive_file, size: 16, color: textColor);
-        typeText = '[文件]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[文件]',
+          zhTW: '[檔案]',
+          en: '[File]',
+        );
       } else if (msgType == MessageContentType.sticker) {
         prefixIcon = Icon(Icons.emoji_emotions, size: 16, color: textColor);
-        typeText = '[表情]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[表情]',
+          zhTW: '[表情]',
+          en: '[Sticker]',
+        );
       } else if (msgType == MessageContentType.location) {
         prefixIcon = Icon(Icons.location_on, size: 16, color: textColor);
-        typeText = '[位置]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[位置]',
+          zhTW: '[位置]',
+          en: '[Location]',
+        );
       } else if (msgType == MessageContentType.contact) {
         prefixIcon = Icon(
           Icons.contact_page_outlined,
           size: 16,
           color: textColor,
         );
-        typeText = '[联系人名片]';
+        typeText = _chatListText(
+          context,
+          zhCN: '[联系人名片]',
+          zhTW: '[聯絡人名片]',
+          en: '[Contact Card]',
+        );
       } else if (msgType == MessageContentType.call) {
-        prefixIcon = Icon(Icons.call, size: 16, color: textColor);
-        // 通话消息直接显示内容（如"语音通话 00:03"）
-        typeText = '[通话]';
+        final callPreview = formatChatCallPreview(
+          text: widget.chat.lastMessage,
+          language: AppLocalizations.of(context).language,
+        );
+        prefixIcon = Icon(
+          callPreview.isVideo
+              ? Icons.videocam_outlined
+              : (callPreview.isAttention
+                  ? Icons.phone_missed_outlined
+                  : Icons.phone_outlined),
+          size: 16,
+          color: callPreview.isAttention ? AppColors.error : textColor,
+        );
+        typeText = callPreview.summary;
       }
     }
 
     // 如果消息内容为空但有类型，使用类型文本
-    final displayMessage =
-        (widget.chat.lastMessage == null || widget.chat.lastMessage!.isEmpty)
+    final hasStructuredPreview =
+        msgType != null && msgType != MessageContentType.text;
+    final displayMessage = hasStructuredPreview
+        ? typeText
+        : ((widget.chat.lastMessage == null || widget.chat.lastMessage!.isEmpty)
             ? typeText
-            : widget.chat.lastMessage;
+            : _normalizeListPreview(widget.chat.lastMessage!));
 
-    return Row(
-      children: [
-        if (widget.showPendingApprovalDot) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(isDark ? 0.18 : 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              widget.chat.pendingJoinRequestCount > 0
-                  ? '待审批 ${widget.chat.pendingJoinRequestCount > 99 ? '99+' : widget.chat.pendingJoinRequestCount}'
-                  : '待审批',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.red,
+    return SizedBox(
+      height: 22,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (widget.showPendingApprovalDot) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(isDark ? 0.18 : 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                widget.chat.pendingJoinRequestCount > 0
+                    ? _chatListText(
+                        context,
+                        zhCN:
+                            '待审批 ${widget.chat.pendingJoinRequestCount > 99 ? '99+' : widget.chat.pendingJoinRequestCount}',
+                        zhTW:
+                            '待審批 ${widget.chat.pendingJoinRequestCount > 99 ? '99+' : widget.chat.pendingJoinRequestCount}',
+                        en: 'Pending ${widget.chat.pendingJoinRequestCount > 99 ? '99+' : widget.chat.pendingJoinRequestCount}',
+                      )
+                    : _chatListText(
+                        context,
+                        zhCN: '待审批',
+                        zhTW: '待審批',
+                        en: 'Pending',
+                      ),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red,
+                ),
               ),
             ),
+            const SizedBox(width: 6),
+          ],
+          if (thumbnailUrl != null) ...[
+            _buildLastMessageThumbnail(thumbnailUrl, msgType, isDark),
+            const SizedBox(width: 6),
+          ] else if (prefixIcon != null) ...[
+            prefixIcon,
+            const SizedBox(width: 4),
+          ],
+          Expanded(
+            child: _buildMessageContent(
+              context,
+              senderText,
+              textColor,
+              displayMessage,
+            ),
           ),
-          const SizedBox(width: 6),
         ],
-        if (prefixIcon != null) ...[prefixIcon, const SizedBox(width: 4)],
-        Expanded(
-          child: _buildMessageContent(senderText, textColor, displayMessage),
-        ),
-      ],
+      ),
     );
   }
 
+  String _normalizeListPreview(String value) {
+    if (value.startsWith(EmojiStoreService.builtInStickerSendPrefix)) {
+      return _chatListText(
+        context,
+        zhCN: '[贴纸]',
+        zhTW: '[貼紙]',
+        en: '[Sticker]',
+      );
+    }
+    return value;
+  }
+
   /// 构建消息内容（支持动画表情）
+  String? _lastMessageThumbnailUrl() {
+    final msgType = widget.chat.lastMessageType;
+    final canPreview = msgType == MessageContentType.photo ||
+        msgType == MessageContentType.video ||
+        msgType == MessageContentType.sticker;
+    if (!canPreview) return null;
+
+    final rawUrl = widget.chat.lastMessageMediaUrl?.trim() ?? '';
+    if (rawUrl.isEmpty) return null;
+    final url = msgType == MessageContentType.sticker
+        ? EmojiStoreService.resolveStickerDisplayPath(rawUrl)
+        : _isLocalPreviewPath(rawUrl)
+            ? rawUrl
+            : ChatMediaCacheManager.normalizeUrl(rawUrl);
+    return url.isEmpty ? null : url;
+  }
+
+  Widget _buildLastMessageThumbnail(
+    String url,
+    MessageContentType? type,
+    bool isDark,
+  ) {
+    const size = 22.0;
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(
+        Icons.image_outlined,
+        size: 14,
+        color: AppColors.textTertiaryFor(context),
+      ),
+    );
+
+    Widget image;
+    if (type == MessageContentType.sticker) {
+      image = StickerImage(
+        source: url,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __) => fallback,
+      );
+    } else if (_isLocalPreviewPath(url)) {
+      final file = File(url);
+      image = file.existsSync()
+          ? Image.file(
+              file,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            )
+          : fallback;
+    } else if (url.startsWith('http')) {
+      image = CachedNetworkImage(
+        imageUrl: url,
+        cacheManager: ChatMediaCacheManager.instance,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        memCacheWidth: 96,
+        memCacheHeight: 96,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
+      );
+    } else {
+      image = fallback;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: image,
+    );
+  }
+
+  bool _isLocalPreviewPath(String value) {
+    return ChatMediaCacheManager.isLocalPath(value) ||
+        RegExp(r'^[A-Za-z]:[\\/]').hasMatch(value);
+  }
+
   Widget _buildMessageContent(
+    BuildContext context,
     String senderText,
     Color textColor,
     String? displayMsg,
@@ -778,7 +1226,12 @@ class _ChatListItemState extends State<ChatListItem>
     if (message.isEmpty && senderText.isEmpty) {
       // 没有消息时显示提示文案
       return Text(
-        '快来发送第一条消息吧～',
+        _chatListText(
+          context,
+          zhCN: '快来发送第一条消息吧～',
+          zhTW: '快來傳送第一條訊息吧～',
+          en: 'Send the first message',
+        ),
         style: TextStyle(
           fontSize: 14,
           color: textColor.withValues(alpha: 0.6),
@@ -828,7 +1281,7 @@ class _ChatListItemState extends State<ChatListItem>
               (emoji) => SizedBox(
                 width: 20,
                 height: 20,
-                child: Lottie.asset(
+                child: WebSafeLottie.asset(
                   emoji.path,
                   repeat: false,
                   animate: false,
@@ -876,7 +1329,7 @@ class _ChatListItemState extends State<ChatListItem>
           SizedBox(
             width: 18,
             height: 18,
-            child: Lottie.asset(
+            child: WebSafeLottie.asset(
               animated.path,
               repeat: false,
               animate: false,

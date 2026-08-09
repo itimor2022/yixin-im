@@ -62,7 +62,7 @@
           style="animation-delay: 0.4s"
         ></i>
         <i
-          class="geo-element square square-purple animate-fade-in-left-no-rotation"
+          class="geo-element square square-graphite animate-fade-in-left-no-rotation"
           style="animation-delay: 0.6s"
         ></i>
       </div>
@@ -459,7 +459,7 @@
             background-color: rgb(from $primary-base r g b / 15%);
           }
 
-          &.square-purple {
+          &.square-graphite {
             top: 66px;
             left: 86px;
             z-index: 3;
@@ -591,7 +591,7 @@
           background-color: rgb(from $primary-base r g b / 10%);
         }
 
-        &.square-purple {
+        &.square-graphite {
           background-color: rgb(from $primary-base r g b / 20%);
         }
       }

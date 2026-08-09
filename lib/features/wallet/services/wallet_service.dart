@@ -1,6 +1,49 @@
+// 文件用途：封装 WalletInfo 相关业务流程与外部能力调用，属于钱包与支付。
+// 核心逻辑：封装钱包余额、账单、红包和转账 API，把服务端金额与订单状态转换为可展示的领域数据。
 import 'package:flutter/foundation.dart';
+
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 
+String _walletServiceText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+ApiResponse<T> _localizeWalletResponse<T>(
+  ApiResponse<T> response, {
+  String? fallbackZhCN,
+  String? fallbackZhTW,
+  String? fallbackEn,
+}) {
+  final localizedMessage = localizeServerMessage(
+    response.message,
+    fallbackZhCN: fallbackZhCN,
+    fallbackZhTW: fallbackZhTW,
+    fallbackEn: fallbackEn,
+  );
+  if (localizedMessage == response.message) {
+    return response;
+  }
+  return ApiResponse<T>(
+    code: response.code,
+    message: localizedMessage,
+    data: response.data,
+  );
+}
+
+// 关键声明：wallet service 是业务副作用入口，负责校验参数、调用外部资源并把异常转换为上层可处理结果。
 /// 钱包信息
 class WalletInfo {
   final int id;
@@ -19,6 +62,7 @@ class WalletInfo {
     required this.createdAt,
   });
 
+  // 流程逻辑：`fromJson` 集中处理输入规范化、空值和兼容字段，输出稳定的数据结构，避免调用方重复实现边界判断。
   factory WalletInfo.fromJson(Map<String, dynamic> json) {
     return WalletInfo(
       id: json['id'] as int? ?? 0,
@@ -45,6 +89,7 @@ enum TransactionType {
   adminRecharge, // 管理员充值
   adminDeduct, // 管理员扣减
   rechargeRejected, // 充值被拒绝
+  vipPurchase, // 购买会员
   unknown, // 未知类型（防止新增类型时崩溃或误显示）
 }
 
@@ -71,6 +116,8 @@ extension TransactionTypeExtension on TransactionType {
         return 'admin_deduct';
       case TransactionType.rechargeRejected:
         return 'recharge_rejected';
+      case TransactionType.vipPurchase:
+        return 'vip_purchase';
       case TransactionType.unknown:
         return 'unknown';
     }
@@ -98,8 +145,10 @@ extension TransactionTypeExtension on TransactionType {
         return TransactionType.adminDeduct;
       case 'recharge_rejected':
         return TransactionType.rechargeRejected;
+      case 'vip_purchase':
+        return TransactionType.vipPurchase;
       default:
-        if (kDebugMode) debugPrint('[Wallet] Unknown transaction type: $value');
+        debugPrint('[Wallet] Unknown transaction type: $value');
         return TransactionType.unknown;
     }
   }
@@ -107,27 +156,65 @@ extension TransactionTypeExtension on TransactionType {
   String get displayName {
     switch (this) {
       case TransactionType.recharge:
-        return '充值';
+        return _walletServiceText(zhCN: '充值', zhTW: '儲值', en: 'Recharge');
       case TransactionType.withdraw:
-        return '提现';
+        return _walletServiceText(zhCN: '提现', zhTW: '提現', en: 'Withdraw');
       case TransactionType.transferOut:
-        return '转账-转出';
+        return _walletServiceText(
+          zhCN: '转账-转出',
+          zhTW: '轉帳-轉出',
+          en: 'Transfer Out',
+        );
       case TransactionType.transferIn:
-        return '转账-转入';
+        return _walletServiceText(
+          zhCN: '转账-转入',
+          zhTW: '轉帳-轉入',
+          en: 'Transfer In',
+        );
       case TransactionType.redPacketSend:
-        return '发出红包';
+        return _walletServiceText(
+          zhCN: '发出红包',
+          zhTW: '發出紅包',
+          en: 'Red Packet Sent',
+        );
       case TransactionType.redPacketReceive:
-        return '收到红包';
+        return _walletServiceText(
+          zhCN: '收到红包',
+          zhTW: '收到紅包',
+          en: 'Red Packet Received',
+        );
       case TransactionType.refund:
-        return '退款';
+        return _walletServiceText(zhCN: '退款', zhTW: '退款', en: 'Refund');
       case TransactionType.adminRecharge:
-        return '系统充值';
+        return _walletServiceText(
+          zhCN: '系统充值',
+          zhTW: '系統儲值',
+          en: 'System Recharge',
+        );
       case TransactionType.adminDeduct:
-        return '系统扣减';
+        return _walletServiceText(
+          zhCN: '系统扣减',
+          zhTW: '系統扣減',
+          en: 'System Deduction',
+        );
       case TransactionType.rechargeRejected:
-        return '充值被拒绝';
+        return _walletServiceText(
+          zhCN: '充值被拒绝',
+          zhTW: '儲值被拒絕',
+          en: 'Recharge Rejected',
+        );
+      case TransactionType.vipPurchase:
+        return _walletServiceText(
+          zhCN: '购买会员',
+          zhTW: '購買會員',
+          en: 'VIP Purchase',
+        );
       case TransactionType.unknown:
-        return '未知类型';
+        return _walletServiceText(
+          zhCN: '未知类型',
+          zhTW: '未知類型',
+          en: 'Unknown Type',
+        );
     }
   }
 }
@@ -200,7 +287,17 @@ extension RedPacketTypeExtension on RedPacketType {
     return value == 'lucky' ? RedPacketType.lucky : RedPacketType.normal;
   }
 
-  String get displayName => this == RedPacketType.normal ? '普通红包' : '拼手气红包';
+  String get displayName => this == RedPacketType.normal
+      ? _walletServiceText(
+          zhCN: '普通红包',
+          zhTW: '普通紅包',
+          en: 'Standard Red Packet',
+        )
+      : _walletServiceText(
+          zhCN: '拼手气红包',
+          zhTW: '拼手氣紅包',
+          en: 'Lucky Red Packet',
+        );
 }
 
 /// 红包状态
@@ -287,7 +384,12 @@ class RedPacketInfo {
       totalCount: json['total_count'] as int? ?? 1,
       remainingAmount: (json['remaining_amount'] as num?)?.toDouble() ?? 0.0,
       remainingCount: json['remaining_count'] as int? ?? 0,
-      message: json['message'] as String? ?? '恭喜发财，大吉大利',
+      message: json['message'] as String? ??
+          _walletServiceText(
+            zhCN: '恭喜发财，大吉大利',
+            zhTW: '恭喜發財，大吉大利',
+            en: 'Wishing you prosperity and good fortune',
+          ),
       status: RedPacketStatusExtension.fromString(
           json['status'] as String? ?? 'active'),
       isClaimed: json['is_claimed'] as bool? ?? false,
@@ -348,9 +450,9 @@ class RedPacketClaim {
   factory RedPacketClaim.fromJson(Map<String, dynamic> json) {
     final userAvatar = ApiConfig.getMediaUrl(json['user_avatar']?.toString());
     return RedPacketClaim(
-      id: json['id'] as String? ?? '',
-      redPacketId: json['red_packet_id'] as String? ?? '',
-      userId: json['user_id'] as String? ?? '',
+      id: json['id']?.toString() ?? '',
+      redPacketId: json['red_packet_id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
       userName: json['user_name'] as String? ?? '',
       userAvatar: userAvatar.isEmpty ? null : userAvatar,
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
@@ -358,6 +460,44 @@ class RedPacketClaim {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
+    );
+  }
+}
+
+/// 红包详情（包含领取汇总与领取人列表）
+class RedPacketDetail {
+  final RedPacketInfo redPacket;
+  final int claimedCount;
+  final double claimedTotalAmount;
+  final bool isSender;
+  final List<RedPacketClaim> claims;
+
+  const RedPacketDetail({
+    required this.redPacket,
+    required this.claimedCount,
+    required this.claimedTotalAmount,
+    required this.isSender,
+    required this.claims,
+  });
+
+  factory RedPacketDetail.fromJson(Map<String, dynamic> json) {
+    final redPacket = RedPacketInfo.fromJson(json);
+    final fallbackClaimedCount =
+        redPacket.totalCount - redPacket.remainingCount;
+    final fallbackClaimedAmount =
+        redPacket.totalAmount - redPacket.remainingAmount;
+    final claimsJson = json['claims'] as List? ?? const [];
+
+    return RedPacketDetail(
+      redPacket: redPacket,
+      claimedCount: json['claimed_count'] as int? ??
+          (fallbackClaimedCount < 0 ? 0 : fallbackClaimedCount),
+      claimedTotalAmount: (json['claimed_total_amount'] as num?)?.toDouble() ??
+          (fallbackClaimedAmount < 0 ? 0 : fallbackClaimedAmount),
+      isSender: json['is_sender'] as bool? ?? false,
+      claims: claimsJson
+          .map((item) => RedPacketClaim.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
     );
   }
 }
@@ -400,13 +540,29 @@ extension TransferStatusExtension on TransferStatus {
   String get displayName {
     switch (this) {
       case TransferStatus.pending:
-        return '待接收';
+        return _walletServiceText(
+          zhCN: '待接收',
+          zhTW: '待接收',
+          en: 'Pending',
+        );
       case TransferStatus.accepted:
-        return '已接收';
+        return _walletServiceText(
+          zhCN: '已接收',
+          zhTW: '已接收',
+          en: 'Accepted',
+        );
       case TransferStatus.rejected:
-        return '已退回';
+        return _walletServiceText(
+          zhCN: '已退回',
+          zhTW: '已退回',
+          en: 'Returned',
+        );
       case TransferStatus.expired:
-        return '已过期';
+        return _walletServiceText(
+          zhCN: '已过期',
+          zhTW: '已過期',
+          en: 'Expired',
+        );
     }
   }
 }
@@ -498,7 +654,7 @@ class WalletSettings {
 
   const WalletSettings({
     this.currency = '¥',
-    this.currencyName = '人民币',
+    this.currencyName = '',
     this.redPacketExpireHours = 24,
     this.transferExpireHours = 24,
     this.walletNotice = '',
@@ -510,7 +666,12 @@ class WalletSettings {
   factory WalletSettings.fromJson(Map<String, dynamic> json) {
     return WalletSettings(
       currency: json['wallet_currency'] as String? ?? '¥',
-      currencyName: json['wallet_currency_name'] as String? ?? '人民币',
+      currencyName: json['wallet_currency_name'] as String? ??
+          _walletServiceText(
+            zhCN: '人民币',
+            zhTW: '人民幣',
+            en: 'CNY',
+          ),
       redPacketExpireHours:
           int.tryParse(json['red_packet_expire_hours']?.toString() ?? '24') ??
               24,
@@ -566,7 +727,9 @@ class RechargeMethod {
   }
 }
 
-/// 钱包 API 服务
+/// 钱包 HTTP 协议边界；余额、交易状态、红包和转账结果均以服务端响应为准。
+///
+/// 此层不做乐观资金变更，调用方应在成功响应后重新拉取钱包快照。
 class WalletService {
   final ApiClient _api;
 
@@ -596,10 +759,15 @@ class WalletService {
 
   /// 验证支付密码
   Future<ApiResponse<bool>> verifyPayPassword(String password) async {
-    final response = await _api.post<Map<String, dynamic>>(
-      '/wallet/verify-password',
-      data: {'password': password},
-      fromJson: (data) => data as Map<String, dynamic>,
+    final response = _localizeWalletResponse(
+      await _api.post<Map<String, dynamic>>(
+        '/wallet/verify-password',
+        data: {'password': password},
+        fromJson: (data) => data as Map<String, dynamic>,
+      ),
+      fallbackZhCN: '支付密码验证失败',
+      fallbackZhTW: '支付密碼驗證失敗',
+      fallbackEn: 'Payment password verification failed',
     );
     if (response.isSuccess) {
       return ApiResponse<bool>(
@@ -612,15 +780,6 @@ class WalletService {
       code: response.code,
       message: response.message,
       data: false,
-    );
-  }
-
-  /// 充值（直接模式）
-  Future<ApiResponse<Map<String, dynamic>>> recharge(double amount) async {
-    return _api.post<Map<String, dynamic>>(
-      '/wallet/recharge',
-      data: {'amount': amount},
-      fromJson: (data) => data as Map<String, dynamic>,
     );
   }
 
@@ -651,6 +810,8 @@ class WalletService {
   // ========== 红包相关 ==========
 
   /// 发红包
+  ///
+  /// 成功仅代表资金操作和红包实体已由服务端创建，聊天消息展示由上层另行投影。
   Future<ApiResponse<RedPacketInfo>> sendRedPacket({
     required String chatId,
     required RedPacketType type,
@@ -690,12 +851,27 @@ class WalletService {
     );
   }
 
+  /// 获取红包详情、领取汇总和领取人列表
+  Future<ApiResponse<RedPacketDetail>> getRedPacketDetail(
+      String redPacketId) async {
+    return _api.get<RedPacketDetail>(
+      '/wallet/red-packet/$redPacketId',
+      fromJson: (data) =>
+          RedPacketDetail.fromJson(data as Map<String, dynamic>),
+    );
+  }
+
   /// 获取红包领取记录
   Future<ApiResponse<List<RedPacketClaim>>> getRedPacketClaims(
       String redPacketId) async {
-    final response = await _api.get<Map<String, dynamic>>(
-      '/wallet/red-packet/$redPacketId',
-      fromJson: (data) => data as Map<String, dynamic>,
+    final response = _localizeWalletResponse(
+      await _api.get<Map<String, dynamic>>(
+        '/wallet/red-packet/$redPacketId',
+        fromJson: (data) => data as Map<String, dynamic>,
+      ),
+      fallbackZhCN: '加载红包详情失败',
+      fallbackZhTW: '載入紅包詳情失敗',
+      fallbackEn: 'Failed to load red packet details',
     );
     if (response.isSuccess && response.data != null) {
       final claimsJson = response.data!['claims'] as List? ?? [];
@@ -718,6 +894,8 @@ class WalletService {
   // ========== 转账相关 ==========
 
   /// 发起转账
+  ///
+  /// 返回的 [TransferInfo] 才是转账 ID 与初始状态的权威值，不应由客户端自行构造。
   Future<ApiResponse<TransferInfo>> transfer({
     required String receiverId,
     required double amount,
@@ -798,22 +976,32 @@ class WalletService {
     required String channel,
     required String clientPlatform,
   }) async {
-    return _api.post<Map<String, dynamic>>(
-      '/wallet/online-pay/create',
-      data: {
-        'amount': amount,
-        'channel': channel,
-        'client_platform': clientPlatform,
-      },
-      fromJson: (data) => data as Map<String, dynamic>,
+    return _localizeWalletResponse(
+      await _api.post<Map<String, dynamic>>(
+        '/wallet/online-pay/create',
+        data: {
+          'amount': amount,
+          'channel': channel,
+          'client_platform': clientPlatform,
+        },
+        fromJson: (data) => data as Map<String, dynamic>,
+      ),
+      fallbackZhCN: '支付发起失败',
+      fallbackZhTW: '支付發起失敗',
+      fallbackEn: 'Failed to start payment',
     );
   }
 
   Future<ApiResponse<Map<String, dynamic>>> getOnlinePayOrder(
       String outTradeNo) async {
-    return _api.get<Map<String, dynamic>>(
-      '/wallet/online-pay/order/$outTradeNo',
-      fromJson: (data) => data as Map<String, dynamic>,
+    return _localizeWalletResponse(
+      await _api.get<Map<String, dynamic>>(
+        '/wallet/online-pay/order/$outTradeNo',
+        fromJson: (data) => data as Map<String, dynamic>,
+      ),
+      fallbackZhCN: '订单查询失败',
+      fallbackZhTW: '訂單查詢失敗',
+      fallbackEn: 'Failed to query order',
     );
   }
 
@@ -824,15 +1012,20 @@ class WalletService {
     String? proofImage,
     String? remark,
   }) async {
-    return _api.post<Map<String, dynamic>>(
-      '/wallet/recharge-order',
-      data: {
-        'method_id': methodId,
-        'amount': amount,
-        if (proofImage != null) 'proof_image': proofImage,
-        if (remark != null && remark.isNotEmpty) 'remark': remark,
-      },
-      fromJson: (data) => data as Map<String, dynamic>,
+    return _localizeWalletResponse(
+      await _api.post<Map<String, dynamic>>(
+        '/wallet/recharge-order',
+        data: {
+          'method_id': methodId,
+          'amount': amount,
+          if (proofImage != null) 'proof_image': proofImage,
+          if (remark != null && remark.isNotEmpty) 'remark': remark,
+        },
+        fromJson: (data) => data as Map<String, dynamic>,
+      ),
+      fallbackZhCN: '提交失败',
+      fallbackZhTW: '提交失敗',
+      fallbackEn: 'Submit failed',
     );
   }
 

@@ -93,9 +93,7 @@
             <el-table-column prop="name" label="名称" width="120" />
             <el-table-column label="类型" width="90"
               ><template #default="{ row }"
-                ><el-tag size="small">{{
-                  { qrcode: '二维码', bank: '银行卡/USDT', manual: '人工' }[row.type] || row.type
-                }}</el-tag></template
+                ><el-tag size="small">{{ rechargeMethodTypeText(row.type) }}</el-tag></template
               ></el-table-column
             >
             <el-table-column label="收款账号" min-width="200" show-overflow-tooltip
@@ -430,8 +428,17 @@
   const activeTab = ref('basic')
   const userStore = useUserStore()
 
+  const rechargeMethodTypeText = (type: string) => {
+    const texts: Record<string, string> = {
+      qrcode: '\u4e8c\u7ef4\u7801',
+      bank: '\u94f6\u884c\u5361/USDT',
+      manual: '\u4eba\u5de5'
+    }
+    return texts[type] || type
+  }
+
   // 上传配置 — 与 API 基地址统一
-  const uploadUrl = `${(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')}/upload/image`
+  const uploadUrl = `${(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')}/admin/upload/image`
   const uploadHeaders = computed(() => {
     return { Authorization: `Bearer ${userStore.accessToken}` }
   })
@@ -453,6 +460,7 @@
     loading.value = true
     try {
       const res = (await getWalletSettings()) as any
+      // 仅回填当前表单声明的键，忽略设置接口中属于其他模块的字段。
       if (res)
         Object.keys(form).forEach((k) => {
           if (res[k] !== undefined) (form as any)[k] = res[k]
@@ -467,6 +475,7 @@
   const handleSave = async () => {
     saving.value = true
     try {
+      // 设置中心按字符串持久化钱包参数，提交边界统一序列化，客户端使用时再按语义转换。
       const d: Record<string, string> = {}
       Object.entries(form).forEach(([k, v]) => (d[k] = String(v)))
       await saveWalletSettings(d)
@@ -512,7 +521,7 @@
     editRecharge.value = row || null
     if (row) {
       Object.assign(rechargeForm, row)
-      // 解析 account_info JSON 为字段列表
+      // account_info 是给 H5 展示的渠道账户键值，编辑时从 JSON 恢复为可排序表单行。
       try {
         const obj = JSON.parse(row.account_info || '{}')
         accountFields.value = Object.entries(obj).map(([k, v]) => ({ label: k, value: String(v) }))
@@ -648,7 +657,7 @@
       ElMessage.warning('请输入名称')
       return
     }
-    // 自动生成 key
+    // key 会成为用户提现 form_data 的字段名，空 key 在保存前生成稳定的当前表单索引名。
     withdrawFields.value.forEach((f, i) => {
       if (!f.key) f.key = `field_${i}`
     })
@@ -677,6 +686,7 @@
   }
 
   onMounted(() => {
+    // 三组接口互不依赖，各自维护 loading，单组失败不会阻断其他配置区域。
     fetchSettings()
     fetchRechargeMethods()
     fetchWithdrawMethods()

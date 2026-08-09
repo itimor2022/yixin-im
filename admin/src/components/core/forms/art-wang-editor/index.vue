@@ -73,12 +73,14 @@
   // 计算属性：上传服务器地址
   const uploadServer = computed(
     () =>
-      props.uploadConfig?.server || `${import.meta.env.VITE_API_URL}/api/common/upload/wangeditor`
+      props.uploadConfig?.server ||
+      `${(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')}/admin/upload/image`
   )
 
   // 合并上传配置
   const mergedUploadConfig = computed(() => ({
     ...DEFAULT_UPLOAD_CONFIG,
+    // 业务页面仅覆盖需要调整的上传项，其余限制继续使用公共默认值。
     ...props.uploadConfig
   }))
 
@@ -115,7 +117,15 @@
         allowedFileTypes: mergedUploadConfig.value.allowedFileTypes,
         server: uploadServer.value,
         headers: {
-          Authorization: userStore.accessToken
+          Authorization: userStore.accessToken ? `Bearer ${userStore.accessToken}` : ''
+        },
+        customInsert(res: any, insertFn: (url: string, alt?: string, href?: string) => void) {
+          // 同时兼容标准响应包和直接返回资源对象的上传接口。
+          const data = res?.data || res
+          const url = data?.url || data?.src
+          if (typeof url === 'string' && url) {
+            insertFn(url, data?.filename || '')
+          }
         },
         onSuccess() {
           ElMessage.success(`图片上传成功 ${EmojiText[200]}`)
@@ -132,17 +142,13 @@
   const onCreateEditor = (editor: IDomEditor) => {
     editorRef.value = editor
 
-    // 监听全屏事件
-    editor.on('fullScreen', () => {
-      console.log('编辑器进入全屏模式')
-    })
-
     // 确保在编辑器创建后应用自定义图标
     applyCustomIcons()
   }
 
   // 应用自定义图标（带重试机制）
   const applyCustomIcons = () => {
+    // 工具栏由第三方编辑器异步渲染，使用有上限的轮询等待 DOM 就绪。
     let retryCount = 0
     const maxRetries = 10
     const retryDelay = 100
@@ -209,6 +215,7 @@
   onBeforeUnmount(() => {
     const editor = editorRef.value
     if (editor) {
+      // destroy 会释放编辑器注册的 DOM、选区和事件监听资源。
       editor.destroy()
     }
   })

@@ -1,10 +1,13 @@
-import 'package:flutter/foundation.dart';
+// 文件用途：封装 HotUpdatePatch 对应的后端 API 请求、响应模型与错误处理。
+// 核心逻辑：把 HotUpdatePatch 相关请求集中到 API 层，负责参数编码、响应解析、鉴权错误和分页/游标边界。
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_io/io.dart';
 
 import '../device_service.dart';
 import 'api_client.dart';
 
+// 关键声明：hot update service 负责请求参数和响应模型的转换，统一处理鉴权错误、分页边界和服务端字段兼容。
 class HotUpdatePatch {
   final int id;
   final String patchId;
@@ -38,6 +41,7 @@ class HotUpdatePatch {
     this.rolloutPercentage = 0,
   });
 
+  // 流程逻辑：`fromJson` 集中处理输入规范化、空值和兼容字段，输出稳定的数据结构，避免调用方重复实现边界判断。
   factory HotUpdatePatch.fromJson(Map<String, dynamic> json) {
     return HotUpdatePatch(
       id: json['id'] as int? ?? 0,
@@ -119,6 +123,7 @@ class HotUpdateService {
     String userUUID = '',
     bool supportsShorebird = false,
   }) async {
+    // 当前热更新交付链只支持移动端，桌面和 Web 不参与检查。
     if (!(Platform.isAndroid || Platform.isIOS)) {
       return null;
     }
@@ -148,9 +153,11 @@ class HotUpdateService {
       );
 
       if (!resp.isSuccess || resp.data == null) {
+        // 检查失败按“本次无可用补丁”降级，不阻塞应用启动。
         return null;
       }
 
+      // 灰度、渠道和版本资格由服务端判定，客户端只消费最终结果。
       final hasPatch = resp.data!['has_patch'] == true;
       if (!hasPatch) {
         return null;
@@ -162,7 +169,7 @@ class HotUpdateService {
       }
       return HotUpdatePatch.fromJson(patchJson);
     } catch (e) {
-      if (kDebugMode) debugPrint('[HotUpdate] check patch failed: $e');
+      debugPrint('[HotUpdate] check patch failed: $e');
       return null;
     }
   }
@@ -175,6 +182,7 @@ class HotUpdateService {
     String userUUID = '',
     String message = '',
   }) async {
+    // 结果上报是观测链路，失败只返回 false，不回滚已经完成的安装。
     if (!(Platform.isAndroid || Platform.isIOS)) {
       return false;
     }
@@ -211,7 +219,7 @@ class HotUpdateService {
       );
       return resp.isSuccess;
     } catch (e) {
-      if (kDebugMode) debugPrint('[HotUpdate] report patch result failed: $e');
+      debugPrint('[HotUpdate] report patch result failed: $e');
       return false;
     }
   }

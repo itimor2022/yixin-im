@@ -1,10 +1,32 @@
+// 文件用途：封装 DesktopNotificationService 相关业务流程与外部能力调用，属于业务服务。
+// 核心逻辑：封装 DesktopNotificationService 的外部能力调用，先校验输入和会话，再转换响应结果并向上层返回可处理的错误状态。
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../i18n/app_localizations.dart';
 import '../utils/platform_utils.dart';
 import 'api/system_settings_service.dart';
 
-/// 桌面端通知服务 - 支持 macOS 和 Windows 系统通知
+String _desktopNotificationText({
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.currentLanguage) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：desktop notification service 是业务副作用入口，负责校验参数、调用外部资源并把异常转换为上层可处理结果。
+/// 桌面系统通知投递服务。
+///
+/// 是否应展示、是否隐藏预览等业务决策由上层完成，本服务只适配平台通知能力。
 class DesktopNotificationService {
   static final DesktopNotificationService _instance =
       DesktopNotificationService._internal();
@@ -15,19 +37,19 @@ class DesktopNotificationService {
       FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
   bool _isDisposed = false;
-  String _appDisplayName = kDefaultAppDisplayName;
+  String _appDisplayName = defaultAppDisplayName();
 
   // 通知点击回调
   Function(String? payload)? onNotificationTap;
 
   /// 是否是桌面端
-  static bool get isDesktop =>
-      PlatformUtils.isPhysicalDesktop;
+  static bool get isDesktop => PlatformUtils.isPhysicalDesktop;
 
   /// 初始化通知服务
   Future<void> initialize() async {
     if (!isDesktop || _isInitialized) return;
 
+    // 初始化阶段允许使用缓存品牌名；通知投递不应因在线设置暂时不可用而阻塞。
     final cachedSettings = await loadCachedSystemSettings();
     if (cachedSettings != null) {
       _appDisplayName = cachedSettings.displayName;
@@ -53,7 +75,7 @@ class DesktopNotificationService {
       // Windows 设置
       final windowsSettings = WindowsInitializationSettings(
         appName: _appDisplayName,
-        appUserModelId: 'com.gaoran.gaoRanIm',
+        appUserModelId: 'com.genericim.app',
         guid: 'd3b07384-d9a3-4d3a-8a5c-1234567890ab',
       );
 
@@ -70,15 +92,15 @@ class DesktopNotificationService {
       );
 
       _isInitialized = true;
-      if (kDebugMode) debugPrint('[DesktopNotification] Initialized successfully');
+      debugPrint('[DesktopNotification] Initialized successfully');
     } catch (e) {
-      if (kDebugMode) debugPrint('[DesktopNotification] Failed to initialize: $e');
+      debugPrint('[DesktopNotification] Failed to initialize: $e');
     }
   }
 
   /// 处理通知点击
   void _onNotificationResponse(NotificationResponse response) {
-    if (kDebugMode) debugPrint(
+    debugPrint(
       '[DesktopNotification] Notification tapped: ${response.payload}',
     );
     onNotificationTap?.call(response.payload);
@@ -110,7 +132,8 @@ class DesktopNotificationService {
       );
 
       // Windows 通知详情
-      final windowsDetails = WindowsNotificationDetails(subtitle: _appDisplayName);
+      final windowsDetails =
+          WindowsNotificationDetails(subtitle: _appDisplayName);
 
       final details = NotificationDetails(
         macOS: darwinDetails,
@@ -126,9 +149,9 @@ class DesktopNotificationService {
         payload: payload,
       );
 
-      if (kDebugMode) debugPrint('[DesktopNotification] Message notification shown: $title');
+      debugPrint('[DesktopNotification] Message notification shown: $title');
     } catch (e) {
-      if (kDebugMode) debugPrint('[DesktopNotification] Failed to show notification: $e');
+      debugPrint('[DesktopNotification] Failed to show notification: $e');
     }
   }
 
@@ -155,7 +178,8 @@ class DesktopNotificationService {
       );
 
       // Windows 通知详情（来电）
-      final windowsDetails = WindowsNotificationDetails(subtitle: _appDisplayName);
+      final windowsDetails =
+          WindowsNotificationDetails(subtitle: _appDisplayName);
 
       final details = NotificationDetails(
         macOS: darwinDetails,
@@ -165,15 +189,29 @@ class DesktopNotificationService {
 
       await _notifications.show(
         9999, // 固定ID用于来电
-        isVideo ? '视频来电' : '语音来电',
-        '$callerName 正在呼叫您',
+        isVideo
+            ? _desktopNotificationText(
+                zhCN: '视频来电',
+                zhTW: '視訊來電',
+                en: 'Incoming video call',
+              )
+            : _desktopNotificationText(
+                zhCN: '语音来电',
+                zhTW: '語音來電',
+                en: 'Incoming voice call',
+              ),
+        _desktopNotificationText(
+          zhCN: '$callerName 正在呼叫您',
+          zhTW: '$callerName 正在呼叫您',
+          en: '$callerName is calling you',
+        ),
         details,
         payload: payload,
       );
 
-      if (kDebugMode) debugPrint('[DesktopNotification] Call notification shown: $callerName');
+      debugPrint('[DesktopNotification] Call notification shown: $callerName');
     } catch (e) {
-      if (kDebugMode) debugPrint('[DesktopNotification] Failed to show call notification: $e');
+      debugPrint('[DesktopNotification] Failed to show call notification: $e');
     }
   }
 
@@ -206,7 +244,8 @@ class DesktopNotificationService {
       );
 
       // Windows 通知详情（动态）
-      final windowsDetails = WindowsNotificationDetails(subtitle: _appDisplayName);
+      final windowsDetails =
+          WindowsNotificationDetails(subtitle: _appDisplayName);
 
       final details = NotificationDetails(
         macOS: darwinDetails,
@@ -222,9 +261,9 @@ class DesktopNotificationService {
         payload: payload,
       );
 
-      if (kDebugMode) debugPrint('[DesktopNotification] Moment notification shown: $title');
+      debugPrint('[DesktopNotification] Moment notification shown: $title');
     } catch (e) {
-      if (kDebugMode) debugPrint(
+      debugPrint(
         '[DesktopNotification] Failed to show moment notification: $e',
       );
     }
@@ -236,19 +275,20 @@ class DesktopNotificationService {
     await _notifications.cancelAll();
   }
 
-  /// 请求通知权限（macOS）
+  /// 请求 macOS 系统通知权限。
+  ///
+  /// 系统授权和应用内通知总开关相互独立，返回值只代表本次系统权限请求结果。
   Future<bool> requestPermission() async {
     if (!PlatformUtils.isMacOS || !_isInitialized) return true;
 
     try {
       final result = await _notifications
           .resolvePlatformSpecificImplementation<
-            MacOSFlutterLocalNotificationsPlugin
-          >()
+              MacOSFlutterLocalNotificationsPlugin>()
           ?.requestPermissions(alert: true, badge: true, sound: true);
       return result ?? false;
     } catch (e) {
-      if (kDebugMode) debugPrint('[DesktopNotification] Failed to request permission: $e');
+      debugPrint('[DesktopNotification] Failed to request permission: $e');
       return false;
     }
   }
@@ -273,7 +313,7 @@ class DesktopNotificationService {
           '',
           NotificationDetails(macOS: darwinDetails),
         );
-        // 立即取消这个空通知，只保留角标
+        // macOS 通过无弹窗通知写入角标，随后取消空通知，仅保留角标状态。
         await _notifications.cancel(0);
       } else {
         // 清除角标
@@ -293,17 +333,18 @@ class DesktopNotificationService {
         await _notifications.cancel(0);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[DesktopNotification] Failed to update badge: $e');
+      debugPrint('[DesktopNotification] Failed to update badge: $e');
     }
   }
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   /// 释放资源
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
     onNotificationTap = null;
     _isInitialized = false;
-    if (kDebugMode) debugPrint('[DesktopNotification] Disposed');
+    debugPrint('[DesktopNotification] Disposed');
   }
 }
 

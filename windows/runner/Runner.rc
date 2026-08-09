@@ -89,13 +89,12 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "壹信科技" "\0"
-            VALUE "FileDescription", "壹信" "\0"
+            VALUE "CompanyName", "通用IM" "\0"
+            VALUE "FileDescription", "通用IM" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "壹信" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 壹信科技. All rights reserved." "\0"
-            VALUE "OriginalFilename", "壹信.exe" "\0"
-            VALUE "ProductName", "壹信" "\0"
+            VALUE "InternalName", "通用IM" "\0"
+            VALUE "OriginalFilename", "genericim.exe" "\0"
+            VALUE "ProductName", "通用IM" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

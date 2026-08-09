@@ -1,4 +1,6 @@
+// 文件用途：由代码生成器生成 user model 的序列化或数据库适配代码，请勿手工修改。
 // GENERATED CODE - DO NOT MODIFY BY HAND
+// 核心逻辑：仅承载代码生成器输出的序列化、数据库适配或字段映射代码，业务逻辑位于对应源文件。
 
 part of 'user_model.dart';
 
@@ -13,75 +15,73 @@ extension GetUserModelCollection on Isar {
   IsarCollection<UserModel> get userModels => this.collection();
 }
 
-int _userModelJsSafeInt(String value) => int.parse(value);
-
-final UserModelSchema = CollectionSchema(
+const UserModelSchema = CollectionSchema(
   name: r'UserModel',
-  id: _userModelJsSafeInt('7195426469378571114'),
+  id: 7195426469378571114,
   properties: {
-    r'avatar': PropertySchema(
+    r'accountId': PropertySchema(
       id: 0,
+      name: r'accountId',
+      type: IsarType.string,
+    ),
+    r'avatar': PropertySchema(
+      id: 1,
       name: r'avatar',
       type: IsarType.string,
     ),
     r'bio': PropertySchema(
-      id: 1,
+      id: 2,
       name: r'bio',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'emojiAvatar': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'emojiAvatar',
       type: IsarType.string,
     ),
     r'id': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'id',
       type: IsarType.string,
     ),
     r'isBlocked': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'isBlocked',
       type: IsarType.bool,
     ),
     r'isContact': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'isContact',
       type: IsarType.bool,
     ),
     r'isOnline': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'isOnline',
       type: IsarType.bool,
     ),
     r'lastSeen': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'lastSeen',
       type: IsarType.dateTime,
     ),
     r'nickname': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'nickname',
       type: IsarType.string,
     ),
     r'nicknameColor': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'nicknameColor',
       type: IsarType.string,
     ),
     r'phone': PropertySchema(
-      id: 11,
-      name: r'phone',
-      type: IsarType.string,
-    ),
-    r'premiumType': PropertySchema(
       id: 12,
-      name: r'premiumType',
+      name: r'phone',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
@@ -101,10 +101,28 @@ final UserModelSchema = CollectionSchema(
   deserializeProp: _userModelDeserializeProp,
   idName: r'isarId',
   indexes: {
-    r'id': IndexSchema(
-      id: _userModelJsSafeInt('-3268401673993471357'),
-      name: r'id',
+    r'accountId_id': IndexSchema(
+      id: 5095769145217530892,
+      name: r'accountId_id',
       unique: true,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'accountId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+        IndexPropertySchema(
+          name: r'id',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'id': IndexSchema(
+      id: -3268401673993471357,
+      name: r'id',
+      unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
@@ -115,7 +133,7 @@ final UserModelSchema = CollectionSchema(
       ],
     ),
     r'username': IndexSchema(
-      id: _userModelJsSafeInt('-2899563114555695793'),
+      id: -2899563114555695793,
       name: r'username',
       unique: false,
       replace: false,
@@ -128,7 +146,7 @@ final UserModelSchema = CollectionSchema(
       ],
     ),
     r'phone': IndexSchema(
-      id: _userModelJsSafeInt('-6308098324157559207'),
+      id: -6308098324157559207,
       name: r'phone',
       unique: false,
       replace: false,
@@ -155,6 +173,7 @@ int _userModelEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.accountId.length * 3;
   {
     final value = object.avatar;
     if (value != null) {
@@ -192,12 +211,6 @@ int _userModelEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
-  {
-    final value = object.premiumType;
-    if (value != null) {
-      bytesCount += 3 + value.length * 3;
-    }
-  }
   bytesCount += 3 + object.username.length * 3;
   return bytesCount;
 }
@@ -208,19 +221,19 @@ void _userModelSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.avatar);
-  writer.writeString(offsets[1], object.bio);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeString(offsets[3], object.emojiAvatar);
-  writer.writeString(offsets[4], object.id);
-  writer.writeBool(offsets[5], object.isBlocked);
-  writer.writeBool(offsets[6], object.isContact);
-  writer.writeBool(offsets[7], object.isOnline);
-  writer.writeDateTime(offsets[8], object.lastSeen);
-  writer.writeString(offsets[9], object.nickname);
-  writer.writeString(offsets[10], object.nicknameColor);
-  writer.writeString(offsets[11], object.phone);
-  writer.writeString(offsets[12], object.premiumType);
+  writer.writeString(offsets[0], object.accountId);
+  writer.writeString(offsets[1], object.avatar);
+  writer.writeString(offsets[2], object.bio);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeString(offsets[4], object.emojiAvatar);
+  writer.writeString(offsets[5], object.id);
+  writer.writeBool(offsets[6], object.isBlocked);
+  writer.writeBool(offsets[7], object.isContact);
+  writer.writeBool(offsets[8], object.isOnline);
+  writer.writeDateTime(offsets[9], object.lastSeen);
+  writer.writeString(offsets[10], object.nickname);
+  writer.writeString(offsets[11], object.nicknameColor);
+  writer.writeString(offsets[12], object.phone);
   writer.writeDateTime(offsets[13], object.updatedAt);
   writer.writeString(offsets[14], object.username);
 }
@@ -232,19 +245,19 @@ UserModel _userModelDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = UserModel();
-  object.avatar = reader.readStringOrNull(offsets[0]);
-  object.bio = reader.readStringOrNull(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.emojiAvatar = reader.readStringOrNull(offsets[3]);
-  object.id = reader.readString(offsets[4]);
-  object.isBlocked = reader.readBool(offsets[5]);
-  object.isContact = reader.readBool(offsets[6]);
-  object.isOnline = reader.readBool(offsets[7]);
-  object.lastSeen = reader.readDateTimeOrNull(offsets[8]);
-  object.nickname = reader.readStringOrNull(offsets[9]);
-  object.nicknameColor = reader.readStringOrNull(offsets[10]);
-  object.phone = reader.readStringOrNull(offsets[11]);
-  object.premiumType = reader.readStringOrNull(offsets[12]);
+  object.accountId = reader.readString(offsets[0]);
+  object.avatar = reader.readStringOrNull(offsets[1]);
+  object.bio = reader.readStringOrNull(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.emojiAvatar = reader.readStringOrNull(offsets[4]);
+  object.id = reader.readString(offsets[5]);
+  object.isBlocked = reader.readBool(offsets[6]);
+  object.isContact = reader.readBool(offsets[7]);
+  object.isOnline = reader.readBool(offsets[8]);
+  object.lastSeen = reader.readDateTimeOrNull(offsets[9]);
+  object.nickname = reader.readStringOrNull(offsets[10]);
+  object.nicknameColor = reader.readStringOrNull(offsets[11]);
+  object.phone = reader.readStringOrNull(offsets[12]);
   object.updatedAt = reader.readDateTime(offsets[13]);
   object.username = reader.readString(offsets[14]);
   return object;
@@ -258,25 +271,25 @@ P _userModelDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
-      return (reader.readDateTime(offset)) as P;
-    case 3:
       return (reader.readStringOrNull(offset)) as P;
+    case 3:
+      return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 5:
-      return (reader.readBool(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 6:
       return (reader.readBool(offset)) as P;
     case 7:
       return (reader.readBool(offset)) as P;
     case 8:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 9:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 10:
       return (reader.readStringOrNull(offset)) as P;
     case 11:
@@ -303,56 +316,89 @@ List<IsarLinkBase<dynamic>> _userModelGetLinks(UserModel object) {
 void _userModelAttach(IsarCollection<dynamic> col, Id id, UserModel object) {}
 
 extension UserModelByIndex on IsarCollection<UserModel> {
-  Future<UserModel?> getById(String id) {
-    return getByIndex(r'id', [id]);
+  Future<UserModel?> getByAccountIdId(String accountId, String id) {
+    return getByIndex(r'accountId_id', [accountId, id]);
   }
 
-  UserModel? getByIdSync(String id) {
-    return getByIndexSync(r'id', [id]);
+  UserModel? getByAccountIdIdSync(String accountId, String id) {
+    return getByIndexSync(r'accountId_id', [accountId, id]);
   }
 
-  Future<bool> deleteById(String id) {
-    return deleteByIndex(r'id', [id]);
+  Future<bool> deleteByAccountIdId(String accountId, String id) {
+    return deleteByIndex(r'accountId_id', [accountId, id]);
   }
 
-  bool deleteByIdSync(String id) {
-    return deleteByIndexSync(r'id', [id]);
+  bool deleteByAccountIdIdSync(String accountId, String id) {
+    return deleteByIndexSync(r'accountId_id', [accountId, id]);
   }
 
-  Future<List<UserModel?>> getAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndex(r'id', values);
+  Future<List<UserModel?>> getAllByAccountIdId(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return getAllByIndex(r'accountId_id', values);
   }
 
-  List<UserModel?> getAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'id', values);
+  List<UserModel?> getAllByAccountIdIdSync(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return getAllByIndexSync(r'accountId_id', values);
   }
 
-  Future<int> deleteAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'id', values);
+  Future<int> deleteAllByAccountIdId(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return deleteAllByIndex(r'accountId_id', values);
   }
 
-  int deleteAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'id', values);
+  int deleteAllByAccountIdIdSync(
+      List<String> accountIdValues, List<String> idValues) {
+    final len = accountIdValues.length;
+    assert(
+        idValues.length == len, 'All index values must have the same length');
+    final values = <List<dynamic>>[];
+    for (var i = 0; i < len; i++) {
+      values.add([accountIdValues[i], idValues[i]]);
+    }
+
+    return deleteAllByIndexSync(r'accountId_id', values);
   }
 
-  Future<Id> putById(UserModel object) {
-    return putByIndex(r'id', object);
+  Future<Id> putByAccountIdId(UserModel object) {
+    return putByIndex(r'accountId_id', object);
   }
 
-  Id putByIdSync(UserModel object, {bool saveLinks = true}) {
-    return putByIndexSync(r'id', object, saveLinks: saveLinks);
+  Id putByAccountIdIdSync(UserModel object, {bool saveLinks = true}) {
+    return putByIndexSync(r'accountId_id', object, saveLinks: saveLinks);
   }
 
-  Future<List<Id>> putAllById(List<UserModel> objects) {
-    return putAllByIndex(r'id', objects);
+  Future<List<Id>> putAllByAccountIdId(List<UserModel> objects) {
+    return putAllByIndex(r'accountId_id', objects);
   }
 
-  List<Id> putAllByIdSync(List<UserModel> objects, {bool saveLinks = true}) {
-    return putAllByIndexSync(r'id', objects, saveLinks: saveLinks);
+  List<Id> putAllByAccountIdIdSync(List<UserModel> objects,
+      {bool saveLinks = true}) {
+    return putAllByIndexSync(r'accountId_id', objects, saveLinks: saveLinks);
   }
 }
 
@@ -433,6 +479,96 @@ extension UserModelQueryWhere
         upper: upperIsarId,
         includeUpper: includeUpper,
       ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterWhereClause> accountIdEqualToAnyId(
+      String accountId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountId_id',
+        value: [accountId],
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterWhereClause>
+      accountIdNotEqualToAnyId(String accountId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [],
+              upper: [accountId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [],
+              upper: [accountId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterWhereClause> accountIdIdEqualTo(
+      String accountId, String id) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountId_id',
+        value: [accountId, id],
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterWhereClause>
+      accountIdEqualToIdNotEqualTo(String accountId, String id) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              upper: [accountId, id],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId, id],
+              includeLower: false,
+              upper: [accountId],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId, id],
+              includeLower: false,
+              upper: [accountId],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountId_id',
+              lower: [accountId],
+              upper: [accountId, id],
+              includeUpper: false,
+            ));
+      }
     });
   }
 
@@ -593,6 +729,138 @@ extension UserModelQueryWhere
 
 extension UserModelQueryFilter
     on QueryBuilder<UserModel, UserModel, QFilterCondition> {
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      accountIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'accountId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'accountId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'accountId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> accountIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
+      accountIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'accountId',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QAfterFilterCondition> avatarIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -1822,158 +2090,6 @@ extension UserModelQueryFilter
     });
   }
 
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'premiumType',
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeIsNotNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'premiumType',
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeEqualTo(
-    String? value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeGreaterThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeLessThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeBetween(
-    String? lower,
-    String? upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'premiumType',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeContains(
-      String value,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'premiumType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition> premiumTypeMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'premiumType',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'premiumType',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterFilterCondition>
-      premiumTypeIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'premiumType',
-        value: '',
-      ));
-    });
-  }
-
   QueryBuilder<UserModel, UserModel, QAfterFilterCondition> updatedAtEqualTo(
       DateTime value) {
     return QueryBuilder.apply(this, (query) {
@@ -2167,6 +2283,18 @@ extension UserModelQueryLinks
     on QueryBuilder<UserModel, UserModel, QFilterCondition> {}
 
 extension UserModelQuerySortBy on QueryBuilder<UserModel, UserModel, QSortBy> {
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByAccountId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByAccountIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByAvatar() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'avatar', Sort.asc);
@@ -2311,18 +2439,6 @@ extension UserModelQuerySortBy on QueryBuilder<UserModel, UserModel, QSortBy> {
     });
   }
 
-  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByPremiumType() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'premiumType', Sort.asc);
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByPremiumTypeDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'premiumType', Sort.desc);
-    });
-  }
-
   QueryBuilder<UserModel, UserModel, QAfterSortBy> sortByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'updatedAt', Sort.asc);
@@ -2350,6 +2466,18 @@ extension UserModelQuerySortBy on QueryBuilder<UserModel, UserModel, QSortBy> {
 
 extension UserModelQuerySortThenBy
     on QueryBuilder<UserModel, UserModel, QSortThenBy> {
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByAccountId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByAccountIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountId', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByAvatar() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'avatar', Sort.asc);
@@ -2506,18 +2634,6 @@ extension UserModelQuerySortThenBy
     });
   }
 
-  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByPremiumType() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'premiumType', Sort.asc);
-    });
-  }
-
-  QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByPremiumTypeDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'premiumType', Sort.desc);
-    });
-  }
-
   QueryBuilder<UserModel, UserModel, QAfterSortBy> thenByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'updatedAt', Sort.asc);
@@ -2545,6 +2661,13 @@ extension UserModelQuerySortThenBy
 
 extension UserModelQueryWhereDistinct
     on QueryBuilder<UserModel, UserModel, QDistinct> {
+  QueryBuilder<UserModel, UserModel, QDistinct> distinctByAccountId(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'accountId', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<UserModel, UserModel, QDistinct> distinctByAvatar(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -2625,13 +2748,6 @@ extension UserModelQueryWhereDistinct
     });
   }
 
-  QueryBuilder<UserModel, UserModel, QDistinct> distinctByPremiumType(
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'premiumType', caseSensitive: caseSensitive);
-    });
-  }
-
   QueryBuilder<UserModel, UserModel, QDistinct> distinctByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'updatedAt');
@@ -2651,6 +2767,12 @@ extension UserModelQueryProperty
   QueryBuilder<UserModel, int, QQueryOperations> isarIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isarId');
+    });
+  }
+
+  QueryBuilder<UserModel, String, QQueryOperations> accountIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'accountId');
     });
   }
 
@@ -2723,12 +2845,6 @@ extension UserModelQueryProperty
   QueryBuilder<UserModel, String?, QQueryOperations> phoneProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'phone');
-    });
-  }
-
-  QueryBuilder<UserModel, String?, QQueryOperations> premiumTypeProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'premiumType');
     });
   }
 

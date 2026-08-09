@@ -1,13 +1,14 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
-	"log"
-	"time"
-
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"log"
+	"time"
+	"genericim/internal/models"
 )
 
 // WalletCronService 钱包定时任务服务
@@ -32,7 +33,6 @@ func (s *WalletCronService) Start() {
 		// 启动时立即执行一次
 		s.processExpiredRedPackets()
 		s.processExpiredTransfers()
-
 		for {
 			select {
 			case <-ticker.C:
@@ -54,17 +54,15 @@ func (s *WalletCronService) Stop() {
 
 // processExpiredRedPackets 处理过期红包 —— 退还剩余金额给发送者
 func (s *WalletCronService) processExpiredRedPackets() {
+
 	var redPackets []models.RedPacket
 	s.db.Where("status = ? AND expired_at < ?", models.RedPacketStatusActive, time.Now()).
 		Limit(100).
 		Find(&redPackets)
-
 	if len(redPackets) == 0 {
 		return
 	}
-
 	log.Printf("[WalletCron] 发现 %d 个过期红包待处理", len(redPackets))
-
 	for _, rp := range redPackets {
 		s.refundExpiredRedPacket(rp)
 	}
@@ -87,12 +85,12 @@ func (s *WalletCronService) refundExpiredRedPacket(rp models.RedPacket) {
 		return
 	}
 
-	// 再次检查状态（可能已被其他协程处理）
+	// 再次检查状态（可能已被其他协程
+
 	if redPacket.Status != models.RedPacketStatusActive {
 		tx.Rollback()
 		return
 	}
-
 	refundAmount := redPacket.RemainingAmount
 	if refundAmount <= 0 {
 		// 没有剩余金额，直接标记过期
@@ -112,7 +110,6 @@ func (s *WalletCronService) refundExpiredRedPacket(rp models.RedPacket) {
 		log.Printf("[WalletCron] 红包 %s 发送者钱包不存在", redPacket.UUID)
 		return
 	}
-
 	newBalance := wallet.Balance + refundAmount
 
 	// 原子退还余额
@@ -150,28 +147,24 @@ func (s *WalletCronService) refundExpiredRedPacket(rp models.RedPacket) {
 		log.Printf("[WalletCron] 红包 %s 交易记录失败: %v", redPacket.UUID, err)
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		log.Printf("[WalletCron] 红包 %s 提交失败: %v", redPacket.UUID, err)
 		return
 	}
-
 	log.Printf("[WalletCron] 红包 %s 已过期退回 %.2f 元", redPacket.UUID, refundAmount)
 }
 
 // processExpiredTransfers 处理过期转账 —— 退还金额给发送者
 func (s *WalletCronService) processExpiredTransfers() {
+
 	var transfers []models.Transfer
 	s.db.Where("status = ? AND expired_at < ?", models.TransferStatusPending, time.Now()).
 		Limit(100).
 		Find(&transfers)
-
 	if len(transfers) == 0 {
 		return
 	}
-
 	log.Printf("[WalletCron] 发现 %d 个过期转账待处理", len(transfers))
-
 	for _, tf := range transfers {
 		s.refundExpiredTransfer(tf)
 	}
@@ -193,8 +186,8 @@ func (s *WalletCronService) refundExpiredTransfer(tf models.Transfer) {
 		tx.Rollback()
 		return
 	}
-
 	if transfer.Status != models.TransferStatusPending {
+
 		tx.Rollback()
 		return
 	}
@@ -207,7 +200,6 @@ func (s *WalletCronService) refundExpiredTransfer(tf models.Transfer) {
 		log.Printf("[WalletCron] 转账 %s 发送者钱包不存在", transfer.UUID)
 		return
 	}
-
 	newBalance := wallet.Balance + transfer.Amount
 
 	// 原子退还余额
@@ -244,11 +236,9 @@ func (s *WalletCronService) refundExpiredTransfer(tf models.Transfer) {
 		log.Printf("[WalletCron] 转账 %s 交易记录失败: %v", transfer.UUID, err)
 		return
 	}
-
 	if err := tx.Commit().Error; err != nil {
 		log.Printf("[WalletCron] 转账 %s 提交失败: %v", transfer.UUID, err)
 		return
 	}
-
 	log.Printf("[WalletCron] 转账 %s 已过期退回 %.2f 元", transfer.UUID, transfer.Amount)
 }

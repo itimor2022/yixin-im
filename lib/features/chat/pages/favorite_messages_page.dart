@@ -1,29 +1,53 @@
+// 文件用途：实现 FavoriteMessagesPage 页面及其交互流程，属于聊天与消息。
+// 核心逻辑：维护 FavoriteMessagesPage 页面状态，响应用户操作并调用 Provider/Service；同时处理加载、成功、失败和返回导航。
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 import '../providers/message_provider.dart';
 import '../services/favorite_message_service.dart';
 
+String _favoriteText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：favorite messages page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 class FavoriteMessagesPage extends StatefulWidget {
-  const FavoriteMessagesPage({super.key, required this.accountKey});
+  const FavoriteMessagesPage({
+    super.key,
+    required this.accountKey,
+    required this.favoriteService,
+  });
 
   final String accountKey;
+  final FavoriteMessageService favoriteService;
 
   @override
   State<FavoriteMessagesPage> createState() => _FavoriteMessagesPageState();
 }
 
 class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
-  final FavoriteMessageService _favoriteService = FavoriteMessageService();
-
   bool _loading = true;
   List<FavoriteMessageEntry> _favorites = const [];
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -32,7 +56,8 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
 
   Future<void> _loadFavorites() async {
     setState(() => _loading = true);
-    final favorites = await _favoriteService.loadFavorites(widget.accountKey);
+    final favorites =
+        await widget.favoriteService.loadFavorites(widget.accountKey);
     if (!mounted) return;
     setState(() {
       _favorites = favorites;
@@ -41,14 +66,36 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
   }
 
   Future<void> _removeFavorite(FavoriteMessageEntry item) async {
-    await _favoriteService.removeFavorite(widget.accountKey, item);
+    try {
+      await widget.favoriteService.removeFavorite(widget.accountKey, item);
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.warning(
+        context,
+        _favoriteText(
+          context,
+          zhCN: '取消收藏同步失败，请稍后重试',
+          zhTW: '取消收藏同步失敗，請稍後重試',
+          en: 'Failed to sync removal. Please retry.',
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _favorites = _favorites
           .where((entry) => entry.dedupeKey != item.dedupeKey)
           .toList();
     });
-    AppSnackBar.success(context, '已移出收藏');
+    AppSnackBar.success(
+      context,
+      _favoriteText(
+        context,
+        zhCN: '已移出收藏',
+        zhTW: '已移出收藏',
+        en: 'Removed from favorites',
+      ),
+    );
   }
 
   Future<void> _confirmRemoveFavorite(FavoriteMessageEntry item) async {
@@ -56,20 +103,53 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
     final shouldRemove = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除收藏'),
+        title: Text(
+          _favoriteText(
+            dialogContext,
+            zhCN: '删除收藏',
+            zhTW: '刪除收藏',
+            en: 'Delete Favorite',
+          ),
+        ),
         content: Text(
-          preview.isNotEmpty ? '确定删除这条收藏吗？\n\n$preview' : '确定删除这条收藏吗？',
+          preview.isNotEmpty
+              ? '${_favoriteText(
+                  dialogContext,
+                  zhCN: '确定删除这条收藏吗？',
+                  zhTW: '確定刪除這條收藏嗎？',
+                  en: 'Delete this favorite?',
+                )}\n\n$preview'
+              : _favoriteText(
+                  dialogContext,
+                  zhCN: '确定删除这条收藏吗？',
+                  zhTW: '確定刪除這條收藏嗎？',
+                  en: 'Delete this favorite?',
+                ),
           maxLines: 5,
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(
+              _favoriteText(
+                dialogContext,
+                zhCN: '取消',
+                zhTW: '取消',
+                en: 'Cancel',
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            child: Text(
+              _favoriteText(
+                dialogContext,
+                zhCN: '删除',
+                zhTW: '刪除',
+                en: 'Delete',
+              ),
+            ),
           ),
         ],
       ),
@@ -94,7 +174,15 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
 
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    AppSnackBar.success(context, '已复制收藏内容');
+    AppSnackBar.success(
+      context,
+      _favoriteText(
+        context,
+        zhCN: '已复制收藏内容',
+        zhTW: '已複製收藏內容',
+        en: 'Favorite content copied',
+      ),
+    );
   }
 
   IconData _iconForType(MessageItemType type) {
@@ -115,6 +203,8 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
         return Icons.redeem_outlined;
       case MessageItemType.transfer:
         return Icons.swap_horiz_rounded;
+      case MessageItemType.forwardBundle:
+        return Icons.library_books_outlined;
       case MessageItemType.call:
         return Icons.call_outlined;
       case MessageItemType.system:
@@ -171,10 +261,10 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.map_outlined,
                         size: 32,
-                        color: AppColors.primary,
+                        color: AppColors.primaryFor(context),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -182,7 +272,7 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white60 : Colors.black54,
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                     ],
@@ -210,15 +300,24 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                         color: Colors.white,
                       ),
                       SizedBox(width: 4),
-                      Text(
-                        '位置收藏',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
                     ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 32,
+                top: 13,
+                child: Text(
+                  _favoriteText(
+                    context,
+                    zhCN: '位置收藏',
+                    zhTW: '位置收藏',
+                    en: 'Saved Location',
+                  ),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -235,10 +334,22 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('收藏 (${_favorites.length})'),
+        title: Text(
+          '${_favoriteText(
+            context,
+            zhCN: '收藏',
+            zhTW: '收藏',
+            en: 'Favorites',
+          )} (${_favorites.length})',
+        ),
         actions: [
           IconButton(
-            tooltip: '刷新',
+            tooltip: _favoriteText(
+              context,
+              zhCN: '刷新',
+              zhTW: '重新整理',
+              en: 'Refresh',
+            ),
             onPressed: _loadFavorites,
             icon: const Icon(Icons.refresh_rounded),
           ),
@@ -254,22 +365,32 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                       Icon(
                         Icons.favorite_border_rounded,
                         size: 52,
-                        color: isDark ? Colors.white24 : Colors.black26,
+                        color: AppColors.textTertiaryFor(context),
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        '还没有收藏的消息',
+                        _favoriteText(
+                          context,
+                          zhCN: '还没有收藏的消息',
+                          zhTW: '還沒有收藏的訊息',
+                          en: 'No saved messages yet',
+                        ),
                         style: TextStyle(
                           fontSize: 15,
-                          color: isDark ? Colors.white54 : Colors.black54,
+                          color: AppColors.textSecondaryFor(context),
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '长按消息后点击“收藏”即可保存',
+                        _favoriteText(
+                          context,
+                          zhCN: '长按消息后点击“收藏”即可保存',
+                          zhTW: '長按訊息後點擊「收藏」即可保存',
+                          en: 'Long press a message and tap "Favorite" to save it',
+                        ),
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.black38,
+                          color: AppColors.textTertiaryFor(context),
                         ),
                       ),
                     ],
@@ -300,8 +421,7 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                         ),
                         onDismissed: (_) => _removeFavorite(item),
                         child: Material(
-                          color:
-                              isDark ? const Color(0xFF161A20) : Colors.white,
+                          color: AppColors.cardFor(context),
                           borderRadius: BorderRadius.circular(14),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(14),
@@ -321,15 +441,16 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                         width: 42,
                                         height: 42,
                                         decoration: BoxDecoration(
-                                          color: AppColors.primary.withValues(
-                                            alpha: isDark ? 0.18 : 0.10,
+                                          color: AppColors.primaryWithOpacity(
+                                            context,
+                                            isDark ? 0.18 : 0.10,
                                           ),
                                           borderRadius:
                                               BorderRadius.circular(12),
                                         ),
                                         child: Icon(
                                           _iconForType(item.type),
-                                          color: AppColors.primary,
+                                          color: AppColors.primaryFor(context),
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -344,7 +465,12 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                                   child: Text(
                                                     item.chatName.isNotEmpty
                                                         ? item.chatName
-                                                        : '未命名会话',
+                                                        : _favoriteText(
+                                                            context,
+                                                            zhCN: '未命名会话',
+                                                            zhTW: '未命名會話',
+                                                            en: 'Unnamed Chat',
+                                                          ),
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -353,7 +479,8 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                                       fontWeight:
                                                           FontWeight.w600,
                                                       color: isDark
-                                                          ? Colors.white
+                                                          ? AppColors
+                                                              .darkTextPrimary
                                                           : Colors.black87,
                                                     ),
                                                   ),
@@ -366,7 +493,8 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     color: isDark
-                                                        ? Colors.white38
+                                                        ? AppColors
+                                                            .darkTextTertiary
                                                         : Colors.black38,
                                                   ),
                                                 ),
@@ -378,7 +506,8 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: isDark
-                                                    ? Colors.white54
+                                                    ? AppColors
+                                                        .darkTextSecondary
                                                     : Colors.black54,
                                               ),
                                             ),
@@ -391,7 +520,7 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                                 fontSize: 14,
                                                 height: 1.4,
                                                 color: isDark
-                                                    ? Colors.white70
+                                                    ? AppColors.darkTextPrimary
                                                     : Colors.black87,
                                               ),
                                             ),
@@ -400,7 +529,12 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                       ),
                                       const SizedBox(width: 8),
                                       IconButton(
-                                        tooltip: '删除收藏',
+                                        tooltip: _favoriteText(
+                                          context,
+                                          zhCN: '删除收藏',
+                                          zhTW: '刪除收藏',
+                                          en: 'Delete Favorite',
+                                        ),
                                         onPressed: () =>
                                             _confirmRemoveFavorite(item),
                                         icon: Icon(
@@ -413,8 +547,18 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                       ),
                                       IconButton(
                                         tooltip: item.canOpenLocation
-                                            ? '打开位置'
-                                            : '复制',
+                                            ? _favoriteText(
+                                                context,
+                                                zhCN: '打开位置',
+                                                zhTW: '打開位置',
+                                                en: 'Open Location',
+                                              )
+                                            : _favoriteText(
+                                                context,
+                                                zhCN: '复制',
+                                                zhTW: '複製',
+                                                en: 'Copy',
+                                              ),
                                         onPressed: () => _handleItemTap(item),
                                         icon: Icon(
                                           item.canOpenLocation
@@ -422,7 +566,7 @@ class _FavoriteMessagesPageState extends State<FavoriteMessagesPage> {
                                               : Icons.copy_rounded,
                                           size: 20,
                                           color: isDark
-                                              ? Colors.white54
+                                              ? AppColors.darkTextSecondary
                                               : Colors.black45,
                                         ),
                                       ),

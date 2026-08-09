@@ -106,4 +106,3 @@ export function showSuccess(message: string, showMessage: boolean = true): void 
 export const isHttpError = (error: unknown): error is HttpError => {
   return error instanceof HttpError
 }
-

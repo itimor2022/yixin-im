@@ -1,21 +1,38 @@
+// 文件用途：提供 in app browser 在原生平台的实现，服务于跨模块共享能力。
+// 核心逻辑：实现 InAppBrowser 的原生平台分支，封装系统权限或文件能力，并保持跨平台调用契约一致。
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/android_webview_support.dart';
 
+String _browserText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：in app browser native 是原生平台实现，集中处理系统权限、文件或窗口能力，避免业务层散落平台判断。
 /// 内置浏览器页面（Telegram 风格，支持下拉关闭）
 class InAppBrowser extends StatefulWidget {
   final String url;
@@ -30,20 +47,22 @@ class InAppBrowser extends StatefulWidget {
   });
 
   /// 打开内置浏览器
-  static Future<void> open(BuildContext context, String url, {String? title, bool hideAddressBar = false}) async {
-    // 确保 URL 有协议前缀
+  static Future<void> open(BuildContext context, String url,
+      {String? title, bool hideAddressBar = false}) async {
+    // 输入可为完整 HTTP(S) URL 或裸域名；裸值统一按 HTTPS 解释。
     String finalUrl = url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       finalUrl = 'https://$url';
     }
-    
+
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black54,
         barrierDismissible: true,
         pageBuilder: (context, animation, secondaryAnimation) {
-          return InAppBrowser(url: finalUrl, title: title, hideAddressBar: hideAddressBar);
+          return InAppBrowser(
+              url: finalUrl, title: title, hideAddressBar: hideAddressBar);
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return SlideTransition(
@@ -65,9 +84,9 @@ class InAppBrowser extends StatefulWidget {
   State<InAppBrowser> createState() => _InAppBrowserState();
 }
 
-class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderStateMixin {
+class _InAppBrowserState extends State<InAppBrowser>
+    with SingleTickerProviderStateMixin {
   late final WebViewController _controller;
-  final ImagePicker _imagePicker = ImagePicker();
   final Dio _downloadDio = Dio();
   bool _isLoading = true;
   double _loadingProgress = 0;
@@ -76,12 +95,13 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
   bool _canGoBack = false;
   bool _canGoForward = false;
   bool _isSecure = false;
-  
+
   // 下拉关闭相关
   double _dragOffset = 0;
   bool _isDragging = false;
   final double _dismissThreshold = 150; // 下拉超过这个距离就关闭
 
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
@@ -92,7 +112,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
   }
 
   void _initWebView() {
-    // 仅对 https 页面启用 JS，http 页面禁用以防中间人注入
+    // 仅对 HTTPS 页面启用 JS；页面后续跳转时也会重新应用同一策略。
     final jsMode = widget.url.startsWith('https://')
         ? JavaScriptMode.unrestricted
         : JavaScriptMode.disabled;
@@ -144,12 +164,13 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
             _updateNavigationState();
           },
           onWebResourceError: (error) {
-            if (kDebugMode) debugPrint('[WebView] Error: ${error.description}');
+            debugPrint('[WebView] Error: ${error.description}');
           },
           onNavigationRequest: (request) async {
             final uri = Uri.tryParse(request.url);
             if (uri == null) return NavigationDecision.prevent;
 
+            // 下载和外部应用 scheme 在 WebView 导航前截获，避免同时触发页面跳转。
             if (_isDownloadRequest(uri)) {
               await _downloadFile(uri);
               return NavigationDecision.prevent;
@@ -162,7 +183,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
             // 明确拒绝危险 scheme（javascript:、file:、data: 等）
             if (uri.scheme != 'http' && uri.scheme != 'https') {
-              if (kDebugMode) debugPrint('[WebView] Blocked dangerous scheme: ${uri.scheme}');
+              debugPrint('[WebView] Blocked dangerous scheme: ${uri.scheme}');
               return NavigationDecision.prevent;
             }
 
@@ -171,17 +192,13 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
         ),
       );
 
-    if (controller.platform is AndroidWebViewController) {
-      final androidController = controller.platform as AndroidWebViewController;
-      androidController
-        ..setMediaPlaybackRequiresUserGesture(false)
-        ..setOnShowFileSelector(_handleAndroidFileSelection);
-    }
+    AndroidWebViewSupport.configure(controller, logTag: 'InAppBrowser');
 
     _controller = controller..loadRequest(Uri.parse(widget.url));
   }
 
   bool _shouldOpenExternally(Uri uri) {
+    // 仅允许明确列出的系统/第三方 scheme 离开沙箱，其余非 HTTP(S) scheme 拒绝。
     const externalSchemes = <String>{
       'tel',
       'mailto',
@@ -206,72 +223,15 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        if (kDebugMode) debugPrint('[WebView] Failed to launch external url: $uri');
+        debugPrint('[WebView] Failed to launch external url: $uri');
       }
     } catch (error) {
-      if (kDebugMode) debugPrint('[WebView] External launch failed: $error');
-    }
-  }
-
-  Future<List<String>> _handleAndroidFileSelection(
-    FileSelectorParams params,
-  ) async {
-    try {
-      final allowMultiple = params.mode == FileSelectorMode.openMultiple;
-      final acceptedTypes = params.acceptTypes
-          .map((type) => type.trim())
-          .where((type) => type.isNotEmpty)
-          .toList();
-
-      final shouldUseCamera = params.isCaptureEnabled &&
-          acceptedTypes.any((type) => type.startsWith('image/'));
-
-      if (shouldUseCamera && !allowMultiple) {
-        final capturedFile = await _imagePicker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 90,
-          maxWidth: 1920,
-          maxHeight: 1920,
-        );
-        if (capturedFile == null) {
-          return <String>[];
-        }
-        return <String>[capturedFile.path];
-      }
-
-      final isImageOnly = acceptedTypes.isNotEmpty &&
-          acceptedTypes.every(
-            (type) =>
-                type.startsWith('image/') ||
-                type == '.jpg' ||
-                type == '.jpeg' ||
-                type == '.png' ||
-                type == '.gif' ||
-                type == '.webp',
-          );
-
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: allowMultiple,
-        type: isImageOnly ? FileType.image : FileType.custom,
-        allowedExtensions:
-            isImageOnly ? null : _extractAllowedExtensions(acceptedTypes),
-      );
-
-      if (result == null || result.files.isEmpty) {
-        return <String>[];
-      }
-
-      return result.files
-          .map((file) => file.path)
-          .whereType<String>()
-          .toList();
-    } catch (error) {
-      if (kDebugMode) debugPrint('[WebView] File selection failed: $error');
-      return <String>[];
+      debugPrint('[WebView] External launch failed: $error');
     }
   }
 
   bool _isDownloadRequest(Uri uri) {
+    // WebView 插件不暴露所有响应头，这里只能按扩展名和显式查询参数预判下载。
     const downloadExtensions = <String>{
       '.pdf',
       '.doc',
@@ -299,7 +259,14 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
   Future<void> _downloadFile(Uri uri) async {
     try {
-      _showMessage('开始下载文件...');
+      _showMessage(
+        _browserText(
+          context,
+          zhCN: '开始下载文件...',
+          zhTW: '開始下載檔案...',
+          en: 'Starting file download...',
+        ),
+      );
       final directory = await _resolveDownloadDirectory();
       final response = await _downloadDio.getUri<List<int>>(
         uri,
@@ -317,12 +284,20 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
       _showDownloadSuccess(file);
     } catch (error) {
-      if (kDebugMode) debugPrint('[WebView] Download failed: $error');
-      _showMessage('文件下载失败');
+      debugPrint('[WebView] Download failed: $error');
+      _showMessage(
+        _browserText(
+          context,
+          zhCN: '文件下载失败',
+          zhTW: '檔案下載失敗',
+          en: 'File download failed',
+        ),
+      );
     }
   }
 
   Future<Directory> _resolveDownloadDirectory() async {
+    // 系统下载目录不可用时回退应用文档目录，保证文件仍有可持久访问的位置。
     final downloadsDirectory = await getDownloadsDirectory();
     if (downloadsDirectory != null) {
       if (!await downloadsDirectory.exists()) {
@@ -341,20 +316,23 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
   String _resolveDownloadFilename(Uri uri, Headers headers) {
     final disposition = headers.value('content-disposition');
     if (disposition != null) {
-      final filenameStarMatch = RegExp(r"filename\*=UTF-8''([^;]+)", caseSensitive: false)
-          .firstMatch(disposition);
+      final filenameStarMatch =
+          RegExp(r"filename\*=UTF-8''([^;]+)", caseSensitive: false)
+              .firstMatch(disposition);
       if (filenameStarMatch != null) {
         return Uri.decodeFull(filenameStarMatch.group(1)!);
       }
 
-      final filenameMatch = RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
-          .firstMatch(disposition);
+      final filenameMatch =
+          RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
+              .firstMatch(disposition);
       if (filenameMatch != null) {
         return filenameMatch.group(1)!;
       }
     }
 
-    final lastSegment = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+    final lastSegment =
+        uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
     if (lastSegment.isNotEmpty) {
       return lastSegment;
     }
@@ -390,10 +368,22 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('文件已保存：${file.path.split(Platform.pathSeparator).last}'),
+        content: Text(
+          _browserText(
+            context,
+            zhCN: '文件已保存：${file.path.split(Platform.pathSeparator).last}',
+            zhTW: '檔案已儲存：${file.path.split(Platform.pathSeparator).last}',
+            en: 'File saved: ${file.path.split(Platform.pathSeparator).last}',
+          ),
+        ),
         behavior: SnackBarBehavior.floating,
         action: SnackBarAction(
-          label: '分享',
+          label: _browserText(
+            context,
+            zhCN: '分享',
+            zhTW: '分享',
+            en: 'Share',
+          ),
           onPressed: () {
             Share.shareXFiles([XFile(file.path)]);
           },
@@ -412,22 +402,8 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
     );
   }
 
-  List<String>? _extractAllowedExtensions(List<String> acceptTypes) {
-    final extensions = acceptTypes
-        .where((type) => type.startsWith('.'))
-        .map((type) => type.substring(1).toLowerCase())
-        .where((type) => type.isNotEmpty)
-        .toSet()
-        .toList();
-
-    if (extensions.isEmpty) {
-      return null;
-    }
-
-    return extensions;
-  }
-
   Future<void> _updateNavigationState() async {
+    // WebView 查询为异步操作，页面关闭后只丢弃结果，不再更新状态。
     final canGoBack = await _controller.canGoBack();
     final canGoForward = await _controller.canGoForward();
     if (mounted) {
@@ -451,7 +427,8 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
-    if (_dragOffset > _dismissThreshold || details.velocity.pixelsPerSecond.dy > 500) {
+    if (_dragOffset > _dismissThreshold ||
+        details.velocity.pixelsPerSecond.dy > 500) {
       // 关闭浏览器
       Navigator.of(context).pop();
     } else {
@@ -468,21 +445,22 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final mediaQuery = MediaQuery.of(context);
     final topPadding = mediaQuery.padding.top;
-    
+
     // 颜色配置
-    final headerBg = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFEFEFF4);
+    final headerBg = AppColors.surfaceFor(context);
     final contentBg = isDark ? const Color(0xFF000000) : Colors.white;
-    
+
     // 计算透明度（下拉时背景变暗）
     final double opacity = (1 - (_dragOffset / 300)).clamp(0.3, 1.0);
     final double scale = (1 - (_dragOffset / 2000)).clamp(0.95, 1.0);
-    
+
     return GestureDetector(
       onTap: () {}, // 阻止点击穿透
       child: Scaffold(
         backgroundColor: Colors.black.withOpacity(0.5 * opacity),
         body: AnimatedContainer(
-          duration: _isDragging ? Duration.zero : const Duration(milliseconds: 200),
+          duration:
+              _isDragging ? Duration.zero : const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           transform: Matrix4.identity()
             ..translate(0.0, _dragOffset)
@@ -491,7 +469,8 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
             margin: EdgeInsets.only(top: topPadding),
             decoration: BoxDecoration(
               color: contentBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -516,7 +495,9 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                   LinearProgressIndicator(
                     value: _loadingProgress,
                     backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.controlActiveFor(context),
+                    ),
                     minHeight: 2,
                   )
                 else
@@ -537,10 +518,12 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
   /// Telegram 风格顶部导航栏（可下拉关闭）
   Widget _buildTelegramHeader(bool isDark, Color headerBg) {
-    final buttonBg = isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.06);
-    final addressBarBg = isDark ? Colors.white.withOpacity(0.12) : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black;
-    
+    final buttonBg = isDark
+        ? AppColors.darkControlBackgroundStrong
+        : Colors.black.withOpacity(0.06);
+    final addressBarBg = AppColors.inputBackgroundFor(context);
+    final textColor = AppColors.textPrimaryFor(context);
+
     return Container(
       color: headerBg,
       child: Column(
@@ -552,7 +535,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
             width: 36,
             height: 5,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white24 : Colors.grey.shade400,
+              color: AppColors.dividerFor(context),
               borderRadius: BorderRadius.circular(2.5),
             ),
           ),
@@ -577,13 +560,15 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                       decoration: BoxDecoration(
                         color: addressBarBg,
                         borderRadius: BorderRadius.circular(18),
-                        boxShadow: isDark ? null : [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
+                        boxShadow: isDark
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 2,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       child: Row(
@@ -595,7 +580,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                               child: Icon(
                                 Icons.lock,
                                 size: 14,
-                                color: isDark ? Colors.white60 : Colors.black45,
+                                color: AppColors.textSecondaryFor(context),
                               ),
                             ),
                           Flexible(
@@ -618,7 +603,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  isDark ? Colors.white60 : Colors.black45,
+                                  AppColors.textSecondaryFor(context),
                                 ),
                               ),
                             ),
@@ -648,16 +633,16 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
 
   /// Telegram 风格底部工具栏
   Widget _buildTelegramBottomBar(bool isDark) {
-    final barBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final iconColor = AppColors.primary;
-    final disabledColor = isDark ? Colors.white30 : Colors.grey.shade400;
-    
+    final barBg = AppColors.surfaceFor(context);
+    final iconColor = AppColors.linkFor(context);
+    final disabledColor = AppColors.textTertiaryFor(context);
+
     return Container(
       decoration: BoxDecoration(
         color: barBg,
         border: Border(
           top: BorderSide(
-            color: isDark ? Colors.white10 : Colors.grey.shade200,
+            color: AppColors.dividerFor(context),
             width: 0.5,
           ),
         ),
@@ -760,9 +745,9 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
   }
 
   void _showMoreOptions(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF2C2C2E) : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black;
-    
+    final bgColor = AppColors.cardFor(context);
+    final textColor = AppColors.textPrimaryFor(context);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -781,7 +766,7 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                 width: 36,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey.shade300,
+                  color: AppColors.dividerFor(context),
                   borderRadius: BorderRadius.circular(2.5),
                 ),
               ),
@@ -809,25 +794,36 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                     _currentUrl,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white60 : Colors.grey,
+                      color: AppColors.textSecondaryFor(context),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              if (_pageTitle.isEmpty)
-                const SizedBox(height: 8),
+              if (_pageTitle.isEmpty) const SizedBox(height: 8),
               // 选项列表
               _buildOptionItem(
                 icon: Icons.copy_rounded,
-                title: '拷贝链接',
+                title: _browserText(
+                  context,
+                  zhCN: '拷贝链接',
+                  zhTW: '複製連結',
+                  en: 'Copy Link',
+                ),
                 isDark: isDark,
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: _currentUrl));
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('链接已拷贝'),
+                      content: Text(
+                        _browserText(
+                          context,
+                          zhCN: '链接已拷贝',
+                          zhTW: '連結已複製',
+                          en: 'Link copied',
+                        ),
+                      ),
                       duration: const Duration(seconds: 1),
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
@@ -839,7 +835,12 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
               ),
               _buildOptionItem(
                 icon: Icons.refresh_rounded,
-                title: '刷新',
+                title: _browserText(
+                  context,
+                  zhCN: '刷新',
+                  zhTW: '重新整理',
+                  en: 'Refresh',
+                ),
                 isDark: isDark,
                 onTap: () {
                   Navigator.pop(context);
@@ -853,7 +854,9 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                 width: double.infinity,
                 child: TextButton(
                   style: TextButton.styleFrom(
-                    backgroundColor: isDark ? Colors.white.withOpacity(0.08) : Colors.grey.shade100,
+                    backgroundColor: isDark
+                        ? AppColors.darkControlBackgroundStrong
+                        : Colors.grey.shade100,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -861,7 +864,12 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
                   ),
                   onPressed: () => Navigator.pop(context),
                   child: Text(
-                    '取消',
+                    _browserText(
+                      context,
+                      zhCN: '取消',
+                      zhTW: '取消',
+                      en: 'Cancel',
+                    ),
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
@@ -892,14 +900,14 @@ class _InAppBrowserState extends State<InAppBrowser> with SingleTickerProviderSt
             Icon(
               icon,
               size: 24,
-              color: AppColors.primary,
+              color: AppColors.linkFor(context),
             ),
             const SizedBox(width: 14),
             Text(
               title,
               style: TextStyle(
                 fontSize: 16,
-                color: isDark ? Colors.white : Colors.black,
+                color: AppColors.textPrimaryFor(context),
               ),
             ),
           ],

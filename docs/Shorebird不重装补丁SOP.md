@@ -1,186 +1,149 @@
 # Shorebird 不重装补丁 SOP
 
-适用场景：
+这套热更新是 App 程序层面的热更新：针对 Flutter/Dart UI 和业务逻辑发补丁，让用户不需要重新安装 APK。
 
-- 只改了 `lib/**` 里的 Dart 代码
-- 不改 `android/**`
-- 不改 `ios/**`
-- 不改权限、签名、包名、原生插件
-- 希望用户不用重装，下载补丁后下次重启生效
+它不是后端热更新，也不是万能替代 APK。第一次必须让用户安装一个由 `shorebird release` 构建出来的基线包；之后同一个基线版本上的 Dart/UI 修复，才可以通过 `shorebird patch` 下发。
 
-## 1. 先确认一个前提
+## 能热更新什么
 
-Shorebird 补丁不是对任意 Flutter 安装包都生效。
+可以走 Shorebird 补丁：
 
-前提必须满足：
+- `lib/**` 里的 Dart 页面、状态、交互、业务逻辑
+- 不涉及原生工程、不涉及新资源文件的 UI 调整
+- 当前 App 已安装的是同一版本的 Shorebird 基线包
 
-- 线上用户当前安装的基础包，必须是 `shorebird release` 构建出来的包
+不能只发 Shorebird 补丁：
 
-如果你当前线上发出去的是普通：
+- 修改 `android/**`、`ios/**`、Gradle、Kotlin、Swift、权限、签名、包名
+- 修改原生插件、推送 SDK、Firebase/HMS/Xiaomi/OPPO 等原生配置
+- 新增或替换需要打进 APK 的 assets、字体、图标、启动图
+- 升级 Flutter SDK、NDK、minSdk、targetSdk 等构建链路
+
+这些情况仍然要重新发 APK 或走整包更新。
+
+## 当前项目状态
+
+- Shorebird 配置文件：`shorebird.yaml`
+- Shorebird app id：交付方自行创建并填写
+- Flutter SDK 依赖：`shorebird_code_push`
+- App 启动时会请求后端：`/app/hot-update/check`
+- 后台补丁投递模式支持：`delivery_mode=shorebird`
+- 当前版本来自 `pubspec.yaml`：`4.0.3+14`
+
+客户端已经由 App 层控制补丁检查和安装时机，`shorebird.yaml` 里保持 `auto_update: false` 是正确的。
+
+## 本机工具链
+
+Shorebird CLI 已安装在：
 
 ```powershell
-flutter build apk
+<USER_HOME>\.shorebird\bin\shorebird.bat
 ```
 
-那它不能直接吃 Shorebird 补丁。
+当前用户 PATH 已加入：
 
-## 2. 当前项目版本号怎么看
-
-项目版本号来自根目录：
-
-- [pubspec.yaml](e:\yi-xin-ai2k\pubspec.yaml)
-
-例如：
-
-```yaml
-version: 4.0.1+10
+```powershell
+<USER_HOME>\.shorebird\bin
 ```
 
-这个版本号同时影响：
+如果新开的终端仍识别不到 `shorebird`，先重新打开 PowerShell，或临时执行：
 
-- Shorebird release version
-- 后台补丁版本匹配
-- 线上用户所属基础版本
-
-## 3. 第一次接入 Shorebird 的正确顺序
-
-如果现网还不是 Shorebird 包，先做一次基础版本替换：
-
-1. 修改版本号，例如从 `4.0.1+10` 升到 `4.0.2+11`
-2. 执行 Shorebird release
-3. 把这个基础包发给用户安装
-4. 之后才开始发 patch
-
-示例：
-
-```bash
-shorebird release android
-shorebird release ios
+```powershell
+$env:Path="$HOME\.shorebird\bin;$env:Path"
 ```
 
-## 4. 什么时候可以直接发补丁
+国内网络下 `pub.dev` 可能 TLS 失败，脚本默认使用：
 
-只有在下面条件同时成立时：
-
-1. 改动只在 `lib/**`
-2. 线上基础包已经是 Shorebird release 包
-
-这时才直接发：
-
-```bash
-shorebird patch android --track=stable
-shorebird patch ios --track=stable
+```powershell
+PUB_HOSTED_URL=https://pub.flutter-io.cn
 ```
 
-## 5. 当前项目里的渠道规则
+## 第一次接入：发基线 APK
 
-这套项目里：
+如果用户当前安装的不是 Shorebird 基线包，必须先发一次基线 APK。以后才可以不重装发补丁。
 
-- 客户端补丁检查默认走 `stable`
-- 后台 `channel` 会映射到 Shorebird `track`
+本地开发/模拟器联调用：
 
-所以最稳妥的做法是：
-
-- Shorebird patch 用 `stable`
-- 后台补丁记录 `channel` 也填 `stable`
-
-如果你发的是：
-
-```bash
-shorebird patch android --track=staging
+```powershell
+.\scripts\shorebird-release-android.ps1 -Artifact apk
 ```
 
-但后台补丁还是 `stable`，或者客户端没有切到 `staging`，那就不会按预期生效。
+线上正式包要显式传生产地址，例如：
 
-## 6. 标准发布步骤
-
-### 6.1 改代码
-
-只改 `lib/**`。
-
-### 6.2 发补丁
-
-```bash
-shorebird patch android --track=stable
-shorebird patch ios --track=stable
+```powershell
+.\scripts\shorebird-release-android.ps1 `
+  -Artifact apk `
+  -ServerUrl "https://imapi.example.com" `
+  -WsUrl "wss://imapi.example.com/api/v1/ws"
 ```
 
-### 6.3 在后台新建补丁记录
+如果只想看命令不真正上传：
 
-虽然 Shorebird 补丁已经发出，但你这套项目仍然必须在后台建一条补丁记录，因为客户端先走你的后端灰度判断。
-
-推荐填写：
-
-- `投递模式`：`shorebird`
-- `平台`：`android` 或 `ios`
-- `渠道`：`stable`
-- `补丁版本`：例如 `4.0.2+11-p1`
-- `补丁地址`：留空
-- `补丁哈希`：留空
-- `灰度比例`：建议先 `5` 或 `10`
-- `强制补丁`：按需
-
-## 7. 客户端实际表现
-
-当前项目里的 Shorebird 行为：
-
-1. App 启动请求 `/app/hot-update/check`
-2. 后端判断平台、版本、灰度、是否已装过
-3. 如果命中且客户端支持 Shorebird，则继续应用
-4. 客户端检查 Shorebird update
-5. 下载补丁
-6. 下次重启生效
-7. 上报 `install_started / install_confirmed / apply_success / apply_failed`
-
-说明：
-
-- 用户拒绝可选更新时，会记录 `deferred`
-- 已安装成功的补丁不会重复下发
-
-## 8. staging 灰度建议
-
-如果你要先测再放量，可以这样：
-
-```bash
-shorebird patch android --track=staging
-shorebird patch ios --track=staging
+```powershell
+.\scripts\shorebird-release-android.ps1 -PrintOnly
 ```
 
-测试通过后，再切到 `stable`。
+基线包成功后，把生成的 APK 安装/分发给用户一次。普通 `flutter build apk` 构建出来的包不能吃 Shorebird 补丁。
 
-示例：
+## 后续更新：发补丁
 
-```bash
-shorebird patches set-track --release-version 4.0.1+10 --patch-number 1 --track stable
+只改 Dart/UI 时，发 Android 补丁：
+
+```powershell
+.\scripts\shorebird-patch-android.ps1 -Track stable
 ```
 
-## 9. 什么时候不能走 Shorebird
+线上正式补丁同样要带和基线包一致的接口地址：
 
-以下任何一种都不能走：
+```powershell
+.\scripts\shorebird-patch-android.ps1 `
+  -ReleaseVersion "4.0.3+14" `
+  -Track stable `
+  -ServerUrl "https://imapi.example.com" `
+  -WsUrl "wss://imapi.example.com/api/v1/ws"
+```
 
-- 改了 `android/**`
-- 改了 `ios/**`
-- 改了插件原生层
-- 改了权限
-- 改了 Firebase / 推送 /原生 SDK 配置
-- 改了签名、包名、渠道包
+先灰度测试可以发到 `staging`：
 
-这时要改走：
+```powershell
+.\scripts\shorebird-patch-android.ps1 -ReleaseVersion "4.0.3+14" -Track staging
+```
 
-- `self_hosted`
-- 或重新发商店包
+补丁下载后通常要下次重启 App 才生效。
 
-## 10. 常见错误
+## 后台补丁记录
 
-- 用普通 `flutter build` 发出去的包，想直接吃 Shorebird patch
-- 后台没建 `shorebird` 补丁记录
+Shorebird 补丁上传成功后，还要在后台热更新管理里建一条记录。因为 App 先走自己的后端灰度判断，再触发 Shorebird SDK 拉取。
+
+推荐字段：
+
+- 投递模式：`shorebird`
+- 平台：`android`
+- 渠道：和 Shorebird track 保持一致，例如 `stable`
+- 最小 App 版本：`4.0.3+14`
+- 最大 App 版本：`4.0.3+14`
+- 最小 build number：`14`
+- 最大 build number：`14`
+- 目标 App 版本：`4.0.3+14`
+- 补丁版本：例如 `4.0.3+14-p1`
+- 补丁地址：留空
+- 补丁哈希：留空
+- 灰度比例：建议先 `5` 或 `10`
+- 强制更新：按需要选择
+
+后台发布后，App 启动会请求 `/app/hot-update/check`，命中后再由客户端调用 Shorebird SDK 下载补丁。
+
+## 常见错误
+
+- 用普通 `flutter build apk` 的包尝试接 Shorebird 补丁
+- 没有在后台建 `delivery_mode=shorebird` 的补丁记录
 - 后台 `channel` 和 Shorebird `track` 不一致
-- 改了原生代码还继续发 Shorebird patch
-- 以为补丁下载后立刻生效，实际上当前逻辑是下次重启生效
+- 改了 Android/iOS 原生代码还继续发 patch
+- 以为下载后立即生效，实际一般需要重启 App
+- 基线包和补丁使用了不同的 `GENERIC_IM_SERVER_URL` / `GENERIC_IM_WS_URL`
 
-## 11. 这条链路需要重新部署什么
+## 当前阻塞项
 
-- 只改 `lib/**` 且现网已是 Shorebird 包：可以不重新安装客户端
-- 改 `backend/**`：后端仍需重新编译并重启
-- 改 `admin/**`：后台仍需重新构建部署
-- 改 `android/**` / `ios/**`：不能只发补丁，必须重新发包
+本机 `shorebird --version` 已通过，`shorebird doctor` 可运行。当前网络对 `api.shorebird.dev` 和 `oauth2.googleapis.com` 不稳定或不可达，所以真实 `shorebird login`、`shorebird release`、`shorebird patch` 可能会被登录或上传阶段挡住。
+
+另外，`git config --system core.longpaths true` 需要管理员权限；当前已设置用户级 `core.longpaths=true`，但 Shorebird 仍可能提示系统级 long paths 警告。这个警告不等于脚本不能运行，后续如遇 Windows 长路径错误，再用管理员 PowerShell 执行系统级配置。

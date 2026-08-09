@@ -13,11 +13,12 @@ import type {
   ServiceAdminInviteCode,
   ServiceAdminInvitee,
   ServiceAdminProfile,
-  ServiceAdminWelcomeMessage
+  ServiceAdminWelcomeMessage,
+  ServiceAdminWelcomeMessageSaveResult
 } from '@/types/service-admin'
 import { request } from '@/utils/request'
 
-const useMock = import.meta.env.VITE_USE_MOCK !== 'false'
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function loginServiceAdmin(payload?: { username: string; password: string }) {
   if (useMock) return mockLogin()
@@ -28,6 +29,7 @@ export async function loginServiceAdmin(payload?: { username: string; password: 
     body: {
       username: payload?.username || '',
       password: payload?.password || '',
+      // 客服后台使用固定设备标识，便于服务端区分独立后台会话与普通客户端登录。
       device_id: 'service-admin-web',
       device_type: 'web',
       device_name: 'service-admin-web'
@@ -80,10 +82,12 @@ export async function fetchServiceAdminWelcomeMessage(): Promise<ServiceAdminWel
   })
 }
 
-export async function saveServiceAdminWelcomeMessage(message: string) {
+export async function saveServiceAdminWelcomeMessage(
+  message: string
+): Promise<ServiceAdminWelcomeMessageSaveResult> {
   if (useMock) return mockSaveWelcomeMessage(message)
 
-  return request<{ success: boolean; message: string; length: number }>({
+  return request<ServiceAdminWelcomeMessageSaveResult>({
     url: '/service-admin/welcome-message',
     method: 'PATCH',
     body: { message }
@@ -91,6 +95,7 @@ export async function saveServiceAdminWelcomeMessage(message: string) {
 }
 
 export async function updateServiceAdminPassword(payload: { oldPassword: string; newPassword: string }) {
+  // 页面模型使用 camelCase，请求边界统一转换为服务端 snake_case 字段。
   return request<{ success: boolean }>({
     url: '/service-admin/password',
     method: 'PUT',

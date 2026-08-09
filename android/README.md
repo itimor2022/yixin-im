@@ -1,6 +1,6 @@
 # Android 平台层
 
-> IM 客户端在 Android 端的原生宿主工程，承载 Flutter 引擎与「壹信」应用在 Android 11+ 设备上的运行，负责权限、通知、后台保活、高刷新率等平台能力。
+> IM 客户端在 Android 端的原生宿主工程，承载 Flutter 引擎与「通用IM」应用在 Android 11+ 设备上的运行，负责权限、通知、后台保活、高刷新率等平台能力。
 
 ---
 
@@ -9,7 +9,7 @@
 `android` 在整个 IM 系统中的定位是 **Android 平台宿主**，与项目根目录下的 Flutter 代码（`lib/`、`pubspec.yaml`）共同构成完整的 Android 客户端。主要作用包括：
 
 - **Flutter 引擎承载**：通过 Flutter Gradle 插件将 Flutter 应用打包为 Android APK，提供 Flutter 运行环境。
-- **应用入口与配置**：`MainActivity`、`AndroidManifest`、应用 ID（`com.yixinim.app`）、应用名「壹信」、版本与 ABI 配置等。
+- **应用入口与配置**：`MainActivity`、`AndroidManifest`、应用 ID（`com.genericim.app`）、应用名「通用IM」、版本与 ABI 配置等。
 - **平台能力**：通知渠道（含后台服务通知）、高刷新率与刘海屏适配、前台服务与开机自启（消息保活）、网络与媒体权限等，为 IM 的聊天、音视频通话、推送与后台连接提供支撑。
 - **构建与优化**：仅保留 arm64-v8a 与中英文资源以控制包体、Release 混淆与压缩、Java 17 / Kotlin 等工具链配置。
 
@@ -25,13 +25,13 @@
 | 构建系统       | Gradle 8.14（Kotlin DSL） |
 | Android 插件   | Android Gradle Plugin 8.9.1 |
 | Kotlin         | 2.1.0 |
-| 最低/目标 SDK  | minSdk 30（Android 11+）/ targetSdk 36 / compileSdk 36 |
+| 最低/目标 SDK  | minSdk 29（Android 10+）/ targetSdk 36 / compileSdk 36 |
 | Java           | 17（sourceCompatibility / targetCompatibility / jvmTarget） |
 | Flutter 集成   | Flutter Gradle Plugin，Flutter 源码路径 `../..` |
 
 与 IM 相关的原生侧要点：
 
-- **通知与后台**：`MainActivity` 中创建通知渠道 `gaoranim_background`，供后台保活使用；Manifest 中声明前台服务、开机自启 Receiver（`flutter_background_service`）。
+- **通知与后台**：`MainActivity` 中创建通知渠道 `genericim_background`，供后台保活使用；Manifest 中声明前台服务、开机自启 Receiver（`flutter_background_service`）。
 - **权限**：网络、存储/媒体、相机、麦克风、蓝牙、唤醒锁、前台服务、通知等，在 `AndroidManifest.xml` 中声明。
 - **混淆**：`proguard-rules.pro` 中保留 Flutter、Agora、Gson、后台服务、通知等与 IM 相关的类。
 
@@ -148,7 +148,7 @@ android/
 | **Flutter 集成**   | `app/build.gradle.kts` 中 `id("dev.flutter.flutter-gradle-plugin")` 与 `flutter { source = "../.." }`；版本号由 Flutter 提供。 |
 | **后台保活**       | Manifest 中 `flutter_background_service` 的 Service（foregroundServiceType="dataSync"）与 BootReceiver；通知渠道在 `MainActivity.createNotificationChannel()`。 |
 | **混淆与加固**     | `app/proguard-rules.pro`：保留 Flutter、Agora、Gson、后台服务、通知等，避免 IM 与音视频相关类被误删。 |
-| **包名与资源**     | `applicationId` / `namespace`：`com.yixinim.app`；应用名「壹信」在 Manifest 的 `android:label`。 |
+| **包名与资源**     | `applicationId` / `namespace`：`com.genericim.app`；应用名「通用IM」在 Manifest 的 `android:label`。 |
 | **实际 IM 逻辑**   | 消息、连接、存储、UI 等均在项目根目录的 Flutter 代码（`lib/`）及 `pubspec.yaml` 依赖中，本目录仅提供 Android 运行环境与平台能力。 |
 
 ---
@@ -184,7 +184,7 @@ cd android
 
 ### 7.3 注意事项
 
-- **minSdk 30**：仅支持 Android 11+；若需支持更低版本，需修改 `app/build.gradle.kts` 的 `minSdk` 并验证兼容性。
+- **minSdk 29**：支持 Android 10+；更低版本不在当前兼容与回归范围内。
 - **ABI**：当前仅保留 `arm64-v8a`，若需 x86_64（模拟器等），在 `defaultConfig.ndk.abiFilters` 中增加。
 - **签名**：Release 建议配置正式 keystore，避免长期使用 `signingConfigs.getByName("debug")`。
 

@@ -1,18 +1,20 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"strings"
-
-	"gaoranim/internal/config"
-	"gaoranim/internal/models"
-
 	"gorm.io/gorm"
+	"strings"
+	"genericim/internal/config"
+	"genericim/internal/models"
 )
 
-// LoadPaymentForRuntime 优先使用 system_settings.payment_gateway JSON，并与 yaml 中非空项合并（便于只改部分字段）。
+// LoadPaymentForRuntime
+
 func LoadPaymentForRuntime(db *gorm.DB, yamlCfg config.PaymentConfig) config.PaymentConfig {
 	if db == nil {
 		return yamlCfg
@@ -32,7 +34,8 @@ func LoadPaymentForRuntime(db *gorm.DB, yamlCfg config.PaymentConfig) config.Pay
 	return paymentFillZeros(dbCfg, yamlCfg)
 }
 
-// paymentFillZeros DB 中已写字段优先生效；空字段用 yaml 补全（不覆盖 enabled 等布尔含义，布尔仅以 DB 为准）。
+// paymentFillZeros
+
 func paymentFillZeros(db, yaml config.PaymentConfig) config.PaymentConfig {
 	out := db
 	if out.NotifyBaseURL == "" {

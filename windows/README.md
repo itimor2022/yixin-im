@@ -1,6 +1,6 @@
 # Windows 平台层
 
-> IM 客户端在 Windows 端的原生宿主工程，承载 Flutter 引擎与「壹信」应用在桌面上的运行，提供窗口、消息循环与 Flutter 嵌入层。
+> IM 客户端在 Windows 端的原生宿主工程，承载 Flutter 引擎与「通用IM」应用在桌面上的运行，提供窗口、消息循环与 Flutter 嵌入层。
 
 ---
 
@@ -8,8 +8,8 @@
 
 `windows` 在整个 IM 系统中的定位是 **Windows 平台宿主**，与项目根目录下的 Flutter 代码（`lib/`、`pubspec.yaml`）共同构成完整的 Windows 桌面客户端。主要作用包括：
 
-- **Flutter 引擎承载**：通过 CMake 与 Win32 API 将 Flutter 应用构建为 Windows 可执行程序（`gao_ran_im.exe`），提供 Flutter 运行环境。
-- **窗口与入口**：`main.cpp` 中创建标题为「壹信」的 Flutter 窗口（默认 1280×720），初始化 COM、Dart 工程与消息循环。
+- **Flutter 引擎承载**：通过 CMake 与 Win32 API 将 Flutter 应用构建为 Windows 可执行程序（`genericim.exe`），提供 Flutter 运行环境。
+- **窗口与入口**：`main.cpp` 中创建标题为「通用IM」的 Flutter 窗口（默认 1280×720），初始化 COM、Dart 工程与消息循环。
 - **构建与安装**：CMake 管理 C++ 编译、Flutter 库与插件链接，并将运行时与资源安装到可执行文件目录，便于直接运行或集成到安装包。
 
 业务与 UI 逻辑在 Flutter 侧（项目根目录）；本目录仅做原生层窗口与构建配置，一般无需在此编写业务代码。桌面端特有能力（如窗口管理、托盘、快捷键）由 Flutter 插件（如 window_manager、tray_manager、hotkey_manager）在 `pubspec.yaml` 中声明。
@@ -24,11 +24,11 @@
 | 构建系统       | CMake 3.14+ |
 | 编译器         | MSVC（Visual Studio 或 Build Tools），C++17 |
 | Flutter 集成   | Flutter 托管目录 `flutter/`（含 generated_plugin_registrant、generated_plugins.cmake） |
-| 可执行文件名   | gao_ran_im（在根 CMakeLists.txt 中 BINARY_NAME） |
+| 可执行文件名   | genericim（在根 CMakeLists.txt 中 BINARY_NAME） |
 
 与 IM 相关的原生侧要点：
 
-- **窗口**：`runner/main.cpp` 中 `FlutterWindow` 创建窗口标题「壹信」、默认尺寸；`runner/flutter_window.cpp`、`win32_window.cpp` 实现 Flutter 视图与 Win32 窗口逻辑。
+- **窗口**：`runner/main.cpp` 中 `FlutterWindow` 创建窗口标题「通用IM」、默认尺寸；`runner/flutter_window.cpp`、`win32_window.cpp` 实现 Flutter 视图与 Win32 窗口逻辑。
 - **依赖**：链接 `flutter`、`flutter_wrapper_app`、`dwmapi.lib`；插件通过 `flutter/generated_plugins.cmake` 自动纳入构建。
 - **资源与 AOT**：CMake 将 `flutter_assets`、ICU 数据、AOT 库（Profile/Release）、插件原生库安装到可执行文件同目录，保证单目录运行。
 
@@ -72,7 +72,7 @@ flutter run -d windows
 flutter build windows
 ```
 
-产出在 `build/windows/x64/runner/`（或对应架构目录），可直接运行 `gao_ran_im.exe` 或整包发布。
+产出在 `build/windows/x64/runner/`（或对应架构目录），可直接运行 `genericim.exe` 或整包发布。
 
 ### 4.3 使用 Visual Studio 打开（可选）
 
@@ -82,9 +82,9 @@ flutter build windows
 
 | 文件/配置           | 说明 |
 |---------------------|------|
-| **windows/CMakeLists.txt** | 顶层 CMake：项目名 gao_ran_im、BINARY_NAME、Flutter 目录、runner 子目录、插件包含、安装规则（可执行文件、flutter_assets、AOT、插件库）。 |
+| **windows/CMakeLists.txt** | 顶层 CMake：项目名 genericim、BINARY_NAME、Flutter 目录、runner 子目录、插件包含、安装规则（可执行文件、flutter_assets、AOT、插件库）。 |
 | **windows/runner/CMakeLists.txt** | 定义可执行文件源（main.cpp、flutter_window、win32_window、utils、generated_plugin_registrant）、链接 Flutter 与 dwmapi。 |
-| **windows/runner/main.cpp** | 窗口标题「壹信」、默认尺寸 1280×720；可在此修改窗口名或初始大小。 |
+| **windows/runner/main.cpp** | 窗口标题「通用IM」、默认尺寸 1280×720；可在此修改窗口名或初始大小。 |
 
 无 `.env` 类环境变量；与后端或功能开关相关的配置在 Flutter 侧。
 
@@ -95,7 +95,7 @@ flutter build windows
 ```
 windows/
 ├── runner/
-│   ├── main.cpp              # 入口：COM 初始化、Flutter 工程、创建「壹信」窗口、消息循环
+│   ├── main.cpp              # 入口：COM 初始化、Flutter 工程、创建「通用IM」窗口、消息循环
 │   ├── flutter_window.cpp    # Flutter 窗口实现
 │   ├── flutter_window.h
 │   ├── win32_window.cpp      # Win32 窗口封装
@@ -120,9 +120,9 @@ windows/
 
 | 关注点             | 位置说明 |
 |--------------------|----------|
-| **应用入口与窗口** | `runner/main.cpp`：创建标题「壹信」、默认 1280×720 的 Flutter 窗口；`runner/flutter_window.cpp`、`win32_window.cpp` 实现视图与 Win32 逻辑。 |
+| **应用入口与窗口** | `runner/main.cpp`：创建标题「通用IM」、默认 1280×720 的 Flutter 窗口；`runner/flutter_window.cpp`、`win32_window.cpp` 实现视图与 Win32 逻辑。 |
 | **Flutter 集成**   | 根目录 `CMakeLists.txt` 中 `add_subdirectory(flutter)`、`include(flutter/generated_plugins.cmake)`；runner 链接 `flutter`、`flutter_wrapper_app`。 |
-| **可执行文件与安装** | BINARY_NAME 为 gao_ran_im；CMake 将 exe、flutter_assets、AOT、插件库安装到同一目录，便于打包分发。 |
+| **可执行文件与安装** | BINARY_NAME 为 genericim；CMake 将 exe、flutter_assets、AOT、插件库安装到同一目录，便于打包分发。 |
 | **实际 IM 逻辑**   | 消息、连接、存储、UI、窗口管理/托盘等均在项目根目录的 Flutter 代码（`lib/`）及 `pubspec.yaml` 依赖中；本目录仅提供 Windows 运行环境。 |
 
 ---

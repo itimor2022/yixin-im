@@ -11,6 +11,7 @@ export function useSettingsState() {
   const initColorWeak = () => {
     if (settingStore.colorWeak) {
       const el = document.getElementsByTagName('html')[0]
+      // 延迟到应用根节点完成初始化后再加类，避免首屏挂载阶段样式竞争。
       setTimeout(() => {
         el.classList.add('color-weak')
       }, 100)
@@ -24,6 +25,7 @@ export function useSettingsState() {
     }
     settingStore.switchMenuLayouts(type)
     if (type === MenuTypeEnum.DUAL_MENU) {
+      // 双列菜单依赖设计主题和展开状态，切换布局时同步修正这两个关联设置。
       settingStore.switchMenuStyles(MenuThemeEnum.DESIGN)
       settingStore.setMenuOpen(true)
     }

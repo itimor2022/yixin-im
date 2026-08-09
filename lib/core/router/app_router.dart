@@ -1,6 +1,8 @@
+// 文件用途：集中定义应用路由、页面跳转规则、重定向和路由级鉴权。
+// 核心逻辑：集中创建 GoRouter，依据登录态、设备锁和注册流程执行重定向，同时维护页面参数与导航栈一致性。
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,7 +21,7 @@ import '../../features/chat/pages/qr_scanner_page.dart';
 import '../../features/chat/pages/search_page.dart';
 import '../../features/settings/pages/personalization_page.dart';
 import '../../features/wallet/wallet.dart';
-import '../../features/settings/pages/membership_page.dart';
+import '../../features/vip/vip.dart';
 import '../../features/contacts/pages/contacts_page.dart';
 import '../../features/discover/pages/discover_page.dart';
 import '../../features/portal/pages/custom_portal_page.dart';
@@ -34,13 +36,33 @@ import '../../features/meeting/pages/meeting_page.dart';
 import '../../features/splash/pages/splash_page.dart';
 import '../../features/call/pages/call_page.dart';
 import '../../shared/widgets/page_transitions.dart';
+import '../i18n/app_localizations.dart';
 import '../services/api/auth_service.dart';
 import '../services/api/system_settings_service.dart';
+import '../utils/platform_utils.dart';
+import 'redirect_utils.dart';
+
+String _routerText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
 
 /// 全局根导航器 Key - 用于在 GoRouter 之外导航（如来电页面）
 final GlobalKey<NavigatorState> rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
 
+/// 路由器只监听会改变访问权限的认证和系统设置；页面业务状态不应触发整棵路由树重建。
 final appRouterProvider = Provider<GoRouter>((ref) {
   // 创建 refresh notifier
   final refreshNotifier =
@@ -52,13 +74,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     // 使用根导航器 Key
     navigatorKey: rootNavigatorKey,
-    // 默认进入启动页
-    initialLocation: '/',
+    // Web needs the browser URL as the initial location for deep links.
+    initialLocation: kIsWeb ? null : '/',
     debugLogDiagnostics: false,
 
     // 路由重定向 - 检查认证状态
     // 注意：使用 ref.read 而不是 ref.watch，避免整个路由器重建
     redirect: (context, state) {
+      // 重定向按启动占位、认证恢复、账号约束、平台合规的顺序收敛，前面的状态拥有更高优先级。
       // 在 redirect 回调内读取最新状态
       final authState = ref.read(authServiceProvider);
       final isLoggedIn = authState.status == AuthStatus.authenticated;
@@ -70,17 +93,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isInitializing = authState.status == AuthStatus.initial;
       final isLoading = authState.status == AuthStatus.loading;
 
+      // Keep splash in charge of its own timing. If redirect moves away from
+      // "/" as soon as auth resolves, the configured splash duration is skipped.
+      if (isOnSplash) return null;
+
       // 初始化中（仅 initial 状态），停留在启动页
       if (isInitializing) {
-        if (isOnSplash) return null;
-        return '/';
+        return splashLocationWithRedirect(state.uri);
       }
 
       // loading 状态时：如果已在启动页/登录页则保持；否则重定向到启动页
       // 防止深链接直接打开受保护路由时，loading 期间短暂停留在该页面
       if (isLoading) {
         if (isOnSplash || isOnAuth) return null;
-        return '/';
+        return splashLocationWithRedirect(state.uri);
       }
 
       // 已登录
@@ -94,8 +120,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         }
         if (isOnBindPhone) return '/home';
 
-        // 在启动页或登录页，跳转到首页
-        if (isOnSplash || isOnAuth) return '/home';
+        if (PlatformUtils.isIOS && settings != null) {
+          final compliance = settings.iosCompliance;
+          final path = state.matchedLocation;
+          if (path.startsWith('/vip') && !compliance.allowsVIP) {
+            return '/settings';
+          }
+          if (path.startsWith('/wallet/recharge') &&
+              !compliance.allowsWalletRecharge) {
+            return compliance.allowsWallet ? '/wallet' : '/settings';
+          }
+          if (path.startsWith('/wallet') && !compliance.allowsWallet) {
+            return '/settings';
+          }
+          if (path.startsWith('/portal') && !compliance.allowsCustomPortal) {
+            return '/home';
+          }
+        }
+
+        // 在启动页或登录页，跳转到目标页或首页
+        if (isOnAuth) {
+          return safeInAppRedirect(state.uri.queryParameters['redirect']) ??
+              '/home';
+        }
         return null;
       }
 
@@ -104,8 +151,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (isOnSplash) return '/login';
       // 在登录/注册页，保持不变
       if (isOnAuth) return null;
-      // 其他页面，跳转到登录
-      return '/login';
+      // 其他页面，跳转到登录，并保留站内目标地址供登录后回跳。
+      return loginLocationWithRedirect(state.uri);
     },
 
     // 刷新监听 - 当认证状态变化时触发 redirect 重新评估
@@ -132,6 +179,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final chatName = state.uri.queryParameters['name'] ?? '';
           final avatar = state.uri.queryParameters['avatar'];
           final typeStr = state.uri.queryParameters['type'] ?? 'private';
+          final messageId = state.uri.queryParameters['messageId'];
+          final messageSeq =
+              int.tryParse(state.uri.queryParameters['messageSeq'] ?? '');
           final action =
               state.uri.queryParameters['action']; // 'call' 或 'video'
           final chatType = ChatType.values.firstWhere(
@@ -149,6 +199,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               avatar: avatar,
               chatType: chatType,
               action: action,
+              initialMessageId: messageId,
+              initialMessageSeq: messageSeq,
             ),
           );
         },
@@ -181,9 +233,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/search',
         name: 'search',
         pageBuilder: (context, state) {
+          final query = state.uri.queryParameters['query'];
           return IOSPage(
             key: state.pageKey,
-            child: const SearchPage(),
+            child: SearchPage(initialQuery: query),
           );
         },
       ),
@@ -274,10 +327,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/search-users',
         name: 'searchUsers',
-        pageBuilder: (context, state) => IOSModalPage(
-          key: state.pageKey,
-          child: const NewContactPage(),
-        ),
+        pageBuilder: (context, state) {
+          final query = state.uri.queryParameters['query'];
+          return IOSModalPage(
+            key: state.pageKey,
+            child: NewContactPage(initialQuery: query),
+          );
+        },
       ),
 
       // 通话页面 - iOS 风格从底部滑入动画
@@ -464,16 +520,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // 钱包页面 - 独立页面，不显示底部导航
-      GoRoute(
-        path: '/membership',
-        name: 'membership',
-        pageBuilder: (context, state) => IOSPage(
-          key: state.pageKey,
-          child: const MembershipPage(),
-        ),
-      ),
-
       GoRoute(
         path: '/wallet',
         name: 'wallet',
@@ -528,6 +574,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
+      GoRoute(
+        path: '/vip',
+        name: 'vip',
+        pageBuilder: (context, state) => IOSPage(
+          key: state.pageKey,
+          child: const VipCenterPage(),
+        ),
+        routes: [
+          GoRoute(
+            path: 'orders',
+            name: 'vipOrders',
+            pageBuilder: (context, state) => IOSPage(
+              key: state.pageKey,
+              child: const VipOrdersPage(),
+            ),
+          ),
+        ],
+      ),
+
       // 登录
       GoRoute(
         path: '/login',
@@ -570,12 +635,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
     errorBuilder: (context, state) => Scaffold(
       body: Center(
-        child: Text('页面不存在: ${state.uri}'),
+        child: Text(
+          '${_routerText(
+            context,
+            zhCN: '页面不存在',
+            zhTW: '頁面不存在',
+            en: 'Page not found',
+          )}: ${state.uri}',
+        ),
       ),
     ),
   );
 });
 
+// 关键声明：app router 维护导航状态与访问控制，重定向只读取权限相关状态，避免业务刷新触发整棵路由树重建。
 /// GoRouter 刷新流监听器
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
@@ -587,6 +660,7 @@ class GoRouterRefreshStream extends ChangeNotifier {
 
   void refresh() => notifyListeners();
 
+  // 流程逻辑：`dispose` 先阻止新的输入或回调，再按创建顺序的逆序取消订阅、定时器和临时资源，保证清理可重复执行。
   @override
   void dispose() {
     _subscription.cancel();

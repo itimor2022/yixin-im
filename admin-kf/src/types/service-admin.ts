@@ -53,3 +53,9 @@ export interface ServiceAdminInvitee {
 export interface ServiceAdminWelcomeMessage {
   message: string
 }
+
+export interface ServiceAdminWelcomeMessageSaveResult {
+  success: boolean
+  message: string
+  length: number
+}

@@ -1,0 +1,170 @@
+[
+  {
+    "name": "duck_01",
+    "path": "backend/assets/sticker_sources/duck/duck_01.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_01.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_01.json",
+    "source": "/uploads/stickers/duck/duck_01.tgs"
+  },
+  {
+    "name": "duck_02",
+    "path": "backend/assets/sticker_sources/duck/duck_02.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_02.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_02.json",
+    "source": "/uploads/stickers/duck/duck_02.tgs"
+  },
+  {
+    "name": "duck_03",
+    "path": "backend/assets/sticker_sources/duck/duck_03.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_03.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_03.json",
+    "source": "/uploads/stickers/duck/duck_03.tgs"
+  },
+  {
+    "name": "duck_04",
+    "path": "backend/assets/sticker_sources/duck/duck_04.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_04.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_04.json",
+    "source": "/uploads/stickers/duck/duck_04.tgs"
+  },
+  {
+    "name": "duck_05",
+    "path": "backend/assets/sticker_sources/duck/duck_05.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_05.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_05.json",
+    "source": "/uploads/stickers/duck/duck_05.tgs"
+  },
+  {
+    "name": "duck_06",
+    "path": "backend/assets/sticker_sources/duck/duck_06.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_06.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_06.json",
+    "source": "/uploads/stickers/duck/duck_06.tgs"
+  },
+  {
+    "name": "duck_07",
+    "path": "backend/assets/sticker_sources/duck/duck_07.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_07.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_07.json",
+    "source": "/uploads/stickers/duck/duck_07.tgs"
+  },
+  {
+    "name": "duck_08",
+    "path": "backend/assets/sticker_sources/duck/duck_08.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_08.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_08.json",
+    "source": "/uploads/stickers/duck/duck_08.tgs"
+  },
+  {
+    "name": "duck_09",
+    "path": "backend/assets/sticker_sources/duck/duck_09.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_09.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_09.json",
+    "source": "/uploads/stickers/duck/duck_09.tgs"
+  },
+  {
+    "name": "duck_10",
+    "path": "backend/assets/sticker_sources/duck/duck_10.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_10.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_10.json",
+    "source": "/uploads/stickers/duck/duck_10.tgs"
+  },
+  {
+    "name": "duck_11",
+    "path": "backend/assets/sticker_sources/duck/duck_11.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_11.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_11.json",
+    "source": "/uploads/stickers/duck/duck_11.tgs"
+  },
+  {
+    "name": "duck_12",
+    "path": "backend/assets/sticker_sources/duck/duck_12.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_12.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_12.json",
+    "source": "/uploads/stickers/duck/duck_12.tgs"
+  },
+  {
+    "name": "duck_13",
+    "path": "backend/assets/sticker_sources/duck/duck_13.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_13.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_13.json",
+    "source": "/uploads/stickers/duck/duck_13.tgs"
+  },
+  {
+    "name": "duck_14",
+    "path": "backend/assets/sticker_sources/duck/duck_14.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_14.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_14.json",
+    "source": "/uploads/stickers/duck/duck_14.tgs"
+  },
+  {
+    "name": "duck_15",
+    "path": "backend/assets/sticker_sources/duck/duck_15.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_15.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_15.json",
+    "source": "/uploads/stickers/duck/duck_15.tgs"
+  },
+  {
+    "name": "duck_16",
+    "path": "backend/assets/sticker_sources/duck/duck_16.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_16.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_16.json",
+    "source": "/uploads/stickers/duck/duck_16.tgs"
+  },
+  {
+    "name": "duck_17",
+    "path": "backend/assets/sticker_sources/duck/duck_17.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_17.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_17.json",
+    "source": "/uploads/stickers/duck/duck_17.tgs"
+  },
+  {
+    "name": "duck_18",
+    "path": "backend/assets/sticker_sources/duck/duck_18.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_18.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_18.json",
+    "source": "/uploads/stickers/duck/duck_18.tgs"
+  },
+  {
+    "name": "duck_19",
+    "path": "backend/assets/sticker_sources/duck/duck_19.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_19.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_19.json",
+    "source": "/uploads/stickers/duck/duck_19.tgs"
+  },
+  {
+    "name": "duck_20",
+    "path": "backend/assets/sticker_sources/duck/duck_20.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_20.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_20.json",
+    "source": "/uploads/stickers/duck/duck_20.tgs"
+  },
+  {
+    "name": "duck_21",
+    "path": "backend/assets/sticker_sources/duck/duck_21.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_21.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_21.json",
+    "source": "/uploads/stickers/duck/duck_21.tgs"
+  },
+  {
+    "name": "duck_22",
+    "path": "backend/assets/sticker_sources/duck/duck_22.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_22.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_22.json",
+    "source": "/uploads/stickers/duck/duck_22.tgs"
+  },
+  {
+    "name": "duck_23",
+    "path": "backend/assets/sticker_sources/duck/duck_23.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_23.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_23.json",
+    "source": "/uploads/stickers/duck/duck_23.tgs"
+  },
+  {
+    "name": "duck_24",
+    "path": "backend/assets/sticker_sources/duck/duck_24.json",
+    "tgs_path": "backend/assets/sticker_sources/duck/duck_24.tgs",
+    "upload_path": "backend/uploads/stickers/duck/duck_24.json",
+    "source": "/uploads/stickers/duck/duck_24.tgs"
+  }
+]

@@ -45,6 +45,7 @@
   const prepareMapData = (geoJson: {
     features: Array<{ properties: Record<string, unknown> }>
   }) => {
+    // 未传业务数据时仅生成演示值用于展示地图轮廓，不能作为真实统计口径。
     return geoJson.features.map((feature) => ({
       name: feature.properties.name as string,
       value: Math.round(Math.random() * 1000),
@@ -233,6 +234,7 @@
         dataIndex: params.dataIndex as number
       })
 
+      // 对外只发送稳定的区域字段，不泄漏 ECharts 原始事件结构。
       emit('regionClick', regionData)
     }
   }
@@ -244,6 +246,7 @@
 
   // 处理组件销毁
   const cleanupChart = () => {
+    // ECharts 事件、实例和 window 监听均为组件外资源，需要成组释放。
     if (chartInstance.value) {
       chartInstance.value.off('click', handleMapClick)
       chartInstance.value.dispose()

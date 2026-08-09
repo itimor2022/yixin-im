@@ -1,27 +1,47 @@
+// 文件用途：实现 DesktopLayout 相关逻辑，服务于跨模块共享能力。
+// 核心逻辑：围绕 DesktopLayout 组织，完成输入校验、核心处理和结果回传。
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/platform_utils.dart';
 
+String _desktopLayoutText(
+  BuildContext context, {
+  required String zhCN,
+  String? zhTW,
+  required String en,
+}) {
+  switch (AppLocalizations.of(context).language) {
+    case AppLanguage.en:
+      return en;
+    case AppLanguage.zhTW:
+      return zhTW ?? zhCN;
+    case AppLanguage.zhCN:
+      return zhCN;
+  }
+}
+
+// 关键声明：desktop layout 把桌面系统能力封装成应用接口，处理窗口、托盘或快捷键生命周期并避免泄漏监听器。
 /// Telegram 风格的桌面端布局
 /// 左侧边栏 + 右侧内容区域
 class DesktopLayout extends StatefulWidget {
   /// 左侧边栏内容（聊天列表等）
   final Widget sidebar;
-  
+
   /// 右侧主内容区域（聊天详情等）
   final Widget? content;
-  
+
   /// 无内容时的占位 Widget
   final Widget? emptyPlaceholder;
-  
+
   /// 侧边栏初始宽度
   final double initialSidebarWidth;
-  
+
   /// 侧边栏宽度变化回调
   final ValueChanged<double>? onSidebarWidthChanged;
-  
+
   const DesktopLayout({
     super.key,
     required this.sidebar,
@@ -38,18 +58,19 @@ class DesktopLayout extends StatefulWidget {
 class _DesktopLayoutState extends State<DesktopLayout> {
   late double _sidebarWidth;
   bool _isDragging = false;
-  
+
+  // 流程逻辑：`initState` 先建立依赖和监听器，再启动异步任务；重复调用必须复用已有状态，失败时释放已建立的资源。
   @override
   void initState() {
     super.initState();
     _sidebarWidth = widget.initialSidebarWidth;
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final hasContent = widget.content != null;
-    
+
     return Row(
       children: [
         // 左侧边栏
@@ -60,7 +81,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
               border: Border(
                 right: BorderSide(
-                  color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
+                  color:
+                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
                   width: 1,
                 ),
               ),
@@ -68,7 +90,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
             child: widget.sidebar,
           ),
         ),
-        
+
         // 拖动分隔条
         MouseRegion(
           cursor: SystemMouseCursors.resizeColumn,
@@ -89,27 +111,27 @@ class _DesktopLayoutState extends State<DesktopLayout> {
             },
             child: Container(
               width: 4,
-              color: _isDragging 
-                  ? AppColors.primary.withOpacity(0.5)
+              color: _isDragging
+                  ? AppColors.primaryWithOpacity(context, 0.5)
                   : Colors.transparent,
             ),
           ),
         ),
-        
+
         // 右侧内容区域
         Expanded(
-          child: hasContent 
+          child: hasContent
               ? widget.content!
               : widget.emptyPlaceholder ?? _buildEmptyPlaceholder(isDark),
         ),
       ],
     );
   }
-  
+
   /// 默认空占位 Widget
   Widget _buildEmptyPlaceholder(bool isDark) {
     return Container(
-      color: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      color: AppColors.backgroundFor(context),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -117,23 +139,33 @@ class _DesktopLayoutState extends State<DesktopLayout> {
             Icon(
               Icons.chat_bubble_outline_rounded,
               size: 64,
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppColors.textTertiaryFor(context),
             ),
             const SizedBox(height: 16),
             Text(
-              '选择一个聊天开始对话',
+              _desktopLayoutText(
+                context,
+                zhCN: '选择一个聊天开始对话',
+                zhTW: '選擇一個聊天開始對話',
+                en: 'Select a chat to start messaging',
+              ),
               style: TextStyle(
                 fontSize: 16,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: AppColors.textTertiaryFor(context),
               ),
             ),
             const SizedBox(height: 8),
-            if (PlatformUtils.isDesktop)
+            if (PlatformUtils.isPhysicalDesktop)
               Text(
-                '按 ⌘N 创建新聊天',
+                _desktopLayoutText(
+                  context,
+                  zhCN: '按 ⌘N 创建新聊天',
+                  zhTW: '按 ⌘N 建立新聊天',
+                  en: 'Press ⌘N to create a new chat',
+                ),
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white24 : Colors.black26,
+                  color: AppColors.textTertiaryFor(context),
                 ),
               ),
           ],
@@ -149,7 +181,7 @@ class DesktopTitleBar extends StatelessWidget {
   final Widget? leading;
   final List<Widget>? actions;
   final double height;
-  
+
   const DesktopTitleBar({
     super.key,
     this.title,
@@ -161,18 +193,18 @@ class DesktopTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return GestureDetector(
       // 拖动窗口
       behavior: HitTestBehavior.translucent,
       onPanStart: (_) {
-        if (PlatformUtils.isDesktop) {
+        if (PlatformUtils.isPhysicalDesktop) {
           windowManager.startDragging();
         }
       },
       onDoubleTap: () {
         // 双击标题栏切换最大化
-        if (PlatformUtils.isDesktop) {
+        if (PlatformUtils.isPhysicalDesktop) {
           windowManager.isMaximized().then((isMaximized) {
             if (isMaximized) {
               windowManager.unmaximize();
@@ -197,10 +229,10 @@ class DesktopTitleBar extends StatelessWidget {
           children: [
             // macOS 红绿灯按钮占位
             if (PlatformUtils.isApple) const SizedBox(width: 78),
-            
+
             // 左侧内容
             if (leading != null) leading!,
-            
+
             // 标题
             if (title != null)
               Expanded(
@@ -209,17 +241,17 @@ class DesktopTitleBar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppColors.textPrimaryFor(context),
                   ),
                   textAlign: TextAlign.center,
                 ),
               )
             else
               const Spacer(),
-            
+
             // 右侧操作按钮
             if (actions != null) ...actions!,
-            
+
             const SizedBox(width: 12),
           ],
         ),
@@ -235,7 +267,7 @@ class DesktopHoverButton extends StatefulWidget {
   final String? tooltip;
   final EdgeInsets padding;
   final BorderRadius borderRadius;
-  
+
   const DesktopHoverButton({
     super.key,
     required this.child,
@@ -251,14 +283,14 @@ class DesktopHoverButton extends StatefulWidget {
 
 class _DesktopHoverButtonState extends State<DesktopHoverButton> {
   bool _isHovered = false;
-  
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     Widget button = MouseRegion(
-      cursor: widget.onPressed != null 
-          ? SystemMouseCursors.click 
+      cursor: widget.onPressed != null
+          ? SystemMouseCursors.click
           : MouseCursor.defer,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -268,8 +300,10 @@ class _DesktopHoverButtonState extends State<DesktopHoverButton> {
           duration: const Duration(milliseconds: 150),
           padding: widget.padding,
           decoration: BoxDecoration(
-            color: _isHovered 
-                ? (isDark ? Colors.white10 : Colors.black.withOpacity(0.05))
+            color: _isHovered
+                ? (isDark
+                    ? AppColors.darkControlBackgroundStrong
+                    : Colors.black.withOpacity(0.05))
                 : Colors.transparent,
             borderRadius: widget.borderRadius,
           ),
@@ -277,14 +311,14 @@ class _DesktopHoverButtonState extends State<DesktopHoverButton> {
         ),
       ),
     );
-    
+
     if (widget.tooltip != null) {
       return Tooltip(
         message: widget.tooltip!,
         child: button,
       );
     }
-    
+
     return button;
   }
 }

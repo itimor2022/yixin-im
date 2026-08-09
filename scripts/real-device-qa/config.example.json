@@ -1,0 +1,11 @@
+{
+  "packageName": "com.genericim.app",
+  "preferredDevice": "",
+  "adbPath": "",
+  "artifactRoot": "artifacts/real-device-qa",
+  "logcat": {
+    "clearBufferAtSessionStart": true,
+    "captureBuffers": ["main", "system", "crash"],
+    "socketEventsAreFatal": false
+  }
+}

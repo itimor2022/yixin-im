@@ -1,3 +1,6 @@
+// 文件用途：实现可复用的后端业务服务和领域逻辑。
+// 核心逻辑：协调数据库、缓存、队列和外部服务，集中处理事务、幂等、重试和错误传播。
+
 package services
 
 import (
@@ -5,18 +8,6 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	"math"
-	"net/http"
-	"net/url"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"gaoranim/internal/config"
-	"gaoranim/internal/models"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/smartwalle/alipay/v3"
@@ -32,9 +23,21 @@ import (
 	"github.com/wechatpay-apiv3/wechatpay-go/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"log"
+	"math"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"genericim/internal/config"
+	"genericim/internal/models"
 )
 
-// OnlinePaymentService 微信/支付宝充值下单与回调入账
+// OnlinePaymentService
+
 type OnlinePaymentService struct {
 	cfg *config.Config
 	db  *gorm.DB
@@ -270,7 +273,73 @@ func genOutTradeNo() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
-// CreateOnlinePayment 创建第三方支付订单；clientPlatform: android|ios|web|windows|macos|linux
+func validPaymentFulfillment(order models.ThirdPartyPaymentOrder, providerTxnID, channel string, paidCents int64) error {
+	if strings.TrimSpace(channel) == "" || channel != order.Channel {
+		return fmt.Errorf("payment channel mismatch")
+	}
+	if strings.TrimSpace(providerTxnID) == "" {
+		return fmt.Errorf("missing provider transaction id")
+	}
+	if paidCents <= 0 {
+		return fmt.Errorf("missing paid amount")
+	}
+	if paidCents != order.AmountCents {
+		return fmt.Errorf("paid amount mismatch")
+	}
+	return nil
+}
+
+func (s *OnlinePaymentService) validateWeChatPaidTransaction(tx payments.Transaction) error {
+	p := s.paymentCfg().Wechat
+	if tx.Appid == nil || strings.TrimSpace(*tx.Appid) != p.AppID {
+		return fmt.Errorf("wechat appid mismatch")
+	}
+	if tx.Mchid == nil || strings.TrimSpace(*tx.Mchid) != p.MchID {
+		return fmt.Errorf("wechat mchid mismatch")
+	}
+	if tx.OutTradeNo == nil || strings.TrimSpace(*tx.OutTradeNo) == "" {
+		return fmt.Errorf("missing wechat out_trade_no")
+	}
+	if tx.TransactionId == nil || strings.TrimSpace(*tx.TransactionId) == "" {
+		return fmt.Errorf("missing wechat transaction_id")
+	}
+	if tx.Amount == nil || tx.Amount.Total == nil || *tx.Amount.Total <= 0 {
+		return fmt.Errorf("missing wechat paid amount")
+	}
+	return nil
+}
+
+func (s *OnlinePaymentService) validateAlipayPaidNotification(n *alipay.Notification) (int64, error) {
+	if n == nil {
+		return 0, fmt.Errorf("missing alipay notification")
+	}
+	p := s.paymentCfg().Alipay
+	if strings.TrimSpace(n.AppId) != p.AppID {
+		return 0, fmt.Errorf("alipay app_id mismatch")
+	}
+	if strings.TrimSpace(n.OutTradeNo) == "" {
+		return 0, fmt.Errorf("missing alipay out_trade_no")
+	}
+	if strings.TrimSpace(n.TradeNo) == "" {
+		return 0, fmt.Errorf("missing alipay trade_no")
+	}
+	total := strings.TrimSpace(n.TotalAmount)
+	if total == "" {
+		return 0, fmt.Errorf("missing alipay paid amount")
+	}
+	f, err := strconv.ParseFloat(total, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid alipay paid amount: %w", err)
+	}
+	cents := amountToCents(f)
+	if cents <= 0 {
+		return 0, fmt.Errorf("invalid alipay paid amount")
+	}
+	return cents, nil
+}
+
+// CreateOnlinePayment
+
 func (s *OnlinePaymentService) CreateOnlinePayment(ctx context.Context, userID uint64, amount float64, channel, clientPlatform, clientIP string) (gin.H, error) {
 	if !s.Enabled() {
 		return nil, fmt.Errorf("在线支付未启用")
@@ -289,10 +358,8 @@ func (s *OnlinePaymentService) CreateOnlinePayment(ctx context.Context, userID u
 	if w.IsLocked {
 		return nil, fmt.Errorf("钱包已锁定")
 	}
-
 	cents := amountToCents(amount)
 	outNo := genOutTradeNo()
-
 	order := models.ThirdPartyPaymentOrder{
 		OutTradeNo:     outNo,
 		UserID:         userID,
@@ -307,14 +374,12 @@ func (s *OnlinePaymentService) CreateOnlinePayment(ctx context.Context, userID u
 	if err := s.db.Create(&order).Error; err != nil {
 		return nil, err
 	}
-
 	cny := "CNY"
 	total := cents
 	desc := core.String("钱包充值")
 	notifyWX := s.wechatNotifyURL()
 	notifyAli := s.alipayNotifyURL()
 	pay := s.paymentCfg()
-
 	resp := gin.H{
 		"out_trade_no":    outNo,
 		"amount":          amount,
@@ -490,11 +555,10 @@ func (s *OnlinePaymentService) CreateOnlinePayment(ctx context.Context, userID u
 		"extra_json": string(extra),
 		"updated_at": time.Now(),
 	})
-
 	return resp, nil
 }
 
-// FulfillIfPaid 幂等入账
+// FulfillIfPaid
 func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel string, paidCents int64) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var order models.ThirdPartyPaymentOrder
@@ -508,8 +572,18 @@ func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel 
 		if order.Status != models.TPPayStatusPending {
 			return fmt.Errorf("订单状态不可支付: %s", order.Status)
 		}
-		if paidCents > 0 && paidCents != order.AmountCents {
-			return fmt.Errorf("金额不一致")
+		providerTxnID = strings.TrimSpace(providerTxnID)
+		if err := validPaymentFulfillment(order, providerTxnID, channel, paidCents); err != nil {
+			return err
+		}
+
+		var existing models.ThirdPartyPaymentOrder
+		err := tx.Where("provider_txn_id = ? AND out_trade_no <> ? AND status = ?", providerTxnID, outTradeNo, models.TPPayStatusPaid).First(&existing).Error
+		if err == nil {
+			return fmt.Errorf("provider transaction already fulfilled")
+		}
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
 		}
 
 		var wallet models.Wallet
@@ -527,7 +601,6 @@ func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel 
 				return err
 			}
 		}
-
 		newBal := wallet.Balance + order.Amount
 		if err := tx.Model(&wallet).Updates(map[string]interface{}{
 			"balance":    gorm.Expr("balance + ?", order.Amount),
@@ -535,7 +608,6 @@ func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel 
 		}).Error; err != nil {
 			return err
 		}
-
 		now := time.Now()
 		if err := tx.Create(&models.Transaction{
 			UserID:       order.UserID,
@@ -548,7 +620,6 @@ func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel 
 		}).Error; err != nil {
 			return err
 		}
-
 		return tx.Model(&order).Updates(map[string]interface{}{
 			"status":          models.TPPayStatusPaid,
 			"provider_txn_id": providerTxnID,
@@ -558,7 +629,8 @@ func (s *OnlinePaymentService) FulfillIfPaid(outTradeNo, providerTxnID, channel 
 	})
 }
 
-// HandleWeChatNotify HTTP 回调
+// HandleWeChatNotify
+
 func (s *OnlinePaymentService) HandleWeChatNotify(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if _, err := s.ensureWechatClient(ctx); err != nil {
@@ -586,24 +658,22 @@ func (s *OnlinePaymentService) HandleWeChatNotify(w http.ResponseWriter, r *http
 		_, _ = w.Write([]byte(`{"code":"SUCCESS","message":"OK"}`))
 		return
 	}
-	var cents int64
-	if tx.Amount != nil && tx.Amount.Total != nil {
-		cents = *tx.Amount.Total
+	if err := s.validateWeChatPaidTransaction(tx); err != nil {
+		log.Printf("[OnlinePay] invalid wechat notify: %v", err)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":"SUCCESS","message":"OK"}`))
+		return
 	}
-	tid := ""
-	if tx.TransactionId != nil {
-		tid = *tx.TransactionId
-	}
-	if err := s.FulfillIfPaid(*tx.OutTradeNo, tid, models.TPPayChannelWechat, cents); err != nil {
+	if err := s.FulfillIfPaid(*tx.OutTradeNo, *tx.TransactionId, models.TPPayChannelWechat, *tx.Amount.Total); err != nil {
 		// 仍返回 SUCCESS 避免微信重试风暴；需日志监控人工对账
-		fmt.Printf("[OnlinePay] wechat fulfill err: %v\n", err)
+		log.Printf("[OnlinePay] wechat fulfill err: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"code":"SUCCESS","message":"成功"}`))
 }
 
-// HandleAlipayNotify HTTP 回调
+// HandleAlipayNotify
 func (s *OnlinePaymentService) HandleAlipayNotify(w http.ResponseWriter, r *http.Request) {
 	cli, err := s.ensureAlipayClient()
 	if err != nil {
@@ -623,14 +693,14 @@ func (s *OnlinePaymentService) HandleAlipayNotify(w http.ResponseWriter, r *http
 		alipay.ACKNotification(w)
 		return
 	}
-	cents := int64(0)
-	if n.TotalAmount != "" {
-		if f, err := strconv.ParseFloat(n.TotalAmount, 64); err == nil {
-			cents = amountToCents(f)
-		}
+	cents, err := s.validateAlipayPaidNotification(n)
+	if err != nil {
+		log.Printf("[OnlinePay] invalid alipay notify: %v", err)
+		alipay.ACKNotification(w)
+		return
 	}
 	if err := s.FulfillIfPaid(n.OutTradeNo, n.TradeNo, models.TPPayChannelAlipay, cents); err != nil {
-		fmt.Printf("[OnlinePay] alipay fulfill err: %v\n", err)
+		log.Printf("[OnlinePay] alipay fulfill err: %v", err)
 	}
 	alipay.ACKNotification(w)
 }

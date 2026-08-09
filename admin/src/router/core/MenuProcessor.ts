@@ -11,6 +11,7 @@ import type { AppRouteRecord } from '@/types/router'
 import { useUserStore } from '@/store/modules/user'
 import { useAppMode } from '@/hooks/core/useAppMode'
 import { fetchGetMenuList } from '@/api/system-manage'
+import { getSystemSettings, type AdminRoleKey, type RolePermissionConfig } from '@/api/admin'
 import { asyncRoutes } from '../routes/asyncRoutes'
 import { RoutesAlias } from '../routesAlias'
 import { formatMenuTitle } from '@/utils'
@@ -50,6 +51,8 @@ export class MenuProcessor {
       menuList = this.filterMenuByRoles(menuList, roles)
     }
 
+    menuList = await this.filterMenuByRolePermissions(menuList, userStore.info?.role)
+
     return this.filterEmptyMenus(menuList)
   }
 
@@ -73,6 +76,81 @@ export class MenuProcessor {
         const filteredItem = { ...item }
         if (filteredItem.children?.length) {
           filteredItem.children = this.filterMenuByRoles(filteredItem.children, roles)
+        }
+        acc.push(filteredItem)
+      }
+
+      return acc
+    }, [])
+  }
+
+  /**
+   * 根据后台配置的角色菜单权限过滤菜单
+   */
+  private async filterMenuByRolePermissions(
+    menu: AppRouteRecord[],
+    role?: AdminRoleKey
+  ): Promise<AppRouteRecord[]> {
+    if (!role || role === 'super_admin' || role === 'demo_admin') {
+      return menu
+    }
+
+    try {
+      const settings = await getSystemSettings()
+      const config = this.parseRolePermissionConfig(settings.role_permissions)
+      const allowedPaths = config?.roles?.[role]
+
+      if (!config?.enabled || !allowedPaths?.length) {
+        return menu
+      }
+
+      const allowedPathSet = new Set(allowedPaths)
+      return this.filterMenuByAllowedPaths(menu, allowedPathSet)
+    } catch (error) {
+      console.warn('[菜单权限] 获取角色权限配置失败，已使用基础角色菜单', error)
+      return menu
+    }
+  }
+
+  private parseRolePermissionConfig(
+    value: RolePermissionConfig | string | undefined
+  ): RolePermissionConfig | null {
+    if (!value) {
+      return null
+    }
+
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as RolePermissionConfig
+      } catch {
+        return null
+      }
+    }
+
+    return value
+  }
+
+  private filterMenuByAllowedPaths(
+    menu: AppRouteRecord[],
+    allowedPaths: Set<string>,
+    parentPath = ''
+  ): AppRouteRecord[] {
+    return menu.reduce((acc: AppRouteRecord[], item) => {
+      if (item.meta?.isHide) {
+        return acc
+      }
+
+      const fullPath = this.buildFullPath(item.path || '', parentPath)
+      const children = item.children?.length
+        ? this.filterMenuByAllowedPaths(item.children, allowedPaths, fullPath)
+        : undefined
+      const hasAllowedChildren = Boolean(children?.length)
+      const isAllowed = allowedPaths.has(fullPath)
+
+      if (isAllowed || hasAllowedChildren) {
+        const filteredItem = { ...item }
+        if (item.children) {
+          filteredItem.children = children || []
         }
         acc.push(filteredItem)
       }

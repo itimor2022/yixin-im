@@ -1,7 +1,10 @@
+// 文件用途：提供 PlatformBlur 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 PlatformBlur，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
 import 'package:universal_io/io.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+// 关键声明：platform blur 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
 /// 跨平台模糊组件
 /// - iOS: 使用 BackdropFilter 毛玻璃效果
 /// - Android: 使用半透明背景（性能更好）
@@ -19,6 +22,7 @@ class PlatformBlur extends StatelessWidget {
     this.borderRadius,
   });
 
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;

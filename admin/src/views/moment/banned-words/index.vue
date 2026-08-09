@@ -316,7 +316,7 @@
               modelValue: row.status === 1,
               activeText: '启用',
               inactiveText: '禁用',
-              onChange: async (val: boolean) => {
+              onChange: async (val: string | number | boolean) => {
                 await updateBannedWord(row.id, { status: val ? 1 : 2 })
                 refreshData()
               }
@@ -423,6 +423,7 @@
     await batchFormRef.value.validate(async (valid) => {
       if (!valid) return
 
+      // 批量输入按行拆分并忽略空行；分类和处理级别对本次全部词条统一生效。
       const words = batchFormData.words
         .split('\n')
         .map((w) => w.trim())
@@ -438,6 +439,7 @@
         const res = await batchCreateBannedWords(words, batchFormData.category, batchFormData.level)
         ElMessage.success(`成功添加 ${(res as any)?.created || words.length} 个违禁词`)
         batchDialogVisible.value = false
+        // 写操作完成后重新读取列表，确保分页总数和服务端去重结果同步。
         refreshData()
       } catch (e) {
         console.error(e)

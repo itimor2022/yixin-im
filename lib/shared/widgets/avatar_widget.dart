@@ -1,58 +1,100 @@
-import 'package:flutter/foundation.dart';
-import 'package:universal_io/io.dart';
+// 文件用途：提供 _AvatarPrefetchTask 可复用界面组件，服务于跨模块共享能力。
+// 核心逻辑：根据输入模型和状态渲染 _AvatarPrefetchTask，通过回调向上层提交交互；组件本身不直接持久化跨页面业务数据。
+import 'dart:async';
+import 'dart:collection';
+import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/premium_theme_tokens.dart';
 import '../../core/services/api/api_client.dart';
+import '../../core/services/performance_trace_service.dart';
+import '../../core/theme/app_colors.dart';
 
-/// 自定义缓存管理器 - 持久化缓存头像到本地，本地加载可秒开
+// 关键声明：avatar widget 只负责将输入状态渲染为界面，并通过回调把交互结果交还页面或状态层。
+class _AvatarPrefetchTask {
+  _AvatarPrefetchTask(this.url, this.completer);
+
+  final String url;
+  final Completer<void> completer;
+}
+
 class AvatarCacheManager {
   static const key = 'avatarCache';
+  static const int _maxConcurrentPrefetch = 4;
+  static const int _maxBatchPrefetch = 40;
+  static final Queue<_AvatarPrefetchTask> _prefetchQueue =
+      Queue<_AvatarPrefetchTask>();
+  static final Set<String> _queuedUrls = <String>{};
+  static int _activePrefetches = 0;
+
   static CacheManager instance = CacheManager(
     Config(
       key,
-      stalePeriod: const Duration(days: 30), // 缓存30天
+      stalePeriod: const Duration(days: 30),
       maxNrOfCacheObjects: 500,
     ),
   );
 
-  /// 预取单个头像到本地，下次 AvatarWidget 加载即秒开
   static Future<void> prefetch(String url) async {
     final full = ApiConfig.getMediaUrl(url);
-    if (full.isEmpty) return;
-    try {
-      await instance.getSingleFile(full);
-    } catch (_) {}
+    if (full.isEmpty || _queuedUrls.contains(full)) return;
+
+    final completer = Completer<void>();
+    _queuedUrls.add(full);
+    _prefetchQueue.add(_AvatarPrefetchTask(full, completer));
+    _pumpPrefetchQueue();
+    return completer.future;
   }
 
-  /// 预取一批头像（如联系人列表），后台静默缓存，列表展示时秒加载
   static void prefetchUrls(List<String> urls) {
     final valid = urls
         .map(ApiConfig.getMediaUrl)
         .where((u) => u.isNotEmpty)
         .toSet()
+        .take(_maxBatchPrefetch)
         .toList();
+    PerformanceTraceService.mark(
+        'avatar_prefetch_queued count=${valid.length}');
     for (final url in valid) {
       prefetch(url);
     }
   }
 
-  /// 清除所有头像缓存
+  static void _pumpPrefetchQueue() {
+    while (_activePrefetches < _maxConcurrentPrefetch &&
+        _prefetchQueue.isNotEmpty) {
+      final task = _prefetchQueue.removeFirst();
+      _activePrefetches++;
+      unawaited(_runPrefetchTask(task));
+    }
+  }
+
+  static Future<void> _runPrefetchTask(_AvatarPrefetchTask task) async {
+    try {
+      await instance.getSingleFile(task.url);
+      task.completer.complete();
+    } catch (_) {
+      task.completer.complete();
+    } finally {
+      _queuedUrls.remove(task.url);
+      _activePrefetches--;
+      _pumpPrefetchQueue();
+    }
+  }
+
   static Future<void> clearAll() async {
     await instance.emptyCache();
   }
 
-  /// 清除指定URL的缓存
   static Future<void> removeFile(String url) async {
-    await instance.removeFile(url);
+    await instance.removeFile(ApiConfig.getMediaUrl(url));
   }
 }
 
-class AvatarWidget extends StatefulWidget {
+class AvatarWidget extends StatelessWidget {
   final String name;
   final String? avatar;
   final String? userId;
@@ -61,7 +103,7 @@ class AvatarWidget extends StatefulWidget {
   final Color? borderColor;
   final double? borderRadius;
   final String? cacheKey;
-  final String? premiumType;
+  final bool isCircle;
 
   const AvatarWidget({
     super.key,
@@ -73,348 +115,123 @@ class AvatarWidget extends StatefulWidget {
     this.borderColor,
     this.borderRadius,
     this.cacheKey,
-    this.premiumType,
+    this.isCircle = false,
   });
 
-  @override
-  State<AvatarWidget> createState() => _AvatarWidgetState();
-}
-
-class _AvatarWidgetState extends State<AvatarWidget>
-    with SingleTickerProviderStateMixin {
-  File? _cachedFile;
-  bool _cacheChecked = false;
-  late final AnimationController _premiumController;
-
-  String? _normalizePremiumType() {
-    final type = widget.premiumType?.trim();
-    if (type == null || type.isEmpty) return null;
-    if (PremiumThemeTokens.isPremium(type)) return type;
-
-    final normalized = type.toLowerCase();
-    if (normalized.contains('year') || normalized.contains('annual')) {
-      return 'yearly';
-    }
-    if (normalized.contains('quarter') || normalized.contains('season')) {
-      return 'quarterly';
-    }
-    return null;
-  }
-
-  String get _resolvedAvatar => ApiConfig.getMediaUrl(widget.avatar);
-
-  @override
-  void initState() {
-    super.initState();
-    final normalizedPremiumType = _normalizePremiumType();
-    _premiumController = AnimationController(
-      vsync: this,
-      duration: Duration(
-        milliseconds:
-            PremiumThemeTokens.isYearly(normalizedPremiumType) ? 2600 : 1700,
-      ),
-    );
-    if (PremiumThemeTokens.isPremium(normalizedPremiumType)) {
-      _premiumController.repeat(reverse: true);
-    }
-    if (widget.avatar != null && widget.avatar!.isNotEmpty) {
-      _loadFromCache();
-    }
-  }
-
-  @override
-  void didUpdateWidget(AvatarWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.avatar != widget.avatar ||
-        oldWidget.cacheKey != widget.cacheKey) {
-      setState(() {
-        _cachedFile = null;
-        _cacheChecked = false;
-      });
-      if (widget.avatar != null && widget.avatar!.isNotEmpty) {
-        _loadFromCache();
-      }
-    }
-    if (oldWidget.premiumType != widget.premiumType) {
-      final normalizedPremiumType = _normalizePremiumType();
-      _premiumController.duration = Duration(
-        milliseconds:
-            PremiumThemeTokens.isYearly(normalizedPremiumType) ? 2600 : 1700,
-      );
-      if (PremiumThemeTokens.isPremium(normalizedPremiumType)) {
-        _premiumController
-          ..reset()
-          ..repeat(reverse: true);
-      } else {
-        _premiumController.stop();
-      }
-    }
-  }
-
-  Future<void> _loadFromCache() async {
-    if (kIsWeb) {
-      if (!mounted) return;
-      // On web, we don't use file caching, but we still need to mark cache as checked
-      // so that the widget proceeds to use CachedNetworkImage
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _cacheChecked = true);
-      });
-      return;
-    }
-
-    try {
-      final url = _resolvedAvatar;
-      final key = widget.cacheKey ?? url;
-      final file = await AvatarCacheManager.instance.getFileFromCache(key);
-      if (!mounted) return;
-      setState(() {
-        _cachedFile = file?.file;
-        _cacheChecked = true;
-      });
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Avatar] cache lookup failed, fallback to network: $e');
-      if (!mounted) return;
-      setState(() {
-        _cachedFile = null;
-        _cacheChecked = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _premiumController.dispose();
-    super.dispose();
-  }
-
+  // 流程逻辑：`build` 根据输入状态生成组件 UI，并通过回调向上层报告交互结果，不在构建阶段直接修改全局状态。
   @override
   Widget build(BuildContext context) {
-    final normalizedPremiumType = _normalizePremiumType();
-    final avatarColor = (widget.avatar == null || widget.avatar!.isEmpty)
+    final resolvedAvatar = ApiConfig.getMediaUrl(avatar);
+    final avatarColor = (avatar == null || avatar!.isEmpty)
         ? AppColors.defaultAvatarColor
-        : AppColors.getAvatarColor(widget.userId ?? widget.name);
-    final initial = widget.name.isNotEmpty ? widget.name.characters.first : '?';
-    final isRounded = widget.borderRadius != null;
-    final size = widget.size;
-    final isPremium = PremiumThemeTokens.isPremium(normalizedPremiumType);
+        : AppColors.getAvatarColor(userId ?? name);
+    final initial = name.isNotEmpty ? name.characters.first : '?';
+    final effectiveBorderRadius = isCircle
+        ? size / 2
+        : math.min(borderRadius ?? size * 0.22, size * 0.28);
+    final decodeSize = (size * MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(1, 512)
+        .toInt();
 
-    Widget child;
+    final child = resolvedAvatar.isEmpty
+        ? _buildPlaceholder(
+            avatarColor,
+            initial,
+            effectiveBorderRadius,
+            isCircle,
+          )
+        : _buildNetworkAvatar(
+            resolvedAvatar: resolvedAvatar,
+            initial: initial,
+            avatarColor: avatarColor,
+            borderRadius: effectiveBorderRadius,
+            isCircle: isCircle,
+            decodeSize: decodeSize,
+          );
 
-    if (widget.avatar == null || widget.avatar!.isEmpty) {
-      child = _buildPlaceholder(avatarColor, initial);
-    } else if (kIsWeb) {
-      child = CachedNetworkImage(
-        imageUrl: _resolvedAvatar,
-        fadeInDuration: Duration.zero,
-        fadeOutDuration: Duration.zero,
-        placeholderFadeInDuration: Duration.zero,
-        memCacheWidth: (size * 2).toInt(),
-        memCacheHeight: (size * 2).toInt(),
-        useOldImageOnUrlChange: false,
-        imageBuilder: (context, imageProvider) => Container(
-          decoration: BoxDecoration(
-            shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-            borderRadius:
-                isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
-            image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
-          ),
-        ),
-        placeholder: (context, url) => _buildLoadingPlaceholder(),
-        errorWidget: (context, url, error) =>
-            _buildPlaceholder(avatarColor, initial),
-      );
-    } else if (_cachedFile != null) {
-      // 本地缓存命中：直接读文件，秒加载，不闪烁
-      child = Image.file(
-        _cachedFile!,
-        fit: BoxFit.cover,
+    return DecoratedBox(
+      decoration: showBorder
+          ? BoxDecoration(
+              shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: isCircle
+                  ? null
+                  : BorderRadius.circular(effectiveBorderRadius),
+              border: Border.all(
+                color: borderColor ?? AppColors.primaryFor(context),
+                width: 2,
+              ),
+            )
+          : const BoxDecoration(),
+      child: SizedBox(
         width: size,
         height: size,
-        cacheWidth: (size * 2).toInt(),
-        cacheHeight: (size * 2).toInt(),
-      );
-    } else if (_cacheChecked) {
-      // 缓存未命中：走网络并写入本地缓存
-      child = CachedNetworkImage(
-        imageUrl: _resolvedAvatar,
-        cacheManager: AvatarCacheManager.instance,
-        cacheKey: widget.cacheKey ?? _resolvedAvatar,
-        fadeInDuration: Duration.zero,
-        fadeOutDuration: Duration.zero,
-        placeholderFadeInDuration: Duration.zero,
-        memCacheWidth: (size * 2).toInt(),
-        memCacheHeight: (size * 2).toInt(),
-        useOldImageOnUrlChange: false,
-        imageBuilder: (context, imageProvider) => Container(
-          decoration: BoxDecoration(
-            shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-            borderRadius:
-                isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
-            image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
-          ),
-        ),
-        placeholder: (context, url) => _buildLoadingPlaceholder(),
-        errorWidget: (context, url, error) =>
-            _buildPlaceholder(avatarColor, initial),
-      );
-    } else {
-      child = _buildLoadingPlaceholder();
-    }
-
-    return AnimatedBuilder(
-      animation: _premiumController,
-      builder: (context, _) {
-        final pulse = isPremium ? _premiumController.value : 0.0;
-        final glowOpacity = PremiumThemeTokens.isYearly(normalizedPremiumType)
-            ? 0.24 + (pulse * 0.18)
-            : 0.18 + (pulse * 0.12);
-        final glowBlur = PremiumThemeTokens.isYearly(normalizedPremiumType)
-            ? 18 + (pulse * 10)
-            : 14 + (pulse * 8);
-        final badgeOffset = PremiumThemeTokens.isYearly(normalizedPremiumType)
-            ? -(pulse * 1.2)
-            : -(pulse * 1.8);
-
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.all(isPremium ? 3 : 0),
-          decoration: isPremium
-              ? BoxDecoration(
-                  shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-                  borderRadius: isRounded
-                      ? BorderRadius.circular((widget.borderRadius ?? 0) + 4)
-                      : null,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: PremiumThemeTokens.avatarRingGradient(
-                      normalizedPremiumType,
-                    ),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: PremiumThemeTokens.glow(
-                        normalizedPremiumType,
-                      ).withValues(alpha: glowOpacity),
-                      blurRadius: glowBlur,
-                      spreadRadius:
-                          PremiumThemeTokens.isYearly(normalizedPremiumType)
-                              ? 1.2
-                              : 0.4,
-                    ),
-                  ],
-                )
-              : widget.showBorder
-                  ? BoxDecoration(
-                      shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-                      borderRadius: isRounded
-                          ? BorderRadius.circular(widget.borderRadius!)
-                          : null,
-                      border: Border.all(
-                        color: widget.borderColor ?? AppColors.primary,
-                        width: 2,
-                      ),
-                    )
-                  : null,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              SizedBox(
-                width: size,
-                height: size,
-                child: isRounded
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          widget.borderRadius!,
-                        ),
-                        child: child,
-                      )
-                    : ClipOval(child: child),
+        child: isCircle
+            ? ClipOval(child: child)
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(effectiveBorderRadius),
+                child: child,
               ),
-              if (isPremium)
-                Positioned(
-                  right: -2,
-                  bottom: -2 + badgeOffset,
-                  child: Transform.scale(
-                    scale: PremiumThemeTokens.isYearly(normalizedPremiumType)
-                        ? 1 + (pulse * 0.06)
-                        : 1 + (pulse * 0.04),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: PremiumThemeTokens.accent(
-                              normalizedPremiumType,
-                            ).withValues(alpha: 0.28 + (pulse * 0.12)),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: const Text(
-                        'PRO',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
+      ),
     );
   }
 
-  Widget _buildLoadingPlaceholder() {
-    final size = widget.size;
-    final isRounded = widget.borderRadius != null;
+  Widget _buildNetworkAvatar({
+    required String resolvedAvatar,
+    required String initial,
+    required Color avatarColor,
+    required double borderRadius,
+    required bool isCircle,
+    required int decodeSize,
+  }) {
+    return CachedNetworkImage(
+      imageUrl: resolvedAvatar,
+      cacheManager: kIsWeb ? null : AvatarCacheManager.instance,
+      cacheKey: cacheKey ?? resolvedAvatar,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholderFadeInDuration: Duration.zero,
+      memCacheWidth: decodeSize,
+      memCacheHeight: decodeSize,
+      useOldImageOnUrlChange: true,
+      imageBuilder: (context, imageProvider) => Container(
+        decoration: BoxDecoration(
+          shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: isCircle ? null : BorderRadius.circular(borderRadius),
+          image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
+        ),
+      ),
+      placeholder: (context, url) =>
+          _buildLoadingPlaceholder(borderRadius, isCircle),
+      errorWidget: (context, url, error) =>
+          _buildPlaceholder(avatarColor, initial, borderRadius, isCircle),
+    );
+  }
+
+  Widget _buildLoadingPlaceholder(double borderRadius, bool isCircle) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius:
-            isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+        shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: isCircle ? null : BorderRadius.circular(borderRadius),
         color: const Color(0xFFE0E0E0),
       ),
-      child: Center(
-        child: SizedBox(
-          width: size * 0.4,
-          height: size * 0.4,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white.withValues(alpha: 0.9),
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _buildPlaceholder(Color color, String initial) {
-    final size = widget.size;
-    final isRounded = widget.borderRadius != null;
+  Widget _buildPlaceholder(
+    Color color,
+    String initial,
+    double borderRadius,
+    bool isCircle,
+  ) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: isRounded ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius:
-            isRounded ? BorderRadius.circular(widget.borderRadius!) : null,
+        shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: isCircle ? null : BorderRadius.circular(borderRadius),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

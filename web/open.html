@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#5965f2">
+  <title>打开通用IM</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(145deg, #eef0ff, #f8f9ff 48%, #edf7ff); color: #15182a; }
+    .card { width: min(100%, 420px); padding: 38px 28px 30px; border-radius: 28px; background: rgba(255,255,255,.92); box-shadow: 0 24px 70px rgba(48,57,130,.16); text-align: center; }
+    .logo { width: 76px; height: 76px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 22px; background: linear-gradient(145deg, #6975ff, #505bea); color: white; font-size: 34px; font-weight: 800; box-shadow: 0 12px 28px rgba(80,91,234,.3); }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    .name { margin: 0 0 8px; font-size: 17px; font-weight: 650; word-break: break-word; }
+    .hint { min-height: 44px; margin: 0 0 24px; color: #6c7288; font-size: 14px; line-height: 1.6; }
+    button, a { width: 100%; min-height: 50px; border-radius: 14px; font: inherit; font-weight: 650; cursor: pointer; }
+    button { border: 0; background: #5965f2; color: white; box-shadow: 0 8px 20px rgba(89,101,242,.25); }
+    a { margin-top: 12px; display: flex; align-items: center; justify-content: center; color: #5965f2; border: 1px solid #d9dcf7; text-decoration: none; background: white; }
+    .invalid { color: #d14343; }
+    @media (prefers-color-scheme: dark) {
+      :root { color-scheme: dark; }
+      body { background: #11131a; color: #f4f5ff; }
+      .card { background: #1c1f2a; box-shadow: none; }
+      .hint { color: #aeb3c6; }
+      a { color: #aeb4ff; border-color: #383d52; background: #252936; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">壹</div>
+    <h1>打开通用IM</h1>
+    <p id="profileName" class="name">正在准备用户名片</p>
+    <p id="hint" class="hint">正在尝试打开客户端，未安装时将进入网页版。</p>
+    <button id="openApp" type="button">打开客户端</button>
+    <a id="openWeb" href="/">继续使用网页版</a>
+  </main>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const type = params.get('type');
+      const id = (params.get('id') || '').trim();
+      const name = (params.get('name') || '').trim();
+      const avatar = (params.get('avatar') || '').trim();
+      const validId = /^[A-Za-z0-9_-]{1,128}$/.test(id);
+      const hint = document.getElementById('hint');
+      const profileName = document.getElementById('profileName');
+      const openApp = document.getElementById('openApp');
+      const openWeb = document.getElementById('openWeb');
+
+      if (type !== 'user' || !validId) {
+        profileName.textContent = '分享链接无效';
+        hint.textContent = '链接缺少有效的用户信息，请让对方重新分享。';
+        hint.classList.add('invalid');
+        openApp.hidden = true;
+        openWeb.textContent = '返回通用IM网页版';
+        openWeb.href = '/#/login';
+        return;
+      }
+
+      profileName.textContent = name ? `查看 ${name} 的名片` : '查看用户名片';
+      const forwarded = new URLSearchParams();
+      if (name) forwarded.set('name', name);
+      if (avatar) forwarded.set('avatar', avatar);
+      const suffix = forwarded.toString() ? `?${forwarded}` : '';
+      const appUrl = `genericim://user/${encodeURIComponent(id)}${suffix}`;
+      const webUrl = `/#/user/${encodeURIComponent(id)}${suffix}`;
+      openWeb.href = webUrl;
+
+      let fallbackTimer = 0;
+      let appWasOpened = false;
+      const cancelFallback = () => {
+        appWasOpened = true;
+        if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      };
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) cancelFallback();
+      });
+      window.addEventListener('pagehide', cancelFallback);
+
+      const tryOpenApp = () => {
+        appWasOpened = false;
+        hint.textContent = '正在尝试打开客户端…';
+        location.href = appUrl;
+        fallbackTimer = window.setTimeout(() => {
+          if (!appWasOpened) location.replace(webUrl);
+        }, 1600);
+      };
+
+      openApp.addEventListener('click', tryOpenApp);
+      window.setTimeout(tryOpenApp, 180);
+    })();
+  </script>
+</body>
+</html>

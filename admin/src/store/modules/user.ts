@@ -164,7 +164,7 @@ export const useUserStore = defineStore(
       sessionStorage.removeItem('iframeRoutes')
       // 清空主页路径
       useMenuStore().setHomePath('')
-      // 重置路由状态
+      // 动态路由延迟卸载，给当前导航/错误提示留出收尾时间；登录后会重新按权限注册。
       resetRouterState(500)
       // 跳转到登录页，携带当前路由作为 redirect 参数
       const currentRoute = router.currentRoute.value
@@ -195,8 +195,7 @@ export const useUserStore = defineStore(
       // 不同用户登录，清空工作台标签页
       if (String(currentUserId) !== lastUserId) {
         const worktabStore = useWorktabStore()
-        worktabStore.opened = []
-        worktabStore.keepAliveExclude = []
+        worktabStore.clearAll()
       }
 
       // 清除临时存储
@@ -228,6 +227,7 @@ export const useUserStore = defineStore(
   },
   {
     persist: {
+      // Pinia 持久化会在 Store 创建时恢复令牌和 isLogin，路由守卫据此决定是否拉取用户与菜单。
       key: 'user',
       storage: localStorage
     }
