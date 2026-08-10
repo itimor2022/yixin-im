@@ -229,6 +229,7 @@ class EndpointManager {
   EndpointBootstrapConfig _config = EndpointBootstrapConfig.fallback();
   String _apiServerUrl = fallbackServerUrl;
   String _wsUrl = fallbackWsUrl;
+  bool _discoveryApplied = false; // ServerDiscovery 已注入节点，bootstrap 不应覆盖
   bool _initialized = false;
   bool _initializing = false;
   Future<void>? _refreshFuture;
@@ -255,6 +256,19 @@ class EndpointManager {
 
   void initializeInBackground() {
     unawaited(initialize());
+  }
+  /// ServerDiscovery 发现节点后调用，将该节点注入为当前活跃端点
+  /// 不影响已缓存的 bootstrap 线路表，仅作为启动阶段的初始节点
+  void setDiscoveredNode(String apiUrl, {String? wsUrl}) {
+    final normalizedApi = _trimTrailingSlash(apiUrl);
+    if (normalizedApi.isEmpty) return;
+    _apiServerUrl = normalizedApi;
+    _wsUrl = wsUrl != null
+        ? _trimTrailingSlash(wsUrl)
+        : '$normalizedApi/api/v1/ws'.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+    _discoveryApplied = true;
+    debugPrint('[EndpointManager] setDiscoveredNode: api=$_apiServerUrl ws=$_wsUrl');
+    _notifyChanged();
   }
 
   Future<void> _initializeInternal() async {
@@ -409,6 +423,8 @@ class EndpointManager {
   }
 
   void _ensureCurrentEndpoints() {
+    // Discovery 已选好节点，bootstrap 不覆盖
+    if (_discoveryApplied) return;
     if (!_containsEndpoint(_config.apiEndpoints, _apiServerUrl)) {
       _apiServerUrl = _config.apiEndpoints.first.url;
     }

@@ -254,7 +254,8 @@ class ApiClient {
 
   ApiClient._({required bool initializeEndpoints}) {
     if (initializeEndpoints) {
-      EndpointManager.instance.initializeInBackground();
+      // EndpointManager 已在 bootstrap 阶段由 _runDiscoveryInBackground 统一初始化
+      // EndpointManager.instance.initializeInBackground();
     }
     debugPrint('[API] Initializing with baseUrl: ${ApiConfig.baseUrl}');
     _dio = Dio(

@@ -25,6 +25,8 @@ import '../../../core/utils/platform_utils.dart';
 import '../../../shared/widgets/desktop/auth_desktop_layout.dart';
 import 'agreement_page.dart';
 import 'forgot_password_page.dart';
+import '../../settings/pages/network_settings_page.dart';
+import '../../../core/services/server_discovery.dart';
 
 /// 登录页面
 String _loginText(
@@ -76,6 +78,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.initState();
   }
 
+
+  void _openNetworkSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NetworkSettingsPage()),
+    );
+  }
   @override
   void dispose() {
     _qrLoginPollTimer?.cancel();
@@ -255,6 +263,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
         const SizedBox(height: 10),
         _buildForgotPasswordEntry(isDark),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _openNetworkSettings,
+            child: const Text('切换线路', style: TextStyle(fontSize: 12)),
+          ),
+        ),
 
         if (showDesktopQrSwitch) ...[
           const SizedBox(height: 12),

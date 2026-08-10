@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/services/server_discovery.dart';
+import '../core/services/api/endpoint_manager.dart';
 import '../app.dart';
 import '../core/services/android_callkit_helper.dart';
 import '../core/services/android_message_notification_service.dart';
@@ -293,6 +295,22 @@ Future<void> bootstrapApp() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     // 首帧完成后再启动非关键服务，确保冷启动耗时不被后台能力初始化放大。
     PerformanceTraceService.mark('first_frame_native');
+    unawaited(_runDiscoveryInBackground());
     unawaited(_runDeferredNativeStartupTasks());
   });
+}
+
+Future<void> _runDiscoveryInBackground() async {
+  try {
+    final node = await ServerDiscovery.instance.initialize();
+    debugPrint('[Bootstrap] ServerDiscovery selected: $node');
+  } catch (e) {
+    debugPrint('[Bootstrap] ServerDiscovery failed, using fallback: $e');
+  }
+  try {
+    await EndpointManager.instance.initialize();
+    debugPrint('[Bootstrap] EndpointManager initialized');
+  } catch (e) {
+    debugPrint('[Bootstrap] EndpointManager failed: $e');
+  }
 }
