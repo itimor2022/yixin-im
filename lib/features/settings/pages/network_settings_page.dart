@@ -8,6 +8,7 @@ import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/endpoint_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 // ── 节点状态 ────────────────────────────────────────────
 enum NodeStatus { idle, testing, ok, failed }
@@ -283,11 +284,7 @@ class NetworkSettingsPage extends ConsumerWidget {
     final okCount = nodes.where((n) => n.status == NodeStatus.ok).length;
 
     return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        backgroundColor: bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+      appBar: ThemedAppBar(
         centerTitle: true,
         title: Text(
           '网络线路',
@@ -297,7 +294,6 @@ class NetworkSettingsPage extends ConsumerWidget {
             color: titleColor,
           ),
         ),
-        iconTheme: IconThemeData(color: titleColor),
       ),
       body: nodes.isEmpty
           ? _buildEmptyState(cardBg, titleColor, subColor)

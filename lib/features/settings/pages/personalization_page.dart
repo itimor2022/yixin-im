@@ -12,6 +12,7 @@ import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../chat/providers/chat_provider.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _personalizationText(
   BuildContext context, {
@@ -163,7 +164,6 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
               en: 'Save failed. Please try again.',
             ),
           ),
-          backgroundColor: AppColors.error,
         ),
       );
     } finally {
@@ -194,10 +194,9 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         backgroundColor:
             isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
-        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -458,12 +457,9 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryFor(context),
-                  foregroundColor: AppColors.onPrimaryFor(context),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
-                  elevation: 0,
                 ),
                 child: _isSaving
                     ? const SizedBox(

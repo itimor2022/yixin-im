@@ -19,6 +19,7 @@ import '../../../core/services/e2ee/e2ee_recovery_models.dart';
 import '../../../core/services/e2ee/e2ee_service.dart';
 import '../../chat/providers/chat_provider.dart';
 import '../../contacts/providers/contact_provider.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 // 关键声明：devices page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
 /// 设备数据模型
@@ -406,7 +407,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(error.toString()),
-      backgroundColor: AppColors.error,
     ));
   }
 
@@ -518,7 +518,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                 en: 'Operation failed. Please try again.',
               ),
             ),
-            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -620,11 +619,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     }
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        backgroundColor: cardColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,
@@ -1356,7 +1351,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
                 en: 'Operation failed. Please try again.',
               ),
             ),
-            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -1589,7 +1583,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
             ),
           ),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),

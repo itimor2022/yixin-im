@@ -13,6 +13,7 @@ import '../../../core/constants/emoji_animations.dart';
 import '../../../shared/widgets/sticker_image.dart';
 import '../../chat/pages/emoji_store_page.dart';
 import '../../chat/services/emoji_store_service.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _stickersText(
   BuildContext context, {
@@ -144,9 +145,7 @@ class _StickersPageState extends ConsumerState<StickersPage>
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -548,7 +547,6 @@ class _StickersPageState extends ConsumerState<StickersPage>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.5,
@@ -616,8 +614,6 @@ class _StickersPageState extends ConsumerState<StickersPage>
                           Navigator.pop(context);
                         },
                         style: TextButton.styleFrom(
-                          backgroundColor: AppColors.primaryFor(context),
-                          foregroundColor: AppColors.onPrimaryFor(context),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 20, vertical: 10),
                           shape: RoundedRectangleBorder(
@@ -674,7 +670,6 @@ class _StickersPageState extends ConsumerState<StickersPage>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -908,8 +903,6 @@ class _AnimatedStickerPackCard extends StatelessWidget {
               TextButton(
                 onPressed: onAction,
                 style: TextButton.styleFrom(
-                  backgroundColor: AppColors.primaryFor(context),
-                  foregroundColor: AppColors.onPrimaryFor(context),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(

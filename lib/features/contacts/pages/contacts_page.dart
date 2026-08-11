@@ -14,6 +14,8 @@ import 'package:lottie/lottie.dart';
 import '../../../shared/widgets/web_safe_lottie.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/services/api/auth_service.dart';
@@ -132,6 +134,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _pc = AppThemePresets.of(ref.watch(appThemePresetProvider));
     final contacts = ref.watch(contactListProvider);
     final pendingFriendRequestCount =
         ref.watch(pendingFriendRequestCountProvider);
@@ -168,7 +171,18 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       child: Scaffold(
         backgroundColor: pageBackground,
         appBar: AppBar(
-          backgroundColor: pageBackground,
+          backgroundColor: Colors.transparent,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [_pc.primaryA.withOpacity(0.9), _pc.primaryB.withOpacity(0.7)]
+                    : [_pc.primaryA, _pc.primaryB],
+              ),
+            ),
+          ),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
@@ -178,7 +192,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black,
+              color: _pc.appBarForeground,
             ),
           ),
           actions: [

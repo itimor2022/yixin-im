@@ -9,6 +9,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
+
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
@@ -678,33 +681,60 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _pc = AppThemePresets.of(ref.watch(appThemePresetProvider));
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final friendAddMode =
         ref.watch(systemSettingsProvider).valueOrNull?.friendAddMode ??
             FriendAddMode.approval;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
-        backgroundColor:
-            isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        surfaceTintColor: Colors.transparent,
-        leading: widget.isDesktopPanel
-            ? IconButton(
-                icon: Icon(
-                  Icons.arrow_back_ios,
-                  size: 20,
-                  color: AppColors.primaryFor(context),
-                ),
-                onPressed: () {
-                  ref.read(desktopProfileProvider.notifier).state =
-                      DesktopProfileInfo.none;
-                },
-              )
-            : null,
-        title: Text(l10n.search),
-        centerTitle: true,
+      backgroundColor: Color.lerp(
+        isDark ? AppColors.darkBackground : AppColors.lightBackground,
+        _pc.primaryA,
+        isDark ? 0.04 : 0.03,
+      )!,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [_pc.primaryA.withOpacity(0.85), _pc.primaryB.withOpacity(0.75)]
+                  : [_pc.primaryA, _pc.primaryB],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+          ),
+          child: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            surfaceTintColor: Colors.transparent,
+            iconTheme: IconThemeData(color: _pc.appBarForeground),
+            leading: widget.isDesktopPanel
+                ? IconButton(
+                    icon: Icon(Icons.arrow_back_ios, size: 20,
+                        color: _pc.appBarForeground),
+                    onPressed: () {
+                      ref.read(desktopProfileProvider.notifier).state =
+                          DesktopProfileInfo.none;
+                    },
+                  )
+                : IconButton(
+                    icon: Icon(Icons.close, size: 22,
+                        color: _pc.appBarForeground),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+            title: Text(
+              l10n.search,
+              style: TextStyle(
+                color: _pc.appBarForeground,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            centerTitle: true,
+          ),
+        ),
       ),
       body: Column(
         children: [

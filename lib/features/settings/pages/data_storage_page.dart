@@ -16,6 +16,7 @@ import '../../../core/services/api/api_client.dart';
 import '../../../core/services/e2ee/e2ee_service.dart';
 import '../../../core/services/media_cache_manager.dart';
 import '../../../shared/widgets/adaptive_settings_tile.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 const _downloadModeAllMedia = 'all_media';
 const _downloadModeImagesOnly = 'images_only';
@@ -458,9 +459,7 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -721,7 +720,6 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -792,8 +790,6 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
                       _showClearCacheConfirm(l10n);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
-                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -1094,7 +1090,6 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -1152,7 +1147,6 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,

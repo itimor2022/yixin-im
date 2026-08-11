@@ -7,6 +7,7 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _deviceLoginText(
   BuildContext context, {
@@ -231,8 +232,7 @@ class _DeviceLoginConfirmPageState
     final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         title: Text(
           _deviceLoginText(
             context,

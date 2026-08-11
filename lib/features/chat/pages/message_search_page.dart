@@ -8,6 +8,10 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/services/api/chat_service.dart' as api;
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
+
 import '../../../shared/widgets/avatar_widget.dart';
 
 // 关键声明：message search page 是页面入口，负责组装局部状态、监听用户操作并把副作用交给 Provider/Service。
@@ -303,41 +307,45 @@ class _MessageSearchPageState extends ConsumerState<MessageSearchPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _pc = AppThemePresets.of(ref.watch(appThemePresetProvider));
     final surface = AppColors.surfaceFor(context);
     final cardColor = AppColors.cardFor(context);
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundFor(context),
-      appBar: AppBar(
-        backgroundColor: surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios,
-            size: 20,
-            color: AppColors.primaryFor(context),
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+      backgroundColor: Color.lerp(
+        AppColors.backgroundFor(context),
+        Theme.of(context).colorScheme.primary,
+        isDark ? 0.04 : 0.03,
+      )!,
+      appBar: ThemedAppBar(
         title: Text(
           _text(zhCN: '搜索消息', zhTW: '搜尋訊息', en: 'Search Messages'),
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimaryFor(context),
-          ),
         ),
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Column(
         children: [
           Container(
-            color: surface,
+            decoration: BoxDecoration(
+              color: Color.lerp(surface, Theme.of(context).colorScheme.primary, 0.05),
+            ),
             padding: const EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.inputBackgroundFor(context),
-                borderRadius: BorderRadius.circular(8),
+                color: Color.lerp(
+                  AppColors.inputBackgroundFor(context),
+                  Theme.of(context).colorScheme.primary,
+                  0.04,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  width: 0.8,
+                ),
               ),
               child: TextField(
                 controller: _searchController,

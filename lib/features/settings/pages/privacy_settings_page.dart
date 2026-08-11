@@ -23,6 +23,7 @@ import '../../../shared/widgets/adaptive_settings_tile.dart';
 import 'blocked_users_page.dart';
 import 'devices_page.dart';
 import 'settings_page.dart' show deviceCountProvider;
+import '../../../shared/widgets/themed_app_bar.dart';
 
 const _privacyVisibilityEveryone = 'everyone';
 const _privacyVisibilityContacts = 'contacts';
@@ -823,9 +824,7 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -1291,7 +1290,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -1440,7 +1438,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(result.message),
-                    backgroundColor: AppColors.error,
                   ),
                 );
                 return;
@@ -1484,7 +1481,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
           _privacyText(
@@ -1671,7 +1667,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
                 ScaffoldMessenger.of(this.context).showSnackBar(
                   SnackBar(
                     content: Text(result.message),
-                    backgroundColor: AppColors.error,
                   ),
                 );
                 return;
@@ -1891,7 +1886,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
           isEditing
@@ -2207,7 +2201,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -2269,7 +2262,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
           title: Text(
             _privacyText(
               context,
@@ -2452,7 +2444,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -2696,7 +2687,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -2928,7 +2918,6 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

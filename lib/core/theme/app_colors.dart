@@ -33,9 +33,7 @@ class AppColors {
   );
 
   static Color primaryFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? primaryDarkMode
-        : primary;
+    return Theme.of(context).colorScheme.primary;
   }
 
   static Color onPrimaryFor(BuildContext context) {
@@ -45,15 +43,11 @@ class AppColors {
   }
 
   static Color primaryContainerFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? primaryDarkModeContainer
-        : primaryLight;
+    return Theme.of(context).colorScheme.primaryContainer;
   }
 
   static Color primaryBorderFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? primaryDarkModeBorder
-        : primary;
+    return Theme.of(context).colorScheme.primary.withOpacity(0.5);
   }
 
   static Color primaryWithOpacity(BuildContext context, double opacity) {
@@ -107,27 +101,19 @@ class AppColors {
   }
 
   static Color backgroundFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? darkBackground
-        : lightBackground;
+    return Theme.of(context).scaffoldBackgroundColor;
   }
 
   static Color surfaceFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? darkSurface
-        : lightSurface;
+    return Theme.of(context).colorScheme.surface;
   }
 
   static Color cardFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? darkCard
-        : lightCard;
+    return Theme.of(context).cardColor;
   }
 
   static Color dividerFor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? darkDivider
-        : lightDivider;
+    return Theme.of(context).dividerColor;
   }
 
   static Color keyboardBackgroundFor(BuildContext context) {

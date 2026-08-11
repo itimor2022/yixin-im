@@ -13,6 +13,7 @@ import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/phone_validation.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _bindPhoneText(
   BuildContext context, {
@@ -235,7 +236,7 @@ class _BindPhonePageState extends ConsumerState<BindPhonePage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         title: Text(
           _bindPhoneText(
             context,
@@ -349,8 +350,6 @@ class _BindPhonePageState extends ConsumerState<BindPhonePage> {
           FilledButton(
             onPressed: (!ready || _isBusy) ? null : _bind,
             style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primaryFor(context),
-              foregroundColor: AppColors.onPrimaryFor(context),
               minimumSize: const Size(double.infinity, 48),
             ),
             child: _binding

@@ -12,6 +12,8 @@ import '../../../shared/widgets/web_safe_lottie.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/media_cache_manager.dart';
@@ -311,11 +313,11 @@ class _ChatPageState extends ConsumerState<ChatPage>
         padding: padding,
         decoration: BoxDecoration(
           color: isDark
-              ? AppColors.darkControlBackgroundStrong
-              : const Color(0xFFF1F1F2),
+              ? Colors.white.withOpacity(0.18)
+              : Colors.white.withOpacity(0.75),
           borderRadius: BorderRadius.circular(19),
           border: isDark
-              ? Border.all(color: AppColors.darkDivider.withOpacity(0.85))
+              ? Border.all(color: Colors.white.withOpacity(0.25))
               : null,
         ),
         alignment: Alignment.center,
@@ -340,9 +342,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
               Icon(
                 icon,
                 size: 23,
-                color: isDark
-                    ? AppColors.primaryFor(context)
-                    : const Color(0xFF1D1D1F),
+                color: Theme.of(context).appBarTheme.iconTheme?.color ?? Colors.white,
               ),
         ),
       ),
@@ -354,6 +354,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     ref.watch(timeZoneRefreshProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _preset = ref.watch(appThemePresetProvider);
+    final _pc = AppThemePresets.of(_preset);
     final isEditing = ref.watch(chatEditModeProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
@@ -412,7 +414,9 @@ class _ChatPageState extends ConsumerState<ChatPage>
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+        backgroundColor: isDark
+            ? Color.lerp(const Color(0xFF0E1116), _pc.primaryA, 0.04)!
+            : Color.lerp(const Color(0xFFF2F4F7), _pc.primaryA, 0.035)!,
         body: FancyRefreshIndicator(
           topOffset: MediaQuery.of(context).padding.top + 52,
           onRefresh: () async {
@@ -431,12 +435,19 @@ class _ChatPageState extends ConsumerState<ChatPage>
                 snap: false,
                 pinned: true,
                 toolbarHeight: 64,
-                backgroundColor:
-                    isDark ? AppColors.darkBackground : Colors.white,
+                backgroundColor: Colors.transparent,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 flexibleSpace: Container(
-                  color: isDark ? AppColors.darkBackground : Colors.white,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: isDark
+                          ? [_pc.primaryA.withOpacity(0.9), _pc.primaryB.withOpacity(0.7)]
+                          : [_pc.primaryA, _pc.primaryB],
+                    ),
+                  ),
                 ),
                 leadingWidth: widget.isDesktopSidebar ? 16 : 92,
                 leading: widget.isDesktopSidebar
@@ -475,9 +486,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
-                                color: isDark
-                                    ? AppColors.primaryFor(context)
-                                    : const Color(0xFF1D1D1F),
+                                color: Theme.of(context).appBarTheme.iconTheme?.color ?? Colors.white,
                               ),
                             ),
                           ),
@@ -496,7 +505,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimaryFor(context),
+                          color: Theme.of(context).appBarTheme.titleTextStyle?.color
+                              ?? _pc.appBarForeground,
                         ),
                       )
                     : _ChatPageTitle(isDark: isDark),
@@ -579,12 +589,20 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       height: 48,
                       decoration: BoxDecoration(
                         color: isDark
-                            ? AppColors.darkInputBackground
-                            : const Color(0xFFF1F1F2),
-                        borderRadius: BorderRadius.circular(10),
-                        border: isDark
-                            ? Border.all(color: AppColors.darkDivider)
-                            : null,
+                            ? _pc.primaryA.withOpacity(0.15)
+                            : Color.lerp(Colors.white, _pc.primaryA, 0.06)!,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _pc.primaryA.withOpacity(isDark ? 0.30 : 0.20),
+                          width: 0.8,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _pc.primaryA.withOpacity(isDark ? 0.10 : 0.07),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Center(
                         child: Row(
@@ -594,8 +612,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
                               Icons.search_rounded,
                               size: 20,
                               color: isDark
-                                  ? AppColors.darkTextSecondary
-                                  : const Color(0xFF9A9A9D),
+                                  ? Colors.white.withOpacity(0.6)
+                                  : _pc.primaryA.withOpacity(0.55),
                             ),
                             const SizedBox(width: 7),
                             Text(
@@ -609,8 +627,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
                                 fontSize: 16,
                                 fontWeight: FontWeight.w400,
                                 color: isDark
-                                    ? AppColors.darkTextSecondary
-                                    : const Color(0xFF9A9A9D),
+                                    ? Colors.white.withOpacity(0.50)
+                                    : _pc.primaryA.withOpacity(0.50),
                               ),
                             ),
                           ],

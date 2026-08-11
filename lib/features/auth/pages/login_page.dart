@@ -1,6 +1,7 @@
 // 文件用途：实现 LoginPage 页面及其交互流程，属于用户认证。
 // 核心逻辑：收集账号凭证并执行登录，处理验证码/设备校验、加载态和失败提示，成功后交给会话协调器完成跳转。
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
@@ -141,14 +144,105 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       );
     }
 
-    // 移动端使用原始布局
+    // 移动端：主题渐变背景 + 毛玻璃卡片
+    final preset = ref.watch(appThemePresetProvider);
+    final colors = AppThemePresets.of(preset);
+    final gradient = isDark ? colors.loginGradientDark : colors.loginGradientLight;
+
     return Scaffold(
-      backgroundColor: bgColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: _buildLoginContent(isDark),
-        ),
+      backgroundColor: colors.primaryA,
+      body: Stack(
+        children: [
+          // 主题渐变背景
+          Positioned.fill(
+            child: Container(decoration: BoxDecoration(gradient: gradient)),
+          ),
+          // 装饰圆圈 - 左上
+          Positioned(
+            top: -80,
+            right: -50,
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(isDark ? 0.05 : 0.15),
+              ),
+            ),
+          ),
+          // 装饰圆圈 - 右下
+          Positioned(
+            bottom: 60,
+            left: -90,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(isDark ? 0.03 : 0.10),
+              ),
+            ),
+          ),
+          // 装饰小圆圈
+          Positioned(
+            top: 160,
+            left: 30,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.primaryB.withOpacity(isDark ? 0.3 : 0.4),
+              ),
+            ),
+          ),
+          // 内容区
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 56),
+                  // Logo
+                  _buildLogo(),
+                  const SizedBox(height: 28),
+                  // 毛玻璃表单卡片
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(32),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(28, 36, 28, 28),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.black.withOpacity(0.50)
+                              : Colors.white.withOpacity(0.80),
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(isDark ? 0.10 : 0.60),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colors.primaryA.withOpacity(0.25),
+                              blurRadius: 40,
+                              offset: const Offset(0, 20),
+                            ),
+                          ],
+                        ),
+                        child: _buildLoginContent(isDark),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // 底部链接放在卡片外，显示在渐变背景上
+                  _buildBottom(isDark, AppLocalizations(ref.watch(languageProvider))),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -165,17 +259,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(height: isDesktop ? 40 : 80),
+        SizedBox(height: isDesktop ? 40 : 0),
 
-        // Logo（桌面端隐藏，因为左侧已有）
-        if (!isDesktop) ...[
+        // Logo（桌面端隐藏，移动端已在卡片外显示）
+        if (isDesktop) ...[
           _buildLogo(),
           const SizedBox(height: 24),
         ],
 
         if (!(isDesktop && _showDesktopQrLogin)) ...[
           _buildTitle(isDark, l10n, appName),
-          const SizedBox(height: 48),
+          const SizedBox(height: 36),
         ],
 
         // 登录表单
@@ -185,13 +279,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           _buildLoginForm(isDark, l10n),
 
         SizedBox(
-          height: isDesktop && _showDesktopQrLogin ? 12 : 40,
+          height: isDesktop && _showDesktopQrLogin ? 12 : 24,
         ),
 
-        // 底部
-        _buildBottom(isDark, l10n),
-
-        const SizedBox(height: 40),
+        // 桌面端显示底部，移动端底部已移到卡片外
+        if (isDesktop) _buildBottom(isDark, l10n),
+        if (isDesktop) const SizedBox(height: 40),
       ],
     );
   }

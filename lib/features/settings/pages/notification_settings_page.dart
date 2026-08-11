@@ -14,6 +14,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/notification_sound_service.dart';
 import '../../../shared/widgets/adaptive_settings_tile.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _notificationText(
   BuildContext context, {
@@ -95,9 +96,7 @@ class _NotificationSettingsPageState
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -562,7 +561,6 @@ class _NotificationSettingsPageState
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -632,7 +630,6 @@ class _NotificationSettingsPageState
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
           l10n.resetAllNotificationSettings,
@@ -709,9 +706,7 @@ class _AndroidBackgroundProtectionPage extends StatelessWidget {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),

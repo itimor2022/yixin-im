@@ -9,6 +9,7 @@ import '../../../core/i18n/app_localizations.dart';
 import '../../../core/i18n/server_message_localizer.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../shared/widgets/avatar_widget.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _blockedUsersText(
   BuildContext context, {
@@ -172,9 +173,7 @@ class _BlockedUsersPageState extends ConsumerState<BlockedUsersPage> {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),

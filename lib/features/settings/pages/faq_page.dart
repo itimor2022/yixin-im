@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/system_settings_service.dart';
 import '../../../core/utils/link_utils.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _faqText(
   BuildContext context, {
@@ -527,9 +528,7 @@ class _FAQPageState extends ConsumerState<FAQPage> {
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0D1117) : const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -554,8 +553,6 @@ class _FAQPageState extends ConsumerState<FAQPage> {
         message: l10n.contactSupport,
         child: FloatingActionButton(
           onPressed: () => _contactSupport(l10n),
-          backgroundColor: AppColors.primaryFor(context),
-          foregroundColor: AppColors.onPrimaryFor(context),
           child: Icon(
             Icons.headset_mic_rounded,
             size: 28,
@@ -748,7 +745,6 @@ class _FAQPageState extends ConsumerState<FAQPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.5,
@@ -906,7 +902,6 @@ class _FAQPageState extends ConsumerState<FAQPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -1153,7 +1148,6 @@ class _FeedbackButton extends StatelessWidget {
         icon: Icon(icon, size: 18),
         label: Text(label),
         style: OutlinedButton.styleFrom(
-          foregroundColor: isDark ? Colors.white70 : Colors.black54,
           side: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(

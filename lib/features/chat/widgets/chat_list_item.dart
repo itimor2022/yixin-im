@@ -309,6 +309,7 @@ class _ChatListItemState extends State<ChatListItem>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // _pc 暂不需要，cardFor 已通过 Theme.of 读取主题色
 
     // 桌面端：使用右键菜单，无滑动
     if (widget.isDesktop) {
@@ -367,7 +368,11 @@ class _ChatListItemState extends State<ChatListItem>
         position.dx + 1,
         position.dy + 1,
       ),
-      color: AppColors.cardFor(context),
+      color: Color.lerp(
+        AppColors.cardFor(context),
+        Theme.of(context).colorScheme.primary,
+        isDark ? 0.03 : 0.025,
+      )!,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       items: [
         PopupMenuItem(

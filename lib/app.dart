@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:isar/isar.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_theme_preset.dart';
 import 'core/config/runtime_flags.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/router/app_router.dart';
@@ -1705,6 +1706,9 @@ class _GenericIMAppState extends ConsumerState<GenericIMApp>
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
+    final themePreset = ref.watch(appThemePresetProvider);
+    final presetColors = AppThemePresets.of(themePreset);
+    debugPrint('[Theme] preset=$themePreset primary=${presetColors.primaryA}');
     final router = ref.watch(appRouterProvider);
 
     final callState = ref.watch(callServiceProvider);
@@ -1762,8 +1766,8 @@ class _GenericIMAppState extends ConsumerState<GenericIMApp>
     return MaterialApp.router(
       title: materialAppTitle,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: AppTheme.build(presetColors, Brightness.light),
+      darkTheme: AppTheme.build(presetColors, Brightness.dark),
       themeMode: themeMode,
       locale: language.locale,
       supportedLocales: AppLanguage.values.map((l) => l.locale).toList(),

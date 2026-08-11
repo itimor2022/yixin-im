@@ -32,6 +32,7 @@ import '../../../shared/widgets/avatar_crop_page.dart';
 import '../../home/pages/home_desktop_page.dart';
 import 'personalization_page.dart';
 import 'bind_phone_page.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _profileText(
   BuildContext context, {
@@ -258,11 +259,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        backgroundColor: bgColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,
@@ -766,7 +763,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
@@ -1011,7 +1007,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
               ),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1037,7 +1032,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
               ),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1058,7 +1052,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
             ),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -1161,7 +1154,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
           ),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -1184,7 +1176,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
           ),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -1250,7 +1241,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
               ),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1271,7 +1261,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
             ),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -2016,7 +2005,6 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
         _qrCardStyles[_selectedStyleIndex.clamp(0, _qrCardStyles.length - 1)];
 
     return Scaffold(
-      backgroundColor: selectedStyle.backgroundEnd,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

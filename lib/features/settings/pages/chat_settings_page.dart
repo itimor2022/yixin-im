@@ -10,6 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/theme/theme_provider.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 String _chatSettingsText(
   BuildContext context, {
@@ -251,11 +252,10 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     return Scaffold(
       backgroundColor:
           isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         title: Text(l10n.chatSettings),
         backgroundColor:
             isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        elevation: 0,
       ),
       body: _buildBody(
           isDark, chatBackground, bubbleColors, messageSettings, l10n),
@@ -611,7 +611,6 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => _BackgroundPickerSheet(isDark: isDark),
     );
   }
@@ -623,7 +622,6 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => _BubbleColorPickerSheet(isDark: isDark),
     );
   }

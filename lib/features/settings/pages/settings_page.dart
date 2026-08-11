@@ -10,6 +10,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/utils/floating_nav_layout.dart';
 import '../../../core/utils/platform_utils.dart';
@@ -37,9 +39,11 @@ import 'faq_page.dart';
 import 'chat_settings_page.dart';
 import '../../auth/pages/agreement_page.dart';
 import '../../home/pages/home_desktop_page.dart';
+import 'theme_picker_page.dart';
 import '../../vip/providers/vip_provider.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_badge.dart';
+import '../../../shared/widgets/themed_app_bar.dart';
 
 /// 设备数量 Provider
 final deviceCountProvider = FutureProvider<int>((ref) async {
@@ -237,8 +241,6 @@ class SettingsPage extends ConsumerWidget {
     }
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -426,6 +428,19 @@ class SettingsPage extends ConsumerWidget {
                       isDark: isDark,
                       onTap: () => _showThemeSheet(context, ref, l10n),
                     ),
+                    _SettingsTile(
+                      icon: Icons.palette_outlined,
+                      iconBgColor: const Color(0xFFFF6B6B),
+                      title: '主题风格',
+                      subtitle: '切换主题色彩与显示模式',
+                      isDark: isDark,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ThemePickerPage(),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
 
@@ -584,7 +599,6 @@ class SettingsPage extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => _SelectionSheet(
         title: l10n.appearance,
         isDark: isDark,
@@ -635,7 +649,6 @@ class SettingsPage extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => _SelectionSheet(
         title: l10n.languageText,
         isDark: isDark,
@@ -660,7 +673,6 @@ class SettingsPage extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: AppColors.cardFor(context),
@@ -1131,7 +1143,6 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) => ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         child: BackdropFilter(
@@ -1903,10 +1914,7 @@ class ChatSettingsFullPage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundFor(context),
-      appBar: AppBar(
-        backgroundColor: AppColors.cardFor(context),
-        surfaceTintColor: Colors.transparent,
+      appBar: ThemedAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -1995,6 +2003,27 @@ class ChatSettingsFullPage extends StatelessWidget {
           _SettingsGroup(
             isDark: isDark,
             children: [
+              _TapTile(
+                title: _settingsText(
+                  context,
+                  zhCN: '主题风格',
+                  zhTW: '主題風格',
+                  en: 'Theme Style',
+                ),
+                subtitle: _settingsText(
+                  context,
+                  zhCN: '切换主题色彩与显示模式',
+                  zhTW: '切換主題色彩與顯示模式',
+                  en: 'Switch theme color and display mode',
+                ),
+                isDark: isDark,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ThemePickerPage(),
+                  ),
+                ),
+              ),
               _TapTile(
                 title: _settingsText(
                   context,
@@ -2328,10 +2357,9 @@ class _MyMomentsPageState extends ConsumerState<MyMomentsPage> {
     return Scaffold(
       backgroundColor:
           isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         backgroundColor:
             isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios,
@@ -2444,10 +2472,9 @@ class _MyLikesPageState extends ConsumerState<MyLikesPage> {
     return Scaffold(
       backgroundColor:
           isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         backgroundColor:
             isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios,
@@ -2584,11 +2611,9 @@ class _MyCommentsPageState extends ConsumerState<MyCommentsPage>
     return Scaffold(
       backgroundColor:
           isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
+      appBar: ThemedAppBar(
         backgroundColor:
             isDark ? AppColors.darkBackground : AppColors.lightBackground,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios,

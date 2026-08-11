@@ -12,6 +12,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/api/auth_service.dart';
 import '../../../core/services/api/chat_service.dart' as api;
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart';
+
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/services/storage/models/message_model.dart'
@@ -349,6 +352,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _pc = AppThemePresets.of(ref.watch(appThemePresetProvider));
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final chatState = ref.watch(chatListProvider);
     final allChats = [...chatState.pinnedChats, ...chatState.regularChats];
@@ -414,77 +418,99 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundFor(context),
-      appBar: AppBar(
-        backgroundColor: AppColors.backgroundFor(context),
-        elevation: 0,
-        leadingWidth: 0,
-        leading: const SizedBox.shrink(),
-        titleSpacing: 16,
-        title: Container(
-          height: 36,
+      backgroundColor: Color.lerp(
+        AppColors.backgroundFor(context),
+        Theme.of(context).colorScheme.primary,
+        isDark ? 0.04 : 0.03,
+      )!,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: Container(
           decoration: BoxDecoration(
-            color: AppColors.inputBackgroundFor(context),
-            borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [_pc.primaryA.withOpacity(0.85), _pc.primaryB.withOpacity(0.75)]
+                  : [_pc.primaryA, _pc.primaryB],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
           ),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            onChanged: _onSearchChanged,
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textPrimaryFor(context),
-            ),
-            decoration: InputDecoration(
-              hintText: l10n.search,
-              hintStyle: TextStyle(
+          child: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leadingWidth: 0,
+            leading: const SizedBox.shrink(),
+            titleSpacing: 16,
+            title: Container(
+              height: 36,
+              clipBehavior: Clip.hardEdge,
+              decoration: BoxDecoration(
                 color: isDark
-                    ? AppColors.darkTextTertiary
-                    : const Color(0xFF8E8E93),
+                    ? Colors.white.withOpacity(0.15)
+                    : Colors.white.withOpacity(0.85),
+                borderRadius: BorderRadius.circular(10),
               ),
-              prefixIcon: Icon(
-                Icons.search,
-                size: 20,
-                color: isDark
-                    ? AppColors.darkTextTertiary
-                    : const Color(0xFF8E8E93),
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textPrimaryFor(context),
+                ),
+                decoration: InputDecoration(
+                  hintText: l10n.search,
+                  hintStyle: TextStyle(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.4)
+                        : _pc.primaryA.withOpacity(0.45),
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 20,
+                    color: isDark
+                        ? Colors.white.withOpacity(0.4)
+                        : _pc.primaryA.withOpacity(0.5),
+                  ),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? GestureDetector(
+                          onTap: _clearSearch,
+                          child: Icon(
+                            Icons.cancel,
+                            size: 18,
+                            color: isDark
+                                ? Colors.white.withOpacity(0.4)
+                                : _pc.primaryA.withOpacity(0.5),
+                          ),
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                ),
               ),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? GestureDetector(
-                      onTap: _clearSearch,
-                      child: Icon(
-                        Icons.cancel,
-                        size: 18,
-                        color: isDark
-                            ? AppColors.darkTextTertiary
-                            : const Color(0xFF8E8E93),
-                      ),
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
             ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  if (widget.isDesktopPanel) {
+                    ref.read(desktopProfileProvider.notifier).state =
+                        DesktopProfileInfo.none;
+                  } else {
+                    context.pop();
+                  }
+                },
+                child: Text(
+                  l10n.cancel,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (widget.isDesktopPanel) {
-                ref.read(desktopProfileProvider.notifier).state =
-                    DesktopProfileInfo.none;
-              } else {
-                context.pop();
-              }
-            },
-            child: Text(
-              l10n.cancel,
-              style: TextStyle(
-                color: AppColors.linkFor(context),
-                fontSize: 16,
-              ),
-            ),
-          ),
-        ],
       ),
       body: _searchQuery.isEmpty
           ? _buildEmptyState(isDark, l10n)
