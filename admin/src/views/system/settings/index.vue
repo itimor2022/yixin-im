@@ -600,9 +600,9 @@
             <header class="feature-section-header">
               <span class="feature-section-header__icon"><ArtSvgIcon icon="ri:apple-line" /></span>
               <div>
-                <span class="feature-section-header__eyebrow">iOS 上架合规</span>
-                <h3>iOS 合规模式</h3>
-                <p>对所有 iOS 用户统一生效，不按审核账号、设备或审核人员做差异化处理。</p>
+                <span class="feature-section-header__eyebrow">App 合规</span>
+                <h3>App 合规模式</h3>
+                <p>对所有移动端用户统一生效，不按审核账号、设备或审核人员做差异化处理。</p>
               </div>
               <ElSwitch v-model="featureForm.ios_compliance.enabled" :disabled="isDemoAdmin" />
             </header>
@@ -643,6 +643,12 @@
               <ElFormItem label="保留自定义栏目">
                 <ElSwitch
                   v-model="featureForm.ios_compliance.custom_portal_enabled"
+                  :disabled="!featureForm.ios_compliance.enabled || isDemoAdmin"
+                />
+              </ElFormItem>
+              <ElFormItem label="开启签到功能">
+                <ElSwitch
+                  v-model="featureForm.ios_compliance.checkin_enabled"
                   :disabled="!featureForm.ios_compliance.enabled || isDemoAdmin"
                 />
               </ElFormItem>
@@ -2464,7 +2470,8 @@
       wallet_enabled: false,
       wallet_recharge_enabled: false,
       moment_video_enabled: false,
-      custom_portal_enabled: false
+      custom_portal_enabled: false,
+      checkin_enabled: false
     },
     custom_portal_enabled: false,
     custom_portal_title: '',
@@ -3301,6 +3308,7 @@
       featureForm.ios_compliance.moment_video_enabled = iosCompliance?.moment_video_enabled === true
       featureForm.ios_compliance.custom_portal_enabled =
         iosCompliance?.custom_portal_enabled === true
+      featureForm.ios_compliance.checkin_enabled = iosCompliance?.checkin_enabled === true
       featureForm.custom_portal_enabled = settings.custom_portal_enabled || false
       featureForm.custom_portal_title = settings.custom_portal_title || ''
       featureForm.custom_portal_url = settings.custom_portal_url || ''

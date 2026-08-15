@@ -20,6 +20,7 @@ type iosComplianceConfig struct {
 	WalletRechargeEnabled bool `json:"wallet_recharge_enabled"`
 	MomentVideoEnabled    bool `json:"moment_video_enabled"`
 	CustomPortalEnabled   bool `json:"custom_portal_enabled"`
+	CheckinEnabled        bool `json:"checkin_enabled"`
 }
 
 func defaultIOSComplianceConfig() iosComplianceConfig {
@@ -30,6 +31,7 @@ func defaultIOSComplianceConfig() iosComplianceConfig {
 		WalletRechargeEnabled: false,
 		MomentVideoEnabled:    false,
 		CustomPortalEnabled:   false,
+		CheckinEnabled:        false,
 	}
 }
 
@@ -74,7 +76,8 @@ func loadIOSComplianceConfig(db *gorm.DB) iosComplianceConfig {
 }
 
 func isIOSClientRequest(c *gin.Context, db *gorm.DB, userID uint64) bool {
-	if strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Client-Platform")), "ios") {
+	platform := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Client-Platform")))
+	if platform == "ios" || platform == "android" {
 		return true
 	}
 	if db == nil {
@@ -101,7 +104,8 @@ func isIOSClientRequest(c *gin.Context, db *gorm.DB, userID uint64) bool {
 		First(&device).Error; err != nil {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(device.DeviceType), "ios")
+	dt := strings.ToLower(strings.TrimSpace(device.DeviceType))
+	return dt == "ios" || dt == "android"
 }
 
 // IOSComplianceFeatureGuard blocks direct API access when a feature is hidden

@@ -45,6 +45,16 @@ export const userPermissionRoutes: AppRouteRecord = {
         roles: commonRoles,
         keepAlive: true
       }
+    },
+    {
+      path: 'checkin-records',
+      name: 'CheckinRecords',
+      component: '/system/checkin',
+      meta: {
+        title: '签到记录',
+        icon: 'ri:calendar-check-line',
+        keepAlive: true
+      }
     }
   ]
 }

@@ -283,6 +283,8 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 		// 邀请码
 		&models.InviteCode{},
 		&models.InviteCodeUsage{},
+		// 签到
+		&models.UserCheckin{},
 	); err != nil {
 		return nil, err
 	}
@@ -977,6 +979,11 @@ func setupRouter(
 				message.GET("/media/count", msgHandler.GetChatMediaCount)
 			}
 
+			// 签到
+			checkinHandler := handlers.NewCheckinHandler(db)
+			authorized.POST("/checkin", checkinHandler.DoCheckin)
+			authorized.GET("/checkin/calendar", checkinHandler.GetCalendar)
+
 			// 联系人
 			contact := authorized.Group("/contact")
 			{
@@ -1354,6 +1361,13 @@ func setupRouter(
 					// 写操作需要非演示管理员权限
 					reportMgmt.POST("/:id/process", middleware.RequireWriteRole(), reportHandler.ProcessReport)
 					reportMgmt.DELETE("/:id", middleware.RequireWriteRole(), reportHandler.DeleteReport)
+				}
+
+				// 签到记录
+				checkinMgmt := adminAuth.Group("/checkins")
+				{
+					checkinAdminHandler := handlers.NewCheckinHandler(db)
+					checkinMgmt.GET("/list", checkinAdminHandler.AdminListCheckins)
 				}
 
 				// 系统设置

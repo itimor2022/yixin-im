@@ -57,6 +57,7 @@ const (
 	SettingRequirePhoneBind         = "require_phone_bind"          // 是否强制绑定手机号
 	SettingEnableMomentPost         = "enable_moment_post"          // 是否允许发布动态（关闭后用户只能浏览）
 	SettingMomentPostReviewEnabled  = "moment_post_review_enabled"  // 动态发布是否启用审核
+	SettingCheckinEnabled           = "checkin_enabled"            // 签到功能开关
 	SettingIOSCompliance            = "ios_compliance"              // iOS 合规模式及细分功能开关 JSON
 	SettingNewUserFollowOfficial    = "new_user_follow_official"    // 新用户是否强制关注官方用户
 	SettingInviteRegisterBindOnly   = "invite_register_bind_only"   // 邀请码注册用户只自动添加邀请码绑定客服

@@ -1054,6 +1054,7 @@ export interface IOSComplianceSettings {
   wallet_recharge_enabled: boolean
   moment_video_enabled: boolean
   custom_portal_enabled: boolean
+  checkin_enabled?: boolean
 }
 
 export interface SystemSettings {
@@ -2609,4 +2610,31 @@ export function getVipOrders(params?: {
   keyword?: string
 }) {
   return request.get<VipOrderListResponse>({ url: '/admin/vip/orders', params })
+}
+
+
+// ─── 签到记录 ──────────────────────────────────────────
+export interface CheckinRecord {
+  id: number
+  user_id: string
+  checkin_at: string
+  created_at: string
+}
+
+export interface CheckinListResult {
+  total: number
+  page: number
+  records: CheckinRecord[]
+}
+
+export function getAdminCheckinList(params: {
+  page?: number
+  page_size?: number
+  user_id?: string
+  date?: string
+}): Promise<{ data: CheckinListResult }> {
+  return request.get<{ data: CheckinListResult }>({
+    url: '/admin/checkins/list',
+    params
+  })
 }
