@@ -1172,9 +1172,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       if (hasVip)
-                                        VipProfileBadge(
+                                        VipBadge(
                                           level: _vip.level,
+                                          text: _vip.badge,
+                                          iconUrl: _vip.badgeIcon,
                                           height: 18,
+                                          compact: true,
                                         ),
                                       if (hasVip && hasEmoji)
                                         const SizedBox(width: 6),
