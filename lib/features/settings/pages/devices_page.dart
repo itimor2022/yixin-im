@@ -696,55 +696,6 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
                 const SizedBox(height: 35),
 
-                // 活跃会话（其他设备）
-                _buildSectionHeader(
-                  l10n.activeSessions,
-                  isDark,
-                  trailing:
-                      '${_devices.where((d) => d.deviceId != _currentDevice?.deviceId).length} ${l10n.devicesCount}',
-                ),
-
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: _devices
-                          .where((d) => d.deviceId != _currentDevice?.deviceId)
-                          .isEmpty
-                      ? [_buildEmptySessionTile(isDark, l10n)]
-                      : _devices
-                          .where((d) => d.deviceId != _currentDevice?.deviceId)
-                          .map(
-                            (device) =>
-                                _buildOtherDeviceTile(device, isDark, l10n),
-                          )
-                          .toList(),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    l10n.suspiciousDeviceHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textTertiaryFor(context),
-                    ),
-                  ),
-                ),
-
-                // 终止所有其他设备按钮（仅当有其他设备时显示）
-                if (_devices
-                    .where((d) => d.deviceId != _currentDevice?.deviceId)
-                    .isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _buildSettingsCard(
-                    isDark: isDark,
-                    cardColor: cardColor,
-                    children: [_buildTerminateAllTile(isDark, l10n)],
-                  ),
-                ],
-
-                const SizedBox(height: 35),
-
                 _buildSectionHeader(
                   _devicesText(
                     context,
@@ -893,23 +844,7 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
 
                 const SizedBox(height: 35),
 
-                // 退出登录
-                _buildSettingsCard(
-                  isDark: isDark,
-                  cardColor: cardColor,
-                  children: [_buildLogoutTile(isDark, l10n)],
-                ),
 
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    l10n.logoutHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textTertiaryFor(context),
-                    ),
-                  ),
-                ),
 
                 const SizedBox(height: 50),
               ],

@@ -41,6 +41,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
   bool _hotUpdateApplying = false;
 
   AuthStatus? _resolvedAuthStatus;
+  Timer? _authTimeoutTimer;
 
   String _updateMessage = '';
   String _updateUrl = '';
@@ -86,6 +87,17 @@ class _SplashPageState extends ConsumerState<SplashPage>
         _onAuthStatusResolved(authState.status);
       });
     }
+
+    // 超时兜底：8秒后若仍未收到 auth 回调，强制跳转
+    _authTimeoutTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted || _resolvedAuthStatus != null) return;
+      debugPrint('[Splash] auth timeout, force navigate');
+      _onAuthStatusResolved(
+        ref.read(authServiceProvider).status == AuthStatus.authenticated
+            ? AuthStatus.authenticated
+            : AuthStatus.unauthenticated,
+      );
+    });
 
     if (!kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -137,6 +149,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authTimeoutTimer?.cancel();
     _controller.dispose();
     _hotUpdateProgressNotifier?.dispose();
     super.dispose();
@@ -165,6 +178,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
   }
 
   void _onAuthStatusResolved(AuthStatus status) {
+    _authTimeoutTimer?.cancel();
     _resolvedAuthStatus = status;
     unawaited(_ensureUpdateGateThenNavigate());
   }
@@ -183,7 +197,10 @@ class _SplashPageState extends ConsumerState<SplashPage>
     if (!_updateCheckCompleted) {
       if (_updateCheckInProgress) return;
       _updateCheckInProgress = true;
-      await _runUpdateCheckFlow();
+      await _runUpdateCheckFlow().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
       _updateCheckInProgress = false;
       _updateCheckCompleted = true;
     }

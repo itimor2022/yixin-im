@@ -179,6 +179,7 @@ class IOSComplianceSettings {
   final bool walletRechargeEnabled;
   final bool momentVideoEnabled;
   final bool customPortalEnabled;
+  final bool checkinEnabled;
 
   const IOSComplianceSettings({
     this.enabled = true,
@@ -187,6 +188,7 @@ class IOSComplianceSettings {
     this.walletRechargeEnabled = false,
     this.momentVideoEnabled = false,
     this.customPortalEnabled = false,
+    this.checkinEnabled = false,
   });
 
   factory IOSComplianceSettings.fromJson(dynamic raw) {
@@ -201,6 +203,7 @@ class IOSComplianceSettings {
           walletEnabled && json['wallet_recharge_enabled'] == true,
       momentVideoEnabled: json['moment_video_enabled'] == true,
       customPortalEnabled: json['custom_portal_enabled'] == true,
+      checkinEnabled: json['checkin_enabled'] == true,
     );
   }
 
@@ -210,6 +213,7 @@ class IOSComplianceSettings {
       !enabled || (walletEnabled && walletRechargeEnabled);
   bool get allowsMomentVideo => !enabled || momentVideoEnabled;
   bool get allowsCustomPortal => !enabled || customPortalEnabled;
+  bool get allowsCheckin => checkinEnabled;
 
   Map<String, dynamic> toJson() => {
         'enabled': enabled,
@@ -218,6 +222,7 @@ class IOSComplianceSettings {
         'wallet_recharge_enabled': walletRechargeEnabled,
         'moment_video_enabled': momentVideoEnabled,
         'custom_portal_enabled': customPortalEnabled,
+        'checkin_enabled': checkinEnabled,
       };
 }
 
@@ -555,6 +560,8 @@ class SystemSettings {
   }
 
   String get portalUrl => customPortalUrl.trim();
+  bool get checkinEnabled => iosCompliance.allowsCheckin;
+
   String get onlineSupportUrl => supportOnlineUrl.trim();
   String get qqSupportNumber => supportQQ.trim();
 

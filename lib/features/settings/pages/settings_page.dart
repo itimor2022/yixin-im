@@ -35,6 +35,7 @@ import 'privacy_settings_page.dart';
 import 'data_storage_page.dart';
 import 'devices_page.dart';
 import 'stickers_page.dart';
+import 'checkin_page.dart';
 import 'faq_page.dart';
 import 'chat_settings_page.dart';
 import '../../auth/pages/agreement_page.dart';
@@ -220,9 +221,9 @@ class SettingsPage extends ConsumerWidget {
     final configuredName =
         ref.watch(systemSettingsProvider).valueOrNull?.displayName.trim() ?? '';
     final systemSettings = ref.watch(systemSettingsProvider).valueOrNull;
-    final showWallet = !PlatformUtils.isIOS ||
+    final showWallet = !PlatformUtils.isMobile ||
         (systemSettings?.iosCompliance.allowsWallet ?? false);
-    final showVIP = !PlatformUtils.isIOS ||
+    final showVIP = !PlatformUtils.isMobile ||
         (systemSettings?.iosCompliance.allowsVIP ?? false);
     final appName =
         configuredName.isNotEmpty ? configuredName : defaultAppDisplayName();
@@ -279,6 +280,20 @@ class SettingsPage extends ConsumerWidget {
                             const PrivacySettingsPage(),
                             ref,
                             desktopPanelType: DesktopPanelType.settingsPrivacy,
+                          ),
+                        ),
+
+                      if (ref.watch(systemSettingsProvider).valueOrNull?.iosCompliance.allowsCheckin == true)
+                        _SettingsTile(
+                          icon: Icons.calendar_today_outlined,
+                          iconBgColor: const Color(0xFF34C759),
+                          title: '签到',
+                          isDark: isDark,
+                          onTap: () => _openPage(
+                            context,
+                            const CheckinPage(),
+                            ref,
+                            desktopPanelType: DesktopPanelType.settingsStickers,
                           ),
                         ),
                       if (showWallet)
@@ -382,14 +397,7 @@ class SettingsPage extends ConsumerWidget {
                       icon: Icons.devices_outlined,
                       iconBgColor: const Color(0xFFFF9500),
                       title: l10n.devices,
-                      subtitle: deviceCountAsync.when(
-                        data: (count) => _settingsDeviceCountText(
-                          context,
-                          count,
-                        ),
-                        loading: () => '...',
-                        error: (_, __) => _settingsDeviceCountText(context, 1),
-                      ),
+
                       isDark: isDark,
                       onTap: () => _openPage(
                         context,
@@ -463,18 +471,6 @@ class SettingsPage extends ConsumerWidget {
                       ),
                     ),
                     _SettingsTile(
-                      icon: Icons.help_outline,
-                      iconBgColor: AppColors.primaryFor(context),
-                      title: l10n.faq,
-                      isDark: isDark,
-                      onTap: () => _openPage(
-                        context,
-                        const FAQPage(),
-                        ref,
-                        desktopPanelType: DesktopPanelType.settingsFaq,
-                      ),
-                    ),
-                    _SettingsTile(
                       icon: Icons.info_outline,
                       iconBgColor: const Color(0xFF8E8E93),
                       title: l10n.about,
@@ -489,6 +485,44 @@ class SettingsPage extends ConsumerWidget {
                           );
                         } else {
                           _showAboutSheet(context, isDark);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // 退出登录
+                _SettingsGroup(
+                  isDark: isDark,
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.logout,
+                      iconBgColor: AppColors.error,
+                      title: l10n.logout,
+                      isDark: isDark,
+                      onTap: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(l10n.logout),
+                            content: const Text('确认退出登录？'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: Text(l10n.cancel),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: Text(l10n.logout,
+                                    style: const TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true && context.mounted) {
+                          await ref.read(authServiceProvider.notifier).logout();
                         }
                       },
                     ),
