@@ -562,7 +562,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
           const SizedBox(height: 8),
 
-          _buildHintText(l10n.bioHint, isDark),
+          // _buildHintText(l10n.bioHint, isDark),
 
           const SizedBox(height: 24),
 

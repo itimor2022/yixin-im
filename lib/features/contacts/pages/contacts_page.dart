@@ -178,7 +178,10 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [_pc.primaryA.withOpacity(0.9), _pc.primaryB.withOpacity(0.7)]
+                    ? [
+                        _pc.primaryA.withOpacity(0.9),
+                        _pc.primaryB.withOpacity(0.7)
+                      ]
                     : [_pc.primaryA, _pc.primaryB],
               ),
             ),
@@ -1128,13 +1131,22 @@ class _ContactListItem extends StatelessWidget {
                               en: 'Online',
                             )
                           : (contact.lastSeen != null
+                              // ? _text(
+                              //     context,
+                              //     zhCN:
+                              //         '最近在线 ${_formatLastSeen(context, contact.lastSeen!)}',
+                              //     zhTW:
+                              //         '最近在線 ${_formatLastSeen(context, contact.lastSeen!)}',
+                              //     en: 'Last seen ${_formatLastSeen(context, contact.lastSeen!)}',
+                              //   )
+                              // : (contact.bio ?? '')),
                               ? _text(
                                   context,
                                   zhCN:
-                                      '最近在线 ${_formatLastSeen(context, contact.lastSeen!)}',
+                                      '最近在线',
                                   zhTW:
-                                      '最近在線 ${_formatLastSeen(context, contact.lastSeen!)}',
-                                  en: 'Last seen ${_formatLastSeen(context, contact.lastSeen!)}',
+                                      '最近在線',
+                                  en: 'Last seen',
                                 )
                               : (contact.bio ?? '')),
                       style: TextStyle(

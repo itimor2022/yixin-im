@@ -382,13 +382,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _buildPasswordField(isDark, l10n),
 
         const SizedBox(height: 10),
-        _buildForgotPasswordEntry(isDark),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: _openNetworkSettings,
-            child: const Text('切换线路', style: TextStyle(fontSize: 12)),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildForgotPasswordEntry(isDark),
+            TextButton.icon(
+              onPressed: _openNetworkSettings,
+              icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+              label: const Text('切换线路', style: TextStyle(fontSize: 12)),
+            ),
+          ],
         ),
 
         if (showDesktopQrSwitch) ...[

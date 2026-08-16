@@ -1085,13 +1085,13 @@ class AuthService extends StateNotifier<AuthState> {
     }
   }
 
-  /// 验证码绑定手机号
-  Future<ApiResponse> bindPhone(String phone, String code) async {
+  /// 绑定手机号
+  Future<ApiResponse> bindPhone(String phone, {String? code}) async {
     try {
       final response = _localizeAuthResponseMessage(
         await _api.post(
           '/user/phone/bind',
-          data: {'phone': phone, 'code': code},
+          data: {'phone': phone, if (code != null) 'code': code},
         ),
         fallbackZhCN: '绑定失败',
         fallbackZhTW: '綁定失敗',

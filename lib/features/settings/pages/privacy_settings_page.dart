@@ -1136,22 +1136,22 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
               onTap: () =>
                   _showAutoLockPicker(settings.autoLockTime, settingsService),
             ),
-            _TapTile(
-              title: _privacyText(
-                context,
-                zhCN: '短信修改登录密码',
-                zhTW: '簡訊修改登入密碼',
-                en: 'Reset Login Password by SMS',
-              ),
-              subtitle: _privacyText(
-                context,
-                zhCN: '通过短信验证码修改',
-                zhTW: '透過簡訊驗證碼修改',
-                en: 'Change it with an SMS verification code',
-              ),
-              isDark: isDark,
-              onTap: _showChangePasswordByCodeDialog,
-            ),
+            // _TapTile(
+            //   title: _privacyText(
+            //     context,
+            //     zhCN: '短信修改登录密码',
+            //     zhTW: '簡訊修改登入密碼',
+            //     en: 'Reset Login Password by SMS',
+            //   ),
+            //   subtitle: _privacyText(
+            //     context,
+            //     zhCN: '通过短信验证码修改',
+            //     zhTW: '透過簡訊驗證碼修改',
+            //     en: 'Change it with an SMS verification code',
+            //   ),
+            //   isDark: isDark,
+            //   onTap: _showChangePasswordByCodeDialog,
+            // ),
           ],
         ),
 
@@ -1162,17 +1162,17 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
         _SettingsCard(
           isDark: isDark,
           children: [
-            _TapTile(
-              title: l10n.activeSessions,
-              subtitle: isLoadingDevices
-                  ? '...'
-                  : _privacyDeviceCountText(context, activeSessionsCount),
-              isDark: isDark,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const DevicesPage()),
-              ),
-            ),
+            // _TapTile(
+            //   title: l10n.activeSessions,
+            //   subtitle: isLoadingDevices
+            //       ? '...'
+            //       : _privacyDeviceCountText(context, activeSessionsCount),
+            //   isDark: isDark,
+            //   onTap: () => Navigator.push(
+            //     context,
+            //     MaterialPageRoute(builder: (_) => const DevicesPage()),
+            //   ),
+            // ),
             _TapTile(
               title: l10n.terminateAllOtherDevices,
               titleColor: AppColors.error,

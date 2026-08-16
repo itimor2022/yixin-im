@@ -8,12 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause" // UserHandler 用户处理器
+	"genericim/internal/authsession"
+	"genericim/internal/cache"
+	"genericim/internal/models"
+	"genericim/internal/privacy"
+	"genericim/internal/services"
+	"genericim/internal/ws"
+	"genericim/pkg/response"
 	"log"
 	"net/http"
 	"net/url"
@@ -24,13 +25,13 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-	"genericim/internal/authsession"
-	"genericim/internal/cache"
-	"genericim/internal/models"
-	"genericim/internal/privacy"
-	"genericim/internal/services"
-	"genericim/internal/ws"
-	"genericim/pkg/response"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause" // UserHandler 用户处理器
 )
 
 type UserHandler struct {
@@ -606,7 +607,7 @@ func (h *UserHandler) SendPhoneBindCode(c *gin.Context) {
 	response.Success(c, gin.H{"message": "验证码已发送", "expires_in": int(cache.TTLVerifyCode / time.Second)})
 }
 
-// BindPhone 校验验证码并绑定手机号（需登录）
+// BindPhone 绑定手机号（需登录）
 func (h *UserHandler) BindPhone(c *gin.Context) {
 	if h.cache == nil {
 
@@ -616,8 +617,6 @@ func (h *UserHandler) BindPhone(c *gin.Context) {
 	}
 	var req struct {
 		Phone string `json:"phone" binding:"required"`
-
-		Code string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 
@@ -629,24 +628,6 @@ func (h *UserHandler) BindPhone(c *gin.Context) {
 	if phone == "" {
 
 		response.BadRequest(c, "手机号无效")
-
-		return
-	}
-	ctx := c.Request.Context()
-	stored, err := h.cache.GetVerifyCode(ctx, phone)
-	if err != nil || stored == "" {
-
-		response.Error(c, 400, "验证码已失效，请重新获取")
-
-		return
-	}
-	if !allowSMSVerifyAttempt(c, h.cache, "bind-phone:"+phone, cache.KeyVerifyCode+phone) {
-
-		return
-	}
-	if stored != strings.TrimSpace(req.Code) {
-
-		response.Error(c, 400, "验证码错误")
 
 		return
 	}
@@ -683,8 +664,6 @@ func (h *UserHandler) BindPhone(c *gin.Context) {
 
 		return
 	}
-	_ = h.cache.DeleteVerifyCode(ctx, phone)
-	clearSMSVerifyAttempts(ctx, h.cache, "bind-phone:"+phone)
 	h.db.Where("uuid = ?", userUUID).First(&user)
 	if h.hub != nil {
 		var phone any
