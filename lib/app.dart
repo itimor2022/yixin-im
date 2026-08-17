@@ -368,42 +368,7 @@ class _GenericIMAppState extends ConsumerState<GenericIMApp>
         if (identical(previous?.loginNotice, notice)) return;
 
         ref.read(authServiceProvider.notifier).clearLoginNotice();
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          if (!mounted) return;
-          final context = rootNavigatorKey.currentContext;
-          if (context == null || !context.mounted) return;
-          final l10n = AppLocalizations.of(context);
-          await showDialog<void>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              title: Text(_localizedText(
-                l10n: l10n,
-                zhCN: '多端登录提醒',
-                zhTW: '多端登入提醒',
-                en: 'Multiple Devices Signed In',
-              )),
-              content: Text(_localizedText(
-                l10n: l10n,
-                zhCN:
-                    '当前账号还在 ${notice.otherActiveDeviceCount} 台其他设备上保持登录。系统允许多端共存；可前往“设置 > 设备管理”检查并下线陌生设备。',
-                zhTW:
-                    '目前帳號仍在 ${notice.otherActiveDeviceCount} 台其他裝置上保持登入。系統允許多端共存；可前往「設定 > 裝置管理」檢查並下線陌生裝置。',
-                en: 'This account is still signed in on ${notice.otherActiveDeviceCount} other device(s). Multiple devices may coexist. Review and remove unfamiliar devices in Settings > Devices.',
-              )),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(_localizedText(
-                    l10n: l10n,
-                    zhCN: '我知道了',
-                    zhTW: '我知道了',
-                    en: 'Got it',
-                  )),
-                ),
-              ],
-            ),
-          );
-        });
+        // 多端登录提醒弹窗已隐藏
       },
     );
   }
