@@ -217,7 +217,7 @@ class _GenericIMAppState extends ConsumerState<GenericIMApp>
         'setup_keep_alive_settings_sync', _setupKeepAliveSettingsSync);
     _runStartupTask('setup_missed_message_sync', _setupMissedMessageSync);
     _runStartupTask('setup_app_lock_sync', _setupAppLockSync);
-        // _runStartupTask('setup_login_notice', _setupLoginNotice);
+    _runStartupTask('setup_login_notice', _setupLoginNotice);
     _runStartupTask('setup_force_logout_handler', _setupForceLogoutHandler);
     _runStartupTask(
       'setup_new_device_login_handler',

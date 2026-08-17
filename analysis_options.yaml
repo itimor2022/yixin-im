@@ -15,6 +15,12 @@ analyzer:
     - "build/**"
     - "release-archives/**"
     - ".dart_tool/**"
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
   errors:
     unused_import: ignore
     unused_field: ignore

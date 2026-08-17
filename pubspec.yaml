@@ -1,7 +1,7 @@
 name: generic_im
 description: A Telegram-style instant messaging app built with Flutter.
 publish_to: 'none'
-version: 5.0.0+47
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
