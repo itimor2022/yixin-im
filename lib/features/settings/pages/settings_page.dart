@@ -1628,9 +1628,12 @@ class _ImmersiveProfileHeader extends ConsumerWidget {
                           ),
                           if (vipLevel > 0) ...[
                             const SizedBox(width: 8),
-                            VipProfileBadge(
+                            VipBadge(
                               level: vipLevel,
+                              text: vipStatus?.badge ?? '',
+                              iconUrl: vipStatus?.badgeIcon ?? '',
                               height: 21,
+                              compact: true,
                             ),
                           ],
                         ],
