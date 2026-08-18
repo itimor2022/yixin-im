@@ -252,38 +252,18 @@ class SettingsPage extends ConsumerWidget {
                   isDesktopSidebar: isDesktopSidebar,
                 ),
 
-                // 账号设置
+                // 钱包设置
                 Transform.translate(
                   offset: const Offset(0, -2),
                   child: _SettingsGroup(
                     isDark: isDark,
                     children: [
-                      if (currentUser?.credentialsInitialized == false)
-                        _SettingsTile(
-                          icon: Icons.warning_amber_rounded,
-                          iconBgColor: const Color(0xFFFF3B30),
-                          title: _settingsText(
-                            context,
-                            zhCN: '完善登录账号',
-                            zhTW: '完善登入帳號',
-                            en: 'Complete Sign-in Setup',
-                          ),
-                          subtitle: _settingsText(
-                            context,
-                            zhCN: '设置账号密码，避免更换设备后无法找回',
-                            zhTW: '設定帳號密碼，避免更換裝置後無法找回',
-                            en: 'Set credentials to keep access on other devices',
-                          ),
-                          isDark: isDark,
-                          onTap: () => _openPage(
-                            context,
-                            const PrivacySettingsPage(),
-                            ref,
-                            desktopPanelType: DesktopPanelType.settingsPrivacy,
-                          ),
-                        ),
-
-                      if (ref.watch(systemSettingsProvider).valueOrNull?.iosCompliance.allowsCheckin == true)
+                      if (ref
+                              .watch(systemSettingsProvider)
+                              .valueOrNull
+                              ?.iosCompliance
+                              .allowsCheckin ==
+                          true)
                         _SettingsTile(
                           icon: Icons.calendar_today_outlined,
                           iconBgColor: const Color(0xFF34C759),
@@ -333,6 +313,42 @@ class SettingsPage extends ConsumerWidget {
                           isDark: isDark,
                           onTap: () => context.push('/vip'),
                         ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // 账号设置
+                Transform.translate(
+                  offset: const Offset(0, -2),
+                  child: _SettingsGroup(
+                    isDark: isDark,
+                    children: [
+                      if (currentUser?.credentialsInitialized == false)
+                        _SettingsTile(
+                          icon: Icons.warning_amber_rounded,
+                          iconBgColor: const Color(0xFFFF3B30),
+                          title: _settingsText(
+                            context,
+                            zhCN: '完善登录账号',
+                            zhTW: '完善登入帳號',
+                            en: 'Complete Sign-in Setup',
+                          ),
+                          subtitle: _settingsText(
+                            context,
+                            zhCN: '设置账号密码，避免更换设备后无法找回',
+                            zhTW: '設定帳號密碼，避免更換裝置後無法找回',
+                            en: 'Set credentials to keep access on other devices',
+                          ),
+                          isDark: isDark,
+                          onTap: () => _openPage(
+                            context,
+                            const PrivacySettingsPage(),
+                            ref,
+                            desktopPanelType: DesktopPanelType.settingsPrivacy,
+                          ),
+                        ),
                       _SettingsTile(
                         icon: Icons.notifications_outlined,
                         iconBgColor: const Color(0xFFFF3B30),
@@ -371,6 +387,44 @@ class SettingsPage extends ConsumerWidget {
                               DesktopPanelType.settingsDataStorage,
                         ),
                       ),
+                      _SettingsTile(
+                        icon: Icons.chat_bubble_outline,
+                        iconBgColor: AppColors.primaryFor(context),
+                        title: l10n.chatSettings,
+                        isDark: isDark,
+                        onTap: () => _openPage(
+                          context,
+                          const ChatSettingsPage(),
+                          ref,
+                          desktopPanelType:
+                              DesktopPanelType.settingsChatSettings,
+                        ),
+                      ),
+                      _SettingsTile(
+                        icon: Icons.devices_outlined,
+                        iconBgColor: const Color(0xFFFF9500),
+                        title: l10n.devices,
+                        isDark: isDark,
+                        onTap: () => _openPage(
+                          context,
+                          const DevicesPage(),
+                          ref,
+                          desktopPanelType: DesktopPanelType.settingsDevices,
+                        ),
+                      ),
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final language = ref.watch(languageProvider);
+                          return _SettingsTile(
+                            icon: Icons.language_outlined,
+                            iconBgColor: const Color(0xFFAF52DE),
+                            title: l10n.languageText,
+                            subtitle: language.displayName,
+                            isDark: isDark,
+                            onTap: () => _showLanguageSheet(context, ref),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -378,56 +432,16 @@ class SettingsPage extends ConsumerWidget {
                 const SizedBox(height: 24),
 
                 // 应用设置
-                _SettingsGroup(
-                  isDark: isDark,
-                  children: [
-                    _SettingsTile(
-                      icon: Icons.chat_bubble_outline,
-                      iconBgColor: AppColors.primaryFor(context),
-                      title: l10n.chatSettings,
-                      isDark: isDark,
-                      onTap: () => _openPage(
-                        context,
-                        const ChatSettingsPage(),
-                        ref,
-                        desktopPanelType: DesktopPanelType.settingsChatSettings,
-                      ),
-                    ),
-                    _SettingsTile(
-                      icon: Icons.devices_outlined,
-                      iconBgColor: const Color(0xFFFF9500),
-                      title: l10n.devices,
-
-                      isDark: isDark,
-                      onTap: () => _openPage(
-                        context,
-                        const DevicesPage(),
-                        ref,
-                        desktopPanelType: DesktopPanelType.settingsDevices,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
+                // _SettingsGroup(
+                //   isDark: isDark,
+                //   children: [],
+                // ),
+                // const SizedBox(height: 24),
 
                 // 外观设置
                 _SettingsGroup(
                   isDark: isDark,
                   children: [
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final language = ref.watch(languageProvider);
-                        return _SettingsTile(
-                          icon: Icons.language_outlined,
-                          iconBgColor: const Color(0xFFAF52DE),
-                          title: l10n.languageText,
-                          subtitle: language.displayName,
-                          isDark: isDark,
-                          onTap: () => _showLanguageSheet(context, ref),
-                        );
-                      },
-                    ),
                     _SettingsTile(
                       icon: Icons.brightness_6_outlined,
                       iconBgColor: const Color(0xFF007AFF),
@@ -449,16 +463,7 @@ class SettingsPage extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // 其他
-                _SettingsGroup(
-                  isDark: isDark,
-                  children: [
-                    _SettingsTile(
+                                        _SettingsTile(
                       icon: Icons.emoji_emotions_outlined,
                       iconBgColor: const Color(0xFFFFCC00),
                       title: l10n.stickersEmoji,
@@ -470,28 +475,36 @@ class SettingsPage extends ConsumerWidget {
                         desktopPanelType: DesktopPanelType.settingsStickers,
                       ),
                     ),
-                    _SettingsTile(
-                      icon: Icons.info_outline,
-                      iconBgColor: const Color(0xFF8E8E93),
-                      title: l10n.about,
-                      isDark: isDark,
-                      onTap: () {
-                        if (isDesktopSidebar) {
-                          HapticFeedback.selectionClick();
-                          ref.read(desktopProfileProvider.notifier).state =
-                              const DesktopProfileInfo(
-                            type: DesktopPanelType.settingsAbout,
-                            id: 'about',
-                          );
-                        } else {
-                          _showAboutSheet(context, isDark);
-                        }
-                      },
-                    ),
                   ],
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
+
+                // 其他
+                // _SettingsGroup(
+                //   isDark: isDark,
+                //   children: [
+                //     _SettingsTile(
+                //       icon: Icons.info_outline,
+                //       iconBgColor: const Color(0xFF8E8E93),
+                //       title: l10n.about,
+                //       isDark: isDark,
+                //       onTap: () {
+                //         if (isDesktopSidebar) {
+                //           HapticFeedback.selectionClick();
+                //           ref.read(desktopProfileProvider.notifier).state =
+                //               const DesktopProfileInfo(
+                //             type: DesktopPanelType.settingsAbout,
+                //             id: 'about',
+                //           );
+                //         } else {
+                //           _showAboutSheet(context, isDark);
+                //         }
+                //       },
+                //     ),
+                //   ],
+                // ),
+                // const SizedBox(height: 16),
 
                 // 退出登录
                 _SettingsGroup(
@@ -555,7 +568,7 @@ class SettingsPage extends ConsumerWidget {
                                 en: ' · Hot update Patch #$patchNumber',
                               );
                         return Text(
-                          '$appName v$displayVersion (Build ${info.buildNumber})$patchLabel',
+                          '$appName v$displayVersion',
                           style: TextStyle(
                             fontSize: 13,
                             color: AppColors.textTertiaryFor(context),

@@ -185,12 +185,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 final versionAsync = ref.watch(_loginAppVersionProvider);
                 return versionAsync.when(
                   data: (info) => Text(
-                    '${info.appName} v${info.version} (Build ${info.buildNumber})',
+                    '${info.appName} v${info.version}',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textTertiaryFor(context),
-                    ),
+                    style: TextStyle(fontSize: 13),
                   ),
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
@@ -382,15 +379,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _buildPasswordField(isDark, l10n),
 
         const SizedBox(height: 10),
+        // 一左一右：左侧在线客服，右侧切换线路（样式保持一致）
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _buildForgotPasswordEntry(isDark),
-            TextButton.icon(
-              onPressed: _openNetworkSettings,
-              icon: const Icon(Icons.swap_horiz_rounded, size: 16),
-              label: const Text('切换线路', style: TextStyle(fontSize: 12)),
-            ),
+            _buildNetworkSettingsEntry(isDark),
           ],
         ),
 
@@ -545,10 +539,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             zhTW: '線上客服',
             en: 'Online Support',
           ),
-          style: TextStyle(
-            fontSize: 13,
-            color: AppColors.textSecondaryFor(context),
-          ),
+          style: TextStyle(fontSize: 13),
         ),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -556,6 +547,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     );
   }
+  /// 切换线路入口（样式与「在线客服」保持一致，位于右侧）
+  Widget _buildNetworkSettingsEntry(bool isDark) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: _openNetworkSettings,
+        icon: Icon(Icons.swap_horiz_rounded, size: 17,
+            color: AppColors.textSecondaryFor(context)),
+        label: Text(
+          _loginText(
+            context,
+            zhCN: '切换线路',
+            zhTW: '切換線路',
+            en: 'Switch Line',
+          ),
+          style: TextStyle(fontSize: 13),
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+        ),
+      ),
+    );
+  }
+
+
 
   Future<void> _openForgotPassword() async {
     final result = await Navigator.of(context).push(

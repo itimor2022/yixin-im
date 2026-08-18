@@ -591,7 +591,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                         color: isDark
                             ? _pc.primaryA.withOpacity(0.15)
                             : Color.lerp(Colors.white, _pc.primaryA, 0.06)!,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(18),
                         border: Border.all(
                           color: _pc.primaryA.withOpacity(isDark ? 0.30 : 0.20),
                           width: 0.8,

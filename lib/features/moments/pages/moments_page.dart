@@ -8658,45 +8658,45 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 32),
-          Row(
-            children: [
-              Icon(
-                Icons.history_rounded,
-                size: 20,
-                color: AppColors.textTertiaryFor(context),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _momentsText(
-                  context,
-                  zhCN: '搜索历史',
-                  zhTW: '搜尋歷史',
-                  en: 'Search History',
-                ),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimaryFor(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: Text(
-              _momentsText(
-                context,
-                zhCN: '暂无搜索历史',
-                zhTW: '暫無搜尋歷史',
-                en: 'No search history',
-              ),
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textTertiaryFor(context),
-              ),
-            ),
-          ),
+          // const SizedBox(height: 32),
+          // Row(
+          //   children: [
+          //     Icon(
+          //       Icons.history_rounded,
+          //       size: 20,
+          //       color: AppColors.textTertiaryFor(context),
+          //     ),
+          //     const SizedBox(width: 8),
+          //     Text(
+          //       _momentsText(
+          //         context,
+          //         zhCN: '搜索历史',
+          //         zhTW: '搜尋歷史',
+          //         en: 'Search History',
+          //       ),
+          //       style: TextStyle(
+          //         fontSize: 16,
+          //         fontWeight: FontWeight.w600,
+          //         color: AppColors.textPrimaryFor(context),
+          //       ),
+          //     ),
+          //   ],
+          // ),
+          // const SizedBox(height: 16),
+          // Center(
+          //   child: Text(
+          //     _momentsText(
+          //       context,
+          //       zhCN: '暂无搜索历史',
+          //       zhTW: '暫無搜尋歷史',
+          //       en: 'No search history',
+          //     ),
+          //     style: TextStyle(
+          //       fontSize: 14,,ook
+          //       color: AppColors.textTertiaryFor(context),
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
