@@ -3457,24 +3457,24 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                       en: 'Comments',
                     ),
                   ),
-                  const SizedBox(width: 24),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      _shareMoment(context, widget.moment);
-                    },
-                    child: _buildStatItem(
-                      Icons.share_outlined,
-                      shareCount,
-                      _momentsText(
-                        context,
-                        zhCN: '分享',
-                        zhTW: '分享',
-                        en: 'Shares',
-                      ),
-                    ),
-                  ),
+                  // const SizedBox(width: 24),
+                  // GestureDetector(
+                  //   behavior: HitTestBehavior.opaque,
+                  //   onTap: () {
+                  //     HapticFeedback.mediumImpact();
+                  //     _shareMoment(context, widget.moment);
+                  //   },
+                  //   child: _buildStatItem(
+                  //     Icons.share_outlined,
+                  //     shareCount,
+                  //     _momentsText(
+                  //       context,
+                  //       zhCN: '分享',
+                  //       zhTW: '分享',
+                  //       en: 'Shares',
+                  //     ),
+                  //   ),
+                  // ),
                 ],
               );
             },
@@ -3718,136 +3718,100 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
   }
 
   Widget _buildCommentInput(bool isDark) {
+    // 样式与聊天页消息输入框保持一致
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
+            left: 8,
+            right: 8,
+            top: 8,
             bottom: _showEmojiPicker
-                ? 12
-                : MediaQuery.of(context).padding.bottom + 12,
+                ? 8
+                : MediaQuery.of(context).padding.bottom + 8,
           ),
           decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
-              ),
-            ],
+            color: (isDark ? AppColors.darkSurface : Colors.white)
+                .withOpacity(0.90),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // 表情按钮
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  if (!_showEmojiPicker) {
-                    _commentFocusNode.unfocus();
-                  }
-                  setState(() => _showEmojiPicker = !_showEmojiPicker);
-                },
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: _showEmojiPicker
-                        ? AppColors.primaryWithOpacity(context, 0.15)
-                        : (isDark
-                            ? AppColors.darkInputBackground
-                            : AppColors.lightInputBackground),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _showEmojiPicker
-                        ? Icons.keyboard_rounded
-                        : Icons.emoji_emotions_outlined,
-                    size: 22,
-                    color: _showEmojiPicker
-                        ? AppColors.primaryFor(context)
-                        : (AppColors.textSecondaryFor(context)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
+              // 输入框（表情按钮内置于右侧，与聊天页一致）
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  constraints: const BoxConstraints(
+                    maxHeight: 120,
+                    minHeight: 40,
+                  ),
                   decoration: BoxDecoration(
                     color: isDark
                         ? AppColors.darkInputBackground
                         : AppColors.lightInputBackground,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.darkDivider
-                          : AppColors.lightDivider,
-                      width: 0.5,
-                    ),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: TextField(
-                    controller: _commentController,
-                    focusNode: _commentFocusNode,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: AppColors.textPrimaryFor(context),
-                    ),
-                    onTap: () {
-                      if (_showEmojiPicker) {
-                        setState(() => _showEmojiPicker = false);
-                      }
-                    },
-                    decoration: InputDecoration(
-                      hintText: _momentsText(
-                        context,
-                        zhCN: '写评论...',
-                        zhTW: '寫評論...',
-                        en: 'Write a comment...',
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(child: _buildCommentTextField()),
+                      // 表情按钮 - 输入框内右侧
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8, bottom: 4),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            if (!_showEmojiPicker) {
+                              _commentFocusNode.unfocus();
+                            }
+                            setState(
+                              () => _showEmojiPicker = !_showEmojiPicker,
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              child: Icon(
+                                _showEmojiPicker
+                                    ? Icons.keyboard_rounded
+                                    : Icons.emoji_emotions_outlined,
+                                key: ValueKey(_showEmojiPicker),
+                                size: 22,
+                                color: _showEmojiPicker
+                                    ? AppColors.primaryFor(context)
+                                    : AppColors.textSecondaryFor(context),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      hintStyle: TextStyle(
-                        color: AppColors.textTertiaryFor(context),
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // 发送按钮 - 与聊天页一致的蓝色渐变圆形按钮
               GestureDetector(
                 onTap: _sendComment,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 44,
-                  height: 44,
+                child: Container(
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     gradient: _isSendingComment
                         ? null
-                        : LinearGradient(
-                            colors: [
-                              AppColors.primaryFor(context),
-                              AppColors.primaryFor(context).withBlue(220),
-                            ],
+                        : const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF6C9EFF),
+                              Color(0xFF5B7FFF),
+                            ],
                           ),
                     color: _isSendingComment
-                        ? AppColors.primaryWithOpacity(context, 0.5)
+                        ? const Color(0xFF5B7FFF).withOpacity(0.5)
                         : null,
                     shape: BoxShape.circle,
-                    boxShadow: _isSendingComment
-                        ? null
-                        : [
-                            BoxShadow(
-                              color: AppColors.primaryWithOpacity(context, 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
                   ),
                   child: Center(
                     child: _isSendingComment
@@ -3860,7 +3824,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
                             ),
                           )
                         : const Icon(
-                            Icons.send_rounded,
+                            Icons.send,
                             size: 20,
                             color: Colors.white,
                           ),
@@ -3926,6 +3890,57 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
       ],
     );
   }
+  /// 评论输入框（样式与聊天页消息输入框一致）
+  Widget _buildCommentTextField() {
+    return TextField(
+      controller: _commentController,
+      focusNode: _commentFocusNode,
+      maxLines: 5,
+      minLines: 1,
+      textInputAction: TextInputAction.send,
+      textCapitalization: TextCapitalization.sentences,
+      style: TextStyle(
+        fontSize: 16,
+        color: AppColors.textPrimaryFor(context),
+      ),
+      onTap: () {
+        if (_showEmojiPicker) {
+          setState(() => _showEmojiPicker = false);
+        }
+      },
+      onSubmitted: (_) => _sendComment(),
+      decoration: InputDecoration(
+        hintText: _momentsText(
+          context,
+          zhCN: '写评论...',
+          zhTW: '寫評論...',
+          en: 'Write a comment...',
+        ),
+        hintStyle: TextStyle(
+          fontSize: 16,
+          color: AppColors.textTertiaryFor(context),
+        ),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        hoverColor: Colors.transparent,
+        fillColor: Colors.transparent,
+        filled: false,
+        contentPadding: const EdgeInsets.only(
+          left: 14,
+          right: 0, // 右侧空间由表情按钮占用
+          top: 10,
+          bottom: 10,
+        ),
+        isDense: true,
+      ),
+    );
+  }
+
+
 
   Future<void> _sendComment() async {
     if (_commentController.text.isEmpty || _isSendingComment) return;
@@ -8476,11 +8491,11 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
         ),
         titleSpacing: 0,
         title: Container(
-          height: 40,
+          height: 44,
           margin: const EdgeInsets.only(right: 16),
           decoration: BoxDecoration(
             color: AppColors.inputBackgroundFor(context),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: TextField(
             controller: _searchController,
@@ -8629,7 +8644,7 @@ class _MomentSearchPageState extends ConsumerState<MomentSearchPage> {
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceFor(context),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: AppColors.dividerFor(context)),
                   ),
                   child: Text(

@@ -12,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/api_client.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme_preset.dart';
+import '../../../core/theme/theme_provider.dart'; // ✅ 添加这一行
 import '../../../shared/widgets/fancy_refresh_indicator.dart';
 import '../../../shared/widgets/in_app_browser.dart';
 import '../../home/pages/home_desktop_page.dart';
@@ -179,6 +181,8 @@ class DiscoverPage extends ConsumerWidget {
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final entries = ref.watch(discoverEntriesProvider);
     final banners = ref.watch(discoverBannersProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _pc = AppThemePresets.of(ref.watch(appThemePresetProvider));
 
     return Scaffold(
       backgroundColor: AppColors.backgroundFor(context),
@@ -192,15 +196,29 @@ class DiscoverPage extends ConsumerWidget {
               expandedHeight: 0,
               floating: true,
               pinned: true,
-              backgroundColor: AppColors.backgroundFor(context),
+              backgroundColor: Colors.transparent,
               surfaceTintColor: Colors.transparent,
               elevation: 0,
+              flexibleSpace: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [
+                            _pc.primaryA.withOpacity(0.9),
+                            _pc.primaryB.withOpacity(0.7)
+                          ]
+                        : [_pc.primaryA, _pc.primaryB],
+                  ),
+                ),
+              ),
               title: Text(
                 l10n.get('discover_title'),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimaryFor(context),
+                  color: _pc.appBarForeground,
                 ),
               ),
               centerTitle: true,

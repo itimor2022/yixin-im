@@ -429,7 +429,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: isDark
-                  ? [_pc.primaryA.withOpacity(0.85), _pc.primaryB.withOpacity(0.75)]
+                  ? [
+                      _pc.primaryA.withOpacity(0.85),
+                      _pc.primaryB.withOpacity(0.75)
+                    ]
                   : [_pc.primaryA, _pc.primaryB],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
@@ -440,15 +443,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             elevation: 0,
             leadingWidth: 0,
             leading: const SizedBox.shrink(),
-            titleSpacing: 16,
+            titleSpacing: 8, // ✅ 从 16 改为 8，让搜索框有更多空间
             title: Container(
-              height: 36,
+              height: 44, // ✅ 从 40 改为 44，更接近标准输入框高度
               clipBehavior: Clip.hardEdge,
               decoration: BoxDecoration(
                 color: isDark
                     ? Colors.white.withOpacity(0.15)
                     : Colors.white.withOpacity(0.85),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(18),
+                // ✅ 添加边框，让搜索框边界更清晰
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.2)
+                      : Colors.black.withOpacity(0.1),
+                  width: 1.5,
+                ),
               ),
               child: TextField(
                 controller: _searchController,
@@ -485,7 +495,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         )
                       : null,
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  // ✅ 调整内边距，让内容更居中
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  // ✅ 添加聚焦状态样式
+                  focusedBorder: InputBorder.none,
+                  enabledBorder: InputBorder.none,
                 ),
               ),
             ),
@@ -1348,7 +1363,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         height: 44,
         decoration: BoxDecoration(
           color: AppColors.cardFor(context),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
           Icons.insert_drive_file_outlined,

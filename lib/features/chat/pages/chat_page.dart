@@ -571,7 +571,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
               // 搜索框（滑动时隐藏）
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
                   child: GestureDetector(
                     onTap: () {
                       if (widget.isDesktopSidebar) {
@@ -586,7 +586,7 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       }
                     },
                     child: Container(
-                      height: 48,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: isDark
                             ? _pc.primaryA.withOpacity(0.15)

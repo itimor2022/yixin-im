@@ -3,6 +3,9 @@
 *.exe
 *.dll
 *.zip
+build/
+.dart_tool/
+third_party/
 
 # 上传目录（运行时生成）
 baota/uploads/
@@ -43,3 +46,4 @@ android/*.tmp
 android/data.db
 
 .darts_tool/
+.gitignore

@@ -230,7 +230,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
           children: [
             // 微信风格搜索框
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: BackdropFilter(
@@ -243,11 +243,17 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                           ? Colors.white.withOpacity(0.09)
                           : Colors.white.withOpacity(0.58),
                       borderRadius: BorderRadius.circular(18),
+                      // ✅ 使用一致边框，编辑状态和非编辑状态保持一致
                       border: Border.all(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.08)
-                            : Colors.white.withOpacity(0.74),
-                        width: 0.8,
+                        color: _searchFocusNode.hasFocus
+                            ? (isDark
+                                ? Colors.white.withOpacity(0.3)
+                                : AppColors.primaryFor(context)
+                                    .withOpacity(0.5))
+                            : (isDark
+                                ? Colors.white.withOpacity(0.08)
+                                : Colors.black.withOpacity(0.08)),
+                        width: 1.5,
                       ),
                       boxShadow: isDark
                           ? null
@@ -268,6 +274,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                         fontSize: 15,
                         color: isDark ? Colors.white : Colors.black87,
                       ),
+                      textAlignVertical: TextAlignVertical.center, // ✅ 添加这行，确保文字垂直居中
                       decoration: InputDecoration(
                         isCollapsed: true,
                         filled: false,
@@ -308,9 +315,11 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                           minWidth: 32,
                           minHeight: 44,
                         ),
+                        // ✅ 统一边框样式 - 编辑和非编辑状态保持一致
                         border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
                   ),
@@ -549,55 +558,59 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
     required Color dividerColor,
     required int pendingFriendRequestCount,
   }) {
+    final items = [
+      _QuickActionItem(
+        icon: Icons.person_add_alt_1_outlined,
+        title: pendingFriendRequestCount > 0
+            ? _contactsPageText(
+                context,
+                zhCN: '新朋友 ($pendingFriendRequestCount)',
+                zhTW: '新朋友 ($pendingFriendRequestCount)',
+                en: 'Friend Requests ($pendingFriendRequestCount)',
+              )
+            : _contactsPageText(
+                context,
+                zhCN: '新朋友',
+                zhTW: '新朋友',
+                en: 'Friend Requests',
+              ),
+        onTap: () {
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(builder: (_) => const FriendRequestsPage()),
+              )
+              .then((_) => ref
+                  .read(pendingFriendRequestCountProvider.notifier)
+                  .refresh());
+        },
+      ),
+      _QuickActionItem(
+        icon: Icons.groups_outlined,
+        title: _contactsPageText(context, zhCN: '群聊', zhTW: '群聊', en: 'Groups'),
+        onTap: () => _openChatDirectory(context, ChatItemType.group),
+      ),
+      _QuickActionItem(
+        icon: Icons.campaign_outlined,
+        title:
+            _contactsPageText(context, zhCN: '频道', zhTW: '頻道', en: 'Channels'),
+        onTap: () => _openChatDirectory(context, ChatItemType.channel),
+      ),
+    ];
+
     return Container(
       color: rowBackground,
-      child: Column(
-        children: [
-          _TGActionTile(
-            icon: Icons.person_add_alt_1_outlined,
-            title: _contactsPageText(
-              context,
-              zhCN: pendingFriendRequestCount > 0
-                  ? '新的朋友 ($pendingFriendRequestCount)'
-                  : '新的朋友',
-              zhTW: pendingFriendRequestCount > 0
-                  ? '新的朋友 ($pendingFriendRequestCount)'
-                  : '新的朋友',
-              en: pendingFriendRequestCount > 0
-                  ? 'Friend Requests ($pendingFriendRequestCount)'
-                  : 'Friend Requests',
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      child: Row(
+        children: items.map((item) {
+          return Expanded(
+            child: _QuickActionCard(
+              icon: item.icon,
+              title: item.title,
+              isDark: isDark,
+              onTap: item.onTap,
             ),
-            isDark: isDark,
-            onTap: () {
-              Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                        builder: (_) => const FriendRequestsPage()),
-                  )
-                  // 申请可能在子页面被处理，返回后重新向服务端校准角标。
-                  .then((_) => ref
-                      .read(pendingFriendRequestCountProvider.notifier)
-                      .refresh());
-            },
-          ),
-          Divider(height: 1, thickness: 0.5, indent: 56, color: dividerColor),
-          _TGActionTile(
-            icon: Icons.groups_outlined,
-            title: _contactsPageText(context,
-                zhCN: '群聊', zhTW: '群聊', en: 'Groups'),
-            isDark: isDark,
-            onTap: () => _openChatDirectory(context, ChatItemType.group),
-          ),
-          Divider(height: 1, thickness: 0.5, indent: 56, color: dividerColor),
-          _TGActionTile(
-            icon: Icons.campaign_outlined,
-            title: _contactsPageText(context,
-                zhCN: '频道', zhTW: '頻道', en: 'Channels'),
-            isDark: isDark,
-            onTap: () => _openChatDirectory(context, ChatItemType.channel),
-          ),
-          Divider(height: 1, thickness: 0.5, color: dividerColor),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -719,6 +732,86 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _ContactChatDirectoryPage(type: type),
+      ),
+    );
+  }
+}
+
+/// 快捷操作项数据
+class _QuickActionItem {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _QuickActionItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+}
+
+/// 快捷操作卡片 - 带边框的横向卡片
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.icon,
+    required this.title,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 64,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.05)
+                : Colors.grey.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.12)
+                  : Colors.grey.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: AppColors.primaryFor(context),
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimaryFor(context),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1142,10 +1235,8 @@ class _ContactListItem extends StatelessWidget {
                               // : (contact.bio ?? '')),
                               ? _text(
                                   context,
-                                  zhCN:
-                                      '最近在线',
-                                  zhTW:
-                                      '最近在線',
+                                  zhCN: '最近在线',
+                                  zhTW: '最近在線',
                                   en: 'Last seen',
                                 )
                               : (contact.bio ?? '')),

@@ -786,32 +786,32 @@ class SettingsPage extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _AboutAction(
-                              icon: Icons.star_border,
-                              label: _settingsText(
-                                context,
-                                zhCN: '评分',
-                                zhTW: '評分',
-                                en: 'Rate',
-                              ),
-                              onTap: () {},
-                            ),
-                            _AboutAction(
-                              icon: Icons.share_outlined,
-                              label: _settingsText(
-                                context,
-                                zhCN: '分享',
-                                zhTW: '分享',
-                                en: 'Share',
-                              ),
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
+                        // Row(
+                        //   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        //   children: [
+                        //     _AboutAction(
+                        //       icon: Icons.star_border,
+                        //       label: _settingsText(
+                        //         context,
+                        //         zhCN: '评分',
+                        //         zhTW: '評分',
+                        //         en: 'Rate',
+                        //       ),
+                        //       onTap: () {},
+                        //     ),
+                        //     _AboutAction(
+                        //       icon: Icons.share_outlined,
+                        //       label: _settingsText(
+                        //         context,
+                        //         zhCN: '分享',
+                        //         zhTW: '分享',
+                        //         en: 'Share',
+                        //       ),
+                        //       onTap: () {},
+                        //     ),
+                        //   ],
+                        // ),
+                        // const SizedBox(height: 20),
                         // 协议链接
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
