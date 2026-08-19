@@ -283,7 +283,7 @@ def main() -> int:
     parser.add_argument("--apk-sha256", required=True)
     parser.add_argument("--case", action="append", choices=["IM-167", "IM-169", "IM-171", "IM-182", "IM-222"])
     parser.add_argument("--reuse-im222-audit", action="store_true")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base", default="https://api.example.com/api/v1")
     args = parser.parse_args()
 

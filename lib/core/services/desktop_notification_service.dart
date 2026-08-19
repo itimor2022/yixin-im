@@ -75,7 +75,7 @@ class DesktopNotificationService {
       // Windows 设置
       final windowsSettings = WindowsInitializationSettings(
         appName: _appDisplayName,
-        appUserModelId: 'com.genericim.app',
+        appUserModelId: 'com.genericim.ma100',
         guid: 'd3b07384-d9a3-4d3a-8a5c-1234567890ab',
       );
 

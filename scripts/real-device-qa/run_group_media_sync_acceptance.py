@@ -351,7 +351,7 @@ def main() -> int:
     parser.add_argument("--image", required=True)
     parser.add_argument("--video", required=True)
     parser.add_argument("--base", default="http://127.0.0.1:8080/api/v1")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--password", default="Smoke123")
     parser.add_argument(
         "--storage-provider",

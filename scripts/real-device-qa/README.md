@@ -42,7 +42,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
 The monitor saves the complete `main`, `system` and `crash` streams, plus a
 filtered event log and JSONL event index. It tracks the app's changing PIDs and
 only treats generic exceptions/socket errors as app events when the PID or
-package belongs to `com.genericim.app`. Categories are:
+package belongs to `com.genericim.ma100`. Categories are:
 
 - `CRASH`, `ANR`, `FATAL`: severe and session-failing.
 - `EXCEPTION`: app exception requiring review.

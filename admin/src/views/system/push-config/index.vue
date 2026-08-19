@@ -145,7 +145,7 @@
           <ElFormItem label="Bundle ID">
             <ElInput
               v-model="pushForm.apns_bundle_id"
-              :placeholder="isDemoAdmin ? '******' : 'com.genericim.app'"
+              :placeholder="isDemoAdmin ? '******' : 'com.genericim.ma100'"
               :disabled="!pushForm.apns_enabled || isDemoAdmin"
             />
           </ElFormItem>
@@ -279,7 +279,7 @@
           <ElFormItem label="小米包名">
             <ElInput
               v-model="pushForm.xiaomi_package_name"
-              :placeholder="isDemoAdmin ? '******' : 'com.genericim.app'"
+              :placeholder="isDemoAdmin ? '******' : 'com.genericim.ma100'"
               :disabled="!pushForm.xiaomi_push_enabled || isDemoAdmin"
             />
           </ElFormItem>

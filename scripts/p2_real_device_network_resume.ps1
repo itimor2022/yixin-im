@@ -24,7 +24,7 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$DeviceBaseUrl = "http://192.168.1.100:8080",
     [string]$Device = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$AliceUsername = "smoke_alice",
     [string]$BobUsername = "smoke_bob",
     [string]$Password = "Smoke123",

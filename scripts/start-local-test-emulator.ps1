@@ -26,7 +26,7 @@ pwsh -File scripts/start-local-test-emulator.ps1 -AvdId GenericIMCacheTest_API36
 param(
     [string]$AvdId = "GenericIMCacheTest_API36",
     [string]$ApkPath = "artifacts\local-real-device-apk-20260717-223424\genericim-local-real-device-release.apk",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [int]$BootTimeoutSeconds = 300,
     [switch]$SkipInstall
 )

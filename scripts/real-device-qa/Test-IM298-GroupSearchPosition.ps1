@@ -19,7 +19,7 @@ pwsh -File scripts/real-device-qa/Test-IM298-GroupSearchPosition.ps1 -DeviceId e
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$GroupName = "IM群改名实时验证0204",
     [string]$SearchTarget = "SEARCH_TARGET_015904",
     [string]$OutputDir = "artifacts/real-device-qa/im298-group-search-position"

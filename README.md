@@ -139,7 +139,7 @@ flutter build windows --release
 flutter build web --release
 ```
 
-Android 包名当前为 `com.genericim.app`，应用名为 `通用IM`。
+Android 包名当前为 `com.genericim.ma100`，应用名为 `通用IM`。
 
 ## 管理后台
 

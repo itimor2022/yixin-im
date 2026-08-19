@@ -240,7 +240,7 @@ def main() -> int:
     parser.add_argument("--adb", required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--apk", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--restore-username", default="demo")
     parser.add_argument("--restore-password", default="demo123")
     parser.add_argument("--output-dir", required=True)
@@ -355,7 +355,7 @@ def main() -> int:
     fatal_lines = [
         line
         for line in log.splitlines()
-        if "FATAL EXCEPTION" in line or "ANR in com.genericim.app" in line or "FlutterError" in line
+        if "FATAL EXCEPTION" in line or "ANR in com.genericim.ma100" in line or "FlutterError" in line
     ]
     status = "PASS" if not test_error and not fatal_lines else "FAIL"
     payload = {

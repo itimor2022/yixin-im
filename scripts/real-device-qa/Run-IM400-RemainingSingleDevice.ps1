@@ -19,7 +19,7 @@ pwsh -File scripts/real-device-qa/Run-IM400-RemainingSingleDevice.ps1 -DeviceId 
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$ApkPath = "",
     [string]$OutputDir = "artifacts/real-device-qa/im400-remaining-single-device",
     [int]$BackgroundSeconds = 8

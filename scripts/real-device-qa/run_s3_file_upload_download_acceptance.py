@@ -107,7 +107,7 @@ def main() -> int:
     parser.add_argument("--receiver", required=True)
     parser.add_argument("--apk-sha256", required=True)
     parser.add_argument("--base", default="http://192.168.1.100:8080/api/v1")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--alice", default="smoke_alice")
     parser.add_argument("--bob", default="smoke_bob")
     parser.add_argument("--password", default="Smoke123")
@@ -212,8 +212,8 @@ def main() -> int:
         fatal_lines.extend(
             line
             for line in log.splitlines()
-            if "ANR in com.genericim.app" in line
-            or "Process: com.genericim.app" in line
+            if "ANR in com.genericim.ma100" in line
+            or "Process: com.genericim.ma100" in line
             or "FATAL EXCEPTION" in line
         )
     assert not fatal_lines, f"fatal/ANR lines found: {len(fatal_lines)}"

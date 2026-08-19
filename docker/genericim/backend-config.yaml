@@ -133,7 +133,7 @@ payment:
     h5_app_name: "通用IM"
     h5_app_url: "http://10.0.2.2:8080"
     h5_bundle_id: ""
-    h5_package_name: "com.genericim.app"
+    h5_package_name: "com.genericim.ma100"
   alipay:
     enabled: false
     app_id: ""

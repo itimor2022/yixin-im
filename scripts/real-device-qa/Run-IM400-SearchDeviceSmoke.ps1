@@ -41,11 +41,11 @@ foreach ($device in $Devices) {
 
     & $Adb -s $device reverse tcp:8080 tcp:8080 | Out-Null
     & $Adb -s $device logcat -c | Out-Null
-    & $Adb -s $device shell am force-stop com.genericim.app | Out-Null
-    & $Adb -s $device shell am start -W -n com.genericim.app/.MainActivity | Out-Null
+    & $Adb -s $device shell am force-stop com.genericim.ma100 | Out-Null
+    & $Adb -s $device shell am start -W -n com.genericim.ma100/.MainActivity | Out-Null
     Start-Sleep -Seconds $StartupWaitSeconds
 
-    $appPid = (& $Adb -s $device shell pidof com.genericim.app 2>$null).Trim()
+    $appPid = (& $Adb -s $device shell pidof com.genericim.ma100 2>$null).Trim()
 
     $remoteXml = "/sdcard/im400-search-smoke-$timestamp.xml"
     $remotePng = "/sdcard/im400-search-smoke-$timestamp.png"

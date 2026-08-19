@@ -397,7 +397,7 @@ def main() -> int:
     parser.add_argument("--target", default="emulator-5554")
     parser.add_argument("--actor", default="8MY0220C17006781")
     parser.add_argument("--smoke", default="UQG5T20915006269")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument("--restore-username", default="smoke_alice")
     parser.add_argument("--restore-password", default="Smoke123")
@@ -520,7 +520,7 @@ def main() -> int:
             fatal_lines = [
                 line
                 for line in fatal.splitlines()
-                if "FATAL EXCEPTION" in line or "ANR in com.genericim.app" in line
+                if "FATAL EXCEPTION" in line or "ANR in com.genericim.ma100" in line
             ]
             check(not fatal_lines, f"fatal Android errors on {serial}: {fatal_lines[:5]}")
 

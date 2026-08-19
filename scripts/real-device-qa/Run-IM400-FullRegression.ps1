@@ -1,6 +1,6 @@
 param(
     [string]$Serial = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Backend = "https://api.example.com",
     [string]$Adb = "",
     [string]$OutputDir = ""

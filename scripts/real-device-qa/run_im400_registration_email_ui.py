@@ -129,7 +129,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--adb", required=True)
     parser.add_argument("--device", default="emulator-5554")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument(
         "--output-dir", default="artifacts/real-device-qa/registration-email-ui"
@@ -247,7 +247,7 @@ def main() -> int:
     logcat_path = output_dir / "logcat.txt"
     logcat_path.write_text(logcat, encoding="utf-8")
     evidence.append(logcat_path.as_posix())
-    fatal_markers = ("FATAL EXCEPTION", "ANR in com.genericim.app", "FlutterError")
+    fatal_markers = ("FATAL EXCEPTION", "ANR in com.genericim.ma100", "FlutterError")
     check(
         not any(marker.lower() in logcat.lower() for marker in fatal_markers),
         "fatal log marker found",

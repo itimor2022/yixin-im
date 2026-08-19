@@ -39,7 +39,7 @@ def main() -> int:
     parser.add_argument("--adb", required=True)
     parser.add_argument("--device-a", required=True)
     parser.add_argument("--device-b", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--chat-title", default="通用IM官方体验群")
     parser.add_argument("--current-chat", action="store_true")
     parser.add_argument("--finalize-log", default="")

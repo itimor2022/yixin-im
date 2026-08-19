@@ -57,7 +57,7 @@ def main() -> int:
     parser.add_argument("--viewer-username", default="smoke_alice")
     parser.add_argument("--target-username", default="smoke_bob")
     parser.add_argument("--password", default="Smoke123")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
 

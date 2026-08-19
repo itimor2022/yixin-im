@@ -21,7 +21,7 @@ pwsh -File scripts/real-device-qa/Start-RealDeviceLogcat.ps1 -Serial emulator-55
 #>
 param(
     [string]$Serial = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = "",
     [string]$OutputDir = "",
     [ValidateRange(0, 86400)][int]$DurationSeconds = 0,

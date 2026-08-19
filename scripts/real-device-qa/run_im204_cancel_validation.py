@@ -37,7 +37,7 @@ def main() -> int:
     parser.add_argument("--sender", required=True)
     parser.add_argument("--receiver", required=True)
     parser.add_argument("--apk-sha256", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base", default="https://api.example.com/api/v1")
     parser.add_argument("--username", default="smoke_alice")
     parser.add_argument("--password", default="Smoke123")
@@ -130,7 +130,7 @@ def main() -> int:
         fatal_markers[name] = [
             line
             for line in logcat.splitlines()
-            if "FATAL EXCEPTION" in line or "ANR in com.genericim.app" in line
+            if "FATAL EXCEPTION" in line or "ANR in com.genericim.ma100" in line
         ]
     if any(fatal_markers.values()):
         raise RuntimeError(f"Fatal/ANR found: {fatal_markers}")

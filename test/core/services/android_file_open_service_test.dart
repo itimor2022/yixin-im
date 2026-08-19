@@ -23,7 +23,7 @@ void main() {
     });
 
     final result = await AndroidFileOpenService.openFile(
-      path: '/data/user/0/com.genericim.app/files/example.zip',
+      path: '/data/user/0/com.genericim.ma100/files/example.zip',
       fileName: 'example.zip',
     );
 
@@ -31,7 +31,7 @@ void main() {
     expect(result.reason, 'chooser_started');
     expect(received?.method, 'openFile');
     expect(received?.arguments, <String, dynamic>{
-      'path': '/data/user/0/com.genericim.app/files/example.zip',
+      'path': '/data/user/0/com.genericim.ma100/files/example.zip',
       'file_name': 'example.zip',
     });
   });
@@ -43,7 +43,7 @@ void main() {
     });
 
     final result = await AndroidFileOpenService.openFile(
-      path: '/data/user/0/com.genericim.app/files/example.unknown',
+      path: '/data/user/0/com.genericim.ma100/files/example.unknown',
       fileName: 'example.unknown',
     );
 

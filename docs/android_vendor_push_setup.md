@@ -25,7 +25,7 @@
 - `google-services.json` 放置位置：
   - `android/app/google-services.json`
 - 当前 Android 包名：
-  - `com.genericim.app`
+  - `com.genericim.ma100`
 - 后端/管理端已增加 FCM 配置校验：
   - `fcm_project_id` 不能为空
   - 禁止将 `mobilesdk_app_id`（形如 `1:xxx:android:xxx`）误填到 `fcm_project_id`

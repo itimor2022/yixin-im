@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 import android.app.PendingIntent
 import android.content.Context
@@ -27,7 +27,7 @@ object NotificationReplyAction {
         // background BroadcastReceiver, even though the receiver originated
         // from a visible notification action.
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = "com.genericim.app.action.NOTIFICATION_REPLY"
+            action = "com.genericim.ma100.action.NOTIFICATION_REPLY"
             // Keep every RemoteInput dispatch distinct so Huawei delivers a
             // fresh onNewIntent instead of only reusing the task.
             this.data = Uri.parse(

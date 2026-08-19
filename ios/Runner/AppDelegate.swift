@@ -206,7 +206,7 @@ private final class VoiceProximityStreamHandler: NSObject, FlutterStreamHandler 
   private var nativeCallKitEventsReady = false
   private var pendingNativeCallKitEvents: [[String: Any]] = []
   private lazy var pushLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.genericim.app",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.genericim.ma100",
     category: "PushKit"
   )
 

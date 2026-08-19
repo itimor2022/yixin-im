@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$RunDir,
     [string]$Serial = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = ""
 )
 

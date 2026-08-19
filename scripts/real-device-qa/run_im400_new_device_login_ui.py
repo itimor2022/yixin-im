@@ -34,7 +34,7 @@ def main() -> int:
     parser.add_argument("--target", default="8MY0220C17006781")
     parser.add_argument("--actor", default="UQG5T20915006269")
     parser.add_argument("--smoke", default="emulator-5554")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument("--target-restore-username", default="smoke_bob")
     parser.add_argument("--actor-restore-username", default="smoke_alice")

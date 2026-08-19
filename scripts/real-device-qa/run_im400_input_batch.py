@@ -178,7 +178,7 @@ def main() -> int:
     parser.add_argument("--serial-b", required=True)
     parser.add_argument("--target-a", required=True)
     parser.add_argument("--target-b", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--only", choices=("all", "keyboard", "paste"), default="all")
     args = parser.parse_args()
 

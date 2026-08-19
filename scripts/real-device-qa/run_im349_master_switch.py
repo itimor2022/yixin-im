@@ -119,7 +119,7 @@ def main() -> int:
     parser.add_argument("--serial", required=True)
     parser.add_argument("--apk", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base", default="https://api.example.com/api/v1")
     parser.add_argument("--username", default="smoke_alice")
     parser.add_argument("--password", default="Smoke123")

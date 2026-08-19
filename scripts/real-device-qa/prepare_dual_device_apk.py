@@ -65,7 +65,7 @@ def hierarchy(device: u2.Device, retries: int = 3) -> str:
     latest = ""
     for _ in range(retries):
         latest = device.dump_hierarchy()
-        if "com.genericim.app" in latest:
+        if "com.genericim.ma100" in latest:
             return latest
         time.sleep(1)
     return latest
@@ -185,7 +185,7 @@ def main() -> int:
     parser.add_argument("--device", action="append", type=parse_device, required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--skip-install", action="store_true")
     args = parser.parse_args()
 

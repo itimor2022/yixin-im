@@ -19,7 +19,7 @@ pwsh -File scripts/real-device-qa/Test-IM350-SystemNotificationToggle.ps1 -Devic
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$OutputDir = "artifacts/real-device-qa/im350-system-toggle"
 )
 

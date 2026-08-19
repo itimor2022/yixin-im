@@ -25,7 +25,7 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()

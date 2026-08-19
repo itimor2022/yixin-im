@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 object LegacyTextRepair {
     private val callDurationPattern = Regex("""\d{1,2}:\d{2}(?::\d{2})?""")

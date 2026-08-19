@@ -3,7 +3,7 @@
 param(
     [string]$DeviceId = "127.0.0.1:7555",
     [string]$ApkPath = "build\app\outputs\flutter-apk\app-release.apk",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [switch]$ClearData,
     [switch]$SetupReverse = $true,
     [switch]$Launch = $true

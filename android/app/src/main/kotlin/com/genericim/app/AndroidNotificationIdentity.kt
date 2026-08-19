@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 object AndroidNotificationIdentity {
     const val fcmAutomaticNotificationId = 0

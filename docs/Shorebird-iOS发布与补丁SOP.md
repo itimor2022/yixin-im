@@ -7,7 +7,7 @@ App Store 正式包必须由 `shorebird release ios` 生成。只有安装过该
 ## 发布前准备
 
 1. 在 App Store Connect 查询目标版本已使用的最高 Build Number，新构建号必须更大。
-2. 确认 Bundle ID 为 `com.genericim.app`，Team ID 为 `U4TWR5VCQ3`。
+2. 确认 Bundle ID 为 `com.genericim.ma100`，Team ID 为 `U4TWR5VCQ3`。
 3. 在后台填写 `app_update_url_ios`，仅接受 Apple 官方 App Store HTTPS 链接。
 4. 确认 `latest_version_ios`（当前字段 `app_version_ios`）和 `min_supported_version_ios` 的运营含义不同：前者触发可关闭提示，后者才触发强制更新。
 5. 本机执行 `shorebird login`、`shorebird doctor`，并确认 Xcode、CocoaPods、证书和 Provisioning Profile 有效。

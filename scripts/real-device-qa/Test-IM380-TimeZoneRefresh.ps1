@@ -19,7 +19,7 @@ pwsh -File scripts/real-device-qa/Test-IM380-TimeZoneRefresh.ps1 -DeviceId emula
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$ConversationName = "Smoke Alice",
     [string]$TargetTimeZone = "America/Los_Angeles",
     [string]$OutputDir = "artifacts/real-device-qa/im380-timezone-refresh"

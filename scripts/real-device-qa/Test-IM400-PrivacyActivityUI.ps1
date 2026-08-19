@@ -98,8 +98,8 @@ $script:Token = $login.data.token
 
 Set-PrivacySettings -SendReadReceipts $true -ShowTypingStatus $true
 Invoke-Adb -Arguments @('-s', $Device, 'reverse', 'tcp:8080', 'tcp:8080') | Out-Null
-Invoke-Adb -Arguments @('-s', $Device, 'shell', 'am', 'force-stop', 'com.genericim.app') | Out-Null
-Invoke-Adb -Arguments @('-s', $Device, 'shell', 'am', 'start', '-W', '-n', 'com.genericim.app/.MainActivity') | Out-Null
+Invoke-Adb -Arguments @('-s', $Device, 'shell', 'am', 'force-stop', 'com.genericim.ma100') | Out-Null
+Invoke-Adb -Arguments @('-s', $Device, 'shell', 'am', 'start', '-W', '-n', 'com.genericim.ma100/.MainActivity') | Out-Null
 Start-Sleep -Seconds 4
 
 $hierarchy = Get-Hierarchy -Name 'home'

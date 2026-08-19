@@ -34,7 +34,7 @@ def main() -> int:
     parser.add_argument("--device-b", required=True)
     parser.add_argument("--username-a", required=True)
     parser.add_argument("--username-b", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()

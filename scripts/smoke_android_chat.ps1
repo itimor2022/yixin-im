@@ -24,7 +24,7 @@ pwsh -File scripts/smoke_android_chat.ps1 -DeviceId emulator-5554 -SkipBuild
 #>
 param(
     [string]$DeviceId = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$ApiBaseUrl = "http://127.0.0.1:8080",
     [string]$ServerUrl = "http://10.0.2.2:8080",
     [string]$WsUrl = "ws://10.0.2.2:8080/api/v1/ws",

@@ -251,7 +251,7 @@ def main() -> int:
     parser.add_argument("--sender", required=True)
     parser.add_argument("--receiver", required=True)
     parser.add_argument("--apk-sha256", required=True)
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base", default="https://api.example.com/api/v1")
     parser.add_argument("--username", default="smoke_alice")
     parser.add_argument("--password", default="Smoke123")
@@ -511,8 +511,8 @@ def main() -> int:
         fatal_lines.extend(
             line
             for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            if "ANR in com.genericim.app" in line
-            or "Process: com.genericim.app" in line
+            if "ANR in com.genericim.ma100" in line
+            or "Process: com.genericim.ma100" in line
         )
     payload = {
         "environment": {

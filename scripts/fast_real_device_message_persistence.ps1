@@ -22,7 +22,7 @@ pwsh -File scripts/fast_real_device_message_persistence.ps1
 param(
     [string]$BaseDir = "artifacts\real-device-test-20260623-233903",
     [string]$DeviceB = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [int]$DelayMs = 450,
     [switch]$SkipLogcatClear
 )

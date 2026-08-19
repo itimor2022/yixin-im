@@ -67,7 +67,7 @@ def main() -> int:
         action="append",
         choices=["IM-162", "IM-163", "IM-179", "IM-186"],
     )
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base", default="https://api.example.com/api/v1")
     args = parser.parse_args()
 
@@ -246,7 +246,7 @@ def main() -> int:
     fatal_lines = [
         line
         for line in log_text.splitlines()
-        if "ANR in com.genericim.app" in line or "Process: com.genericim.app" in line
+        if "ANR in com.genericim.ma100" in line or "Process: com.genericim.ma100" in line
     ]
     fatal_path = run_dir / "fatal-anr-audit.json"
     fatal_path.write_text(

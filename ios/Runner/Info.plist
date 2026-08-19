@@ -28,7 +28,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.genericim.app</string>
+			<string>com.genericim.ma100</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>genericim</string>

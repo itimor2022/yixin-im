@@ -44,8 +44,8 @@ function Tap-Node($node) {
     Start-Sleep -Seconds 3
 }
 
-& $Adb -s $Device shell am force-stop com.genericim.app | Out-Null
-& $Adb -s $Device shell am start -W -n com.genericim.app/.MainActivity | Out-Null
+& $Adb -s $Device shell am force-stop com.genericim.ma100 | Out-Null
+& $Adb -s $Device shell am start -W -n com.genericim.ma100/.MainActivity | Out-Null
 Start-Sleep -Seconds 15
 
 # 按“会话列表 -> 私聊详情 -> 用户资料 -> 搜索筛选”逐层进入目标页面。

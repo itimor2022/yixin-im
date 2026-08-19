@@ -1,7 +1,7 @@
 # Google FCM 推送与 Android 保活测试报告
 
 测试时间：2026-06-22  
-测试应用：通用IM Android 正式包，包名 `com.genericim.app`  
+测试应用：通用IM Android 正式包，包名 `com.genericim.ma100`  
 测试设备：Android Studio 模拟器 `emulator-5554`，机型 `sdk_gphone64_x86_64`  
 Google Play services：`25.26.35 (260800-783060121)`  
 后端环境：本地 Docker `genericim-api`、`genericim-mysql`、`genericim-redis`、`genericim-mongodb`
@@ -18,7 +18,7 @@ Google Play services：`25.26.35 (260800-783060121)`
 
 | 项目 | 结果 |
 | --- | --- |
-| Android 包名 | `com.genericim.app` |
+| Android 包名 | `com.genericim.ma100` |
 | Firebase 客户端配置 | `android/app/google-services.json` 已用于打包 |
 | Firebase Project ID | `genericim-c7ffc` |
 | 后端 FCM 开关 | `fcm_enabled=true` |
@@ -32,8 +32,8 @@ Google Play services：`25.26.35 (260800-783060121)`
 | --- | --- | --- |
 | 客户端 token 注册 | 登录后查询 `user_devices` | 通过，设备 `026f5746-d2d5-4762-a0aa-3d4b8d7b361b` 注册 FCM token |
 | 后台消息推送 | 应用退到后台，发送 FCM notification 消息 | 通过，通知栏出现 `FCM测试消息`，渠道 `genericim_messages`，重要性 `4` |
-| 普通杀进程对照 | 后台执行 `am kill com.genericim.app` 后发送消息 | 通过；前台保活服务存在时进程未被杀掉，消息继续到达 |
-| 系统强停对照 | 执行 `am force-stop com.genericim.app` 后发送消息 | 符合预期；Firebase 接口返回成功，但系统取消广播，应用无进程、无新通知 |
+| 普通杀进程对照 | 后台执行 `am kill com.genericim.ma100` 后发送消息 | 通过；前台保活服务存在时进程未被杀掉，消息继续到达 |
+| 系统强停对照 | 执行 `am force-stop com.genericim.ma100` 后发送消息 | 符合预期；Firebase 接口返回成功，但系统取消广播，应用无进程、无新通知 |
 | 后台来电推送 | 发送 `type=incoming_call` 的 FCM data-only 高优先级消息 | 通过，显示 CallKit 来电通知，渠道 `callkit_incoming_channel_id`，有全屏 intent、接听/拒绝动作 |
 | 来电超时 | 未接听，等待超时 | 通过，产生未接来电通知，渠道 `callkit_missed_channel_id` |
 | 锁屏 + deep idle | 屏幕关闭并 `dumpsys deviceidle force-idle` 后发送高优先级消息 | 通过，系统状态 `mState=IDLE`，通知 `doze-lock` 到达，进程保持存在 |
@@ -74,7 +74,7 @@ projects/genericim-c7ffc/messages/0:1782102493126415%c0920637f9fd7ecd
 后台消息通知：
 
 ```text
-pkg=com.genericim.app
+pkg=com.genericim.ma100
 tag=FCM-Notification:6651675
 channel=genericim_messages
 android.title=FCM测试消息
@@ -84,7 +84,7 @@ android.text=通用IM Google 推送测试 am-kill
 后台来电通知：
 
 ```text
-pkg=com.genericim.app
+pkg=com.genericim.ma100
 channel=callkit_incoming_channel_id
 category=call
 android.title=FCM测试来电
@@ -141,8 +141,8 @@ push_token_len=142
 `force-stop` 后日志：
 
 ```text
-Force stopping com.genericim.app
-Killing com.genericim.app
+Force stopping com.genericim.ma100
+Killing com.genericim.ma100
 isStopped true
 broadcast intent callback: result=CANCELLED
 ```

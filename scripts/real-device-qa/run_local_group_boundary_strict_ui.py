@@ -1001,7 +1001,7 @@ def main() -> int:
     parser.add_argument("--bob", required=True)
     parser.add_argument("--base", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument("--password", default="Smoke123")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--blocked-word", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--only", action="append", choices=CASES)

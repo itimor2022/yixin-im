@@ -26,7 +26,7 @@ param(
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$EmulatorBaseUrl = "http://10.0.2.2:8080",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string[]]$Devices = @("127.0.0.1:16384", "127.0.0.1:16416", "127.0.0.1:16448"),
     [string]$AliceDevice = "127.0.0.1:16416",
     [string]$BobDevice = "127.0.0.1:16448",

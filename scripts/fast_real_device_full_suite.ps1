@@ -26,7 +26,7 @@ param(
     [string]$BaseDir = "artifacts\real-device-test-20260623-233903",
     [string]$DeviceA = "8MY0220C17006781",
     [string]$DeviceB = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [int]$DelayMs = 450,
     [switch]$SkipLogcatClear,
     [switch]$SkipCallProbe,

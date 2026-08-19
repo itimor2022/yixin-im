@@ -18,7 +18,7 @@ pwsh -File scripts/real-device-qa/cases/IM-001-PhoneRegistration.ps1 -Serial emu
 #>
 param(
     [string]$Serial = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = "",
     [string]$OutputDir = ""
 )

@@ -119,7 +119,7 @@ def main() -> int:
         default=str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"),
     )
     parser.add_argument("--serial", default="8MY0220C17006781")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument("--username", default="smoke_bob")
     parser.add_argument("--password", default="Smoke123")

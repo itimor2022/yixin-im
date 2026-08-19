@@ -25,7 +25,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("Request", "Approve", "Import", "Unsupported")]
     [string]$Operation,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$OutputDir = "artifacts/p2-device-smoke"
 )
 

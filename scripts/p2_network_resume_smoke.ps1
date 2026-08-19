@@ -23,7 +23,7 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$EmulatorBaseUrl = "http://10.0.2.2:8080",
     [string]$Device = "127.0.0.1:16448",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$AliceUsername = "smoke_alice",
     [string]$BobUsername = "smoke_bob",
     [string]$Password = "Smoke123",

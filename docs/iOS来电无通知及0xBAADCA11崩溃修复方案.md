@@ -5,7 +5,7 @@
 - 问题平台：iOS 真机
 - 问题版本：`5.0.0 (31)` TestFlight
 - 测试系统：iOS `26.5 (23F77)`
-- Bundle ID：`com.genericim.app`
+- Bundle ID：`com.genericim.ma100`
 - 问题类型：PushKit VoIP 推送未成功上报 CallKit，导致系统强制结束 App
 - 修复优先级：P0
 - 文档日期：2026-07-23
@@ -332,7 +332,7 @@ VoIP 推送应继续使用：
 
 ```text
 apns-push-type: voip
-apns-topic: com.genericim.app.voip
+apns-topic: com.genericim.ma100.voip
 apns-priority: 10
 apns-expiration: 0
 ```

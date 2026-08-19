@@ -25,7 +25,7 @@ class FakeDevice:
 class BottomNavigationTest(unittest.TestCase):
     def make_runner(self, hierarchy: str) -> Runner:
         runner = Runner.__new__(Runner)
-        runner.package = "com.genericim.app"
+        runner.package = "com.genericim.ma100"
         runner.device = FakeDevice(hierarchy)
         return runner
 
@@ -33,9 +33,9 @@ class BottomNavigationTest(unittest.TestCase):
         runner = self.make_runner(
             """
             <hierarchy>
-              <node package="com.genericim.app" clickable="true"
+              <node package="com.genericim.ma100" clickable="true"
                     content-desc="消息详情" bounds="[0,200][1200,500]" />
-              <node package="com.genericim.app" clickable="true"
+              <node package="com.genericim.ma100" clickable="true"
                     content-desc="4&#10;消息" bounds="[116,2408][358,2486]" />
             </hierarchy>
             """
@@ -48,7 +48,7 @@ class BottomNavigationTest(unittest.TestCase):
         runner = self.make_runner(
             """
             <hierarchy>
-              <node package="com.genericim.app" clickable="true"
+              <node package="com.genericim.ma100" clickable="true"
                     content-desc="消息详情" bounds="[0,200][1200,500]" />
             </hierarchy>
             """

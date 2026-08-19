@@ -1,7 +1,7 @@
 param(
     [string]$DeviceA = "8MY0220C17006781",
     [string]$DeviceB = "UQG5T20915006269",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = "",
     [string]$OutputDir = "artifacts\real-device-qa\im400-two-device-resume-20260715",
     [string]$SourceResults = "artifacts\real-device-qa\im400-full-verified-20260715-0111\results.json",

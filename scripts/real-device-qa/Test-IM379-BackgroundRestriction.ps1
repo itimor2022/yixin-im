@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$OutputDir = "artifacts/real-device-qa/im379-background-restriction"
 )
 

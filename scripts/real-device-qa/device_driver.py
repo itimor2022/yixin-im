@@ -35,7 +35,7 @@ def selector(device: Any, kind: str, value: str, contains: bool) -> Any:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="ADB device serial")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     sub = parser.add_subparsers(dest="action", required=True)
 
     sub.add_parser("probe")

@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

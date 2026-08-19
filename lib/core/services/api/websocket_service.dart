@@ -161,6 +161,10 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   Timer? _pingTimer;
   Timer? _reconnectTimer;
   Timer? _pongTimeoutTimer;
+  // 后台保活自持检查器：主 isolate 自己周期触发 _onBackgroundKeepAlive。
+  // 不依赖 flutter_background_service 的跨 isolate keepAlive 事件（该事件在
+  // 系统调度暂停、后台服务被部分回收时可能丢失），提高息屏/短后台的保活可靠性。
+  Timer? _backgroundKeepAliveTimer;
   Timer? _countdownTimer;
   Timer? _resumeRetryTimer;
 
@@ -696,6 +700,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       _lastBackgroundPingAt = null;
       _lastBackgroundReconnectAt = null;
       _backgroundFastReconnects = 0;
+      _backgroundKeepAliveTimer?.cancel();
+      _backgroundKeepAliveTimer = null;
       unawaited(BackgroundKeepAlivePolicyStore.instance.load().then((mode) {
         BackgroundService.instance.applyPolicy(mode);
       }));
@@ -719,6 +725,9 @@ class WebSocketService extends StateNotifier<WSConnectionState>
         BackgroundKeepAlivePolicyStore.instance.mode,
       );
       _startBackgroundPing();
+      // 主 isolate 自持后台保活：WebSocket 在息屏/短后台自行周期性检查并重连，
+      // 不依赖 flutter_background_service 的 keepAlive 事件桥。
+      _startBackgroundKeepAliveSelfCheck();
       if (state == WSConnectionState.connected) {
         _lastPongTime = DateTime.now();
       }
@@ -892,6 +901,26 @@ class WebSocketService extends StateNotifier<WSConnectionState>
       }
       _maybeSendBackgroundPing('background timer');
     });
+  }
+
+  /// 主 isolate 自持后台保活自检：息屏/短后台由本 isolate 自己周期触发
+  /// [_onBackgroundKeepAlive]，用它内部既有的 stale/pong 超时、断连重连与冷却
+  /// 逻辑。这与 flutter_background_service 的跨 isolate `keepAlive` 事件互为
+  /// 兜底 —— 即使后台服务心跳因系统调度暂停、进程调度异常没有派发事件，只要
+  /// App 进程还在，WebSocket 也会按增强策略自行维持连接。
+  void _startBackgroundKeepAliveSelfCheck() {
+    _backgroundKeepAliveTimer?.cancel();
+    _backgroundKeepAliveTimer = Timer.periodic(
+      _keepAliveProfile.backgroundPingInterval,
+      (_) {
+        if (_isDisposed) {
+          _backgroundKeepAliveTimer?.cancel();
+          _backgroundKeepAliveTimer = null;
+          return;
+        }
+        unawaited(_onBackgroundKeepAlive());
+      },
+    );
   }
 
   void _maybeSendBackgroundPing(String reason) {
@@ -1260,6 +1289,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
     _pingTimer = null;
     _pongTimeoutTimer?.cancel();
     _pongTimeoutTimer = null;
+    _backgroundKeepAliveTimer?.cancel();
+    _backgroundKeepAliveTimer = null;
     _resumeRetryTimer?.cancel();
     _resumeRetryTimer = null;
     _cancelReconnectSchedule();

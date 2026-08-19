@@ -23,7 +23,7 @@ param(
     [Parameter(Mandatory)][string]$TestScript,
     [string[]]$TestArguments = @(),
     [string]$Serial = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = "",
     [string]$OutputDir = "",
     [ValidateRange(1, 43200)][int]$TestTimeoutSeconds = 10800

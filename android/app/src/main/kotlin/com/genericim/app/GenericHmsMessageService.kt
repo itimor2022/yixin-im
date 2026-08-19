@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

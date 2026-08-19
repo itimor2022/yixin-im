@@ -19,7 +19,7 @@ pwsh -File scripts/p0_real_device_logout.ps1 -DeviceId emulator-5554
 param(
     [Parameter(Mandatory = $true)]
     [string]$DeviceId,
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$OutputDir = "artifacts/account-isolation-p0-device-smoke/logout"
 )
 

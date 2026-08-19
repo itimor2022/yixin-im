@@ -21,8 +21,8 @@ pwsh -File scripts/p3_real_device_release_experience.ps1 -Devices device-a,devic
 param(
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
     [string[]]$Devices = @("8MY0220C17006781", "UQG5T20915006269"),
-    [string]$PackageName = "com.genericim.app",
-    [string]$MainActivity = "com.genericim.app/.MainActivity",
+    [string]$PackageName = "com.genericim.ma100",
+    [string]$MainActivity = "com.genericim.ma100/.MainActivity",
     [string]$ApkPath = "artifacts\local-real-device-apk-20260624-224822\genericim-local-real-device-release.apk",
     [string]$OutputDir = "release-archives\qa-20260624\real-device-p0-p3\p3-release-experience",
     [string]$ExpectedLabel = "通用IM",

@@ -27,7 +27,7 @@ param(
     [string]$WsUrl = "ws://127.0.0.1:8080/api/v1/ws",
     [string]$Flutter = "/Users/dongtengxiao/development/flutter/bin/flutter",
     [string]$Device = "booted",
-    [string]$BundleId = "com.genericim.app",
+    [string]$BundleId = "com.genericim.ma100",
     [string]$AliceUsername = "smoke_alice",
     [string]$BobUsername = "smoke_bob",
     [string]$Password = "Smoke123",

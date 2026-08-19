@@ -73,7 +73,7 @@ def main() -> int:
     parser.add_argument("--viewer-username", default="smoke_alice")
     parser.add_argument("--target-username", default="smoke_bob")
     parser.add_argument("--password", default="Smoke123")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
 
@@ -145,7 +145,7 @@ def main() -> int:
             line
             for line in log.splitlines()
             if "FATAL EXCEPTION" in line
-            or "ANR in com.genericim.app" in line
+            or "ANR in com.genericim.ma100" in line
             or "FlutterError" in line
         ]
 

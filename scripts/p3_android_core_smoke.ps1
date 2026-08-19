@@ -22,7 +22,7 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$Adb = "",
     [string]$Device = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$DeviceHealthUrl = "",
     [string]$AliceUsername = "smoke_alice",
     [string]$BobUsername = "smoke_bob",

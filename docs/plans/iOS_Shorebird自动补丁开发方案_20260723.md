@@ -180,7 +180,7 @@ ios_maintenance_message
 - App Store 应用 Apple ID 和正式下载链接。
 - 当前线上包是否由 Shorebird 构建；如果没有明确证据，按“不是 Shorebird 基线”处理。
 - Apple Developer Team：`U4TWR5VCQ3` 是否仍有效。
-- Bundle ID：`com.genericim.app` 是否与 App Store 记录一致。
+- Bundle ID：`com.genericim.ma100` 是否与 App Store 记录一致。
 - Distribution Certificate 和 App Store Provisioning Profile 是否有效。
 - Mac 上的 Xcode、CocoaPods、Flutter、Shorebird CLI 是否正常。
 - `shorebird login` 和 `shorebird doctor` 是否通过。

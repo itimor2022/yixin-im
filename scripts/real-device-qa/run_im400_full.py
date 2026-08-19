@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 import uiautomator2 as u2
 
 
-PACKAGE = "com.genericim.app"
+PACKAGE = "com.genericim.ma100"
 SERIAL = "UQG5T20915006269"
 BACKEND = "https://api.example.com"
 
@@ -381,7 +381,7 @@ class Runner:
             edit_bottom = int(edit_bounds.group(4)) if edit_bounds else height
             candidates: list[tuple[int, int]] = []
             for node in re.findall(r"<node\b[^>]*>", hierarchy):
-                if 'package="com.genericim.app"' not in node or 'clickable="true"' not in node:
+                if 'package="com.genericim.ma100"' not in node or 'clickable="true"' not in node:
                     continue
                 bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
                 if not bounds:

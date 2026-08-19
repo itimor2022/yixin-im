@@ -1,6 +1,6 @@
 param(
     [string]$Serial = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = ""
 )
 

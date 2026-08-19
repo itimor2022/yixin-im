@@ -168,7 +168,7 @@ if (enableVendorPushSdk) {
 }
 
 android {
-    namespace = "com.genericim.app"
+    namespace = "com.genericim.ma100"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -183,7 +183,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.genericim.app"
+        applicationId = "com.genericim.ma100"
         // Android 10 / EMUI 10.1 devices report API 29.
         minSdk = 29
         targetSdk = 36

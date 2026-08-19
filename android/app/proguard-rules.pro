@@ -34,7 +34,7 @@
 -dontwarn com.google.android.play.core.tasks.Task
 
 # App entry
--keep class com.genericim.app.MainActivity { *; }
+-keep class com.genericim.ma100.MainActivity { *; }
 -keep class * extends android.app.Application {
     <init>();
 }

@@ -153,7 +153,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--adb", required=True)
     parser.add_argument("--device", default="emulator-5554")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080/api/v1")
     parser.add_argument(
         "--output-dir", default="artifacts/real-device-qa/banned-login-ui"
@@ -237,7 +237,7 @@ def main() -> int:
             line
             for line in logcat.splitlines()
             if "FATAL EXCEPTION" in line
-            or "ANR in com.genericim.app" in line
+            or "ANR in com.genericim.ma100" in line
             or "FlutterError" in line
         ]
         check(not fatal, f"fatal log markers found: {fatal[:3]}")

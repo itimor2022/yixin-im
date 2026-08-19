@@ -8,4 +8,4 @@
 PRODUCT_NAME = 通用IM
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.genericim.app
+PRODUCT_BUNDLE_IDENTIFIER = com.genericim.ma100

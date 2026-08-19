@@ -24,7 +24,7 @@ pwsh -File scripts/full_power_p0_p5_qa.ps1 -OnlyPhase P0 -SkipMonkey
 param(
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
     [string]$BaseUrl = "http://127.0.0.1:8080",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$DeviceA = "8MY0220C17006781",
     [string]$DeviceB = "UQG5T20915006269",
     [string]$ApkPath = "artifacts\local-real-device-apk-20260625-005055\genericim-local-real-device-release.apk",

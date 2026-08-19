@@ -1,4 +1,4 @@
-package com.genericim.app
+package com.genericim.ma100
 
 import android.Manifest
 import android.app.AppOpsManager

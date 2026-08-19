@@ -21,7 +21,7 @@ pwsh -File scripts/p2_real_device_monkey.ps1 -MonkeyEvents 200 -ThrottleMs 80
 #>
 param(
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string[]]$Devices = @("8MY0220C17006781", "UQG5T20915006269"),
     [string]$OutputDir = "release-archives\qa-20260624\real-device-p0-p3\p2-monkey",
     [int]$MonkeyEvents = 1000,

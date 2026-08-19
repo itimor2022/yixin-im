@@ -21,7 +21,7 @@ pwsh -File scripts/real-device-qa/Initialize-RealDeviceQa.ps1 -Serial emulator-5
 #>
 param(
     [string]$Serial = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$Adb = "",
     [string]$ArtifactRoot = "",
     [string]$VenvPath = "",

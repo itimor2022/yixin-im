@@ -354,7 +354,7 @@ def error_log(harness: P1Harness) -> tuple[str, list[str]]:
     output = harness.adb_run("logcat", "-d", "-v", "threadtime").stdout
     fatal_markers = (
         "FATAL EXCEPTION",
-        "ANR in com.genericim.app",
+        "ANR in com.genericim.ma100",
         "Unhandled Exception",
     )
     # The native bootstrap forwards Flutter diagnostics to logcat. Material
@@ -388,7 +388,7 @@ def main() -> int:
     parser.add_argument("--alice", default="smoke_alice")
     parser.add_argument("--bob", default="smoke_bob")
     parser.add_argument("--password", default="Smoke123")
-    parser.add_argument("--package", default="com.genericim.app")
+    parser.add_argument("--package", default="com.genericim.ma100")
     parser.add_argument("--expect-direct-upload", action="store_true")
     args = parser.parse_args()
 

@@ -8,7 +8,7 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$Username = "smoke_bob",
     [string]$Password = "Smoke123",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$AdbPath = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
     [string]$OutputPath = "artifacts/p1-s3-acceptance-20260727/resume-interrupted.json"
 )

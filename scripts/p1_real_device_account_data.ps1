@@ -26,7 +26,7 @@ param(
     [ValidateSet("ClearCache", "ClearAccountData", "ResetEncryption")]
     [string]$Operation,
     [string]$ExpectedChatMarker = "",
-    [string]$PackageName = "com.genericim.app",
+    [string]$PackageName = "com.genericim.ma100",
     [string]$OutputDir = "artifacts/account-data-p1-device-smoke"
 )
 
