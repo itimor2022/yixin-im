@@ -321,36 +321,30 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         children: [
           const SizedBox(height: 20),
 
-          // 头像
+          // 头像 + 昵称 + 邀请码（只点头像才弹拍照 sheet；邀请码独立可点击复制）
           Center(
-            child: GestureDetector(
-              onTap: _changeAvatar,
-              child: Column(
-                children: [
-                  AvatarWidget(
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: _changeAvatar,
+                  child: AvatarWidget(
                     name: displayName,
                     avatar: avatar,
                     size: 90,
                     isCircle: true,
                   ),
-                  const SizedBox(height: 12),
-                  ColoredNameWidget(
-                    name: displayName,
-                    nicknameColor: user?.nicknameColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    defaultColor: AppColors.textPrimaryFor(context),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.setNewPhoto,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: AppColors.linkFor(context),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                ColoredNameWidget(
+                  name: displayName,
+                  nicknameColor: user?.nicknameColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  defaultColor: AppColors.textPrimaryFor(context),
+                ),
+                const SizedBox(height: 8),
+                _buildInviteCodeRow(context, user),
+              ],
             ),
           ),
 
@@ -753,6 +747,75 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           height: 1.35,
           color: AppColors.textTertiaryFor(context),
         ),
+      ),
+    );
+  }
+
+  /// 渲染头像下方的邀请码行：用户点击即复制自己的 10 位个人邀请码到剪贴板。
+  /// 旧账号 / 后端尚未下发 invite_code 时显示占位文案且不可点击。
+  Widget _buildInviteCodeRow(BuildContext context, dynamic user) {
+    final inviteCode = user?.inviteCode is String
+        ? (user.inviteCode as String).trim()
+        : '';
+    final hasCode = inviteCode.isNotEmpty;
+    final label = hasCode
+        ? inviteCode
+        : _profileText(
+            context,
+            zhCN: '暂未生成',
+            zhTW: '暫未生成',
+            en: 'Not generated',
+          );
+
+    void onTap() {
+      if (!hasCode) return;
+      HapticFeedback.lightImpact();
+      Clipboard.setData(ClipboardData(text: inviteCode));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _profileText(
+              context,
+              zhCN: '邀请码已复制',
+              zhTW: '邀請碼已複製',
+              en: 'Invite code copied',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: hasCode ? onTap : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: hasCode
+                  ? AppColors.linkFor(context)
+                  : AppColors.textTertiaryFor(context),
+              letterSpacing: hasCode ? 1.2 : 0,
+            ),
+          ),
+          if (hasCode) ...[
+            const SizedBox(width: 6),
+            Icon(
+              Icons.copy_rounded,
+              size: 14,
+              color: AppColors.linkFor(context),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1982,13 +2045,17 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
     final username = isSelfEntry
         ? (usernameValue(widget.username) ?? usernameValue(user?.username))
         : usernameValue(widget.username);
+    // 自己：展示个人邀请码（10 位数字）—— 用于名片下方文字与点击复制。
+    // 非自己：拿不到对方的 invite_code，fallback 到短 UUID 片段。
+    final inviteCode = isSelfEntry ? nonEmpty(user?.inviteCode) : null;
     final qrPayload = userUuid.isNotEmpty ? buildUserQrPayload(userUuid) : '';
     final avatar = isSelfEntry
         ? (nonEmpty(widget.avatar) ?? user?.avatar)
         : nonEmpty(widget.avatar);
-    final secondaryText = username != null
-        ? '@$username'
-        : (userUuid.isNotEmpty ? _shortUserId(userUuid) : displayName);
+    final secondaryText = inviteCode ??
+        (username != null
+            ? '@$username'
+            : (userUuid.isNotEmpty ? _shortUserId(userUuid) : displayName));
     final titleText = _qrPageTitle(
       context,
       isSelfEntry: isSelfEntry,
@@ -2180,15 +2247,7 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
                                             0,
                                             isShortScreen ? -9 : -11,
                                           ),
-                                          child: Text(
-                                            '通用IM客服',
-                                            style: TextStyle(
-                                              fontSize: isShortScreen ? 16 : 18,
-                                              color: Colors.black
-                                                  .withOpacity(0.72),
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
+                                          child: const SizedBox.shrink(),
                                         ),
                                         SizedBox(
                                           height: isShortScreen ? 0 : 2,
@@ -2211,9 +2270,9 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
                                           ),
                                         ),
                                         const SizedBox(height: 2),
-                                        // 用户名
+                                        // 邀请码 / 用户名（点击复制到剪贴板）
                                         GestureDetector(
-                                          onTap: username == null
+                                          onTap: secondaryText.isEmpty
                                               ? null
                                               : () {
                                                   HapticFeedback.lightImpact();
@@ -2227,9 +2286,15 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
                                                       content: Text(
                                                         _profileText(
                                                           context,
-                                                          zhCN: '用户名已复制',
-                                                          zhTW: '使用者名稱已複製',
-                                                          en: 'Username copied',
+                                                          zhCN: inviteCode != null
+                                                              ? '邀请码已复制'
+                                                              : '用户名已复制',
+                                                          zhTW: inviteCode != null
+                                                              ? '邀請碼已複製'
+                                                              : '使用者名稱已複製',
+                                                          en: inviteCode != null
+                                                              ? 'Invite code copied'
+                                                              : 'Username copied',
                                                         ),
                                                       ),
                                                       behavior: SnackBarBehavior
@@ -2423,7 +2488,11 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
                               TextButton.icon(
                                 onPressed: () {
                                   HapticFeedback.selectionClick();
-                                  Navigator.pop(context);
+                                  // 关掉「我的二维码」页，进入扫码页；不可仅 pop
+                                  // 否则用户会误以为「点了没反应」。
+                                  final outerContext = context;
+                                  Navigator.of(outerContext).pop();
+                                  outerContext.push('/scan');
                                 },
                                 icon: Icon(
                                   Icons.qr_code_scanner_rounded,

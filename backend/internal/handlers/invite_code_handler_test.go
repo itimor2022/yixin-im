@@ -49,3 +49,31 @@ func TestEnsureDirectRecommenderAndBindAsContacts_NoOpOnNilInputs(t *testing.T) 
 		t.Fatalf("nil RecommenderID should be no-op, got %v", err)
 	}
 }
+
+// TestIsValidUserInviteCode 校验用户个人邀请码的格式规则：
+//   - 必须恰好 10 位字符
+//   - 首位不能是 '0'
+//   - 全部字符必须是 0-9 的数字
+func TestIsValidUserInviteCode(t *testing.T) {
+	cases := []struct {
+		name string
+		code string
+		want bool
+	}{
+		{"valid 10 digits starting with 1", "1234567890", true},
+		{"valid 10 digits starting with 9", "9876543210", true},
+		{"too short", "123456789", false},
+		{"too long", "12345678901", false},
+		{"empty", "", false},
+		{"starts with 0", "0123456789", false},
+		{"contains letter", "123456789a", false},
+		{"all digits but 8 chars (hex)", "abcd1234", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := models.IsValidUserInviteCode(c.code); got != c.want {
+				t.Fatalf("IsValidUserInviteCode(%q) = %v, want %v", c.code, got, c.want)
+			}
+		})
+	}
+}

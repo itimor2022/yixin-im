@@ -677,12 +677,23 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// 先预校验邀请码，避免先建号再失败导致用户名被占用
+	// 先预校验邀请码，避免先建号再失败导致用户名被占用。
+	// 优先按「用户个人邀请码（10 位数字）」匹配；命中即视为合法，后置事务
+	// 里会把它解析为 recommender_id。若不匹配再走「客服邀请码（hex）」校验，
+	// 这样既兼容 require_invite_code 强制场景下用户填的是他人个人码的情况，
+	// 也保留对原有客服邀请码链路的支持。
 	if req.InviteCode != "" {
-		result := ValidateInviteCode(h.db, req.InviteCode)
-		if result != nil && !result.Valid {
-			response.Error(c, 400, result.Message)
-			return
+		if models.IsValidUserInviteCode(req.InviteCode) {
+			if models.FindUserIDByInviteCode(h.db, req.InviteCode) == 0 {
+				response.Error(c, 400, "邀请码无效")
+				return
+			}
+		} else {
+			result := ValidateInviteCode(h.db, req.InviteCode)
+			if result != nil && !result.Valid {
+				response.Error(c, 400, result.Message)
+				return
+			}
 		}
 	}
 

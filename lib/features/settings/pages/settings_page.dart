@@ -1165,22 +1165,6 @@ class _UserProfileCard extends ConsumerStatefulWidget {
 }
 
 class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
-  /// 格式化手机号（隐藏中间4位）
-  String _formatPhone(String? phone) {
-    if (phone == null || phone.isEmpty) {
-      return _settingsText(
-        context,
-        zhCN: '未绑定手机',
-        zhTW: '未綁定手機',
-        en: 'No phone',
-      );
-    }
-    if (phone.length >= 11) {
-      return '${phone.substring(0, 3)}****${phone.substring(phone.length - 4)}';
-    }
-    return phone;
-  }
-
   /// 显示表情状态选择器（毛玻璃效果）
   void _showEmojiStatusPicker() {
     HapticFeedback.selectionClick();
@@ -1363,8 +1347,9 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
     // 用户名 @xxx
     final username = user?.username ?? '';
 
-    // 手机号
-    final phoneDisplay = _formatPhone(user?.phone);
+    // 自己的邀请码（10 位数字）。原来该位置是手机号/未绑定手机，
+    // 现统一替换为显示个人邀请码，不再展示手机号。
+    final inviteCode = user?.inviteCode ?? '';
 
     // 头像
     final avatar = user?.avatar;
@@ -1373,7 +1358,7 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
       user: user,
       displayName: displayName,
       username: username,
-      phoneDisplay: phoneDisplay,
+      inviteCode: inviteCode,
       avatar: avatar,
       isDark: isDark,
       isDesktopSidebar: widget.isDesktopSidebar,
@@ -1387,7 +1372,7 @@ class _ImmersiveProfileHeader extends ConsumerWidget {
   final User? user;
   final String displayName;
   final String username;
-  final String phoneDisplay;
+  final String inviteCode;
   final String? avatar;
   final bool isDark;
   final bool isDesktopSidebar;
@@ -1397,7 +1382,7 @@ class _ImmersiveProfileHeader extends ConsumerWidget {
     required this.user,
     required this.displayName,
     required this.username,
-    required this.phoneDisplay,
+    required this.inviteCode,
     required this.avatar,
     required this.isDark,
     required this.isDesktopSidebar,
@@ -1433,8 +1418,8 @@ class _ImmersiveProfileHeader extends ConsumerWidget {
         : const Color(0xFF1D3557);
     final emojiStatus = user?.emojiAvatar;
     final accountLine = [
-      if (phoneDisplay.trim().isNotEmpty) phoneDisplay.trim(),
       if (username.trim().isNotEmpty) '@${username.trim()}',
+      if (inviteCode.trim().isNotEmpty) inviteCode.trim(),
     ].join(' · ');
 
     void openProfile() {

@@ -953,6 +953,8 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 		"nickname_color": user.NicknameColor, // 个人资料背景颜色
 
+		"invite_code": user.InviteCode, // 个人邀请码（10 位数字）。扫码场景需向访客展示以便复制使用。
+
 		"vip": h.buildVipSummary(user.ID),
 	})
 }

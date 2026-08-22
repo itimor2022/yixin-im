@@ -232,6 +232,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   bool _isOnline = false;
   DateTime? _lastSeen;
   bool _loadingUserInfo = true;
+  String? _realInviteCode; // 用户的个人邀请码（10 位数字，扫码场景展示）
 
   // 私聊信息和媒体统计
   String? _privateChatId;
@@ -628,6 +629,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
           _userUuid = response.data['id']?.toString();
           _contactRemark = inferredRemark;
           _isOnline = response.data['status'] == 1;
+          _realInviteCode =
+              response.data['invite_code']?.toString().trim();
           if (response.data['last_seen'] != null) {
             _lastSeen = DateTime.tryParse(
               response.data['last_seen'],
@@ -1203,6 +1206,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  // 邀请码：扫码场景核心入口，访客复制后可去注册页填写
+                                  _buildHeaderInviteCode(
+                                    context,
+                                    headerForeground,
                                   ),
                                 ],
                               ),
@@ -2638,6 +2647,47 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         ),
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.error,
+      ),
+    );
+  }
+
+  /// 渲染名字下方的邀请码行。
+  /// - 已拉到 invite_code：显示 10 位数字 + 复制图标，整体可点击复制并 SnackBar 提示。
+  /// - 尚未拉到（旧账号或后端未下发）：返回 SizedBox 不渲染，避免占位空白。
+  /// - 是自己（_isCurrentUser）：不渲染，避免与 ProfilePage 自身的邀请码重复入口。
+  Widget _buildHeaderInviteCode(BuildContext context, Color foreground) {
+    if (_isCurrentUser) return const SizedBox.shrink();
+    final raw = _realInviteCode?.trim() ?? '';
+    if (raw.isEmpty) return const SizedBox.shrink();
+
+    return Center(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _copyToClipboard(raw),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                raw,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.2,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w500,
+                  color: foreground.withOpacity(0.78),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.copy_rounded,
+                size: 14,
+                color: foreground.withOpacity(0.78),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

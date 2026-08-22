@@ -79,6 +79,7 @@ class User {
   final String? profileBackgroundUrl;
   final String? profileBackground;
   final String? profileCardBackground;
+  final String inviteCode; // 用户个人邀请码（10 位数字）；空表示后端尚未下发
 
   User({
     required this.id,
@@ -100,6 +101,7 @@ class User {
     this.profileBackgroundUrl,
     this.profileBackground,
     this.profileCardBackground,
+    this.inviteCode = '',
   });
 
   // 流程逻辑：`fromJson` 集中处理输入规范化、空值和兼容字段，输出稳定的数据结构，避免调用方重复实现边界判断。
@@ -134,6 +136,7 @@ class User {
       profileBackgroundUrl: json['profile_background_url'],
       profileBackground: json['profile_background'],
       profileCardBackground: json['profile_card_background'],
+      inviteCode: json['invite_code']?.toString() ?? '',
     );
   }
 
@@ -156,6 +159,7 @@ class User {
       'profile_background_url': profileBackgroundUrl,
       'profile_background': profileBackground,
       'profile_card_background': profileCardBackground,
+      'invite_code': inviteCode,
       'last_seen': lastSeen?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
