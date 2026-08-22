@@ -715,6 +715,20 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.ServerError(c, "注册失败")
 		return
 	}
+
+	// 提前预解析邀请码：在事务开启前先用只读连接匹配用户个人邀请码，
+	// 解析出 recommenderID 后直接写入 user 结构体，这样后续 tx.Create(&user)
+	// 会把 recommender_id 一并写入，避免后置赋值后被遗忘（持久化丢失）。
+	var pendingRecommenderID uint64
+	pendingInviteValid := false
+	if req.InviteCode != "" {
+		if recommenderID := models.FindUserIDByInviteCode(h.db, req.InviteCode); recommenderID > 0 {
+			pendingRecommenderID = recommenderID
+			user.RecommenderID = &pendingRecommenderID
+			pendingInviteValid = true
+		}
+	}
+
 	tx := h.db.Begin()
 	if tx.Error != nil {
 		response.ServerError(c, "注册失败")
@@ -738,6 +752,37 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		tx.Rollback()
 		response.ServerError(c, "注册失败")
 		return
+	}
+
+	// 如果用户通过个人邀请码注册（已有 recommender_id），把直接邀请人
+	// 以及该邀请人的 bind_id 客服加为新用户的好友。不沿 recommender 链
+	// 或 bind_id 链继续向上递归（业务侧只需要加直接上级这一层）。
+	if user.RecommenderID != nil {
+		if err := ensureDirectRecommenderAndBindAsContacts(tx, &user, time.Now()); err != nil {
+			tx.Rollback()
+			response.ServerError(c, "注册失败")
+			return
+		}
+	}
+	// 为新用户生成唯一个人邀请码（10 位数字，首位 1-9）。
+	// 最多重试 5 次以应对极端冲突，仍失败则降级留空。
+	for retry := 0; retry < 5; retry++ {
+		generated, genErr := models.GenerateUserInviteCode()
+		if genErr != nil {
+			break
+		}
+		updateErr := tx.Model(&models.User{}).
+			Where("id = ? AND invite_code = ?", user.ID, "").
+			Update("invite_code", generated).Error
+		if updateErr == nil {
+			user.InviteCode = generated
+			break
+		}
+		// 仅处理唯一索引冲突，其它错误直接退出。
+		if !strings.Contains(updateErr.Error(), "Duplicate") &&
+			!strings.Contains(updateErr.Error(), "1062") {
+			break
+		}
 	}
 	if quickRegister {
 		if err := tx.Model(&user).Update("credentials_initialized", false).Error; err != nil {
@@ -782,10 +827,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
-	// 处理邀请码（自动加官方客服为好友 + 创建私聊 + 发送欢迎语）
+	// 处理邀请码。优先匹配用户个人邀请码（10 位数字），命中则推荐人已在上方预解析完成；
+	// 未命中再走客服邀请码流程。
 	boundService := false
 	var inviteWelcomeInfo *InviteWelcomeInfo
-	if req.InviteCode != "" {
+	if req.InviteCode != "" && !pendingInviteValid {
 		result := ProcessInviteCode(tx, req.InviteCode, user.ID)
 		if result != nil && !result.Valid {
 			tx.Rollback()
@@ -797,6 +843,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			inviteWelcomeInfo = result.WelcomeInfo
 		}
 	}
+
 	inviteRegisterBindOnly := false
 	if boundService {
 		var bindOnlySetting models.SystemSetting

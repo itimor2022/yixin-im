@@ -36,6 +36,8 @@ export interface UserTableSearchParams {
   registerSource?: 'manual' | 'quick' | ''
   credentialsStatus?: 'initialized' | 'pending' | ''
   onlineOnly?: boolean
+  inviteCode?: string
+  recommenderId?: number | string
 }
 
 /** 用户列表响应（兼容 useTable） */
@@ -77,11 +79,25 @@ export interface UserTableListItem {
   serviceUsername?: string
   serviceNickname?: string
   serviceInviteCode?: string
+  inviteCode?: string
+  bindId?: number | null
+  bindUsername?: string
+  bindNickname?: string
+  recommenderId?: number | null
+  recommenderUsername?: string
+  recommenderNickname?: string
+  recommenderInviteCode?: string
+  subordinatesCount?: number
 }
 
 /** 获取用户列表（兼容 useTable） */
 export async function fetchGetUserList(params: UserTableSearchParams): Promise<UserTableList> {
   // 在这里集中适配 useTable 的驼峰分页字段与后端 snake_case 协议。
+  const recommenderIdNum =
+    params.recommenderId === '' || params.recommenderId === undefined || params.recommenderId === null
+      ? undefined
+      : Number(params.recommenderId)
+
   const searchParams: UserSearchParams = {
     page: params.current || 1,
     page_size: params.size || 20,
@@ -91,7 +107,9 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     gender: params.gender || undefined,
     register_source: params.registerSource || undefined,
     credentials_status: params.credentialsStatus || undefined,
-    online_only: params.onlineOnly
+    online_only: params.onlineOnly,
+    invite_code: params.inviteCode || undefined,
+    recommender_id: recommenderIdNum
   }
 
   const response = await getUserList(searchParams)
@@ -127,7 +145,16 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     serviceUserId: item.service_user_id,
     serviceUsername: item.service_username || '',
     serviceNickname: item.service_nickname || '',
-    serviceInviteCode: item.service_invite_code || ''
+    serviceInviteCode: item.service_invite_code || '',
+    inviteCode: item.invite_code || '',
+    bindId: item.bind_id ?? null,
+    bindUsername: item.bind_user_name || '',
+    bindNickname: item.bind_user_name || '',
+    recommenderId: item.recommender_id ?? null,
+    recommenderUsername: item.recommender_username || '',
+    recommenderNickname: item.recommender_nickname || '',
+    recommenderInviteCode: item.recommender_invite_code || '',
+    subordinatesCount: Number(item.subordinates_count || 0)
   }))
 
   return {

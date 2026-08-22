@@ -47,3 +47,5 @@ android/data.db
 
 .darts_tool/
 .gitignore
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+.flutter-plugins-dependencies

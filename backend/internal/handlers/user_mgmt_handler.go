@@ -67,6 +67,16 @@ type UserListItem struct {
 	ServiceUsername        *string `json:"service_username"`
 	ServiceNickname        *string `json:"service_nickname"`
 	ServiceInviteCode      *string `json:"service_invite_code"`
+	// InviteCode 用户个人邀请码（10 位数字，首位 1-9）
+	InviteCode            *string `json:"invite_code,omitempty"`
+	// BindID 绑定的官方客服用户 ID，可空
+	BindID                *uint64 `json:"bind_id,omitempty"`
+	// BindUserName 绑定的官方客服昵称（冗余字段，仅展示用），可空
+	BindUserName          *string `json:"bind_user_name,omitempty"`
+	// RecommenderID 推荐人用户 ID，可空
+	RecommenderID         *uint64 `json:"recommender_id,omitempty"`
+	// RecommenderName 推荐人昵称（冗余字段，方便后台展示），可空
+	RecommenderName       *string `json:"recommender_name,omitempty"`
 }
 
 func uint64Ptr(v uint64) *uint64 {
@@ -117,6 +127,14 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 	registerSource := strings.ToLower(strings.TrimSpace(c.Query("register_source")))
 	credentialsStatus := strings.ToLower(strings.TrimSpace(c.Query("credentials_status")))
 	onlineOnly := isSystemSettingTrue(c.Query("online_only"))
+	inviteCodeQuery := strings.TrimSpace(c.Query("invite_code"))
+	// recommender_id 允许 0 表示未绑定推荐人
+	var recommenderIDQuery *uint64
+	if rawRec := strings.TrimSpace(c.Query("recommender_id")); rawRec != "" {
+		if v, parseErr := strconv.ParseUint(rawRec, 10, 64); parseErr == nil {
+			recommenderIDQuery = &v
+		}
+	}
 	offset := (page - 1) * pageSize
 
 	query := h.db.Model(&models.User{})
@@ -142,6 +160,12 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 			return
 		}
 		query = query.Where("register_source = ?", registerSource)
+	}
+	if inviteCodeQuery != "" {
+		query = query.Where("invite_code = ?", inviteCodeQuery)
+	}
+	if recommenderIDQuery != nil {
+		query = query.Where("recommender_id = ?", *recommenderIDQuery)
 	}
 	if credentialsStatus != "" {
 		switch credentialsStatus {
@@ -229,6 +253,49 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 		}
 	}
 
+	// 构建推荐人 / 绑定客服的昵称映射，用于列表展示
+	recommenderIDSet := map[uint64]struct{}{}
+	bindIDSet := map[uint64]struct{}{}
+	for _, u := range users {
+		if u.RecommenderID != nil {
+			recommenderIDSet[*u.RecommenderID] = struct{}{}
+		}
+		if u.BindID != nil {
+			bindIDSet[*u.BindID] = struct{}{}
+		}
+	}
+	recommenderNameMap := make(map[uint64]string)
+	bindNameMap := make(map[uint64]string)
+	fillUserBriefs := func(idSet map[uint64]struct{}, target map[uint64]string) {
+		if len(idSet) == 0 {
+			return
+		}
+		ids := make([]uint64, 0, len(idSet))
+		for id := range idSet {
+			ids = append(ids, id)
+		}
+		type brief struct {
+			ID       uint64
+			Nickname string
+			Username string
+		}
+		var rows []brief
+		if err := h.db.Model(&models.User{}).
+			Select("id, nickname, username").
+			Where("id IN ? AND deleted_at IS NULL", ids).
+			Scan(&rows).Error; err == nil {
+			for _, r := range rows {
+				display := r.Nickname
+				if display == "" {
+					display = r.Username
+				}
+				target[r.ID] = display
+			}
+		}
+	}
+	fillUserBriefs(recommenderIDSet, recommenderNameMap)
+	fillUserBriefs(bindIDSet, bindNameMap)
+
 	// 构建设备映射（每个用户只取最近活跃的设备）
 	deviceMap := make(map[uint64]models.UserDevice)
 	for _, d := range devices {
@@ -278,6 +345,26 @@ func (h *UserMgmtHandler) ListUsers(c *gin.Context) {
 		if u.BannedAt != nil {
 			bannedAt := formatAdminTime(*u.BannedAt)
 			item.BannedAt = &bannedAt
+		}
+
+		// 邀请码 / 绑定客服 / 推荐人信息
+		if u.InviteCode != "" {
+			ic := u.InviteCode
+			item.InviteCode = &ic
+		}
+		if u.BindID != nil && *u.BindID > 0 {
+			bid := *u.BindID
+			item.BindID = &bid
+			if name, ok := bindNameMap[*u.BindID]; ok && name != "" {
+				item.BindUserName = &name
+			}
+		}
+		if u.RecommenderID != nil && *u.RecommenderID > 0 {
+			rid := *u.RecommenderID
+			item.RecommenderID = &rid
+			if name, ok := recommenderNameMap[*u.RecommenderID]; ok && name != "" {
+				item.RecommenderName = &name
+			}
 		}
 
 		// 通过 WebSocket Hub 判断实时在线状态
@@ -352,12 +439,14 @@ func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
 	userID := c.Param("id")
 
 	var req struct {
-		Nickname *string `json:"nickname"`
-		Username *string `json:"username"`
-		Phone    *string `json:"phone"`
-		Bio      *string `json:"bio"`
-		Status   *int8   `json:"status"`
-		Gender   *string `json:"gender"`
+		Nickname *string  `json:"nickname"`
+		Username *string  `json:"username"`
+		Phone    *string  `json:"phone"`
+		Bio      *string  `json:"bio"`
+		Status   *int8    `json:"status"`
+		Gender   *string  `json:"gender"`
+		// BindID 绑定客服用户 ID，0 或 nil 表示解绑
+		BindID *uint64 `json:"bind_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "参数错误")
@@ -400,6 +489,24 @@ func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
 			return
 		}
 		updates["gender"] = gender
+	}
+	if req.BindID != nil {
+		// 0 表示解绑客服
+		if *req.BindID == 0 {
+			updates["bind_id"] = nil
+		} else {
+			// 校验客服用户是否存在
+			var serviceUser models.User
+			if err := h.db.First(&serviceUser, *req.BindID).Error; err != nil {
+				response.Error(c, http.StatusBadRequest, "绑定的客服用户不存在")
+				return
+			}
+			if serviceUser.ID == user.ID {
+				response.Error(c, http.StatusBadRequest, "不能将自己绑定为客服")
+				return
+			}
+			updates["bind_id"] = *req.BindID
+		}
 	}
 	if len(updates) > 0 {
 		if err := h.db.Model(&user).Updates(updates).Error; err != nil {

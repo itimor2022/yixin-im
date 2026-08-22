@@ -496,6 +496,56 @@
           }
         },
         {
+          prop: 'inviteCode',
+          label: '邀请码',
+          width: 120,
+          align: 'center',
+          formatter: (row) => {
+            if (!row.inviteCode) {
+              return h('span', { class: 'text-g-300' }, '—')
+            }
+            return h(
+              'span',
+              { class: 'invite-code-text' },
+              row.inviteCode
+            )
+          }
+        },
+        {
+          prop: 'recommender',
+          label: '推荐人',
+          minWidth: 180,
+          formatter: (row) => {
+            if (!row.recommenderId) {
+              return h('span', { class: 'text-g-300' }, '—')
+            }
+            const name = row.recommenderNickname || row.recommenderUsername || `ID:${row.recommenderId}`
+            const code = row.recommenderInviteCode ? `邀请码：${row.recommenderInviteCode}` : ''
+            return h(
+              'div',
+              { class: 'recommender-cell' },
+              [
+                h('div', { class: 'recommender-name' }, `${name}`),
+                code ? h('div', { class: 'recommender-code text-g-500' }, code) : null
+              ]
+            )
+          }
+        },
+        {
+          prop: 'subordinatesCount',
+          label: '下级数量',
+          width: 90,
+          align: 'center',
+          formatter: (row) => {
+            const count = Number(row.subordinatesCount || 0)
+            return h(
+              'span',
+              { class: count > 0 ? 'sub-count active' : 'sub-count' },
+              String(count)
+            )
+          }
+        },
+        {
           prop: 'device',
           label: '设备 / IP',
           minWidth: 190,
@@ -595,6 +645,25 @@
               ])
             }
             return h('span', { class: 'text-g-400' }, formatTime(row.lastSeen))
+          }
+        },
+        {
+          prop: 'bindId',
+          label: '绑定客服ID',
+          width: 140,
+          align: 'center',
+          formatter: (row) => {
+            if (!row.bindId) {
+              return h('span', { class: 'text-g-300' }, '—')
+            }
+            const displayName = row.bindUsername || row.bindNickname
+            if (displayName) {
+              return h('div', { class: 'bind-id-cell' }, [
+                h('div', { class: 'text-sm text-g-700 font-medium' }, displayName),
+                h('div', { class: 'text-xs text-g-400 font-mono mt-1' }, `ID: ${row.bindId}`)
+              ])
+            }
+            return h('span', { class: 'font-mono text-g-700' }, `#${row.bindId}`)
           }
         },
         {
@@ -716,7 +785,11 @@
       gender: params.gender,
       registerSource: params.registerSource,
       credentialsStatus: params.credentialsStatus,
-      onlineOnly: params.onlineOnly
+      onlineOnly: params.onlineOnly,
+      inviteCode: params.inviteCode || '',
+      recommenderId: params.recommenderId !== undefined && params.recommenderId !== '' && params.recommenderId !== null
+        ? Number(params.recommenderId)
+        : undefined
     })
     getData()
     updateLastTime()

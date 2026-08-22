@@ -59,6 +59,15 @@ export interface UserListItem {
   service_username?: string | null
   service_nickname?: string | null
   service_invite_code?: string | null
+  invite_code?: string | null
+  bind_id?: number | null
+  bind_username?: string | null
+  bind_nickname?: string | null
+  recommender_id?: number | null
+  recommender_username?: string | null
+  recommender_nickname?: string | null
+  recommender_invite_code?: string | null
+  subordinates_count?: number
 }
 export interface UserListResponse {
   list: UserListItem[]
@@ -159,6 +168,8 @@ export interface UserSearchParams {
   register_source?: 'manual' | 'quick'
   credentials_status?: 'initialized' | 'pending'
   online_only?: boolean
+  invite_code?: string
+  recommender_id?: number
 }
 export interface ClientEndpointConfig {
   id: string

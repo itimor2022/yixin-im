@@ -455,3 +455,71 @@ func SendInviteWelcomeMessageByInfo(db *gorm.DB, msgService *services.MessageSer
 	}
 	sendInviteWelcomeMessage(db, msgService, &chat, &serviceUser, &newUser, info.Welcome)
 }
+
+// ensureDirectRecommenderAndBindAsContacts 把新人注册时的「直接邀请人」
+// （recommender）以及该邀请人的 bind_id 客服加为新人的好友。
+//
+// 关键规则：
+//   - 只加「直接上级」一层，不沿 recommender_id 链向上递归。
+//   - 不沿 bind_id 链向上递归。
+//   - 新用户自身、被软删除、被禁用的用户都不会被加为好友。
+//   - 在事务 tx 中调用，失败会返回 error 由调用方决定回滚。
+func ensureDirectRecommenderAndBindAsContacts(tx *gorm.DB, newUser *models.User, now time.Time) error {
+	if newUser == nil || newUser.RecommenderID == nil {
+		return nil
+	}
+	if *newUser.RecommenderID == 0 || *newUser.RecommenderID == newUser.ID {
+		return nil
+	}
+
+	var recommender models.User
+	if err := tx.Select("id, bind_id, status").
+		Where("id = ? AND deleted_at IS NULL", *newUser.RecommenderID).
+		First(&recommender).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return err
+	}
+	if recommender.Status != models.UserStatusNormal {
+		return nil
+	}
+
+	if err := linkPairAsContacts(tx, newUser.ID, recommender.ID, now); err != nil {
+		return err
+	}
+
+	if recommender.BindID != nil && *recommender.BindID > 0 && *recommender.BindID != newUser.ID {
+		var bindUser models.User
+		if err := tx.Select("id, status").
+			Where("id = ? AND deleted_at IS NULL", *recommender.BindID).
+			First(&bindUser).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		if bindUser.Status != models.UserStatusNormal {
+			return nil
+		}
+		if err := linkPairAsContacts(tx, newUser.ID, bindUser.ID, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkPairAsContacts 建立双向联系人关系（userID -> contactUserID 与反向）。
+// 失败时返回 error，由调用方决定是否回滚事务。
+func linkPairAsContacts(tx *gorm.DB, userID, contactUserID uint64, now time.Time) error {
+	if userID == 0 || contactUserID == 0 || userID == contactUserID {
+		return nil
+	}
+	if _, err := ensureContactRelation(tx, userID, contactUserID, now); err != nil {
+		return err
+	}
+	if _, err := ensureContactRelation(tx, contactUserID, userID, now); err != nil {
+		return err
+	}
+	return nil
+}

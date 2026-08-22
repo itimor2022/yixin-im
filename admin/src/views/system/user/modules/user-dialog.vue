@@ -27,6 +27,20 @@
           <ElOption label="待审核" :value="2" />
         </ElSelect>
       </ElFormItem>
+      <ElFormItem label="绑定客服" prop="bindId">
+        <div class="bind-id-wrapper">
+          <ElInput
+            v-model.number="formData.bindId"
+            type="number"
+            :min="0"
+            placeholder="请输入客服的用户ID，0或留空表示取消绑定"
+            clearable
+          />
+          <span v-if="formData.bindIdName" class="bind-id-tip">
+            当前绑定：{{ formData.bindIdName }}
+          </span>
+        </div>
+      </ElFormItem>
     </ElForm>
     <template #footer>
       <div class="dialog-footer">
@@ -52,6 +66,10 @@
     userPhone?: string
     status?: string
     uuid?: string
+    bindId?: number | null
+    bindIdName?: string
+    bindUsername?: string
+    bindNickname?: string
   }
 
   interface Props {
@@ -81,13 +99,24 @@
   const formRef = ref<FormInstance>()
 
   // 表单数据
-  const formData = reactive({
+  const formData = reactive<{
+    nickname: string
+    username: string
+    phone: string
+    gender: string
+    bio: string
+    status: number
+    bindId: number | null
+    bindIdName: string
+  }>({
     nickname: '',
     username: '',
     phone: '',
     gender: 'unknown',
     bio: '',
-    status: 1
+    status: 1,
+    bindId: null,
+    bindIdName: ''
   })
 
   // 表单验证规则
@@ -120,7 +149,12 @@
             ? row.userGender
             : 'unknown',
         bio: row.bio || '',
-        status: parseInt(row.status || '1')
+        status: parseInt(row.status || '1'),
+        bindId:
+          row.bindId !== undefined && row.bindId !== null && row.bindId !== 0
+            ? Number(row.bindId)
+            : null,
+        bindIdName: row.bindUsername || row.bindIdName || ''
       })
     }
   }
@@ -158,7 +192,8 @@
             phone: formData.phone || undefined,
             gender: formData.gender,
             bio: formData.bio || undefined,
-            status: formData.status
+            status: formData.status,
+            bind_id: formData.bindId && formData.bindId > 0 ? formData.bindId : 0
           } as any)
           ElMessage.success('更新成功')
           dialogVisible.value = false

@@ -36,6 +36,13 @@ type User struct {
 	Status                   int8           `gorm:"type:tinyint;default:1" json:"status"`
 	BanReason                string         `gorm:"type:varchar(500)" json:"ban_reason"`
 	BannedAt                 *time.Time     `gorm:"type:datetime" json:"banned_at"`
+	// InviteCode 用户个人邀请码：10 位数字，首位 1-9，其余 0-9，唯一索引。
+	// 注册成功后由系统自动生成，注册时填入此码的用户会成为该用户的「推荐人」。
+	InviteCode              string         `gorm:"type:char(10);uniqueIndex" json:"invite_code"`
+	// BindID 绑定的官方客服用户 ID，可空。运营可在后台手动调整。
+	BindID                   *uint64        `gorm:"index" json:"bind_id,omitempty"`
+	// RecommenderID 推荐人用户 ID（填写本人 InviteCode 完成注册的用户），可空。
+	RecommenderID            *uint64        `gorm:"index" json:"recommender_id,omitempty"`
 	LastSeen                 time.Time      `gorm:"type:datetime" json:"last_seen"`
 	CreatedAt                time.Time      `gorm:"type:datetime;not null" json:"created_at"`
 	UpdatedAt                time.Time      `gorm:"type:datetime;not null" json:"updated_at"`

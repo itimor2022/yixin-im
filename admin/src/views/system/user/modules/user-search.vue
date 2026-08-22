@@ -142,6 +142,26 @@
         options: credentialsStatusOptions,
         clearable: true
       }
+    },
+    {
+      label: '邀请码',
+      key: 'inviteCode',
+      type: 'input',
+      props: {
+        placeholder: '请输入用户邀请码',
+        clearable: true,
+        style: { width: '200px' }
+      }
+    },
+    {
+      label: '推荐人ID',
+      key: 'recommenderId',
+      type: 'input',
+      props: {
+        placeholder: '查询下级用户，输入推荐人用户ID',
+        clearable: true,
+        style: { width: '220px' }
+      }
     }
   ])
 
