@@ -114,17 +114,17 @@ export const messageCommunityRoutes: AppRouteRecord = {
         keepAlive: true
       }
     },
-    {
-      path: 'official-service',
-      alias: ['/official-service/index'],
-      name: 'OfficialService',
-      component: '/official-service',
-      meta: {
-        title: '官方客服',
-        icon: 'ri:customer-service-2-line',
-        keepAlive: true
-      }
-    }
+    // {
+    //   path: 'official-service',
+    //   alias: ['/official-service/index'],
+    //   name: 'OfficialService',
+    //   component: '/official-service',
+    //   meta: {
+    //     title: '官方客服',
+    //     icon: 'ri:customer-service-2-line',
+    //     keepAlive: true
+    //   }
+    // }
   ]
 }
 

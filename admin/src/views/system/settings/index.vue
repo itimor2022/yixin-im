@@ -553,7 +553,7 @@
                   v-model="featureForm.quick_register_device_limit"
                   :min="1"
                   :max="20"
-                  :disabled="!featureForm.allow_quick_register || isDemoAdmin"
+                  :disabled="!featureForm.allow_register || isDemoAdmin"
                 />
                 <span class="feature-setting-help">限制同一设备每天快捷注册次数</span>
               </ElFormItem>
@@ -562,7 +562,7 @@
                   v-model="featureForm.quick_register_ip_limit"
                   :min="1"
                   :max="1000"
-                  :disabled="!featureForm.allow_quick_register || isDemoAdmin"
+                  :disabled="!featureForm.allow_register || isDemoAdmin"
                 />
                 <span class="feature-setting-help">限制同一网络出口每天快捷注册次数</span>
               </ElFormItem>
@@ -577,10 +577,23 @@
                 />
                 <span class="feature-setting-help">关闭后可稍后在个人资料中补充</span>
               </ElFormItem>
-              <ElFormItem label="强制绑定手机号" class="feature-setting-grid__wide">
+              <ElFormItem label="强制绑定手机号">
                 <ElSwitch v-model="featureForm.require_phone_bind" :disabled="isDemoAdmin" />
                 <span class="feature-setting-help">
                   未绑定手机号前不可使用消息、通讯录和钱包等核心功能
+                </span>
+              </ElFormItem>
+              <ElFormItem label="邀请码位数">
+                <ElInputNumber
+                  v-model="featureForm.user_invite_code_length"
+                  :min="6"
+                  :max="10"
+                  :step="1"
+                  controls-position="right"
+                  :disabled="isDemoAdmin"
+                />
+                <span class="feature-setting-help">
+                  新生成的个人邀请码位数（6-10）。历史 10 位邀请码始终兼容可继续使用
                 </span>
               </ElFormItem>
               <ElFormItem label="加好友方式" class="feature-setting-grid__wide">
@@ -646,7 +659,7 @@
                   :disabled="!featureForm.ios_compliance.enabled || isDemoAdmin"
                 />
               </ElFormItem>
-              <ElFormItem label="开启签到功能">
+              <ElFormItem label="保留签到入口">
                 <ElSwitch
                   v-model="featureForm.ios_compliance.checkin_enabled"
                   :disabled="!featureForm.ios_compliance.enabled || isDemoAdmin"
@@ -757,10 +770,10 @@
                 <ElSwitch v-model="featureForm.new_user_follow_official" :disabled="isDemoAdmin" />
                 <span class="feature-setting-help">注册后自动关注后台配置的官方用户</span>
               </ElFormItem>
-              <ElFormItem label="邀请码只加绑定客服">
+              <!-- <ElFormItem label="邀请码只加绑定客服">
                 <ElSwitch v-model="featureForm.invite_register_bind_only" :disabled="isDemoAdmin" />
                 <span class="feature-setting-help">邀请码用户仅自动添加其绑定客服</span>
-              </ElFormItem>
+              </ElFormItem> -->
               <ElFormItem label="加入官方群组">
                 <ElSwitch v-model="featureForm.new_user_join_group" :disabled="isDemoAdmin" />
                 <span class="feature-setting-help">注册后自动加入指定官方群组</span>
@@ -2449,13 +2462,14 @@
   // 功能设置
   const featureForm = reactive({
     allow_register: true,
-    allow_quick_register: false,
+    allow_quick_register: true,
     quick_register_device_limit: 1,
     quick_register_ip_limit: 5,
     force_keep_alive_enabled: false,
     require_invite_code: false,
     require_gender_on_register: true,
     require_phone_bind: false,
+    user_invite_code_length: 6,
     enable_moment_post: true,
     moment_post_review_enabled: false,
     new_user_follow_official: false,
@@ -3286,6 +3300,10 @@
       featureForm.require_invite_code = settings.require_invite_code || false
       featureForm.require_gender_on_register = settings.require_gender_on_register !== false
       featureForm.require_phone_bind = settings.require_phone_bind || false
+      const rawInviteLength =
+        typeof settings.user_invite_code_length === 'number' ? settings.user_invite_code_length : 6
+      const clampedInviteLength = Math.min(10, Math.max(6, Math.round(rawInviteLength)))
+      featureForm.user_invite_code_length = clampedInviteLength
       featureForm.enable_moment_post = settings.enable_moment_post !== false
       featureForm.moment_post_review_enabled = settings.moment_post_review_enabled || false
       featureForm.new_user_follow_official = settings.new_user_follow_official || false
@@ -3505,7 +3523,12 @@
           featureForm.ios_compliance.wallet_enabled &&
           featureForm.ios_compliance.wallet_recharge_enabled
       },
-      message_crypto_mode: featureForm.message_crypto_mode
+      message_crypto_mode: featureForm.message_crypto_mode,
+      // 始终序列化为整数，避免空值/字符串造成后端解析失败
+      user_invite_code_length: Math.min(
+        10,
+        Math.max(6, Math.round(Number(featureForm.user_invite_code_length) || 6))
+      )
     }
   }
 
@@ -3601,6 +3624,10 @@
       } catch {
         return '请输入有效的自定义栏目网址'
       }
+    }
+    const inviteLength = Number(payload.user_invite_code_length)
+    if (!Number.isInteger(inviteLength) || inviteLength < 6 || inviteLength > 10) {
+      return '邀请码位数需为 6-10 之间的整数'
     }
     return null
   }

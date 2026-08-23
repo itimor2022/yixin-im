@@ -310,6 +310,9 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	if err := ensureUserEmojiAvatarColumnLength(db); err != nil {
 		log.Printf("[DB] ensure users.emoji_avatar length failed: %v", err)
 	}
+	if err := ensureUserInviteCodeColumnLength(db); err != nil {
+		log.Printf("[DB] ensure users.invite_code length failed: %v", err)
+	}
 	if err := backfillHotUpdateDeliveryModes(db); err != nil {
 		log.Printf("[HotUpdate] normalize delivery_mode failed: %v", err)
 	}
@@ -452,6 +455,44 @@ func ensureUserEmojiAvatarColumnLength(db *gorm.DB) error {
 		return fmt.Errorf("alter users.emoji_avatar: %w", err)
 	}
 	log.Printf("[DB] widened users.emoji_avatar column")
+	return nil
+}
+
+// ensureUserInviteCodeColumnLength 兼容旧版固定 10 位邀请码，并允许扩展为 12 位以支持后台「邀请码位数」配置。
+// 旧字段类型为 char(10)，无法存储更长字符串；这里检测列类型，若仍是定长 char(N) 则改为 varchar(12)。
+// 历史已有的 10 位数字邀请码无需迁移，可继续被 IsValidUserInviteCode 通过「旧版固定长度」分支识别。
+func ensureUserInviteCodeColumnLength(db *gorm.DB) error {
+	migrator := db.Migrator()
+	model := &models.User{}
+	if !migrator.HasColumn(model, "InviteCode") {
+		return nil
+	}
+	needsAlter := false
+	if columns, err := migrator.ColumnTypes(model); err == nil {
+		for _, column := range columns {
+			if !strings.EqualFold(column.Name(), "invite_code") {
+				continue
+			}
+			// varchar(>=12) 已满足；若仍是定长 char 或长度不足，则需要扩展。
+			if column.DatabaseTypeName() != "char" {
+				if length, ok := column.Length(); ok && length >= models.UserInviteCodeMaxLength {
+					return nil
+				}
+			}
+			needsAlter = true
+			break
+		}
+	} else {
+		// 拿不到列详情时保守地尝试一次 AlterColumn，让 GORM 按最新 struct tag 调整。
+		needsAlter = true
+	}
+	if !needsAlter {
+		return nil
+	}
+	if err := migrator.AlterColumn(model, "InviteCode"); err != nil {
+		return fmt.Errorf("alter users.invite_code: %w", err)
+	}
+	log.Printf("[DB] widened users.invite_code column")
 	return nil
 }
 

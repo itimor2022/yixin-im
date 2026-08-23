@@ -55,6 +55,7 @@ const (
 	SettingRequireInviteCode        = "require_invite_code"         // 注册是否必须填写邀请码
 	SettingRequireGenderOnRegister  = "require_gender_on_register"  // 注册是否必须选择性别
 	SettingRequirePhoneBind         = "require_phone_bind"          // 是否强制绑定手机号
+	SettingUserInviteCodeLength    = "user_invite_code_length"     // 新用户个人邀请码位数（4-12，默认 6）
 	SettingEnableMomentPost         = "enable_moment_post"          // 是否允许发布动态（关闭后用户只能浏览）
 	SettingMomentPostReviewEnabled  = "moment_post_review_enabled"  // 动态发布是否启用审核
 	SettingCheckinEnabled           = "checkin_enabled"            // 签到功能开关
@@ -170,6 +171,16 @@ const (
 	FriendAddModeDirect   = "direct"
 	FriendAddModeApproval = "approval"
 	FriendAddModeDisabled = "disabled"
+)
+const (
+	// UserInviteCodeMinLength 用户邀请码最小位数
+	UserInviteCodeMinLength = 6
+	// UserInviteCodeMaxLength 用户邀请码最大位数
+	UserInviteCodeMaxLength = 10
+	// UserInviteCodeDefaultLength 用户邀请码默认位数（与未配置时一致）
+	UserInviteCodeDefaultLength = 6
+	// UserInviteCodeLegacyLength 旧版固定邀请码长度，用于兼容已有用户
+	UserInviteCodeLegacyLength = 10
 )
 const (
 	SettingRTCProvider        = "rtc_provider"

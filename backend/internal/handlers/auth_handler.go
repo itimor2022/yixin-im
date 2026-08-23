@@ -677,14 +677,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// 读取后台「邀请码位数」配置（未配置/异常时回退到默认 6）。
+	inviteCodeLength := loadUserInviteCodeLength(h.db)
+
 	// 先预校验邀请码，避免先建号再失败导致用户名被占用。
-	// 优先按「用户个人邀请码（10 位数字）」匹配；命中即视为合法，后置事务
+	// 优先按「用户个人邀请码」匹配；命中即视为合法，后置事务
 	// 里会把它解析为 recommender_id。若不匹配再走「客服邀请码（hex）」校验，
 	// 这样既兼容 require_invite_code 强制场景下用户填的是他人个人码的情况，
 	// 也保留对原有客服邀请码链路的支持。
 	if req.InviteCode != "" {
-		if models.IsValidUserInviteCode(req.InviteCode) {
-			if models.FindUserIDByInviteCode(h.db, req.InviteCode) == 0 {
+		if models.IsValidUserInviteCode(req.InviteCode, inviteCodeLength) {
+			if models.FindUserIDByInviteCode(h.db, req.InviteCode, inviteCodeLength) == 0 {
 				response.Error(c, 400, "邀请码无效")
 				return
 			}
@@ -733,7 +736,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var pendingRecommenderID uint64
 	pendingInviteValid := false
 	if req.InviteCode != "" {
-		if recommenderID := models.FindUserIDByInviteCode(h.db, req.InviteCode); recommenderID > 0 {
+		if recommenderID := models.FindUserIDByInviteCode(h.db, req.InviteCode, inviteCodeLength); recommenderID > 0 {
 			pendingRecommenderID = recommenderID
 			user.RecommenderID = &pendingRecommenderID
 			pendingInviteValid = true
@@ -775,10 +778,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			return
 		}
 	}
-	// 为新用户生成唯一个人邀请码（10 位数字，首位 1-9）。
+	// 为新用户生成唯一个人邀请码（按后台「邀请码位数」配置生成数字码，首位 1-9）。
 	// 最多重试 5 次以应对极端冲突，仍失败则降级留空。
 	for retry := 0; retry < 5; retry++ {
-		generated, genErr := models.GenerateUserInviteCode()
+		generated, genErr := models.GenerateUserInviteCode(inviteCodeLength)
 		if genErr != nil {
 			break
 		}

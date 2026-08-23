@@ -36,9 +36,9 @@ type User struct {
 	Status                   int8           `gorm:"type:tinyint;default:1" json:"status"`
 	BanReason                string         `gorm:"type:varchar(500)" json:"ban_reason"`
 	BannedAt                 *time.Time     `gorm:"type:datetime" json:"banned_at"`
-	// InviteCode 用户个人邀请码：10 位数字，首位 1-9，其余 0-9，唯一索引。
-	// 注册成功后由系统自动生成，注册时填入此码的用户会成为该用户的「推荐人」。
-	InviteCode              string         `gorm:"type:char(10);uniqueIndex" json:"invite_code"`
+	// InviteCode 用户个人邀请码：默认 6 位数字（首位 1-9，其余 0-9），长度由后台「邀请码位数」配置决定（4-12），
+	// 历史固定 10 位邀请码仍可被识别与登录。注册成功后由系统自动生成，注册时填入此码的用户会成为该用户的「推荐人」。
+	InviteCode              string         `gorm:"type:varchar(12);uniqueIndex" json:"invite_code"`
 	// BindID 绑定的官方客服用户 ID，可空。运营可在后台手动调整。
 	BindID                   *uint64        `gorm:"index" json:"bind_id,omitempty"`
 	// RecommenderID 推荐人用户 ID（填写本人 InviteCode 完成注册的用户），可空。

@@ -1050,6 +1050,10 @@ func (h *SettingHandler) GetAllSettings(c *gin.Context) {
 
 		result[models.SettingQuickRegisterDeviceLimit] = 1
 	}
+	if _, exists := result[models.SettingUserInviteCodeLength]; !exists {
+
+		result[models.SettingUserInviteCodeLength] = models.UserInviteCodeDefaultLength
+	}
 	if _, exists := result[models.SettingQuickRegisterIPLimit]; !exists {
 
 		result[models.SettingQuickRegisterIPLimit] = 5
@@ -1595,6 +1599,16 @@ func (h *SettingHandler) validateSystemSettingsForUpdate(req map[string]interfac
 		if enabled && (h.smsSvc == nil || !h.smsSvc.CanSend()) {
 
 			return fmt.Errorf("开启强制绑定手机号前，请先配置并启用短信服务")
+
+		}
+	}
+	if raw, exists := req[models.SettingUserInviteCodeLength]; exists {
+
+		value, err := strconv.Atoi(normalizeSettingInputValue(raw))
+
+		if err != nil || value < models.UserInviteCodeMinLength || value > models.UserInviteCodeMaxLength {
+
+			return fmt.Errorf("邀请码位数需为 %d-%d 的整数", models.UserInviteCodeMinLength, models.UserInviteCodeMaxLength)
 
 		}
 	}
@@ -2670,6 +2684,8 @@ func isAllowedSystemSettingKey(key string) bool {
 		models.SettingRequireGenderOnRegister,
 
 		models.SettingRequirePhoneBind,
+
+		models.SettingUserInviteCodeLength,
 
 		models.SettingBurnAfterReadEnabled,
 
@@ -4366,4 +4382,19 @@ func getDefaultUserAgreement() string {
 } // 默认隐私政策
 func getDefaultPrivacyPolicy() string {
 	return `# 隐私政策  本隐私政策说明我们如何收集、使用和保护您的个人信息。  ## 一、信息收集  我们可能收集以下类型的信息：  ### 1. 账号信息 - 用户名、昵称 - 头像 - 个人简介  ### 2. 设备信息 - 设备型号 - 操作系统版本 - 设备标识符  ### 3. 使用信息 - 登录时间 - 功能使用情况  ### 4. 通讯内容 - 您发送的消息（端对端加密传输） - 分享的媒体文件  ## 二、信息使用  我们使用收集的信息用于： 1. 提供、维护和改进服务 2. 发送通知和更新 3. 保障账号安全 4. 遵守法律法规要求  ## 三、信息保护  我们采取以下措施保护您的信息： 1. 使用加密技术保护数据传输 2. 限制员工访问用户数据的权限 3. 定期审查安全措施  ## 四、信息共享  除以下情况外，我们不会与第三方共享您的个人信息： 1. 经您明确同意 2. 法律法规要求 3. 保护我们或他人的权益  ## 五、您的权利  您有权： 1. 访问您的个人信息 2. 更正不准确的信息 3. 删除您的账号和数据 4. 撤回同意  ## 六、Cookie 和类似技术  我们可能使用 Cookie 来改善用户体验和分析使用情况。  ## 七、未成年人保护  本应用不面向未满 14 周岁的儿童。如果您是未成年人，请在监护人指导下使用本应用。  ## 八、隐私政策更新  我们可能不时更新本隐私政策。重大变更时，我们会通过应用内通知您。  ## 九、联系我们  如对本隐私政策有任何疑问，请通过应用内的反馈功能联系我们。  --- 最后更新日期：2024年1月`
+}
+
+// loadUserInviteCodeLength 读取后台「邀请码位数」配置，自动夹紧到合法区间。
+// 缺省/异常时返回默认位数，避免邀请码生成或校验在配置缺失时崩溃。
+// 该 helper 与配置白名单/校验规则保持单一来源（统一引用 models 常量）。
+func loadUserInviteCodeLength(db *gorm.DB) int {
+	var setting models.SystemSetting
+	if err := db.Where("`key` = ?", models.SettingUserInviteCodeLength).First(&setting).Error; err != nil {
+		return models.ClampUserInviteCodeLength(0)
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(setting.Value))
+	if err != nil {
+		return models.ClampUserInviteCodeLength(0)
+	}
+	return models.ClampUserInviteCodeLength(value)
 }
