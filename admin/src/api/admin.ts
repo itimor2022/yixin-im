@@ -1094,6 +1094,7 @@ export interface SystemSettings {
   require_invite_code: boolean
   require_gender_on_register: boolean
   require_phone_bind: boolean
+  username_type?: 'phone' | 'alphanumeric'
   user_invite_code_length: number
   enable_moment_post: boolean
   moment_post_review_enabled?: boolean

@@ -102,6 +102,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   bool? _isUsernameAvailable;
   String? _usernameMessage;
   Timer? _usernameCheckTimer;
+  // 注册用户名类型：phone=仅中国手机号 / alphanumeric=英文和数字。
+  // 默认 phone 与后端未配置时的回退值一致。
+  String _usernameType = 'phone';
   bool _requireInviteCode = false;
   bool _smsRegistrationReady = false;
   bool _emailRegistrationReady = false;
@@ -131,6 +134,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         _requireInviteCode = settings.requireInviteCode;
         _smsRegistrationReady = settings.smsBindReady;
         _emailRegistrationReady = settings.emailRegistrationReady;
+        _usernameType = settings.usernameType;
         if (!settings.smsBindReady && settings.emailRegistrationReady) {
           _registrationChannel = 'email';
         }
@@ -170,6 +174,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       fallbackZhTW: zhTW,
       fallbackEn: en,
     );
+  }
+
+  /// 与后端 `services.NormalizeCNMobile` 规则一致的本地粗校验：
+  /// 11 位、以 1 开头、第二位 3-9。仅作为前端快速失败，最终以服务端为准。
+  bool _isLikelyValidCNMobile(String s) {
+    if (s.length != 11) return false;
+    if (s[0] != '1') return false;
+    final second = s.codeUnitAt(1);
+    if (second < '3'.codeUnitAt(0) || second > '9'.codeUnitAt(0)) return false;
+    for (var i = 0; i < s.length; i++) {
+      final c = s.codeUnitAt(i);
+      if (c < '0'.codeUnitAt(0) || c > '9'.codeUnitAt(0)) return false;
+    }
+    return true;
   }
 
   String _loginLocation() {
@@ -758,8 +776,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     );
   }
 
-  /// 用户名输入框 - 完全禁用中文输入
+  /// 用户名输入框 - 根据后台设置决定输入限制
   Widget _buildUsernameField(bool isDark) {
+    final isPhone = _usernameType == 'phone';
     return Container(
       decoration: BoxDecoration(
         color: AppColors.inputBackgroundFor(context),
@@ -767,8 +786,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       ),
       child: TextField(
         controller: _usernameController,
-        // 使用 ASCII 类型完全禁用中文输入法
-        keyboardType: TextInputType.visiblePassword,
+        // 仅数字（手机号）与 ASCII 字母数字都建议走非 IME，避免中文/表情干扰
+        keyboardType: isPhone ? TextInputType.phone : TextInputType.visiblePassword,
         autocorrect: false,
         enableSuggestions: false,
         enableIMEPersonalizedLearning: false,
@@ -778,18 +797,25 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           color: AppColors.textPrimaryFor(context),
         ),
         decoration: InputDecoration(
-          hintText: _registerText(
-            context,
-            zhCN: '用户名（3-20位，仅限英文、数字、下划线）',
-            zhTW: '用戶名（3-20位，僅限英文、數字、下劃線）',
-            en: 'Username (3-20 chars, letters/numbers/underscores only)',
-          ),
+          hintText: isPhone
+              ? _registerText(
+                  context,
+                  zhCN: '请输入中国大陆手机号作为用户名',
+                  zhTW: '請輸入手機號作為用戶名',
+                  en: 'Enter your mainland China phone number',
+                )
+              : _registerText(
+                  context,
+                  zhCN: '用户名（3-20位，仅限英文和数字）',
+                  zhTW: '用戶名（3-20位，僅限英文和數字）',
+                  en: 'Username (3-20 chars, letters and numbers only)',
+                ),
           hintStyle: TextStyle(
             color: AppColors.inputHintFor(context),
             fontSize: 15,
           ),
           prefixIcon: Icon(
-            Icons.alternate_email_rounded,
+            isPhone ? Icons.phone_iphone_rounded : Icons.alternate_email_rounded,
             color: AppColors.inputIconFor(context),
             size: 22,
           ),
@@ -799,7 +825,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_]')),
+          FilteringTextInputFormatter.allow(
+            isPhone ? RegExp(r'[0-9]') : RegExp(r'[a-zA-Z0-9]'),
+          ),
           LengthLimitingTextInputFormatter(20),
         ],
       ),
@@ -1339,6 +1367,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           zhCN: '用户名至少 3 位',
           zhTW: '用戶名至少 3 位',
           en: 'Username must be at least 3 characters',
+        ),
+      );
+      return;
+    }
+
+    // 用户名类型为「仅中国手机号」时，先在本地做一次粗校验，
+    // 避免无意义请求往返，最终以服务端 CheckUsername 为准。
+    if (_usernameType == 'phone' && !_isLikelyValidCNMobile(username)) {
+      _showError(
+        _registerText(
+          context,
+          zhCN: '请输入有效的中国大陆手机号',
+          zhTW: '請輸入有效的中國大陸手機號',
+          en: 'Please enter a valid mainland China phone number',
         ),
       );
       return;

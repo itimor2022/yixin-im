@@ -596,6 +596,16 @@
                   新生成的个人邀请码位数（6-10）。历史 10 位邀请码始终兼容可继续使用
                 </span>
               </ElFormItem>
+              <ElFormItem label="注册用户名类型" class="feature-setting-grid__wide">
+                <ElRadioGroup v-model="featureForm.username_type" :disabled="isDemoAdmin">
+                  <ElRadioButton value="phone">仅中国手机号</ElRadioButton>
+                  <ElRadioButton value="alphanumeric">英文和数字</ElRadioButton>
+                </ElRadioGroup>
+                <span class="feature-setting-help">
+                  选择「仅中国手机号」时，注册用户名必须是有效中国大陆手机号；
+                  选择「英文和数字」时，用户名只允许英文字母与数字，长度 3-20 位
+                </span>
+              </ElFormItem>
               <ElFormItem label="加好友方式" class="feature-setting-grid__wide">
                 <ElRadioGroup v-model="featureForm.friend_add_mode" :disabled="isDemoAdmin">
                   <ElRadioButton value="direct">无需验证</ElRadioButton>
@@ -2469,6 +2479,7 @@
     require_invite_code: false,
     require_gender_on_register: true,
     require_phone_bind: false,
+    username_type: 'phone' as NonNullable<SystemSettings['username_type']>,
     user_invite_code_length: 6,
     enable_moment_post: true,
     moment_post_review_enabled: false,
@@ -3300,6 +3311,12 @@
       featureForm.require_invite_code = settings.require_invite_code || false
       featureForm.require_gender_on_register = settings.require_gender_on_register !== false
       featureForm.require_phone_bind = settings.require_phone_bind || false
+      // 新字段缺失或值异常时采用「phone」，兼顾旧配置兼容和默认安全边界。
+      featureForm.username_type = ['phone', 'alphanumeric'].includes(
+        settings.username_type || ''
+      )
+        ? settings.username_type!
+        : 'phone'
       const rawInviteLength =
         typeof settings.user_invite_code_length === 'number' ? settings.user_invite_code_length : 6
       const clampedInviteLength = Math.min(10, Math.max(6, Math.round(rawInviteLength)))
@@ -3628,6 +3645,9 @@
     const inviteLength = Number(payload.user_invite_code_length)
     if (!Number.isInteger(inviteLength) || inviteLength < 6 || inviteLength > 10) {
       return '邀请码位数需为 6-10 之间的整数'
+    }
+    if (payload.username_type && !['phone', 'alphanumeric'].includes(payload.username_type)) {
+      return '注册用户名类型必须为「仅中国手机号」或「英文和数字」'
     }
     return null
   }

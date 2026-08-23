@@ -93,6 +93,17 @@ func normalizeMessageCryptoMode(v string) string {
 		return models.MessageCryptoModePlain
 	}
 }
+
+// normalizeUsernameType 归一化注册用户名类型设置值。
+// 兼容旧值或异常输入：未配置或非白名单值统一回退为「phone」。
+func normalizeUsernameType(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "alphanumeric":
+		return "alphanumeric"
+	default:
+		return "phone"
+	}
+}
 func voiceTranscriptionConfigured(settingMap map[string]string) bool {
 	provider := strings.ToLower(strings.TrimSpace(settingMap[models.SettingVoiceTranscribeProvider]))
 	if provider == "openai" {
@@ -4006,6 +4017,8 @@ func (h *SettingHandler) GetAppSettings(c *gin.Context) {
 		"require_gender_on_register": !isSystemSettingFalse(settingMap[models.SettingRequireGenderOnRegister]), // 默认必选
 
 		"require_phone_bind": isSystemSettingTrue(settingMap[models.SettingRequirePhoneBind]),
+
+		"username_type": normalizeUsernameType(settingMap[models.SettingUsernameType]),
 
 		"enable_moment_post": !isSystemSettingFalse(settingMap[models.SettingEnableMomentPost]), // 默认允许发布
 

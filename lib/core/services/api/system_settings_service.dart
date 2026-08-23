@@ -313,6 +313,7 @@ class SystemSettings {
   final bool requireInviteCode;
   final bool requireGenderOnRegister;
   final bool requirePhoneBind;
+  final String usernameType;
   final bool smsBindReady;
   final bool emailRegistrationReady;
   final bool enableMomentPost;
@@ -367,6 +368,7 @@ class SystemSettings {
     this.requireInviteCode = false,
     this.requireGenderOnRegister = true,
     this.requirePhoneBind = false,
+    this.usernameType = 'phone',
     this.smsBindReady = false,
     this.emailRegistrationReady = false,
     this.enableMomentPost = true,
@@ -438,6 +440,12 @@ class SystemSettings {
       requireInviteCode: json['require_invite_code'] == true,
       requireGenderOnRegister: json['require_gender_on_register'] != false,
       requirePhoneBind: json['require_phone_bind'] == true,
+      // 注册用户名类型：phone=仅中国手机号 / alphanumeric=英文和数字。
+      // 默认回退为 phone，兼容未配置或异常值。
+      usernameType:
+          json['username_type']?.toString().toLowerCase() == 'alphanumeric'
+              ? 'alphanumeric'
+              : 'phone',
       smsBindReady: json['sms_bind_ready'] == true,
       emailRegistrationReady: json['email_registration_ready'] == true,
       enableMomentPost: json['enable_moment_post'] != false,
@@ -504,6 +512,7 @@ class SystemSettings {
         'require_invite_code': requireInviteCode,
         'require_gender_on_register': requireGenderOnRegister,
         'require_phone_bind': requirePhoneBind,
+        'username_type': usernameType,
         'sms_bind_ready': smsBindReady,
         'email_registration_ready': emailRegistrationReady,
         'enable_moment_post': enableMomentPost,

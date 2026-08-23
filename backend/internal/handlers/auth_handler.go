@@ -83,7 +83,17 @@ func (h *AuthHandler) CheckUsername(c *gin.Context) {
 	}
 	username := strings.TrimSpace(req.Username)
 
-	// 验证长度
+	// 读取注册用户名类型设置（phone=中国手机号 / alphanumeric=英文和数字）
+	usernameType := "phone"
+	var usernameTypeSetting models.SystemSetting
+	if err := h.db.Where("`key` = ?", models.SettingUsernameType).First(&usernameTypeSetting).Error; err == nil {
+		s := strings.ToLower(strings.TrimSpace(usernameTypeSetting.Value))
+		if s == "alphanumeric" {
+			usernameType = "alphanumeric"
+		}
+	}
+
+	// 长度校验（手机号 11 位、英文数字用户名 3-20 位，两种类型共用同一阈值区间）
 	if len(username) < 3 {
 		response.Success(c, gin.H{"available": false, "message": "用户名至少3位"})
 		return
@@ -93,11 +103,19 @@ func (h *AuthHandler) CheckUsername(c *gin.Context) {
 		return
 	}
 
-	// 验证格式（只允许 a-z, 0-9, _）
-	for _, char := range username {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_') {
-			response.Success(c, gin.H{"available": false, "message": "只能包含字母、数字和下划线"})
+	// 根据系统设置决定格式校验规则
+	if usernameType == "phone" {
+		if services.NormalizeCNMobile(username) == "" {
+			response.Success(c, gin.H{"available": false, "message": "请输入有效的中国大陆手机号"})
 			return
+		}
+	} else {
+		// alphanumeric：只允许 a-z, 0-9
+		for _, char := range username {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+				response.Success(c, gin.H{"available": false, "message": "只能包含英文字母和数字"})
+				return
+			}
 		}
 	}
 
@@ -562,10 +580,26 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.Error(c, 400, "用户名长度需为3-20位")
 		return
 	}
-	for _, char := range req.Username {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_') {
-			response.Error(c, 400, "用户名只能包含字母、数字和下划线")
+	// 读取注册用户名类型设置：phone=仅中国手机号 / alphanumeric=英文和数字
+	usernameType := "phone"
+	var usernameTypeSetting models.SystemSetting
+	if err := h.db.Where("`key` = ?", models.SettingUsernameType).First(&usernameTypeSetting).Error; err == nil {
+		s := strings.ToLower(strings.TrimSpace(usernameTypeSetting.Value))
+		if s == "alphanumeric" {
+			usernameType = "alphanumeric"
+		}
+	}
+	if usernameType == "phone" {
+		if services.NormalizeCNMobile(req.Username) == "" {
+			response.Error(c, 400, "用户名必须是有效的中国大陆手机号")
 			return
+		}
+	} else {
+		for _, char := range req.Username {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+				response.Error(c, 400, "用户名只能包含英文字母和数字")
+				return
+			}
 		}
 	}
 	if req.Nickname == "" {

@@ -55,6 +55,7 @@ const (
 	SettingRequireInviteCode        = "require_invite_code"         // 注册是否必须填写邀请码
 	SettingRequireGenderOnRegister  = "require_gender_on_register"  // 注册是否必须选择性别
 	SettingRequirePhoneBind         = "require_phone_bind"          // 是否强制绑定手机号
+	SettingUsernameType            = "username_type"               // 注册用户名类型：phone=中国手机号 / alphanumeric=英文和数字
 	SettingUserInviteCodeLength    = "user_invite_code_length"     // 新用户个人邀请码位数（4-12，默认 6）
 	SettingEnableMomentPost         = "enable_moment_post"          // 是否允许发布动态（关闭后用户只能浏览）
 	SettingMomentPostReviewEnabled  = "moment_post_review_enabled"  // 动态发布是否启用审核
