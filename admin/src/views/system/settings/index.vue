@@ -537,7 +537,7 @@
                 <ElSwitch v-model="featureForm.allow_register" :disabled="isDemoAdmin" />
                 <span class="feature-setting-help">关闭后新用户无法创建账号</span>
               </ElFormItem>
-              <ElFormItem label="一键注册并登录">
+              <!-- <ElFormItem label="一键注册并登录">
                 <ElSwitch
                   v-model="featureForm.allow_quick_register"
                   :disabled="
@@ -547,7 +547,7 @@
                 <span class="feature-setting-help"
                   >创建正式账号并直接登录，邀请码必填时自动停用</span
                 >
-              </ElFormItem>
+              </ElFormItem> -->
               <ElFormItem label="单设备每日上限">
                 <ElInputNumber
                   v-model="featureForm.quick_register_device_limit"

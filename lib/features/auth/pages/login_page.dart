@@ -448,72 +448,73 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           text: l10n.login,
         ),
 
-        if (allowQuickRegister) ...[
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: Divider(color: AppColors.dividerFor(context))),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  _loginText(
-                    context,
-                    zhCN: '或者',
-                    zhTW: '或者',
-                    en: 'OR',
-                  ),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textTertiaryFor(context),
-                  ),
-                ),
-              ),
-              Expanded(child: Divider(color: AppColors.dividerFor(context))),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: OutlinedButton.icon(
-              key: const Key('quick_register_button'),
-              onPressed: _isLoading ? null : _quickRegister,
-              icon: const Icon(Icons.flash_on_rounded, size: 20),
-              label: Text(
-                _loginText(
-                  context,
-                  zhCN: '一键注册登录',
-                  zhTW: '一鍵註冊登入',
-                  en: 'One-Tap Registration',
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primaryFor(context),
-                side: BorderSide(color: AppColors.primaryFor(context)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _loginText(
-              context,
-              zhCN: '无需填写资料，直接创建正式账号',
-              zhTW: '無需填寫資料，直接建立正式帳號',
-              en: 'Create a full account without filling out a form',
-            ),
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textTertiaryFor(context),
-            ),
-          ),
-        ],
+        // if (allowQuickRegister) ...[
+        //   const SizedBox(height: 16),
+        //   Row(
+        //     children: [
+        //       Expanded(child: Divider(color: AppColors.dividerFor(context))),
+        //       Padding(
+        //         padding: const EdgeInsets.symmetric(horizontal: 12),
+        //         child: Text(
+        //           _loginText(
+        //             context,
+        //             zhCN: '或者',
+        //             zhTW: '或者',
+        //             en: 'OR',
+        //           ),
+        //           style: TextStyle(
+        //             fontSize: 12,
+        //             color: AppColors.textTertiaryFor(context),
+        //           ),
+        //         ),
+        //       ),
+        //       Expanded(child: Divider(color: AppColors.dividerFor(context))),
+        //     ],
+        //   ),
+        //   const SizedBox(height: 16),
+        //   SizedBox(
+        //     width: double.infinity,
+        //     height: 50,
+        //     child: OutlinedButton.icon(
+        //       key: const Key('quick_register_button'),
+        //       onPressed: _isLoading ? null : _quickRegister,
+        //       icon: const Icon(Icons.flash_on_rounded, size: 20),
+        //       label: Text(
+        //         _loginText(
+        //           context,
+        //           zhCN: '一键注册登录',
+        //           zhTW: '一鍵註冊登入',
+        //           en: 'One-Tap Registration',
+        //         ),
+        //       ),
+        //       style: OutlinedButton.styleFrom(
+        //         foregroundColor: AppColors.primaryFor(context),
+        //         side: BorderSide(color: AppColors.primaryFor(context)),
+        //         shape: RoundedRectangleBorder(
+        //           borderRadius: BorderRadius.circular(12),
+        //         ),
+        //         textStyle: const TextStyle(
+        //           fontSize: 16,
+        //           fontWeight: FontWeight.w600,
+        //         ),
+        //       ),
+        //     ),
+        //   ),
+        //   const SizedBox(height: 6),
+        //   Text(
+        //     _loginText(
+        //       context,
+        //       zhCN: '无需填写资料，直接创建正式账号',
+        //       zhTW: '無需填寫資料，直接建立正式帳號',
+        //       en: 'Create a full account without filling out a form',
+        //     ),
+        //     style: TextStyle(
+        //       fontSize: 12,
+        //       color: AppColors.textTertiaryFor(context),
+        //     ),
+        //   ),
+        // ],
+        
       ],
     );
   }
