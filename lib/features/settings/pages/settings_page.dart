@@ -45,6 +45,7 @@ import '../../vip/providers/vip_provider.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_badge.dart';
 import '../../../shared/widgets/themed_app_bar.dart';
+import 'network_settings_page.dart';
 
 /// 设备数量 Provider
 final deviceCountProvider = FutureProvider<int>((ref) async {
@@ -510,6 +511,24 @@ class SettingsPage extends ConsumerWidget {
                 _SettingsGroup(
                   isDark: isDark,
                   children: [
+                    _SettingsTile(
+                      icon: Icons.swap_horiz_rounded,
+                      iconBgColor: const Color(0xFF34C759),
+                      title: _settingsText(
+                        context,
+                        zhCN: '切换线路',
+                        zhTW: '切換線路',
+                        en: 'Switch Line',
+                      ),
+                      isDark: isDark,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NetworkSettingsPage(),
+                          ),
+                        );
+                      },
+                    ),
                     _SettingsTile(
                       icon: Icons.logout,
                       iconBgColor: AppColors.error,

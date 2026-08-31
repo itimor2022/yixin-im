@@ -6,9 +6,10 @@ cd "$(dirname "$0")"
 
 echo ">>> 正在打包 Android APK（arm64，混淆+剥离符号，仅新系统 minSdk 30）..."
 # ✅ 关键：添加 --release
-flutter clean
-flutter pub get
-flutter build apk \
+fvm use 3.47.2
+fvm flutter clean
+fvm flutter pub get
+fvm flutter build apk \
   --release \
   --target-platform=android-arm64 \
   --obfuscate \

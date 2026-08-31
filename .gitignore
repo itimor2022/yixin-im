@@ -33,7 +33,6 @@ docs/app_literals_snippets.txt
 docs/garbled_literals.txt
 docs/encoding_candidates.txt
 
-
 android/.gradle/
 android/app/build/
 android/build/
@@ -49,3 +48,6 @@ android/data.db
 .gitignore
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 .flutter-plugins-dependencies
+
+# FVM Version Cache
+.fvm/

@@ -38,11 +38,24 @@ class BindPhonePage extends ConsumerStatefulWidget {
 
 class _BindPhonePageState extends ConsumerState<BindPhonePage> {
   final _phoneCtrl = TextEditingController();
+  final _phoneFocus = FocusNode();
   bool _binding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 进入页面后自动激活手机号输入框，避免用户再次手动点击
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _phoneFocus.requestFocus();
+      }
+    });
+  }
 
   @override
   void dispose() {
     _phoneCtrl.dispose();
+    _phoneFocus.dispose();
     super.dispose();
   }
 
@@ -155,6 +168,8 @@ class _BindPhonePageState extends ConsumerState<BindPhonePage> {
           const SizedBox(height: 16),
           TextField(
             controller: _phoneCtrl,
+            focusNode: _phoneFocus,
+            autofocus: true,
             enabled: !_binding,
             keyboardType: TextInputType.phone,
             textInputAction: TextInputAction.done,
