@@ -3890,6 +3890,7 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
       ],
     );
   }
+
   /// 评论输入框（样式与聊天页消息输入框一致）
   Widget _buildCommentTextField() {
     return TextField(
@@ -3939,8 +3940,6 @@ class _MomentDetailPageState extends ConsumerState<MomentDetailPage> {
       ),
     );
   }
-
-
 
   Future<void> _sendComment() async {
     if (_commentController.text.isEmpty || _isSendingComment) return;
@@ -4065,50 +4064,50 @@ class _CommentTile extends StatelessWidget {
                   emojiSize: 20,
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                      },
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.favorite_border,
-                            size: 16,
-                            color: AppColors.textTertiaryFor(context),
-                          ),
-                          if (comment.likeCount > 0) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '${comment.likeCount}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textTertiaryFor(context),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    GestureDetector(
-                      onTap: () {},
-                      child: Text(
-                        _momentsText(
-                          context,
-                          zhCN: '回复',
-                          zhTW: '回覆',
-                          en: 'Reply',
-                        ),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiaryFor(context),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                // Row(
+                //   children: [
+                //     GestureDetector(
+                //       onTap: () {
+                //         HapticFeedback.selectionClick();
+                //       },
+                //       child: Row(
+                //         children: [
+                //           Icon(
+                //             Icons.favorite_border,
+                //             size: 16,
+                //             color: AppColors.textTertiaryFor(context),
+                //           ),
+                //           if (comment.likeCount > 0) ...[
+                //             const SizedBox(width: 4),
+                //             Text(
+                //               '${comment.likeCount}',
+                //               style: TextStyle(
+                //                 fontSize: 12,
+                //                 color: AppColors.textTertiaryFor(context),
+                //               ),
+                //             ),
+                //           ],
+                //         ],
+                //       ),
+                //     ),
+                //     const SizedBox(width: 20),
+                //     GestureDetector(
+                //       onTap: () {},
+                //       child: Text(
+                //         _momentsText(
+                //           context,
+                //           zhCN: '回复',
+                //           zhTW: '回覆',
+                //           en: 'Reply',
+                //         ),
+                //         style: TextStyle(
+                //           fontSize: 12,
+                //           color: AppColors.textTertiaryFor(context),
+                //         ),
+                //       ),
+                //     ),
+                //   ],
+                // ),
               ],
             ),
           ),
