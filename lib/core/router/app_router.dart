@@ -31,6 +31,8 @@ import '../../features/settings/pages/settings_page.dart';
 import '../../features/settings/pages/chat_settings_page.dart';
 import '../../features/settings/pages/profile_page.dart';
 import '../../features/settings/pages/bind_phone_page.dart';
+import '../../features/settings/pages/theme_picker_page.dart';
+import '../../features/settings/pages/network_settings_page.dart';
 import '../../features/home/pages/home_page.dart';
 import '../../features/meeting/pages/meeting_page.dart';
 import '../../features/splash/pages/splash_page.dart';
@@ -511,6 +513,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) => IOSPage(
                       key: state.pageKey,
                       child: const PersonalizationPage(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'theme',
+                    name: 'settingsTheme',
+                    pageBuilder: (context, state) => IOSPage(
+                      key: state.pageKey,
+                      child: const ThemePickerPage(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'network',
+                    name: 'settingsNetwork',
+                    pageBuilder: (context, state) => IOSPage(
+                      key: state.pageKey,
+                      child: const NetworkSettingsPage(),
                     ),
                   ),
                 ],

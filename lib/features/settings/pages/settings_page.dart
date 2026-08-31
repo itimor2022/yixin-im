@@ -457,12 +457,7 @@ class SettingsPage extends ConsumerWidget {
                       title: '主题风格',
                       subtitle: '切换主题色彩与显示模式',
                       isDark: isDark,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ThemePickerPage(),
-                        ),
-                      ),
+                      onTap: () => context.push('/settings/theme'),
                     ),
                                         _SettingsTile(
                       icon: Icons.emoji_emotions_outlined,
@@ -521,13 +516,7 @@ class SettingsPage extends ConsumerWidget {
                         en: 'Switch Line',
                       ),
                       isDark: isDark,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const NetworkSettingsPage(),
-                          ),
-                        );
-                      },
+                      onTap: () => context.push('/settings/network'),
                     ),
                     _SettingsTile(
                       icon: Icons.logout,
@@ -2071,12 +2060,7 @@ class ChatSettingsFullPage extends StatelessWidget {
                   en: 'Switch theme color and display mode',
                 ),
                 isDark: isDark,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ThemePickerPage(),
-                  ),
-                ),
+                onTap: () => context.push('/settings/theme'),
               ),
               _TapTile(
                 title: _settingsText(

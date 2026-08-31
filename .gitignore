@@ -51,3 +51,5 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
 # FVM Version Cache
 .fvm/
+release.jks
+.flutter-plugins-dependencies
