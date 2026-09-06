@@ -182,7 +182,7 @@ class AppColors {
   static const Color lightTextTertiary = Color(0xFF9CA3AF);
 
   /// 分割线
-  static const Color lightDivider = Color(0xFFE5E5E5);
+  static const Color lightDivider = Color(0xFFEDEDED);
 
   /// 输入框
   static const Color lightInputBackground = Color(0xFFF1F2F4);
@@ -204,7 +204,7 @@ class AppColors {
   static const Color darkTextTertiary = Color(0xFF8D97A6);
   static const Color darkTextDisabled = Color(0xFF677281);
 
-  static const Color darkDivider = Color(0xFF2C333D);
+  static const Color darkDivider = Color(0xFF22272F);
   static const Color darkInputBackground = Color(0xFF20252D);
 
   // ==================== 语义颜色 ====================

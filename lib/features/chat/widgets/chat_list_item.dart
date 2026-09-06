@@ -349,7 +349,7 @@ class _ChatListItemState extends State<ChatListItem>
         Padding(
           padding: const EdgeInsets.only(left: 82),
           child: Divider(
-            height: 1,
+            height: 0.5,
             thickness: 0.5,
             color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
           ),
@@ -546,10 +546,9 @@ class _ChatListItemState extends State<ChatListItem>
         Padding(
           padding: const EdgeInsets.only(left: 84),
           child: Divider(
-            height: 1,
+            height: 0.5,
             thickness: 0.5,
-            color: (isDark ? AppColors.darkDivider : AppColors.lightDivider)
-                .withOpacity(0.58),
+            color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
           ),
         ),
       ],

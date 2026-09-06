@@ -316,9 +316,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
               ? Colors.white.withOpacity(0.18)
               : Colors.white.withOpacity(0.75),
           borderRadius: BorderRadius.circular(19),
-          border: isDark
-              ? Border.all(color: Colors.white.withOpacity(0.25))
-              : null,
+          border:
+              isDark ? Border.all(color: Colors.white.withOpacity(0.25)) : null,
         ),
         alignment: Alignment.center,
         child: child,
@@ -342,7 +341,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
               Icon(
                 icon,
                 size: 23,
-                color: Theme.of(context).appBarTheme.iconTheme?.color ?? Colors.white,
+                color: Theme.of(context).appBarTheme.iconTheme?.color ??
+                    Colors.white,
               ),
         ),
       ),
@@ -444,7 +444,10 @@ class _ChatPageState extends ConsumerState<ChatPage>
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: isDark
-                          ? [_pc.primaryA.withOpacity(0.9), _pc.primaryB.withOpacity(0.7)]
+                          ? [
+                              _pc.primaryA.withOpacity(0.9),
+                              _pc.primaryB.withOpacity(0.7)
+                            ]
                           : [_pc.primaryA, _pc.primaryB],
                     ),
                   ),
@@ -486,7 +489,11 @@ class _ChatPageState extends ConsumerState<ChatPage>
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
-                                color: Theme.of(context).appBarTheme.iconTheme?.color ?? Colors.white,
+                                color: Theme.of(context)
+                                        .appBarTheme
+                                        .iconTheme
+                                        ?.color ??
+                                    Colors.white,
                               ),
                             ),
                           ),
@@ -505,8 +512,11 @@ class _ChatPageState extends ConsumerState<ChatPage>
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: Theme.of(context).appBarTheme.titleTextStyle?.color
-                              ?? _pc.appBarForeground,
+                          color: Theme.of(context)
+                                  .appBarTheme
+                                  .titleTextStyle
+                                  ?.color ??
+                              _pc.appBarForeground,
                         ),
                       )
                     : _ChatPageTitle(isDark: isDark),
@@ -598,7 +608,8 @@ class _ChatPageState extends ConsumerState<ChatPage>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: _pc.primaryA.withOpacity(isDark ? 0.10 : 0.07),
+                            color:
+                                _pc.primaryA.withOpacity(isDark ? 0.10 : 0.07),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
