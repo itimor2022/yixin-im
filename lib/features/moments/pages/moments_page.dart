@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -392,35 +391,25 @@ class _MomentsPageState extends ConsumerState<MomentsPage>
                     ),
                   )
                 else
-                  // 动态列表 - 瀑布流布局（小红书风格）
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
-                    sliver: SliverMasonryGrid.count(
-                      // 桌面端侧边栏较窄，保持2列
-                      crossAxisCount: widget.isDesktopSidebar ? 2 : 2,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childCount: moments.length,
-                      itemBuilder: (context, index) {
+                  // 动态列表 - 单列朋友圈信息流
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
                         final moment = moments[index];
-                        // 使用 RepaintBoundary + key 优化滚动性能
                         return RepaintBoundary(
                           key: ValueKey(moment.id),
-                          child: _WaterfallMomentCard(
+                          child: _MomentCard(
                             moment: moment,
                             isDark: isDark,
                             onLike: () => ref
                                 .read(momentProvider.notifier)
                                 .toggleLike(moment.id),
+                            onMore: () => _showMomentOptions(moment),
                             onTap: () => _openMomentDetail(moment),
-                            onLongPress: (details, ctx) => _showCardPopupMenu(
-                              ctx,
-                              details.globalPosition,
-                              moment,
-                            ),
                           ),
                         );
                       },
+                      childCount: moments.length,
                     ),
                   ),
 
@@ -2223,6 +2212,7 @@ class _MomentCard extends StatelessWidget {
   final bool isDark;
   final VoidCallback onLike;
   final VoidCallback onMore;
+  final VoidCallback? onTap;
   final Widget? footer;
   final bool showModerationBadge;
 
@@ -2231,6 +2221,7 @@ class _MomentCard extends StatelessWidget {
     required this.isDark,
     required this.onLike,
     required this.onMore,
+    this.onTap,
     this.footer,
     this.showModerationBadge = false,
   });
@@ -2238,7 +2229,7 @@ class _MomentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _openMomentDetail(context),
+      onTap: onTap ?? () => _openMomentDetail(context),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(

@@ -377,22 +377,13 @@ class _DiscoverGroupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final tiles = <Widget>[
+    final listTiles = <Widget>[
       _DiscoverTile(
         title: _discoverText(zhCN: '广场', zhTW: '廣場', en: 'Square'),
         accentColor: AppColors.linkFor(context),
         iconAsset: 'assets/icons/tab_moments_active.png',
         onTap: squareTap,
       ),
-      for (final entry in entries)
-        _DiscoverTile(
-          title: entry.title,
-          accentColor: isDark && entry.iconUrl == null
-              ? AppColors.linkFor(context)
-              : entry.accentColor,
-          iconUrl: entry.iconUrl,
-          onTap: () => onEntryTap(entry),
-        ),
     ];
 
     return DecoratedBox(
@@ -425,9 +416,42 @@ class _DiscoverGroupCard extends StatelessWidget {
               ),
             ),
           ],
-          for (var index = 0; index < tiles.length; index++) ...[
-            tiles[index],
-            if (index < tiles.length - 1)
+          if (entries.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _discoverText(
+                    zhCN: '常用应用',
+                    zhTW: '常用應用',
+                    en: 'Common Apps',
+                  ),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimaryFor(context),
+                  ),
+                ),
+              ),
+            ),
+            _CommonAppsGrid(
+              entries: entries,
+              isDark: isDark,
+              onTap: onEntryTap,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(
+                height: 1,
+                thickness: 0.5,
+                color: AppColors.dividerFor(context),
+              ),
+            ),
+          ],
+          for (var index = 0; index < listTiles.length; index++) ...[
+            listTiles[index],
+            if (index < listTiles.length - 1)
               Padding(
                 padding: const EdgeInsets.only(left: 62),
                 child: Divider(
@@ -439,6 +463,80 @@ class _DiscoverGroupCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _CommonAppsGrid extends StatelessWidget {
+  final List<DiscoverEntry> entries;
+  final bool isDark;
+  final ValueChanged<DiscoverEntry> onTap;
+
+  const _CommonAppsGrid({
+    required this.entries,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: entries.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.78,
+      ),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final accentColor = isDark && entry.iconUrl == null
+            ? AppColors.linkFor(context)
+            : entry.accentColor;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => onTap(entry),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AspectRatio(
+                  aspectRatio: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(isDark ? 0.18 : 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: _DiscoverIcon(
+                        accentColor: accentColor,
+                        iconUrl: entry.iconUrl,
+                        size: 44,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  entry.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimaryFor(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -657,24 +755,26 @@ class _DiscoverIcon extends StatelessWidget {
   final Color accentColor;
   final String? iconAsset;
   final String? iconUrl;
+  final double size;
 
   const _DiscoverIcon({
     required this.accentColor,
     this.iconAsset,
     this.iconUrl,
+    this.size = 30,
   });
 
   @override
   Widget build(BuildContext context) {
     if (iconAsset != null) {
       return SizedBox(
-        width: 30,
-        height: 30,
+        width: size,
+        height: size,
         child: Center(
           child: Image.asset(
             iconAsset!,
-            width: 26,
-            height: 26,
+            width: size * 0.87,
+            height: size * 0.87,
             color: accentColor,
           ),
         ),
@@ -686,27 +786,27 @@ class _DiscoverIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         child: Image.network(
           iconUrl!,
-          width: 30,
-          height: 30,
+          width: size,
+          height: size,
           fit: BoxFit.cover,
           cacheWidth: 80,
           cacheHeight: 80,
           errorBuilder: (_, __, ___) => Icon(
             Icons.explore_rounded,
             color: accentColor,
-            size: 28,
+            size: size * 0.93,
           ),
         ),
       );
     }
 
     return SizedBox(
-      width: 30,
-      height: 30,
+      width: size,
+      height: size,
       child: Icon(
         Icons.explore_rounded,
         color: accentColor,
-        size: 28,
+        size: size * 0.93,
       ),
     );
   }
