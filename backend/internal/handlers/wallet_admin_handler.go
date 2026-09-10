@@ -4,6 +4,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 	"genericim/internal/config"
 	"genericim/internal/middleware"
@@ -18,6 +21,42 @@ import (
 	"genericim/internal/services"
 	"genericim/pkg/response"
 )
+
+// adminTransactionCursor 钱包后台查看用户流水时使用的游标，与客户端接口同结构。
+type adminTransactionCursor struct {
+	CreatedAt string `json:"t"`
+	ID        uint64 `json:"i"`
+}
+
+func encodeAdminTransactionCursor(tx models.Transaction) string {
+	payload, err := json.Marshal(adminTransactionCursor{
+		CreatedAt: tx.CreatedAt.UTC().Format(time.RFC3339Nano),
+		ID:        tx.ID,
+	})
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeAdminTransactionCursor(raw string) (time.Time, uint64, error) {
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	var cursor adminTransactionCursor
+	if err := json.Unmarshal(data, &cursor); err != nil {
+		return time.Time{}, 0, err
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	if cursor.ID == 0 {
+		return time.Time{}, 0, gorm.ErrInvalidData
+	}
+	return createdAt, cursor.ID, nil
+}
 
 type WalletAdminHandler struct {
 	db     *gorm.DB
@@ -640,9 +679,34 @@ func (h *WalletAdminHandler) ClearUserPayPassword(c *gin.Context) {
 // GetUserTransactions 获取用户交易记录
 func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 	userID := c.Param("user_id")
-	page := getQueryInt(c, "page", 1)
+	rawPage, hasPage := c.GetQuery("page")
+	page := 1
+	if rawPage != "" {
+		if parsed, err := strconv.Atoi(rawPage); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
 	pageSize := getQueryInt(c, "page_size", 20)
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	cursorToken := strings.TrimSpace(c.Query("cursor"))
 	txType := c.Query("type")
+	// 后台表格优先用 cursor 翻页；没传 page 也走游标，避免深分页。
+	useCursor := cursorToken != "" || !hasPage
+	var cursorCreatedAt time.Time
+	var cursorID uint64
+	if cursorToken != "" {
+		var err error
+		cursorCreatedAt, cursorID, err = decodeAdminTransactionCursor(cursorToken)
+		if err != nil || cursorID == 0 {
+			response.BadRequest(c, "无效游标")
+			return
+		}
+	}
 
 	// 查找用户
 	var user models.User
@@ -654,15 +718,37 @@ func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 	if txType != "" {
 		query = query.Where("type = ?", txType)
 	}
+	if useCursor && cursorToken != "" {
+		// 游标条件必须与 (created_at, id) 降序排序严格对应，避免同时间落库的交易重复或遗漏。
+		query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", cursorCreatedAt, cursorCreatedAt, cursorID)
+	}
 
-	var total int64
-	query.Count(&total)
-
+	limit := pageSize
+	if useCursor {
+		limit = pageSize + 1
+	}
 	var transactions []models.Transaction
-	query.Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
+	query.Order("created_at DESC, id DESC").
+		Limit(limit).
 		Find(&transactions)
+	hasMore := false
+	if useCursor && len(transactions) > pageSize {
+		hasMore = true
+		transactions = transactions[:pageSize]
+	}
+	nextCursor := ""
+	if hasMore && len(transactions) > 0 {
+		nextCursor = encodeAdminTransactionCursor(transactions[len(transactions)-1])
+	}
+	// 旧 page 模式保留 OFFSET；后台分页器仍在用。
+	if !useCursor && page > 1 {
+		offset := (page - 1) * pageSize
+		query = query.Offset(offset)
+		if err := query.Find(&transactions).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
+	}
 
 	// 获取关联用户信息
 	result := make([]gin.H, len(transactions))
@@ -689,14 +775,22 @@ func (h *WalletAdminHandler) GetUserTransactions(c *gin.Context) {
 
 		result[i] = item
 	}
-	response.Success(c, gin.H{
-		"user_id":   user.UUID,
-		"user_name": user.Nickname,
-		"list":      result,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-	})
+	resp := gin.H{
+		"user_id":     user.UUID,
+		"user_name":   user.Nickname,
+		"list":        result,
+		"page":        page,
+		"page_size":   pageSize,
+		"has_more":    hasMore,
+		"next_cursor": nextCursor,
+	}
+	// 后台保留 total，方便表格展示总数。
+	if !useCursor {
+		var total int64
+		query.Count(&total)
+		resp["total"] = total
+	}
+	response.Success(c, resp)
 }
 
 // LockUserWallet 锁定用户钱包

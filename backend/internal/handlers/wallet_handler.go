@@ -6,6 +6,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,8 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 	"genericim/internal/cache"
 	"genericim/internal/models"
@@ -23,6 +26,54 @@ import (
 	"genericim/internal/ws"
 	"genericim/pkg/response"
 )
+
+// transactionCursor 钱包流水游标，使用 (created_at, id) 二元组保证稳定排序
+type transactionCursor struct {
+	CreatedAt string `json:"t"`
+	ID        uint64 `json:"i"`
+}
+
+func encodeTransactionCursor(tx models.Transaction) string {
+	payload, err := json.Marshal(transactionCursor{
+		CreatedAt: tx.CreatedAt.UTC().Format(time.RFC3339Nano),
+		ID:        tx.ID,
+	})
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeTransactionCursor(raw string) (time.Time, uint64, error) {
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	var cursor transactionCursor
+	if err := json.Unmarshal(data, &cursor); err != nil {
+		return time.Time{}, 0, err
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	if cursor.ID == 0 {
+		return time.Time{}, 0, gorm.ErrInvalidData
+	}
+	return createdAt, cursor.ID, nil
+}
+
+// EncodeTransactionCursor 是 encodeTransactionCursor 的导出别名，给 handler 内部及测试使用。
+func EncodeTransactionCursor(tx models.Transaction) string { return encodeTransactionCursor(tx) }
+
+// DecodeTransactionCursor 是 decodeTransactionCursor 的导出别名。
+func DecodeTransactionCursor(raw string) (time.Time, uint64, error) { return decodeTransactionCursor(raw) }
+
+// EncodeAdminTransactionCursor 是后台游标的导出别名。
+func EncodeAdminTransactionCursor(tx models.Transaction) string { return encodeAdminTransactionCursor(tx) }
+
+// DecodeAdminTransactionCursor 是后台游标的导出别名。
+func DecodeAdminTransactionCursor(raw string) (time.Time, uint64, error) { return decodeAdminTransactionCursor(raw) }
 
 type WalletHandler struct {
 	db         *gorm.DB
@@ -600,21 +651,67 @@ func (h *WalletHandler) GetTransactions(c *gin.Context) {
 
 		return
 	}
-	page := getQueryInt(c, "page", 1)
+	rawPage, hasPage := c.GetQuery("page")
+	page := 1
+	if rawPage != "" {
+		if parsed, err := strconv.Atoi(rawPage); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
 	pageSize := getQueryInt(c, "page_size", 20)
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	cursorToken := strings.TrimSpace(c.Query("cursor"))
 	txType := c.Query("type")
+	// 客户端只要传 cursor 就走游标模式；没传 page 也走游标模式（moment_handler 已采用同一约定）。
+	useCursor := cursorToken != "" || !hasPage
+	var cursorCreatedAt time.Time
+	var cursorID uint64
+	if cursorToken != "" {
+		cursorCreatedAt, cursorID, err = decodeTransactionCursor(cursorToken)
+		if err != nil || cursorID == 0 {
+			response.BadRequest(c, "无效游标")
+			return
+		}
+	}
 	query := h.db.Model(&models.Transaction{}).Where("user_id = ?", userID)
 	if txType != "" {
-
 		query = query.Where("type = ?", txType)
 	}
-	var total int64
-	query.Count(&total)
+	if useCursor && cursorToken != "" {
+		// 游标条件必须与 (created_at, id) 降序排序严格对应，避免同时间落库的交易重复或遗漏。
+		query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", cursorCreatedAt, cursorCreatedAt, cursorID)
+	}
+	limit := pageSize
+	if useCursor {
+		limit = pageSize + 1
+	}
 	var transactions []models.Transaction
-	query.Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
+	query.Order("created_at DESC, id DESC").
+		Limit(limit).
 		Find(&transactions)
+	hasMore := false
+	if useCursor && len(transactions) > pageSize {
+		hasMore = true
+		transactions = transactions[:pageSize]
+	}
+	nextCursor := ""
+	if hasMore && len(transactions) > 0 {
+		nextCursor = encodeTransactionCursor(transactions[len(transactions)-1])
+	}
+	// 旧客户端传 page 时仍走 OFFSET，避免破坏现有前端；命中后会以 page 模式返回 total。
+	if !useCursor && page > 1 {
+		offset := (page - 1) * pageSize
+		query = query.Offset(offset)
+		if err := query.Find(&transactions).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "查询失败")
+			return
+		}
+	}
 	// 获取关联用户信息
 	result := make([]gin.H, len(transactions))
 	for i, tx := range transactions {
@@ -654,16 +751,20 @@ func (h *WalletHandler) GetTransactions(c *gin.Context) {
 
 		result[i] = item
 	}
-	response.Success(c, gin.H{
-
-		"list": result,
-
-		"total": total,
-
-		"page": page,
-
-		"page_size": pageSize,
-	})
+	resp := gin.H{
+		"list":        result,
+		"page":        page,
+		"page_size":   pageSize,
+		"has_more":    hasMore,
+		"next_cursor": nextCursor,
+	}
+	// 旧 page 模式才返回 total；游标模式不返回，避免大表 COUNT 拖慢接口。
+	if !useCursor {
+		var total int64
+		query.Count(&total)
+		resp["total"] = total
+	}
+	response.Success(c, resp)
 }
 
 // Recharge was a development-only direct top-up endpoint. Keep the route as a // hard failure so old clients cannot accidentally credit balances in production.

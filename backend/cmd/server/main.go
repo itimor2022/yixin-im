@@ -304,6 +304,12 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	if err := ensureP0DatabaseIndexes(db); err != nil {
 		log.Printf("[DB] ensure P0 indexes failed: %v", err)
 	}
+	if err := ensureDiagnosticIndexes(db); err != nil {
+		log.Printf("[DB] ensure diagnostic indexes failed: %v", err)
+	}
+	if err := ensureSearchStatsIndexes(db); err != nil {
+		log.Printf("[DB] ensure search/stats indexes failed: %v", err)
+	}
 	if err := ensureUserDeviceE2EEColumns(db); err != nil {
 		log.Printf("[E2EE] ensure user_devices columns failed: %v", err)
 	}
@@ -393,6 +399,143 @@ func ensureP0DatabaseIndexes(db *gorm.DB) error {
 			return fmt.Errorf("create index %s: %w", spec.name, err)
 		}
 		log.Printf("[DB] created P0 index: %s", spec.name)
+	}
+	return nil
+}
+
+// ensureDiagnosticIndexes 创建后台诊断类二级索引（admin_login_logs / push_delivery_logs / user_devices），
+// 与 backend/scripts/p1_diagnostic_indexes.sql 保持一致；启动时按 HasIndex 自动跳过已建索引。
+func ensureDiagnosticIndexes(db *gorm.DB) error {
+	type indexSpec struct {
+		model     interface{}
+		name      string
+		createSQL string
+	}
+	specs := []indexSpec{
+		{
+			model:     &models.AdminLoginLog{},
+			name:      "idx_admin_login_logs_created_id",
+			createSQL: "CREATE INDEX idx_admin_login_logs_created_id ON admin_login_logs (created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.AdminLoginLog{},
+			name:      "idx_admin_login_logs_status_created",
+			createSQL: "CREATE INDEX idx_admin_login_logs_status_created ON admin_login_logs (status, created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.AdminLoginLog{},
+			name:      "idx_admin_login_logs_throttle_created",
+			createSQL: "CREATE INDEX idx_admin_login_logs_throttle_created ON admin_login_logs (throttle_applied, created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.PushDeliveryLog{},
+			name:      "idx_push_delivery_logs_occurred_id",
+			createSQL: "CREATE INDEX idx_push_delivery_logs_occurred_id ON push_delivery_logs (occurred_at DESC, id DESC)",
+		},
+		{
+			model:     &models.PushDeliveryLog{},
+			name:      "idx_push_delivery_logs_success_occurred",
+			createSQL: "CREATE INDEX idx_push_delivery_logs_success_occurred ON push_delivery_logs (success, occurred_at DESC, id DESC)",
+		},
+		{
+			model:     &models.PushDeliveryLog{},
+			name:      "idx_push_delivery_logs_user_occurred",
+			createSQL: "CREATE INDEX idx_push_delivery_logs_user_occurred ON push_delivery_logs (user_id, occurred_at DESC, id DESC)",
+		},
+		{
+			model:     &models.PushDeliveryLog{},
+			name:      "idx_push_delivery_logs_device_occurred",
+			createSQL: "CREATE INDEX idx_push_delivery_logs_device_occurred ON push_delivery_logs (device_id, occurred_at DESC, id DESC)",
+		},
+		{
+			model:     &models.PushDeliveryLog{},
+			name:      "idx_push_delivery_logs_channel_occurred",
+			createSQL: "CREATE INDEX idx_push_delivery_logs_channel_occurred ON push_delivery_logs (channel, occurred_at DESC, id DESC)",
+		},
+		{
+			model:     &models.UserDevice{},
+			name:      "idx_user_devices_user_last_active",
+			createSQL: "CREATE INDEX idx_user_devices_user_last_active ON user_devices (user_id, last_active DESC, id DESC)",
+		},
+	}
+	migrator := db.Migrator()
+	for _, spec := range specs {
+		if migrator.HasIndex(spec.model, spec.name) {
+			continue
+		}
+		if err := db.Exec(spec.createSQL).Error; err != nil {
+			return fmt.Errorf("create index %s: %w", spec.name, err)
+		}
+		log.Printf("[DB] created diagnostic index: %s", spec.name)
+	}
+	return nil
+}
+
+// ensureSearchStatsIndexes 创建搜索、统计、联系人、会话相关二级索引，
+// 与 backend/scripts/p3_search_stats_indexes.sql 保持一致；启动时按 HasIndex 自动跳过已建索引。
+// MongoDB 部分仍需人工执行 backend/scripts/p3_search_stats_mongo_indexes.js。
+func ensureSearchStatsIndexes(db *gorm.DB) error {
+	type indexSpec struct {
+		model     interface{}
+		name      string
+		createSQL string
+	}
+	specs := []indexSpec{
+		{
+			model:     &models.Contact{},
+			name:      "idx_contacts_user_status_updated",
+			createSQL: "CREATE INDEX idx_contacts_user_status_updated ON contacts (user_id, status, updated_at DESC, contact_user_id)",
+		},
+		{
+			model:     &models.Contact{},
+			name:      "idx_contacts_user_contact_status",
+			createSQL: "CREATE INDEX idx_contacts_user_contact_status ON contacts (user_id, contact_user_id, status)",
+		},
+		{
+			model:     &models.User{},
+			name:      "idx_users_nickname_deleted",
+			createSQL: "CREATE INDEX idx_users_nickname_deleted ON users (nickname, deleted_at, id)",
+		},
+		{
+			model:     &models.User{},
+			name:      "idx_users_status_created",
+			createSQL: "CREATE INDEX idx_users_status_created ON users (status, created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.Chat{},
+			name:      "idx_chats_status_type_created",
+			createSQL: "CREATE INDEX idx_chats_status_type_created ON chats (status, type, created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.Chat{},
+			name:      "idx_chats_username_status",
+			createSQL: "CREATE INDEX idx_chats_username_status ON chats (username, status, id)",
+		},
+		{
+			model:     &models.HealthMetricSnapshot{},
+			name:      "idx_health_metric_snapshots_created_id",
+			createSQL: "CREATE INDEX idx_health_metric_snapshots_created_id ON health_metric_snapshots (created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.HealthMetricSnapshot{},
+			name:      "idx_health_metric_snapshots_status_created",
+			createSQL: "CREATE INDEX idx_health_metric_snapshots_status_created ON health_metric_snapshots (status, created_at DESC, id DESC)",
+		},
+		{
+			model:     &models.UserDevice{},
+			name:      "idx_user_devices_last_active_user",
+			createSQL: "CREATE INDEX idx_user_devices_last_active_user ON user_devices (last_active DESC, user_id)",
+		},
+	}
+	migrator := db.Migrator()
+	for _, spec := range specs {
+		if migrator.HasIndex(spec.model, spec.name) {
+			continue
+		}
+		if err := db.Exec(spec.createSQL).Error; err != nil {
+			return fmt.Errorf("create index %s: %w", spec.name, err)
+		}
+		log.Printf("[DB] created search/stats index: %s", spec.name)
 	}
 	return nil
 }
