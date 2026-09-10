@@ -46,11 +46,28 @@ mongodb:
   min_pool_size: 200
 
 redis:
-  addr: localhost:6379
+  # 集群部署：填入 6 个 Redis Cluster 端口（每机 2 实例）。
+  # 单机部署：保留单元素列表，go-redis UniversalClient 会自动选择 *redis.Client。
+  addrs:
+    - localhost:6379
+  # 兼容旧配置：仅在 addrs 为空时生效，新部署请直接用 addrs。
+  addr: ""
   password: ""
   db: 0
   pool_size: 1000
   min_idle_conns: 100
+  # 仅在 addrs 指向 ElastiCache 之类 cluster configuration endpoint 时打开；
+  # 普通部署保持 false。
+  is_cluster_mode: false
+
+# 多机集群功能开关。单机部署保持 enabled=false 即可，所有改动对单进程透明。
+cluster:
+  enabled: false           # 开启后 Hub 启用 Redis Pub/Sub 跨节点推送
+  node_id: ""              # 留空回退到主机名；3 机部署建议填 node1/node2/node3
+  channel: "ws:node:fanout"
+  # 集群下 MQ 队列 hash-tag 分片；单机部署无需打开。
+  sharded_queue: false
+  queue_shards: 4          # sharded_queue=true 时的分片数
 
 jwt:
   secret: dev-only-change-me

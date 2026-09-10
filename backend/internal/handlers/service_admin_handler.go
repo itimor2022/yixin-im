@@ -492,7 +492,7 @@ func (h *ServiceAdminHandler) BindPhone(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "验证码已失效，请重新获取")
 		return
 	}
-	if !allowSMSVerifyAttempt(c, h.cache, "service-admin-bind-phone:"+phone, cache.KeyVerifyCode+phone) {
+	if !allowSMSVerifyAttempt(c, h.cache, "service-admin-bind-phone:"+phone, cache.KeyVerifyCodeFor(phone)) {
 		return
 	}
 	if stored != strings.TrimSpace(req.Code) {

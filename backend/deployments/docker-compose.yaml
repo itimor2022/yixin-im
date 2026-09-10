@@ -1,5 +1,9 @@
 # 文件用途：deployments\docker-compose.yaml 是一个运行时配置或容器编排文件。
 # 核心逻辑：按文件中的顺序执行配置加载、数据库变更、构建部署或维护操作，并保持可重复执行。
+#
+# 注意：本 compose 文件是开发/单机部署用，**不包含** Redis Cluster 编排。
+# 三机集群部署请参考 docs/plans/IM三机集群部署方案_20260728.md §9.2，
+# 并使用 scripts/init-redis-cluster.sh 在物理机上构建 3 主 3 从集群。
 
 version: '3.8'
 
@@ -13,6 +17,11 @@ services:
       - "8080:8080"
     environment:
       - GIN_MODE=release
+      # Redis 连接：单机部署下用 addrs；集群部署在物理机跑，容器里只填内网地址。
+      - GENERIC_IM_REDIS_CLUSTER_NODES=redis:6379
+      # 集群功能开关（开发/单机部署保持 false）
+      - GENERIC_IM_CLUSTER_ENABLED=false
+      - GENERIC_IM_CLUSTER_NODE_ID=node-local
     volumes:
       - ../uploads:/app/uploads
     depends_on:
@@ -58,7 +67,7 @@ services:
       - genericim
     restart: unless-stopped
 
-  # Redis缓存
+  # Redis（单机部署）。生产 3 机集群部署改用 scripts/init-redis-cluster.sh。
   redis:
     image: redis:7-alpine
     container_name: genericim-redis

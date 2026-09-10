@@ -7,14 +7,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/redis/go-redis/v9"
 	"sync/atomic"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Cache Redis缓存层
 type Cache struct {
-	client *redis.Client
+	// client is intentionally typed as the broad Cmdable interface so the same
+	// Cache struct works against either a standalone Redis (*redis.Client) or a
+	// Redis Cluster (*redis.ClusterClient) connection. The selected topology
+	// comes from internal/redisclient.New; business code does not have to care.
+	client redis.Cmdable
 }
 
 var rateLimitMemberSeq uint64
@@ -51,17 +56,34 @@ func (c *Cache) SortedSetLen(ctx context.Context, key string) (int64, error) {
 }
 
 // 缓存Key前缀
-
+//
+// 在 Redis Cluster 下，所有跨 key 的原子操作（Lua/MSET/WATCH）要求 key 落在同一
+// slot；slot 由 CRC16(key) 决定，hash tag `{xxx}` 是其中第一个 {...} 段。
+// 因此本文件里需要"同一 chat_id 一定同 slot"的 key，全部包成 `{chatID}`。
+// 单 Redis 部署时 hash tag 不影响行为，运维可以保持原样不动。
 const (
-	KeyUser        = "user:"         // 用户信息
-	KeyUserToken   = "user:token:"   // 用户Token
-	KeyUserOnline  = "user:online:"  // 用户在线状态
-	KeyChat        = "chat:"         // 会话信息
-	KeyChatMembers = "chat:members:" // 会话成员
-	KeyMsgSeq      = "msg:seq:"      // 消息序号
-	KeyVerifyCode  = "verify:code:"  // 验证码
-	KeyRateLimit   = "rate:"         // 限流
+	KeyUser         = "user:"            // 用户信息（单 key，无需 hash tag）
+	KeyUserToken    = "user:token:"      // 用户Token（单 key，无需 hash tag）
+	KeyUserOnline   = "user:online:"     // 用户在线状态（单 key，无需 hash tag）
+	KeyChat         = "chat:"            // 会话信息（单 key，无需 hash tag）
+	KeyChatMembers  = "chat:members:"    // 会话成员前缀，构造 key 时加 hash tag
+	KeyMsgSeq       = "msg:seq:"         // 消息序号前缀，构造 key 时加 hash tag
+	KeyVerifyCode   = "verify:code:"     // 验证码前缀，构造 key 时加 hash tag
+	KeyRateLimit    = "rate:"            // 限流（单 key，无需 hash tag）
 )
+
+// HashTag 构造 hash-tagged key，确保 Cluster 下相同标识符落在同一 slot。
+// 用法：`KeyMsgSeqFor(chatID)` → `msg:seq:{chatID}`。
+// 单 Redis 部署下行为与 `KeyMsgSeq + chatID` 完全一致。
+func HashTag(prefix, id string) string {
+	return prefix + "{" + id + "}"
+}
+
+// KeyChatMembersFor / KeyMsgSeqFor / KeyVerifyCodeFor 是必须同 slot 的 key 构造
+// 函数。其它访问场景继续用 `KeyUser+userID` 即可（slot 无所谓）。
+func KeyChatMembersFor(chatID string) string { return HashTag(KeyChatMembers, chatID) }
+func KeyMsgSeqFor(chatID string) string       { return HashTag(KeyMsgSeq, chatID) }
+func KeyVerifyCodeFor(phone string) string    { return HashTag(KeyVerifyCode, phone) }
 
 // 缓存过期时间
 
@@ -74,7 +96,11 @@ const (
 )
 
 // NewCache 创建缓存实例
-func NewCache(client *redis.Client) *Cache {
+//
+// client is the broad Cmdable interface so callers may pass either a
+// *redis.Client (standalone) or *redis.ClusterClient (Redis Cluster); the
+// Cache code is identical for both topologies.
+func NewCache(client redis.Cmdable) *Cache {
 	return &Cache{client: client}
 }
 
@@ -258,7 +284,7 @@ func (c *Cache) GetChat(ctx context.Context, chatID string, dest interface{}) er
 
 // SetChatMembers 缓存会话成员
 func (c *Cache) SetChatMembers(ctx context.Context, chatID string, memberIDs []string) error {
-	key := KeyChatMembers + chatID
+	key := KeyChatMembersFor(chatID)
 
 	if len(memberIDs) == 0 {
 		return nil
@@ -277,24 +303,24 @@ func (c *Cache) SetChatMembers(ctx context.Context, chatID string, memberIDs []s
 
 // GetChatMembers 获取会话成员
 func (c *Cache) GetChatMembers(ctx context.Context, chatID string) ([]string, error) {
-	return c.client.SMembers(ctx, KeyChatMembers+chatID).Result()
+	return c.client.SMembers(ctx, KeyChatMembersFor(chatID)).Result()
 }
 
 // IsChatMember 检查是否是会话成员
 func (c *Cache) IsChatMember(ctx context.Context, chatID, userID string) bool {
-	return c.client.SIsMember(ctx, KeyChatMembers+chatID, userID).Val()
+	return c.client.SIsMember(ctx, KeyChatMembersFor(chatID), userID).Val()
 }
 
 // --- 消息序号 ---
 
 // GetNextMsgSeq 获取下一个消息序号（原子操作）
 func (c *Cache) GetNextMsgSeq(ctx context.Context, chatID string) (uint64, error) {
-	return c.client.Incr(ctx, KeyMsgSeq+chatID).Uint64()
+	return c.client.Incr(ctx, KeyMsgSeqFor(chatID)).Uint64()
 }
 
 // GetCurrentMsgSeq 获取当前消息序号
 func (c *Cache) GetCurrentMsgSeq(ctx context.Context, chatID string) (uint64, error) {
-	result, err := c.client.Get(ctx, KeyMsgSeq+chatID).Uint64()
+	result, err := c.client.Get(ctx, KeyMsgSeqFor(chatID)).Uint64()
 	if err == redis.Nil {
 		return 0, nil
 	}
@@ -306,11 +332,14 @@ func (c *Cache) GetCurrentMsgSeq(ctx context.Context, chatID string) (uint64, er
 // 消息发送使用 INCR 并发分配序号，因此校准不能使用普通 SET：增量同步和
 // 重复键修复可能在 INCR 进行中读到较旧的 Mongo 最大值，普通 SET 会把
 // 计数器回退并导致多个消息拿到相同 seq。
+//
+// key 使用 hash tag `{chatID}`，确保 Cluster 下 INCR 始终命中同一分片，
+// Lua 脚本（EVAL）也保证所有引用 key 落在同一 slot。
 func (c *Cache) SetCurrentMsgSeq(ctx context.Context, chatID string, seq uint64) error {
 	return setCurrentMsgSeqAtLeastScript.Run(
 		ctx,
 		c.client,
-		[]string{KeyMsgSeq + chatID},
+		[]string{KeyMsgSeqFor(chatID)},
 		seq,
 	).Err()
 }
@@ -318,18 +347,21 @@ func (c *Cache) SetCurrentMsgSeq(ctx context.Context, chatID string, seq uint64)
 // --- 验证码 ---
 
 // SetVerifyCode 设置验证码
+//
+// key 加 hash tag `{phone}`，确保 Cluster 下验证码生命周期内的 Set/Get/Del
+// 命中同一分片，避免验证码刚 Set 到分片 A、立即 Get 命中分片 B 拿不到。
 func (c *Cache) SetVerifyCode(ctx context.Context, phone, code string) error {
-	return c.client.Set(ctx, KeyVerifyCode+phone, code, TTLVerifyCode).Err()
+	return c.client.Set(ctx, KeyVerifyCodeFor(phone), code, TTLVerifyCode).Err()
 }
 
 // GetVerifyCode 获取验证码
 func (c *Cache) GetVerifyCode(ctx context.Context, phone string) (string, error) {
-	return c.client.Get(ctx, KeyVerifyCode+phone).Result()
+	return c.client.Get(ctx, KeyVerifyCodeFor(phone)).Result()
 }
 
 // DeleteVerifyCode 删除验证码
 func (c *Cache) DeleteVerifyCode(ctx context.Context, phone string) error {
-	return c.client.Del(ctx, KeyVerifyCode+phone).Err()
+	return c.client.Del(ctx, KeyVerifyCodeFor(phone)).Err()
 }
 
 // --- 限流 ---

@@ -4,6 +4,7 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"gorm.io/gorm" // Hub WebSocket连接管理中心 // 使用分片设计支持百万级连接 // Hub 只承担进程内实时分发，不是消息权威存储；连接断开或缓冲区溢出后由客户端按 seq 同步补偿。
 	"log"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"genericim/internal/privacy"
 	"genericim/internal/shard"
+	"genericim/internal/ws/crossnode"
 )
 
 type Hub struct {
@@ -38,6 +40,16 @@ type Hub struct {
 	// 运行状态
 	running bool
 	mu      sync.RWMutex
+	// crossNode is the multi-node fan-out bridge. When the deployment is a
+	// single API node this is a NoopPublisher; in a 3-node deployment it is
+	// a RedisPublisher backed by the same Redis (Cluster or standalone) that
+	// the cache/mq layers use. Either way SendToXxx still publishes to
+	// crossNode so subscribers on other nodes can forward to their own
+	// local connections.
+	crossNode crossnode.Publisher
+	// crossNodeCancel releases the subscription created in Run. Captured so
+	// the main shutdown path can stop the goroutine that drains the channel.
+	crossNodeCancel func()
 }
 
 // ClientSet 客户端集合（线程安全）
@@ -94,7 +106,17 @@ const (
 )
 
 // NewHub 创建Hub
-func NewHub(db *gorm.DB) *Hub {
+//
+// pub is the cross-node fan-out bridge. Pass crossnode.NewNoopPublisher(nodeID)
+// on single-node deployments and a crossnode.NewRedisPublisher(...) on
+// multi-node deployments; the Hub code is identical either way.
+func NewHub(db *gorm.DB, pub crossnode.Publisher) *Hub {
+	if pub == nil {
+		// Defensive default so callers that don't yet know about cluster
+		// deployment still get a working Hub. The NodeID string is used in
+		// logs; "local" matches the defaultNodeID() fallback in config.
+		pub = crossnode.NewNoopPublisher("local")
+	}
 	return &Hub{
 
 		db: db,
@@ -108,6 +130,8 @@ func NewHub(db *gorm.DB) *Hub {
 		unregister: make(chan *Client, 5000),
 
 		broadcast: make(chan *BroadcastMessage, 50000),
+
+		crossNode: pub,
 	}
 }
 
@@ -131,8 +155,76 @@ func (h *Hub) Run() {
 
 		go h.broadcastWorker(i)
 	}
+	// Subscribe to the cross-node bridge so we can deliver events emitted by
+	// other API nodes to our own local connections. The subscription is
+	// best-effort: if it fails (e.g. Redis is unavailable at startup on a
+	// single-node deploy we never wired up a publisher) we log and continue
+	// — local fan-out still works, only multi-node delivery is degraded.
+	if h.crossNode != nil {
+		evtCh, cancel, err := h.crossNode.Subscribe(context.Background())
+		if err != nil {
+			log.Printf("[WS Hub] cross-node subscribe failed (continuing in local-only mode): %v", err)
+		} else {
+			h.crossNodeCancel = cancel
+			go h.crossNodeWorker(evtCh)
+			log.Printf("[WS Hub] cross-node bridge active (node=%s)", h.crossNode.NodeID())
+		}
+	}
 	// 主协程保持运行
 	select {}
+}
+
+// crossNodeWorker drains events from the cross-node bridge and re-enqueues
+// them through the local broadcast channel so they go through the same
+// worker pool as locally-originated messages. Doing it this way (rather
+// than calling sendToUser directly) preserves the existing
+// ordering/observability story.
+//
+// We deliberately do NOT go through Broadcast() — that would re-emit the
+// event to other nodes and create a ping-pong loop. Instead we hand the
+// message straight to the local broadcast channel; the publisher skips
+// itself via the OriginNodeID check in crossnode.RedisPublisher.
+func (h *Hub) crossNodeWorker(evtCh <-chan crossnode.Event) {
+	for evt := range evtCh {
+		var data interface{}
+		if len(evt.Payload) > 0 {
+			data = json.RawMessage(evt.Payload)
+		}
+		h.broadcast <- &BroadcastMessage{
+			Type:    evt.Kind,
+			UserIDs: evt.UserIDs,
+			ChatID:  evt.ChatID,
+			All:     evt.BroadcastAll,
+			Data:    data,
+		}
+	}
+}
+
+// publishCrossNode is the helper that turns a BroadcastMessage into a
+// cross-node Event and ships it. Failures are intentionally swallowed: the
+// local broadcast has already happened and dropping the network leg is
+// preferable to blocking business callers on Pub/Sub latency.
+func (h *Hub) publishCrossNode(ctx context.Context, msg *BroadcastMessage) {
+	if h.crossNode == nil {
+		return
+	}
+	payload, err := json.Marshal(msg.Data)
+	if err != nil {
+		log.Printf("[WS Hub] cross-node marshal failed: %v", err)
+		return
+	}
+	evt := crossnode.Event{
+		Kind:         msg.Type,
+		UserIDs:      append([]string(nil), msg.UserIDs...),
+		ChatID:       msg.ChatID,
+		BroadcastAll: msg.All,
+		Payload:      payload,
+	}
+	if err := h.crossNode.Publish(ctx, evt); err != nil {
+		// Single-node deploys use NoopPublisher which never errors; on real
+		// clusters the network leg is best-effort, so we log and move on.
+		log.Printf("[WS Hub] cross-node publish failed (kind=%s): %v", evt.Kind, err)
+	}
 }
 
 // registerWorker 注册/注销处理 worker
@@ -431,6 +523,11 @@ func (h *Hub) Unregister(client *Client) {
 func (h *Hub) Broadcast(msg *BroadcastMessage) {
 	// 有界通道用于隔离业务协程和网络写入；这里入队成功不等于客户端已经收到。
 	h.broadcast <- msg
+	// Fan the message out to other API nodes after queuing it for local
+	// delivery. The two operations are intentionally decoupled: we never
+	// block a business caller on Pub/Sub latency, and a Pub/Sub failure
+	// only costs us the cross-node leg (local delivery already happened).
+	h.publishCrossNode(context.Background(), msg)
 }
 
 // SubscribeChat 订阅会话（幂等：已订阅则跳过）

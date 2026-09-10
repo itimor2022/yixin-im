@@ -17,6 +17,7 @@ type Config struct {
 	MySQL           MySQLConfig           `yaml:"mysql"`
 	MongoDB         MongoDBConfig         `yaml:"mongodb"`
 	Redis           RedisConfig           `yaml:"redis"`
+	Cluster         ClusterConfig         `yaml:"cluster"`
 	JWT             JWTConfig             `yaml:"jwt"`
 	WebSocket       WebSocketConfig       `yaml:"websocket"`
 	ClientBootstrap ClientBootstrapConfig `yaml:"client_bootstrap"`
@@ -59,11 +60,50 @@ type MongoDBConfig struct {
 	MinPoolSize uint64 `yaml:"min_pool_size"`
 }
 type RedisConfig struct {
+	// Addrs is the preferred field. Single host:port → standalone Redis; multiple
+	// host:port values → Redis Cluster (go-redis UniversalClient picks the right
+	// implementation based on len(Addrs)).
+	Addrs []string `yaml:"addrs"`
+	// Addr is kept for backwards compatibility with existing single-node
+	// config files. When Addrs is empty and Addr is set, Addr is treated as
+	// the single entry of Addrs.
 	Addr         string `yaml:"addr"`
 	Password     string `yaml:"password"`
 	DB           int    `yaml:"db"`
 	PoolSize     int    `yaml:"pool_size"`
 	MinIdleConns int    `yaml:"min_idle_conns"`
+
+	// ClusterOnly forces NewUniversalClient to build a ClusterClient even when
+	// only a single address is supplied (useful when the address points at a
+	// cluster-aware proxy such as an ElastiCache configuration endpoint).
+	IsClusterMode bool `yaml:"is_cluster_mode"`
+}
+
+// ClusterConfig controls the multi-node API deployment features that are
+// layered on top of the base Redis connection. When Enabled is false the
+// server runs in single-node mode (no cross-node fan-out, no hash-tag
+// enforcement); the same binary supports 1, 3, or N machines by toggling this
+// flag plus the redis.addrs list.
+type ClusterConfig struct {
+	// Enabled gates cross-node WebSocket fan-out via Redis Pub/Sub. The
+	// underlying Redis client (ClusterClient vs Client) is determined
+	// independently by len(redis.addrs); this flag only controls whether
+	// publishers and subscribers are wired up.
+	Enabled bool `yaml:"enabled"`
+	// NodeID is the stable identifier for this process (e.g. "node1"). It is
+	// stamped onto every outbound cross-node event so other nodes can drop
+	// their own echoed messages without doing extra work.
+	NodeID string `yaml:"node_id"`
+	// Channel is the Redis Pub/Sub channel used for cross-node WebSocket
+	// fan-out. Defaults to "ws:node:fanout".
+	Channel string `yaml:"channel"`
+	// ShardedQueue splits the delayed/work queue into N hash-tagged shards so
+	// each worker can BRPop from one shard while Cluster routes the key
+	// deterministically. Leave false on single-node deployments.
+	ShardedQueue bool `yaml:"sharded_queue"`
+	// QueueShards is the number of shards used when ShardedQueue is true.
+	// Ignored otherwise.
+	QueueShards int `yaml:"queue_shards"`
 }
 type JWTConfig struct {
 	Secret        string        `yaml:"secret"`
@@ -311,8 +351,30 @@ func Load(path string) (*Config, error) {
 
 		cfg.MessageStorage.IdempotencyMonths = cfg.MessageStorage.RetentionMonths
 	}
+	if cfg.Cluster.Channel == "" {
+		cfg.Cluster.Channel = "ws:node:fanout"
+	}
+	if cfg.Cluster.ShardedQueue && cfg.Cluster.QueueShards <= 0 {
+		cfg.Cluster.QueueShards = 4
+	}
+	if cfg.Cluster.NodeID == "" {
+		// Default to hostname-style identifier so logs and events are traceable
+		// even when the operator forgets to set the variable.
+		cfg.Cluster.NodeID = defaultNodeID()
+	}
 	GlobalConfig = &cfg
 	return &cfg, nil
+}
+
+// defaultNodeID derives a stable fallback identifier for the current process.
+// The hostname is good enough for human-readable log lines; deployments that
+// care about distinguishing machines in a fixed order should override via the
+// GENERIC_IM_CLUSTER_NODE_ID env var or the cluster.node_id config field.
+func defaultNodeID() string {
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "node-local"
 }
 
 // ValidateRuntime catches unsafe production defaults after all environment // overrides have been applied. Tests intentionally call Load without this gate // so bundled sample configs can stay lightweight.
@@ -382,6 +444,12 @@ func ValidateRuntime(cfg *Config) error {
 	return nil
 }
 func applyEnvOverrides(cfg *Config) {
+	// Honour the legacy single-node `redis.addr` field by promoting it to the
+	// `redis.addrs` list when the operator hasn't supplied the new style.
+	if len(cfg.Redis.Addrs) == 0 && strings.TrimSpace(cfg.Redis.Addr) != "" {
+		cfg.Redis.Addrs = []string{strings.TrimSpace(cfg.Redis.Addr)}
+	}
+	cfg.Redis.Addrs = trimStringList(cfg.Redis.Addrs)
 	setString("GENERIC_IM_SERVER_MODE", &cfg.Server.Mode)
 	setInt("GENERIC_IM_SERVER_PORT", &cfg.Server.Port)
 	setString("GENERIC_IM_SERVER_BASE_URL", &cfg.Server.BaseURL)
@@ -418,8 +486,15 @@ func applyEnvOverrides(cfg *Config) {
 	setString("GENERIC_IM_MONGODB_URI", &cfg.MongoDB.URI)
 	setString("GENERIC_IM_MONGODB_DATABASE", &cfg.MongoDB.Database)
 	setString("GENERIC_IM_REDIS_ADDR", &cfg.Redis.Addr)
+	setStringList("GENERIC_IM_REDIS_CLUSTER_NODES", &cfg.Redis.Addrs)
 	setString("GENERIC_IM_REDIS_PASSWORD", &cfg.Redis.Password)
 	setInt("GENERIC_IM_REDIS_DB", &cfg.Redis.DB)
+	setBool("GENERIC_IM_REDIS_IS_CLUSTER_MODE", &cfg.Redis.IsClusterMode)
+	setBool("GENERIC_IM_CLUSTER_ENABLED", &cfg.Cluster.Enabled)
+	setString("GENERIC_IM_CLUSTER_NODE_ID", &cfg.Cluster.NodeID)
+	setString("GENERIC_IM_CLUSTER_CHANNEL", &cfg.Cluster.Channel)
+	setBool("GENERIC_IM_CLUSTER_SHARDED_QUEUE", &cfg.Cluster.ShardedQueue)
+	setInt("GENERIC_IM_CLUSTER_QUEUE_SHARDS", &cfg.Cluster.QueueShards)
 	setString("GENERIC_IM_JWT_SECRET", &cfg.JWT.Secret)
 	setDuration("GENERIC_IM_JWT_EXPIRE", &cfg.JWT.Expire)
 	setDuration("GENERIC_IM_JWT_REFRESH_EXPIRE", &cfg.JWT.RefreshExpire)

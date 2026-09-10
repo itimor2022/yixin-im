@@ -6,21 +6,30 @@ package mq
 import (
 	"context"
 	"encoding/json"
-	"github.com/redis/go-redis/v9"
+	"fmt"
 	"log"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // MessageQueue 消息队列 - 基于Redis实现高性能消息队列
 type MessageQueue struct {
-	redis       *redis.Client
+	// redis is the broad Cmdable interface so the same MessageQueue works
+	// against either a standalone Redis or a Redis Cluster connection.
+	redis       redis.Cmdable
 	handlers    map[string]Handler
 	mu          sync.RWMutex
 	workerCount int
 	ctx         context.Context
 	cancel      context.CancelFunc
+	// shardCount > 1 means queue names are appended with `:{0..shardCount-1}`
+	// so each shard lives on a deterministic Redis Cluster slot; one worker
+	// pops from one shard, so BRPop never blocks waiting for a key on the
+	// wrong shard. sharded mode is only meaningful with Cluster.
+	shardCount int
 }
 
 // Handler 消息处理器
@@ -48,7 +57,14 @@ const (
 )
 
 // NewMessageQueue 创建消息队列
-func NewMessageQueue(rdb *redis.Client, workerCount int) *MessageQueue {
+//
+// shardCount defaults to 1 (legacy behaviour: a single queue name per logical
+// queue). On Redis Cluster deployments set shardCount>1 so each shard has its
+// own hash-tagged key and each worker can BRPop deterministically.
+func NewMessageQueue(rdb redis.Cmdable, workerCount int, shardCount int) *MessageQueue {
+	if shardCount < 1 {
+		shardCount = 1
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &MessageQueue{
 		redis:       rdb,
@@ -56,7 +72,32 @@ func NewMessageQueue(rdb *redis.Client, workerCount int) *MessageQueue {
 		workerCount: workerCount,
 		ctx:         ctx,
 		cancel:      cancel,
+		shardCount:  shardCount,
 	}
+}
+
+// queueName builds the concrete Redis key for a logical queue + shard index.
+// sharded=true with shard N produces `base:{N}`; sharded=false produces `base`.
+// Hash tag `{N}` keeps the key on a deterministic Cluster slot so a worker
+// attached to shard N always reads from the same shard.
+func (mq *MessageQueue) queueName(base string, shard int) string {
+	if mq.shardCount <= 1 {
+		return base
+	}
+	return fmt.Sprintf("%s:{%d}", base, shard)
+}
+
+// allShards returns the concrete keys for every shard of `base`. When
+// sharding is disabled the slice is just `[base]`.
+func (mq *MessageQueue) allShards(base string) []string {
+	if mq.shardCount <= 1 {
+		return []string{base}
+	}
+	out := make([]string, mq.shardCount)
+	for i := 0; i < mq.shardCount; i++ {
+		out[i] = fmt.Sprintf("%s:{%d}", base, i)
+	}
+	return out
 }
 
 // RegisterHandler 注册消息处理器
@@ -67,7 +108,9 @@ func (mq *MessageQueue) RegisterHandler(msgType string, handler Handler) {
 }
 
 // Publish 发布消息到队列
-
+//
+// 在 Cluster + sharded 模式下，按消息 ID 哈希到固定 shard，确保同一会话的
+// 消息顺序在同一 worker 中被处理（顺序只是"同一分片内"保证，跨分片不保证）。
 func (mq *MessageQueue) Publish(ctx context.Context, queue string, msg *QueueMessage) error {
 	if msg.ID == "" {
 		msg.ID = generateID()
@@ -89,7 +132,23 @@ func (mq *MessageQueue) Publish(ctx context.Context, queue string, msg *QueueMes
 	if msg.Priority > 0 {
 		targetQueue = queue + ":high"
 	}
-	return mq.redis.LPush(ctx, targetQueue, data).Err()
+	shard := mq.pickShard(msg.ID)
+	return mq.redis.LPush(ctx, mq.queueName(targetQueue, shard), data).Err()
+}
+
+// pickShard returns the shard index for a given message identifier. The hash
+// uses the same FNV-like routine as the rest of the package; deterministic and
+// cheap. sharded=false always returns 0 (the only shard).
+func (mq *MessageQueue) pickShard(id string) int {
+	if mq.shardCount <= 1 {
+		return 0
+	}
+	var h uint32 = 2166136261
+	for i := 0; i < len(id); i++ {
+		h ^= uint32(id[i])
+		h *= 16777619
+	}
+	return int(h % uint32(mq.shardCount))
 }
 
 // PublishDelayed
@@ -115,7 +174,7 @@ func (mq *MessageQueue) PublishDelayed(ctx context.Context, msg *QueueMessage, d
 
 // Start 启动消费者
 func (mq *MessageQueue) Start(queues ...string) {
-	log.Printf("[MQ] Starting message queue with %d workers", mq.workerCount)
+	log.Printf("[MQ] Starting message queue with %d workers (shards=%d)", mq.workerCount, mq.shardCount)
 
 	// 启动工作协程
 	for i := 0; i < mq.workerCount; i++ {
@@ -132,15 +191,27 @@ func (mq *MessageQueue) Stop() {
 }
 
 // worker 工作协程
+//
+// 在 sharded 模式下每个 worker 只 BRPop 自己负责的 shard（按 worker id %
+// shardCount），保证 BRPop 的所有 key 落在同一 Cluster slot 上。
+// 非 sharded 模式下行为不变：每个 worker 监听全部队列。
 func (mq *MessageQueue) worker(id int, queues []string) {
 	log.Printf("[MQ] Worker %d started", id)
 
-	// 构建队列列表（包含高优先级队列）
-	allQueues := make([]string, 0, len(queues)*2)
-	for _, q := range queues {
-
-		allQueues = append(allQueues, q+":high") // 优先处理高优先级
-		allQueues = append(allQueues, q)
+	var allQueues []string
+	if mq.shardCount <= 1 {
+		allQueues = make([]string, 0, len(queues)*2)
+		for _, q := range queues {
+			allQueues = append(allQueues, q+":high") // 优先处理高优先级
+			allQueues = append(allQueues, q)
+		}
+	} else {
+		shard := id % mq.shardCount
+		allQueues = make([]string, 0, len(queues)*2)
+		for _, q := range queues {
+			allQueues = append(allQueues, mq.queueName(q+":high", shard))
+			allQueues = append(allQueues, mq.queueName(q, shard))
+		}
 	}
 	for {
 		select {
@@ -202,9 +273,10 @@ func (mq *MessageQueue) processMessage(msg *QueueMessage) {
 			delay := time.Duration(msg.Retry*msg.Retry) * time.Second
 			mq.PublishDelayed(context.Background(), msg, delay)
 		} else {
-			// 移入死信队列
+			// 移入死信队列（沿用原 shard，让 BRPop 还能继续看到）
 			data, _ := json.Marshal(msg)
-			mq.redis.LPush(context.Background(), QueueDead, data)
+			shard := mq.pickShard(msg.ID)
+			mq.redis.LPush(context.Background(), mq.queueName(QueueDead, shard), data)
 			log.Printf("[MQ] Message moved to dead queue: %s", msg.ID)
 		}
 	}
@@ -252,7 +324,8 @@ func (mq *MessageQueue) checkDelayed() {
 		//
 
 		queue := getQueueByType(msg.Type)
-		mq.redis.LPush(mq.ctx, queue, data)
+		shard := mq.pickShard(msg.ID)
+		mq.redis.LPush(mq.ctx, mq.queueName(queue, shard), data)
 	}
 }
 
