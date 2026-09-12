@@ -804,9 +804,9 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               Text(
                 _walletText(
                   context,
-                  zhCN: '通用IM钱包',
-                  zhTW: '通用IM錢包',
-                  en: '通用IM Wallet',
+                  zhCN: '钱包',
+                  zhTW: '錢包',
+                  en: 'Wallet',
                 ),
                 style: TextStyle(
                   fontSize: 20,

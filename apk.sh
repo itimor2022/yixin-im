@@ -24,7 +24,7 @@ mkdir -p "$DESKTOP"
 
 # 生成时间戳（格式：年月日_时分秒）
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_NAME="通用IM_${TIMESTAMP}.apk"
+OUTPUT_NAME="快聊_${TIMESTAMP}.apk"
 
 APK_SOURCE="$APK_DIR/app-release.apk"
 

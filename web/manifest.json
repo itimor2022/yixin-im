@@ -1,11 +1,11 @@
 {
-    "name": "通用IM",
-    "short_name": "通用IM",
+    "name": "快聊",
+    "short_name": "快聊",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#3F8FEF",
     "theme_color": "#3F8FEF",
-    "description": "通用IM Web 客户端",
+    "description": "快聊 Web",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

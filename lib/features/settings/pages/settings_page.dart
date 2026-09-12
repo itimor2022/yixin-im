@@ -219,15 +219,11 @@ class SettingsPage extends ConsumerWidget {
     final deviceCountAsync = ref.watch(deviceCountProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final currentUser = ref.watch(authServiceProvider).user;
-    final configuredName =
-        ref.watch(systemSettingsProvider).valueOrNull?.displayName.trim() ?? '';
     final systemSettings = ref.watch(systemSettingsProvider).valueOrNull;
     final showWallet = !PlatformUtils.isMobile ||
         (systemSettings?.iosCompliance.allowsWallet ?? false);
     final showVIP = !PlatformUtils.isMobile ||
         (systemSettings?.iosCompliance.allowsVIP ?? false);
-    final appName =
-        configuredName.isNotEmpty ? configuredName : defaultAppDisplayName();
     final vipStatusAsync = ref.watch(vipStatusProvider);
     final isFloatingNavHidden = ref.watch(floatingNavHiddenProvider);
     final floatingBottomSpace = isDesktopSidebar
@@ -558,15 +554,9 @@ class SettingsPage extends ConsumerWidget {
                     final versionAsync = ref.watch(appVersionProvider);
                     return versionAsync.when(
                       data: (info) {
-                        final settings =
-                            ref.watch(systemSettingsProvider).valueOrNull;
                         final patchNumber = ref
                             .watch(shorebirdCurrentPatchNumberProvider)
                             .valueOrNull;
-                        final displayVersion =
-                            settings?.systemVersion.trim().isNotEmpty == true
-                                ? settings!.systemVersion.trim()
-                                : info.version;
                         final patchLabel = patchNumber == null
                             ? ''
                             : _settingsText(
@@ -576,27 +566,15 @@ class SettingsPage extends ConsumerWidget {
                                 en: ' · Hot update Patch #$patchNumber',
                               );
                         return Text(
-                          '$appName v$displayVersion',
+                          '${info.appName} v${info.version}$patchLabel',
                           style: TextStyle(
                             fontSize: 13,
                             color: AppColors.textTertiaryFor(context),
                           ),
                         );
                       },
-                      loading: () => Text(
-                        appName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiaryFor(context),
-                        ),
-                      ),
-                      error: (_, __) => Text(
-                        appName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiaryFor(context),
-                        ),
-                      ),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
                     );
                   },
                 ),

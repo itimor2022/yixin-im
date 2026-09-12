@@ -10,10 +10,10 @@ import '../../i18n/app_localizations.dart';
 import '../background_keep_alive_policy.dart';
 import 'api_client.dart';
 
-const String kDefaultAppDisplayName = '通用IM';
+const String kDefaultAppDisplayName = '快聊';
 const String kSystemSettingsCacheKey = 'system_settings_cache';
 
-const String kDefaultAppDisplayNameEn = '通用IM';
+const String kDefaultAppDisplayNameEn = '快聊';
 
 // 流程逻辑：`defaultAppDisplayName` 负责一次完整的外部调用边界，包含参数准备、响应转换、异常归一化和必要的重试/清理。
 String defaultAppDisplayName({AppLanguage? language}) {
