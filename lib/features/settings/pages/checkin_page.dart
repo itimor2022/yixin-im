@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api/checkin_service.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 
@@ -84,11 +85,15 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
       await ref.read(checkinServiceProvider).doCheckin();
       if (mounted) {
         HapticFeedback.lightImpact();
-        AppSnackBar.success(context, '签到成功  连续加油');
+        final l10n = AppLocalizations.of(context);
+        AppSnackBar.success(context, l10n.checkinSuccess);
       }
       await _load();
     } catch (e) {
-      if (mounted) AppSnackBar.error(context, '签到失败：$e');
+      if (mounted) {
+        final l10n = AppLocalizations.of(context);
+        AppSnackBar.error(context, '${l10n.checkinFailed}：$e');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -106,6 +111,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? _kBgDark : _kBgLight;
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
@@ -122,7 +128,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '签到',
+          l10n.checkin,
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -166,6 +172,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
   Widget _buildHero(bool isDark) {
     final continuous = _data.continuousDays;
     final done = _data.checkedToday;
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Container(
@@ -213,8 +220,10 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
                       children: [
                         Text(
                           _loading
-                              ? '同步中…'
-                              : (done ? '太棒了 · 今日已完成' : '今日还未签到'),
+                              ? l10n.checkinSyncing
+                              : (done
+                                  ? l10n.checkinTodayDone
+                                  : l10n.checkinTodayPending),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
@@ -248,9 +257,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
                                         letterSpacing: -1.5,
                                       ),
                                     ),
-                                    const TextSpan(
-                                      text: ' 天',
-                                      style: TextStyle(
+                                    TextSpan(
+                                      text: ' ${l10n.checkinDayUnit}',
+                                      style: const TextStyle(
                                         color: Colors.white70,
                                         fontSize: 16,
                                         fontWeight: FontWeight.w500,
@@ -260,9 +269,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              const Text(
-                                '连续签到',
-                                style: TextStyle(
+                              Text(
+                                l10n.checkinContinuous,
+                                style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: 12,
                                   letterSpacing: 0.4,
@@ -301,6 +310,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
     final surface = isDark ? _kSurfaceDark : _kSurfaceLight;
     final title = isDark ? Colors.white : _kTextPrimary;
     final sub = isDark ? Colors.white54 : _kTextSecondary;
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
@@ -309,9 +319,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
             child: _StatPill(
               icon: Icons.emoji_events_rounded,
               iconTint: const Color(0xFFF59E0B),
-              label: '累计签到',
+              label: l10n.checkinTotal,
               value: '${_data.totalDays}',
-              unit: '天',
+              unit: l10n.checkinDayUnit,
               surface: surface,
               titleColor: title,
               subColor: sub,
@@ -322,9 +332,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
             child: _StatPill(
               icon: Icons.calendar_month_rounded,
               iconTint: _kPrimary,
-              label: '本月签到',
+              label: l10n.checkinMonth,
               value: '${_data.checkedDays.length}',
-              unit: '天',
+              unit: l10n.checkinDayUnit,
               surface: surface,
               titleColor: title,
               subColor: sub,
@@ -368,6 +378,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
 
   Widget _buildMonthPicker(bool isDark) {
     final txt = isDark ? Colors.white : _kTextPrimary;
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
@@ -394,7 +405,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
                     ),
                     const WidgetSpan(child: SizedBox(width: 8)),
                     TextSpan(
-                      text: '${_month.month} 月',
+                      text: '${_month.month} ${l10n.checkinMonthUnit}',
                       style: TextStyle(
                         fontSize: 17,
                         color: txt,
@@ -421,7 +432,16 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
     final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
     final leadingBlanks = first.weekday % 7; // Sun=0
     final checked = _data.checkedDays.toSet();
-    const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
+    final l10n = AppLocalizations.of(context);
+    final weekLabels = [
+      l10n.checkinWeekdaySun,
+      l10n.checkinWeekdayMon,
+      l10n.checkinWeekdayTue,
+      l10n.checkinWeekdayWed,
+      l10n.checkinWeekdayThu,
+      l10n.checkinWeekdayFri,
+      l10n.checkinWeekdaySat,
+    ];
     final now = DateTime.now();
 
     Widget label(String s, {bool weekend = false}) => Center(
@@ -433,9 +453,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
               letterSpacing: 0.4,
               color: isDark
                   ? Colors.white54
-                  : (weekend
-                      ? const Color(0xFFEF6060)
-                      : _kTextTertiary),
+                  : (weekend ? const Color(0xFFEF6060) : _kTextTertiary),
             ),
           ),
         );
@@ -451,9 +469,8 @@ class _CheckinPageState extends ConsumerState<CheckinPage>
       final dateStr =
           '${_month.year}-${_month.month.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}';
       final isChecked = checked.contains(dateStr);
-      final isToday = _month.year == now.year &&
-          _month.month == now.month &&
-          d == now.day;
+      final isToday =
+          _month.year == now.year && _month.month == now.month && d == now.day;
       cells.add(_DayCell(
         day: d,
         isChecked: isChecked,
@@ -503,20 +520,21 @@ class _StreakBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     late final IconData icon;
     late final String label;
     if (continuous >= 30) {
       icon = Icons.local_fire_department_rounded;
-      label = '火力全开';
+      label = l10n.checkinStreakFire;
     } else if (continuous >= 7) {
       icon = Icons.auto_awesome_rounded;
-      label = '保持节奏';
+      label = l10n.checkinStreakKeep;
     } else if (continuous >= 1) {
       icon = Icons.spa_rounded;
-      label = '开始积累';
+      label = l10n.checkinStreakStart;
     } else {
       icon = Icons.bedtime_rounded;
-      label = '待激活';
+      label = l10n.checkinStreakPending;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -562,6 +580,7 @@ class _HeroCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AnimatedBuilder(
       animation: pulseCtrl,
       builder: (context, _) {
@@ -613,7 +632,9 @@ class _HeroCta extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            done ? '已签到' : '签到',
+                            done
+                                ? l10n.checkinCheckedToday
+                                : l10n.checkinButton,
                             style: TextStyle(
                               color: done ? Colors.white : _kPrimary,
                               fontSize: 15,
@@ -645,9 +666,18 @@ class _WeeklyPulse extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final now = DateTime.now();
     final monday = now.subtract(Duration(days: now.weekday - 1));
-    const labels = ['一', '二', '三', '四', '五', '六', '日'];
+    final labels = [
+      l10n.checkinWeekdayMon,
+      l10n.checkinWeekdayTue,
+      l10n.checkinWeekdayWed,
+      l10n.checkinWeekdayThu,
+      l10n.checkinWeekdayFri,
+      l10n.checkinWeekdaySat,
+      l10n.checkinWeekdaySun,
+    ];
     return AnimatedBuilder(
       animation: animation,
       builder: (context, _) {
@@ -696,8 +726,7 @@ class _WeeklyPulse extends StatelessWidget {
                             ? Colors.white
                             : Colors.white.withOpacity(0.6),
                         fontSize: 10.5,
-                        fontWeight:
-                            isToday ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
                   ],
@@ -836,9 +865,7 @@ class _CircleIconBtn extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isDark
-                ? Colors.white.withOpacity(0.06)
-                : _kSoftGray,
+            color: isDark ? Colors.white.withOpacity(0.06) : _kSoftGray,
           ),
           child: Icon(
             icon,

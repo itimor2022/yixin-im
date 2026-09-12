@@ -214,8 +214,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
     final l10n = AppLocalizations(ref.watch(languageProvider));
 
-    final authState = ref.watch(authServiceProvider);
-    final user = authState.user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
     final displayName = user?.nickname ?? user?.username ?? l10n.get('offline');
     final avatar = user?.avatar;
     final phoneDisplay = _formatPhone(user?.phone, l10n);
@@ -2007,8 +2006,7 @@ class _QRCodePageState extends ConsumerState<ProfileQRCodePage>
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authServiceProvider);
-    final user = authState.user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
     String? nonEmpty(String? value) {
       final text = value?.trim() ?? '';
       return text.isEmpty ? null : text;

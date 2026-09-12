@@ -1628,7 +1628,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authServiceProvider);
+    final authState = ref.watch(authServiceProvider.select((s) => s.status));
     final appName =
         ref.read(systemSettingsServiceProvider).cachedSettings?.displayName ??
             kDefaultAppDisplayName;
@@ -1641,11 +1641,12 @@ class _SplashPageState extends ConsumerState<SplashPage>
       }
     });
 
-    if (authState.status != AuthStatus.initial &&
-        authState.status != AuthStatus.loading) {
+    if (authState != AuthStatus.initial &&
+        authState != AuthStatus.loading) {
+      final captured = authState;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _onAuthStatusResolved(authState.status);
+        _onAuthStatusResolved(captured);
       });
     }
 

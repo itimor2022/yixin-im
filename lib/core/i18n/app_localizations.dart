@@ -499,6 +499,42 @@ class AppLocalizations {
   String get aboutTitle => get('about_title');
   String get copyright => get('copyright');
 
+  // 签到页
+  String get checkin => get('checkin');
+  String get checkinSubtitle => get('checkin_subtitle');
+  String get checkinSuccess => get('checkin_success');
+  String get checkinFailed => get('checkin_failed');
+  String get checkinContinuous => get('checkin_continuous');
+  String get checkinTodayDone => get('checkin_today_done');
+  String get checkinTodayPending => get('checkin_today_pending');
+  String get checkinSyncing => get('checkin_syncing');
+  String get checkinTotal => get('checkin_total');
+  String get checkinMonth => get('checkin_month');
+  String get checkinStreakFire => get('checkin_streak_fire');
+  String get checkinStreakKeep => get('checkin_streak_keep');
+  String get checkinStreakStart => get('checkin_streak_start');
+  String get checkinStreakPending => get('checkin_streak_pending');
+  String get checkinButton => get('checkin_button');
+  String get checkinCheckedToday => get('checkin_checked_today');
+  String get checkinDayUnit => get('checkin_day_unit');
+  String get checkinMonthUnit => get('checkin_month_unit');
+  String get checkinWeekdaySun => get('checkin_weekday_sun');
+  String get checkinWeekdayMon => get('checkin_weekday_mon');
+  String get checkinWeekdayTue => get('checkin_weekday_tue');
+  String get checkinWeekdayWed => get('checkin_weekday_wed');
+  String get checkinWeekdayThu => get('checkin_weekday_thu');
+  String get checkinWeekdayFri => get('checkin_weekday_fri');
+  String get checkinWeekdaySat => get('checkin_weekday_sat');
+
+  // 主题设置页
+  String get themePickerTitle => get('theme_picker_title');
+  String get themePickerSubtitle => get('theme_picker_subtitle');
+  String get themeModeSection => get('theme_mode_section');
+  String get themeModeLight => get('theme_mode_light');
+  String get themeModeSystem => get('theme_mode_system');
+  String get themeModeDark => get('theme_mode_dark');
+  String get themeColorSection => get('theme_color_section');
+
   // 空状态
   String get selectChatToStart => get('select_chat_to_start');
   String get pressToStartChat => get('press_to_start_chat');
@@ -1176,6 +1212,42 @@ const Map<String, String> _zhCN = {
   'meeting': '会议',
   'record_video': '录像',
   'view_media': '查看媒体',
+
+  // 签到页
+  'checkin': '签到',
+  'checkin_subtitle': '每日签到，连续打卡拿奖励',
+  'checkin_success': '签到成功，连续加油',
+  'checkin_failed': '签到失败',
+  'checkin_continuous': '连续签到',
+  'checkin_today_done': '太棒了 · 今日已完成',
+  'checkin_today_pending': '今日还未签到',
+  'checkin_syncing': '同步中…',
+  'checkin_total': '累计签到',
+  'checkin_month': '本月签到',
+  'checkin_streak_fire': '火力全开',
+  'checkin_streak_keep': '保持节奏',
+  'checkin_streak_start': '开始积累',
+  'checkin_streak_pending': '待激活',
+  'checkin_button': '签到',
+  'checkin_checked_today': '已签到',
+  'checkin_day_unit': '天',
+  'checkin_month_unit': '月',
+  'checkin_weekday_sun': '日',
+  'checkin_weekday_mon': '一',
+  'checkin_weekday_tue': '二',
+  'checkin_weekday_wed': '三',
+  'checkin_weekday_thu': '四',
+  'checkin_weekday_fri': '五',
+  'checkin_weekday_sat': '六',
+
+  // 主题设置页
+  'theme_picker_title': '主题风格',
+  'theme_picker_subtitle': '切换主题色彩与显示模式',
+  'theme_mode_section': '显示模式',
+  'theme_mode_light': '浅色',
+  'theme_mode_system': '跟随系统',
+  'theme_mode_dark': '深色',
+  'theme_color_section': '主题色彩',
 };
 
 const Map<String, String> _zhTW = {
@@ -1819,6 +1891,42 @@ const Map<String, String> _zhTW = {
   'meeting': '會議',
   'record_video': '錄影',
   'view_media': '查看媒體',
+
+  // 簽到頁
+  'checkin': '簽到',
+  'checkin_subtitle': '每日簽到，連續打卡拿獎勵',
+  'checkin_success': '簽到成功，連續加油',
+  'checkin_failed': '簽到失敗',
+  'checkin_continuous': '連續簽到',
+  'checkin_today_done': '太棒了 · 今日已完成',
+  'checkin_today_pending': '今日還未簽到',
+  'checkin_syncing': '同步中…',
+  'checkin_total': '累計簽到',
+  'checkin_month': '本月簽到',
+  'checkin_streak_fire': '火力全開',
+  'checkin_streak_keep': '保持節奏',
+  'checkin_streak_start': '開始累積',
+  'checkin_streak_pending': '待啟動',
+  'checkin_button': '簽到',
+  'checkin_checked_today': '已簽到',
+  'checkin_day_unit': '天',
+  'checkin_month_unit': '月',
+  'checkin_weekday_sun': '日',
+  'checkin_weekday_mon': '一',
+  'checkin_weekday_tue': '二',
+  'checkin_weekday_wed': '三',
+  'checkin_weekday_thu': '四',
+  'checkin_weekday_fri': '五',
+  'checkin_weekday_sat': '六',
+
+  // 主題設定頁
+  'theme_picker_title': '主題風格',
+  'theme_picker_subtitle': '切換主題色彩與顯示模式',
+  'theme_mode_section': '顯示模式',
+  'theme_mode_light': '淺色',
+  'theme_mode_system': '跟隨系統',
+  'theme_mode_dark': '深色',
+  'theme_color_section': '主題色彩',
 };
 
 const Map<String, String> _en = {
@@ -2486,4 +2594,40 @@ const Map<String, String> _en = {
   'meeting': 'Meeting',
   'record_video': 'Record Video',
   'view_media': 'View Media',
+
+  // Check-in page
+  'checkin': 'Check-in',
+  'checkin_subtitle': 'Daily check-in to earn streak rewards',
+  'checkin_success': 'Check-in successful, keep it up!',
+  'checkin_failed': 'Check-in failed',
+  'checkin_continuous': 'Day Streak',
+  'checkin_today_done': 'Awesome · Done for today',
+  'checkin_today_pending': 'Not checked in today',
+  'checkin_syncing': 'Syncing…',
+  'checkin_total': 'Total Check-ins',
+  'checkin_month': 'This Month',
+  'checkin_streak_fire': 'On Fire',
+  'checkin_streak_keep': 'Keep It Up',
+  'checkin_streak_start': 'Building Up',
+  'checkin_streak_pending': 'Not Started',
+  'checkin_button': 'Check in',
+  'checkin_checked_today': 'Checked in',
+  'checkin_day_unit': 'd',
+  'checkin_month_unit': 'mo',
+  'checkin_weekday_sun': 'Sun',
+  'checkin_weekday_mon': 'Mon',
+  'checkin_weekday_tue': 'Tue',
+  'checkin_weekday_wed': 'Wed',
+  'checkin_weekday_thu': 'Thu',
+  'checkin_weekday_fri': 'Fri',
+  'checkin_weekday_sat': 'Sat',
+
+  // Theme settings page
+  'theme_picker_title': 'Theme',
+  'theme_picker_subtitle': 'Switch theme color and display mode',
+  'theme_mode_section': 'Display Mode',
+  'theme_mode_light': 'Light',
+  'theme_mode_system': 'System',
+  'theme_mode_dark': 'Dark',
+  'theme_color_section': 'Theme Color',
 };

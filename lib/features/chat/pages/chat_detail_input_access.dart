@@ -293,8 +293,9 @@ extension _ChatDetailInputAccess on _ChatDetailPageState {
 
   // 构建禁言状态检查的输入区域
   Widget _buildMuteStatusInputArea(bool isDark) {
-    final authState = ref.watch(authServiceProvider);
-    final myUserId = authState.user?.uuid ?? '';
+    final myUserId = ref.watch(
+      authServiceProvider.select((s) => s.user?.uuid ?? ''),
+    );
 
     if (myUserId.isEmpty) {
       return this._buildInputWithPreview(isDark);

@@ -858,7 +858,7 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
     bool isLoadingDevices,
     AppLocalizations l10n,
   ) {
-    final currentUser = ref.watch(authServiceProvider).user;
+    final currentUser = ref.watch(authServiceProvider.select((s) => s.user));
     final onlineStatusTitle = l10n.get('online_status') ??
         _privacyText(
           context,

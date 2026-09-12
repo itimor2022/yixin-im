@@ -178,7 +178,7 @@ class _PersonalizationPageState extends ConsumerState<PersonalizationPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final user = ref.watch(authServiceProvider).user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
     final l10n = AppLocalizations(ref.watch(languageProvider));
     final displayName = user?.nickname ??
         user?.username ??

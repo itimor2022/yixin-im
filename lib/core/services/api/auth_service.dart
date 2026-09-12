@@ -1513,42 +1513,53 @@ class AuthService extends StateNotifier<AuthState> {
             }
           : null,
       localCleanup: (context) async {
-        try {
-          await _ref.read(pushNotificationServiceProvider).clearToken();
-        } catch (e) {
-          debugPrint('[Auth] Failed to clear local push token: $e');
-        }
+        // 先立即把状态切到 unauthenticated，让 UI 立即响应跳转，再并行做磁盘清理。
+        _api.clearToken();
+        state = AuthState(
+          status: AuthStatus.unauthenticated,
+          error: errorMessage ??
+              (reason == SessionExitReason.tokenExpired
+                  ? _authText(
+                      zhCN: '登录已过期，请重新登录',
+                      zhTW: '登入已過期，請重新登入',
+                      en: 'Session expired. Please log in again.',
+                    )
+                  : null),
+        );
 
-        try {
-          if (PlatformUtils.isWeb) {
-            final prefs = await SharedPreferences.getInstance();
-            await Future.wait([
-              prefs.remove('auth_token'),
-              prefs.remove('user_id'),
-              prefs.remove('auth_user_data'),
-              prefs.remove('moment_notification_last_read'),
-            ]);
-          } else {
-            await TokenStorage.clear();
-          }
-        } catch (e) {
-          debugPrint('[Auth] Failed to clear token storage: $e');
-        } finally {
-          _api.clearToken();
-          state = AuthState(
-            status: AuthStatus.unauthenticated,
-            error: errorMessage ??
-                (reason == SessionExitReason.tokenExpired
-                    ? _authText(
-                        zhCN: '登录已过期，请重新登录',
-                        zhTW: '登入已過期，請重新登入',
-                        en: 'Session expired. Please log in again.',
-                      )
-                    : null),
-          );
-        }
+        // 并行清理：推送 token（含 FCM 网络调用）+ 本地凭据存储，不阻塞 UI 已完成的跳转。
+        await Future.wait([
+          _safeClearPushToken(),
+          _safeClearTokenStorage(),
+        ]);
       },
     );
+  }
+
+  Future<void> _safeClearPushToken() async {
+    try {
+      await _ref.read(pushNotificationServiceProvider).clearToken();
+    } catch (e) {
+      debugPrint('[Auth] Failed to clear local push token: $e');
+    }
+  }
+
+  Future<void> _safeClearTokenStorage() async {
+    try {
+      if (PlatformUtils.isWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await Future.wait([
+          prefs.remove('auth_token'),
+          prefs.remove('user_id'),
+          prefs.remove('auth_user_data'),
+          prefs.remove('moment_notification_last_read'),
+        ]);
+      } else {
+        await TokenStorage.clear();
+      }
+    } catch (e) {
+      debugPrint('[Auth] Failed to clear token storage: $e');
+    }
   }
 }
 
