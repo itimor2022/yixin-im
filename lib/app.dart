@@ -940,7 +940,7 @@ class _GenericIMAppState extends ConsumerState<GenericIMApp>
     _announcementHandlerId ??= wsService.registerHandler(
       WSMessageType.systemAnnouncement,
       (data) {
-        final 】【 =
+        final appName =
             ref.read(systemSettingsProvider).valueOrNull?.displayName ??
                 defaultAppDisplayName();
         final l10n = rootNavigatorKey.currentContext != null
