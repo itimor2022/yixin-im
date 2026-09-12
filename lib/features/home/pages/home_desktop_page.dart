@@ -399,8 +399,7 @@ class _HomeDesktopPageState extends ConsumerState<HomeDesktopPage> {
     bool hasCustomPortal,
     String portalLabel,
   ) {
-    final authState = ref.watch(authServiceProvider);
-    final user = authState.user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
 
     return Container(
       width: 68,

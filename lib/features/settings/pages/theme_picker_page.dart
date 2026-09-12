@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/theme/app_theme_preset.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/theme/app_colors.dart';
@@ -15,6 +16,8 @@ class ThemePickerPage extends ConsumerWidget {
     final currentPreset = ref.watch(appThemePresetProvider);
     final currentMode = ref.watch(themeModeProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
+    final isEnglish = l10n.language == AppLanguage.en;
 
     return Scaffold(
       appBar: ThemedAppBar(
@@ -22,17 +25,17 @@ class ThemePickerPage extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('主题风格'),
+        title: Text(l10n.themePickerTitle),
         centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _SectionTitle(title: '显示模式'),
+          _SectionTitle(title: l10n.themeModeSection),
           const SizedBox(height: 8),
           _ModeSelector(currentMode: currentMode),
           const SizedBox(height: 28),
-          _SectionTitle(title: '主题色彩'),
+          _SectionTitle(title: l10n.themeColorSection),
           const SizedBox(height: 12),
           ...AppThemePreset.values.map((preset) {
             final colors = AppThemePresets.of(preset);
@@ -41,6 +44,7 @@ class ThemePickerPage extends ConsumerWidget {
               colors: colors,
               isSelected: isSelected,
               isDark: isDark,
+              isEnglish: isEnglish,
               onTap: () {
                 HapticFeedback.selectionClick();
                 ref.read(appThemePresetProvider.notifier).setPreset(preset);
@@ -84,10 +88,11 @@ class _ModeSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n = AppLocalizations.of(context);
     final options = [
-      (ThemeMode.light, Icons.light_mode_rounded, '浅色'),
-      (ThemeMode.system, Icons.brightness_auto_rounded, '跟随系统'),
-      (ThemeMode.dark, Icons.dark_mode_rounded, '深色'),
+      (ThemeMode.light, Icons.light_mode_rounded, l10n.themeModeLight),
+      (ThemeMode.system, Icons.brightness_auto_rounded, l10n.themeModeSystem),
+      (ThemeMode.dark, Icons.dark_mode_rounded, l10n.themeModeDark),
     ];
 
     return Container(
@@ -128,9 +133,8 @@ class _ModeSelector extends ConsumerWidget {
                       label,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected
                             ? Colors.white
                             : AppColors.textSecondaryFor(context),
@@ -152,12 +156,14 @@ class _ThemePresetCard extends StatelessWidget {
   final AppThemeColors colors;
   final bool isSelected;
   final bool isDark;
+  final bool isEnglish;
   final VoidCallback onTap;
 
   const _ThemePresetCard({
     required this.colors,
     required this.isSelected,
     required this.isDark,
+    required this.isEnglish,
     required this.onTap,
   });
 
@@ -211,8 +217,7 @@ class _ThemePresetCard extends StatelessWidget {
 
             // ── 名称行 ──
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Container(
@@ -234,7 +239,7 @@ class _ThemePresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        colors.name,
+                        isEnglish ? colors.nameEn : colors.name,
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -242,7 +247,7 @@ class _ThemePresetCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        colors.nameEn,
+                        isEnglish ? colors.name : colors.nameEn,
                         style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondaryFor(context),
@@ -331,8 +336,7 @@ class _PreviewMockup extends StatelessWidget {
                 ),
                 const Spacer(),
                 Icon(Icons.more_vert,
-                    size: 14,
-                    color: Colors.white.withOpacity(0.7)),
+                    size: 14, color: Colors.white.withOpacity(0.7)),
               ],
             ),
           ),
@@ -357,7 +361,9 @@ class _PreviewMockup extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       _Bubble(
-                          color: bubbleInColor, width: 70, align: Alignment.centerLeft),
+                          color: bubbleInColor,
+                          width: 70,
+                          align: Alignment.centerLeft),
                     ],
                   ),
                   // 自己气泡（右）
@@ -365,7 +371,9 @@ class _PreviewMockup extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       _Bubble(
-                          color: bubbleOutColor, width: 55, align: Alignment.centerRight),
+                          color: bubbleOutColor,
+                          width: 55,
+                          align: Alignment.centerRight),
                     ],
                   ),
                   // 对方气泡（左，短）
@@ -373,7 +381,9 @@ class _PreviewMockup extends StatelessWidget {
                     children: [
                       const SizedBox(width: 22),
                       _Bubble(
-                          color: bubbleInColor, width: 45, align: Alignment.centerLeft),
+                          color: bubbleInColor,
+                          width: 45,
+                          align: Alignment.centerLeft),
                     ],
                   ),
                 ],
@@ -422,7 +432,8 @@ class _Bubble extends StatelessWidget {
   final Color color;
   final double width;
   final Alignment align;
-  const _Bubble({required this.color, required this.width, required this.align});
+  const _Bubble(
+      {required this.color, required this.width, required this.align});
 
   @override
   Widget build(BuildContext context) {

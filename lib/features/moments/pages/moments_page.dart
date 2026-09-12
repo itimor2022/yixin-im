@@ -6075,8 +6075,7 @@ class _MomentPublishPageState extends ConsumerState<MomentPublishPage> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final authState = ref.watch(authServiceProvider);
-    final user = authState.user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
     final displayName = user?.nickname ??
         user?.username ??
         l10n.get('me') ??

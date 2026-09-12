@@ -218,7 +218,7 @@ class SettingsPage extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final deviceCountAsync = ref.watch(deviceCountProvider);
     final l10n = AppLocalizations(ref.watch(languageProvider));
-    final currentUser = ref.watch(authServiceProvider).user;
+    final currentUser = ref.watch(authServiceProvider.select((s) => s.user));
     final configuredName =
         ref.watch(systemSettingsProvider).valueOrNull?.displayName.trim() ?? '';
     final systemSettings = ref.watch(systemSettingsProvider).valueOrNull;
@@ -268,7 +268,7 @@ class SettingsPage extends ConsumerWidget {
                         _SettingsTile(
                           icon: Icons.calendar_today_outlined,
                           iconBgColor: const Color(0xFF34C759),
-                          title: '签到',
+                          title: l10n.checkin,
                           isDark: isDark,
                           onTap: () => _openPage(
                             context,
@@ -454,12 +454,12 @@ class SettingsPage extends ConsumerWidget {
                     _SettingsTile(
                       icon: Icons.palette_outlined,
                       iconBgColor: const Color(0xFFFF6B6B),
-                      title: '主题风格',
-                      subtitle: '切换主题色彩与显示模式',
+                      title: l10n.themePickerTitle,
+                      subtitle: l10n.themePickerSubtitle,
                       isDark: isDark,
                       onTap: () => context.push('/settings/theme'),
                     ),
-                                        _SettingsTile(
+                    _SettingsTile(
                       icon: Icons.emoji_emotions_outlined,
                       iconBgColor: const Color(0xFFFFCC00),
                       title: l10n.stickersEmoji,
@@ -1337,8 +1337,7 @@ class _UserProfileCardState extends ConsumerState<_UserProfileCard> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authServiceProvider);
-    final user = authState.user;
+    final user = ref.watch(authServiceProvider.select((s) => s.user));
     final isDark = widget.isDark;
 
     // 用户显示名称
