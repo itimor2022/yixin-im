@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1783,5 +1785,271 @@ func (h *ChatMgmtHandler) GetChatStats(c *gin.Context) {
 		"today_channel_count":  todayChannelCount,
 		"hot_groups":           hotGroups,
 		"hot_channels":         hotChannels,
+	})
+}
+
+// mergeGroupsRequest 合并群组请求
+type mergeGroupsRequest struct {
+	SourceGroupIDs []uint64 `json:"source_group_ids" binding:"required,min=2"`
+	OwnerID        uint64   `json:"owner_id" binding:"required"`
+	NewName        string   `json:"new_name" binding:"required,min=1,max=100"`
+}
+
+// MergeGroups 将多个现有群组合并为一个新群，源群数据保持不变。
+// 行为：
+//   - 校验所有源群均为 type=2 且未被解散/封禁；
+//   - 收集所有源群成员（去重）作为新群成员；
+//   - owner_id 必须是并集成员中的一位，且用户状态正常；
+//   - 在单事务中创建新群、写入 chat_members / user_chats 投影；
+//   - 源群的 chats / chat_members / user_chats 全部保持不变；
+//   - 合并后失效相关用户的会话列表热缓存，并通过 WS 广播 new_chat。
+func (h *ChatMgmtHandler) MergeGroups(c *gin.Context) {
+	var req mergeGroupsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	idSet := make(map[uint64]struct{}, len(req.SourceGroupIDs))
+	orderedIDs := make([]uint64, 0, len(req.SourceGroupIDs))
+	for _, id := range req.SourceGroupIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := idSet[id]; ok {
+			continue
+		}
+		idSet[id] = struct{}{}
+		orderedIDs = append(orderedIDs, id)
+	}
+	if len(orderedIDs) < 2 {
+		response.Error(c, http.StatusBadRequest, "至少选择两个不同的群组")
+		return
+	}
+
+	newName := strings.TrimSpace(req.NewName)
+	if newName == "" {
+		response.Error(c, http.StatusBadRequest, "新群名称不能为空")
+		return
+	}
+
+	var sourceChats []models.Chat
+	if err := h.db.Where("id IN ?", orderedIDs).Find(&sourceChats).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询源群失败")
+		return
+	}
+	if len(sourceChats) != len(orderedIDs) {
+		response.Error(c, http.StatusBadRequest, "存在无效的源群")
+		return
+	}
+	for _, sc := range sourceChats {
+		if sc.Type != 2 {
+			response.Error(c, http.StatusBadRequest, "仅支持合并群聊（type=2）")
+			return
+		}
+		if sc.Status == models.ChatStatusDissolved {
+			response.Error(c, http.StatusBadRequest, "已解散的群不能参与合并："+sc.Name)
+			return
+		}
+		if sc.Status == models.ChatStatusBanned {
+			response.Error(c, http.StatusBadRequest, "已封禁的群不能参与合并："+sc.Name)
+			return
+		}
+	}
+
+	type memberAgg struct {
+		UserID uint64
+		UUID   string
+	}
+	var rawMembers []memberAgg
+	if err := h.db.Table("chat_members").
+		Select("chat_members.user_id AS user_id, users.uuid AS uuid").
+		Joins("LEFT JOIN users ON users.id = chat_members.user_id").
+		Where("chat_members.chat_id IN ?", orderedIDs).
+		Scan(&rawMembers).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询源群成员失败")
+		return
+	}
+	memberSet := make(map[uint64]memberAgg, len(rawMembers))
+	for _, m := range rawMembers {
+		if m.UserID == 0 {
+			continue
+		}
+		if _, ok := memberSet[m.UserID]; ok {
+			continue
+		}
+		memberSet[m.UserID] = m
+	}
+	if len(memberSet) == 0 {
+		response.Error(c, http.StatusBadRequest, "源群没有任何成员")
+		return
+	}
+
+	ownerInfo, ownerInSet := memberSet[req.OwnerID]
+	if !ownerInSet {
+		response.Error(c, http.StatusBadRequest, "新群主必须是源群成员之一")
+		return
+	}
+
+	var ownerUser models.User
+	if err := h.db.Select("id", "uuid", "status", "nickname", "username", "avatar").
+		First(&ownerUser, req.OwnerID).Error; err != nil {
+		response.Error(c, http.StatusBadRequest, "新群主用户不存在")
+		return
+	}
+	if ownerUser.Status != models.UserStatusNormal {
+		response.Error(c, http.StatusBadRequest, "新群主用户状态异常")
+		return
+	}
+
+	maxMembers := sourceChats[0].MaxMembers
+	if maxMembers <= 0 {
+		maxMembers = 200
+	}
+	memberUserIDs := make([]uint64, 0, len(memberSet))
+	for uid := range memberSet {
+		memberUserIDs = append(memberUserIDs, uid)
+	}
+	sort.Slice(memberUserIDs, func(i, j int) bool { return memberUserIDs[i] < memberUserIDs[j] })
+	if maxMembers > 0 && len(memberUserIDs) > maxMembers {
+		ownerIdx := -1
+		for i, uid := range memberUserIDs {
+			if uid == req.OwnerID {
+				ownerIdx = i
+				break
+			}
+		}
+		if ownerIdx >= 0 {
+			owner := memberUserIDs[ownerIdx]
+			filtered := []uint64{owner}
+			for _, uid := range memberUserIDs {
+				if uid == owner {
+					continue
+				}
+				if len(filtered) >= maxMembers {
+					break
+				}
+				filtered = append(filtered, uid)
+			}
+			memberUserIDs = filtered
+		} else {
+			memberUserIDs = memberUserIDs[:maxMembers]
+		}
+	}
+
+	now := time.Now()
+	inviteLink := uuid.New().String()
+	if len(inviteLink) > 8 {
+		inviteLink = inviteLink[:8]
+	}
+	merged := models.Chat{
+		UUID:        uuid.New().String(),
+		Type:        2,
+		Name:        newName,
+		OwnerID:     req.OwnerID,
+		MemberCount: len(memberUserIDs),
+		MaxMembers:  maxMembers,
+		InviteLink:  inviteLink,
+		Status:      models.ChatStatusNormal,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&merged).Error; err != nil {
+			return err
+		}
+		ownerMember := models.ChatMember{
+			ChatID:   merged.ID,
+			UserID:   req.OwnerID,
+			Role:     2,
+			JoinedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Create(&ownerMember).Error; err != nil {
+			return err
+		}
+		members := make([]models.ChatMember, 0, len(memberUserIDs))
+		userChats := make([]models.UserChat, 0, len(memberUserIDs))
+		for _, uid := range memberUserIDs {
+			if uid == req.OwnerID {
+				continue
+			}
+			members = append(members, models.ChatMember{
+				ChatID: merged.ID, UserID: uid, Role: 0,
+				JoinedAt: now, UpdatedAt: now,
+			})
+			userChats = append(userChats, models.UserChat{
+				UserID: uid, ChatID: merged.ID,
+				IsPinned: false, IsMuted: false,
+				SortTime: now, UpdatedAt: now,
+			})
+		}
+		if len(members) > 0 {
+			if err := tx.Create(&members).Error; err != nil {
+				return err
+			}
+		}
+		userChats = append(userChats, models.UserChat{
+			UserID: req.OwnerID, ChatID: merged.ID,
+			IsPinned: false, IsMuted: false,
+			SortTime: now, UpdatedAt: now,
+		})
+		if err := tx.Create(&userChats).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&merged).Update("member_count", len(memberUserIDs)).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "合并失败："+err.Error())
+		return
+	}
+
+	deleteUserChatListHotCache(c.Request.Context(), h.cache, memberUserIDs...)
+	if h.msgService != nil {
+		h.msgService.InvalidateMessageWindowCache(c.Request.Context(), merged.UUID)
+	}
+	if h.hub != nil {
+		ownerDisplayName := ownerUser.Nickname
+		if ownerDisplayName == "" {
+			ownerDisplayName = ownerUser.Username
+		}
+		var notifyUUIDs []string
+		if ownerInfo.UUID != "" {
+			notifyUUIDs = append(notifyUUIDs, ownerInfo.UUID)
+		}
+		for uid := range memberSet {
+			if uid == req.OwnerID {
+				continue
+			}
+			if info, ok := memberSet[uid]; ok && info.UUID != "" {
+				notifyUUIDs = append(notifyUUIDs, info.UUID)
+			}
+		}
+		if len(notifyUUIDs) > 0 {
+			h.hub.Broadcast(&ws.BroadcastMessage{
+				Type:    "new_chat",
+				UserIDs: notifyUUIDs,
+				Data: map[string]interface{}{
+					"chat_id":    merged.UUID,
+					"chat_type":  2,
+					"name":       merged.Name,
+					"avatar":     merged.Avatar,
+					"owner_id":   ownerUser.ID,
+					"owner_name": ownerDisplayName,
+				},
+			})
+		}
+	}
+
+	response.Success(c, gin.H{
+		"message":      "已合并",
+		"chat_id":      merged.ID,
+		"uuid":         merged.UUID,
+		"name":         merged.Name,
+		"member_count": merged.MemberCount,
 	})
 }
