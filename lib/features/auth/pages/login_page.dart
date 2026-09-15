@@ -332,7 +332,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Column(
       children: [
         Text(
-          appName,
+          l10n.welcomeLogin,
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.bold,

@@ -558,15 +558,9 @@ class SettingsPage extends ConsumerWidget {
                     final versionAsync = ref.watch(appVersionProvider);
                     return versionAsync.when(
                       data: (info) {
-                        final settings =
-                            ref.watch(systemSettingsProvider).valueOrNull;
                         final patchNumber = ref
                             .watch(shorebirdCurrentPatchNumberProvider)
                             .valueOrNull;
-                        final displayVersion =
-                            settings?.systemVersion.trim().isNotEmpty == true
-                                ? settings!.systemVersion.trim()
-                                : info.version;
                         final patchLabel = patchNumber == null
                             ? ''
                             : _settingsText(
@@ -576,27 +570,15 @@ class SettingsPage extends ConsumerWidget {
                                 en: ' · Hot update Patch #$patchNumber',
                               );
                         return Text(
-                          '$appName v$displayVersion',
+                          '${info.appName} v${info.version}$patchLabel',
                           style: TextStyle(
                             fontSize: 13,
                             color: AppColors.textTertiaryFor(context),
                           ),
                         );
                       },
-                      loading: () => Text(
-                        appName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiaryFor(context),
-                        ),
-                      ),
-                      error: (_, __) => Text(
-                        appName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiaryFor(context),
-                        ),
-                      ),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
                     );
                   },
                 ),

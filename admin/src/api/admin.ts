@@ -248,6 +248,18 @@ export interface ChatMemberSearchParams {
   page_size?: number
   keyword?: string
 }
+export interface MergeGroupsParams {
+  source_group_ids: number[]
+  owner_id: number
+  new_name: string
+}
+export interface MergeGroupsResponse {
+  message: string
+  chat_id: number
+  uuid: string
+  name: string
+  member_count: number
+}
 export interface ChatDetailResponse {
   chat: ChatListItem
   owner: UserListItem | null
@@ -805,6 +817,12 @@ export function unbanChat(id: number) {
 export function dissolveChat(id: number) {
   return request.post({
     url: `/admin/chats/${id}/dissolve`
+  })
+}
+export function mergeGroups(params: MergeGroupsParams) {
+  return request.post<MergeGroupsResponse>({
+    url: '/admin/chats/groups/merge',
+    params
   })
 }
 export function getChatMembers(id: number, params?: ChatMemberSearchParams) {

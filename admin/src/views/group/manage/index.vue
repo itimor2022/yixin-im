@@ -76,6 +76,14 @@
           <ArtSvgIcon icon="ri:refresh-line" class="mr-1" />
           刷新
         </ElButton>
+        <ElButton
+          type="success"
+          :disabled="isDemoAdmin || loading"
+          @click="openMergeDialog"
+        >
+          <ArtSvgIcon icon="ri:git-merge-line" class="mr-1" />
+          合并群组
+        </ElButton>
       </div>
     </ElCard>
 
@@ -475,6 +483,116 @@
       </template>
     </ElDrawer>
 
+    <ElDialog
+      v-model="mergeDialogVisible"
+      title="合并群组"
+      width="640px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <ElForm label-width="96px" v-loading="mergeLoading">
+        <ElFormItem label="选择源群组" required>
+          <ElInput
+            v-model="mergeSourceKeyword"
+            clearable
+            placeholder="按群名称或群主搜索"
+            class="merge-full"
+            style="margin-bottom: 8px"
+          >
+            <template #prefix>
+              <ArtSvgIcon icon="ri:search-line" />
+            </template>
+          </ElInput>
+          <div class="merge-source-table">
+            <ElTable
+              :data="filteredMergeCandidates"
+              height="240px"
+              size="small"
+              :row-class-name="mergeTableRowClass"
+              @row-click="toggleMergeRow"
+            >
+              <ElTableColumn width="48" label="选择">
+                <template #default="{ row }">
+                  <ElCheckbox
+                    :model-value="isMergeSelected(row.id)"
+                    :disabled="row.status !== 0"
+                    @click.stop
+                    @change="onMergeCheckboxChange(row, $event)"
+                  />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="name" label="群名称" min-width="160">
+                <template #default="{ row }">
+                  <span class="muted-text">{{ row.name || '未命名群' }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="member_count" label="人数" width="80" />
+              <ElTableColumn label="状态" width="80">
+                <template #default="{ row }">
+                  <ElTag v-if="row.status === 0" type="success" size="small">正常</ElTag>
+                  <ElTag v-else type="danger" size="small">禁用</ElTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </div>
+          <div class="form-tip">
+            仅可选择状态正常的群聊；已选 {{ mergeForm.sourceIds.length }} 个。
+          </div>
+        </ElFormItem>
+        <ElFormItem label="并集成员预览">
+          <div class="merge-summary">
+            <span>共 {{ mergeUnionMembers.length }} 位去重成员</span>
+            <span v-if="mergeForm.sourceIds.length > 0" class="muted-text">
+              （来源 {{ mergeForm.sourceIds.length }} 个群）
+            </span>
+            <ElButton
+              link
+              type="primary"
+              :loading="mergeLoadingMembers"
+              @click="reloadMergeMembers"
+            >
+              刷新成员
+            </ElButton>
+          </div>
+        </ElFormItem>
+        <ElFormItem label="选择新群主" required>
+          <ElSelect
+            v-model="mergeForm.ownerId"
+            filterable
+            placeholder="从合并成员中指定新群主"
+            class="merge-full"
+            :disabled="mergeUnionMembers.length === 0"
+          >
+            <ElOption
+              v-for="m in mergeUnionMembers"
+              :key="m.user_id"
+              :label="m.label"
+              :value="m.user_id"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="新群名称" required>
+          <ElInput
+            v-model="mergeForm.newName"
+            maxlength="100"
+            show-word-limit
+            placeholder="合并后的新群名称"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="mergeDialogVisible = false">取消</ElButton>
+        <ElButton
+          type="primary"
+          :loading="mergeLoading"
+          :disabled="!mergeCanSubmit"
+          @click="submitMerge"
+        >
+          确认合并
+        </ElButton>
+      </template>
+    </ElDialog>
+
     <ElDialog v-model="addMemberVisible" title="添加群成员" width="520px">
       <ElForm label-width="96px">
         <ElFormItem label="用户标识">
@@ -507,6 +625,7 @@
   import {
     addChatMembers,
     banChat,
+    ChatDetailResponse,
     ChatListItem,
     ChatJoinRequestItem,
     ChatMemberItem,
@@ -518,6 +637,7 @@
     getChatMembers,
     getChatStats,
     getGroupList,
+    mergeGroups,
     removeChatMember,
     reviewChatJoinRequest,
     transferChatOwner,
@@ -543,6 +663,45 @@
   const saving = ref(false)
   const drawerVisible = ref(false)
   const addMemberVisible = ref(false)
+  const mergeDialogVisible = ref(false)
+  const mergeLoading = ref(false)
+  const mergeLoadingMembers = ref(false)
+  const mergeForm = reactive({
+    sourceIds: [] as number[],
+    ownerId: undefined as number | undefined,
+    newName: ''
+  })
+  const mergeUnionMembers = ref<{ user_id: number; label: string }[]>([])
+  const mergeSourceCandidates = ref<ChatListItem[]>([])
+  const mergeSourceKeyword = ref('')
+  const filteredMergeCandidates = computed(() => {
+    const kw = mergeSourceKeyword.value.trim().toLowerCase()
+    if (!kw) return mergeSourceCandidates.value
+    return mergeSourceCandidates.value.filter((row) => {
+      const name = (row.name || '').toLowerCase()
+      return name.includes(kw)
+    })
+  })
+  const isMergeSelected = (id: number) => mergeForm.sourceIds.includes(id)
+  const toggleMergeRow = (row: ChatListItem) => {
+    if (row.status !== 0) return
+    const idx = mergeForm.sourceIds.indexOf(row.id)
+    if (idx === -1) mergeForm.sourceIds.push(row.id)
+    else mergeForm.sourceIds.splice(idx, 1)
+  }
+  const onMergeCheckboxChange = (
+    row: ChatListItem,
+    checked: unknown
+  ) => {
+    // 直接根据 checkbox 的新状态同步选中列表，避免与行点击 toggle 互相抵消。
+    if (row.status !== 0) return
+    const want = !!checked
+    const idx = mergeForm.sourceIds.indexOf(row.id)
+    if (want && idx === -1) mergeForm.sourceIds.push(row.id)
+    else if (!want && idx !== -1) mergeForm.sourceIds.splice(idx, 1)
+  }
+  const mergeTableRowClass = ({ row }: { row: ChatListItem }) =>
+    isMergeSelected(row.id) ? 'merge-row-selected' : ''
   const activeTab = ref('profile')
   const selectedGroup = ref<ChatListItem | null>(null)
   const groups = ref<ChatListItem[]>([])
@@ -901,6 +1060,111 @@
     await Promise.all([loadData(), loadStats()])
   }
 
+  const resetMergeForm = () => {
+    mergeForm.sourceIds = []
+    mergeForm.ownerId = undefined
+    mergeForm.newName = ''
+    mergeUnionMembers.value = []
+    mergeSourceKeyword.value = ''
+  }
+
+  const openMergeDialog = async () => {
+    resetMergeForm()
+    // 候选源群：当前列表中所有状态正常的群聊，按成员数降序展示。
+    mergeSourceCandidates.value = groups.value
+      .filter((row) => row.status === 0)
+      .sort((a, b) => (b.member_count || 0) - (a.member_count || 0))
+    mergeDialogVisible.value = true
+  }
+
+  // 监听 sourceIds 变化：拉取每个源群的成员并去重生成并集。
+  watch(
+    () => [...mergeForm.sourceIds],
+    async (ids) => {
+      mergeForm.ownerId = undefined
+      if (!ids || ids.length === 0) {
+        mergeUnionMembers.value = []
+        return
+      }
+      mergeLoadingMembers.value = true
+      try {
+        const settled = await Promise.allSettled(
+          ids.map((id) => getChatDetail(id))
+        )
+        const union = new Map<number, { user_id: number; label: string }>()
+        for (const r of settled) {
+          if (r.status !== 'fulfilled') continue
+          const list = (r.value && (r.value as ChatDetailResponse).members) || []
+          for (const m of list) {
+            if (!m || !m.user_id) continue
+            if (union.has(m.user_id)) continue
+            const name = m.nickname || m.username || m.user_uuid
+            union.set(m.user_id, {
+              user_id: m.user_id,
+              label: `${name}（${m.user_id}）`
+            })
+          }
+        }
+        mergeUnionMembers.value = Array.from(union.values())
+      } finally {
+        mergeLoadingMembers.value = false
+      }
+    },
+    { immediate: false }
+  )
+
+  const reloadMergeMembers = async () => {
+    if (!mergeForm.sourceIds.length) return
+    const ids = [...mergeForm.sourceIds]
+    mergeForm.sourceIds = []
+    await new Promise((r) => setTimeout(r, 0))
+    mergeForm.sourceIds = ids
+  }
+
+  const mergeCanSubmit = computed(() => {
+    return (
+      !isDemoAdmin.value &&
+      mergeForm.sourceIds.length >= 2 &&
+      !!mergeForm.ownerId &&
+      mergeForm.newName.trim().length > 0 &&
+      !mergeLoading.value
+    )
+  })
+
+  const submitMerge = async () => {
+    const name = mergeForm.newName.trim()
+    if (!name) {
+      ElMessage.warning('请填写新群名称')
+      return
+    }
+    if (mergeForm.sourceIds.length < 2) {
+      ElMessage.warning('请选择至少两个群组')
+      return
+    }
+    if (!mergeForm.ownerId) {
+      ElMessage.warning('请选择新群主')
+      return
+    }
+    await ElMessageBox.confirm(
+      `确认将 ${mergeForm.sourceIds.length} 个群合并为「${name}」？原群将保持不变。`,
+      '合并群组',
+      { confirmButtonText: '确认合并', cancelButtonText: '取消', type: 'warning' }
+    )
+    mergeLoading.value = true
+    try {
+      const res = await mergeGroups({
+        source_group_ids: mergeForm.sourceIds,
+        owner_id: mergeForm.ownerId,
+        new_name: name
+      })
+      ElMessage.success(`已合并为「${res.name}」，共 ${res.member_count} 人`)
+      mergeDialogVisible.value = false
+      await refreshAll()
+    } finally {
+      mergeLoading.value = false
+    }
+  }
+
   const handleDissolve = async (row: ChatListItem) => {
     await ElMessageBox.confirm(`确定解散「${row.name}」吗？所有成员会被移除。`, '解散群', {
       confirmButtonText: '确定解散',
@@ -1105,6 +1369,32 @@
 
   .group-desc,
   .member-username,
+  .merge-full {
+    width: 100%;
+  }
+
+  .merge-source-table {
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 4px;
+
+    :deep(.el-table__row) {
+      cursor: pointer;
+    }
+
+    :deep(.el-table__row.merge-row-selected) {
+      background-color: var(--el-color-primary-light-9);
+    }
+  }
+
+  .merge-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--art-gray-700);
+  }
+
   .muted-text {
     overflow: hidden;
     color: var(--art-gray-500);

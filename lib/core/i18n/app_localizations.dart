@@ -220,6 +220,7 @@ class AppLocalizations {
 
   // 登录注册
   String get login => get('login');
+  String get welcomeLogin => get('welcome_login');
   String get register => get('register');
   String get loginToAccount => get('login_to_account');
   String get registerAccount => get('register_account');
@@ -572,7 +573,7 @@ const Map<String, Map<String, String>> _translations = {
 };
 
 const Map<String, String> _zhCN = {
-  'app_name': '通用IM',
+  'app_name': '快聊',
 
   // 通用
   'confirm': '确认',
@@ -734,6 +735,7 @@ const Map<String, String> _zhCN = {
 
   // 登录注册
   'login': '登录',
+  'welcome_login': '欢迎登录',
   'register': '注册',
   'no_account_yet': '还没有账号？',
   'login_to_account': '登录您的账号',
@@ -1249,7 +1251,7 @@ const Map<String, String> _zhCN = {
 };
 
 const Map<String, String> _zhTW = {
-  'app_name': '通用IM',
+  'app_name': '快聊',
 
   // 通用
   'confirm': '確認',
@@ -1411,6 +1413,7 @@ const Map<String, String> _zhTW = {
 
   // 登入註冊
   'login': '登入',
+  'welcome_login': '歡迎登入',
   'register': '註冊',
   'no_account_yet': '還沒有帳號？',
   'login_to_account': '登入您的帳號',
@@ -1927,7 +1930,7 @@ const Map<String, String> _zhTW = {
 };
 
 const Map<String, String> _en = {
-  'app_name': '通用IM',
+  'app_name': '快聊',
 
   // Common
   'confirm': 'Confirm',
@@ -2095,6 +2098,7 @@ const Map<String, String> _en = {
 
   // Login/Register
   'login': 'Login',
+  'welcome_login': 'Welcome',
   'register': 'Register',
   'no_account_yet': 'No account yet?',
   'login_to_account': 'Login to your account',

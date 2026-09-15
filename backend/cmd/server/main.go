@@ -1484,6 +1484,7 @@ func setupRouter(
 					chatMgmtHandler := handlers.NewChatMgmtHandler(db, cache, hub, msgService)
 					chatMgmt.GET("/list", chatMgmtHandler.ListChats)
 					chatMgmt.GET("/groups", chatMgmtHandler.ListGroups)
+					chatMgmt.POST("/groups/merge", middleware.RequireWriteRole(), chatMgmtHandler.MergeGroups)
 					chatMgmt.GET("/channels", chatMgmtHandler.ListChannels)
 					chatMgmt.GET("/stats", chatMgmtHandler.GetChatStats)
 					chatMgmt.GET("/:id", chatMgmtHandler.GetChatDetail)
