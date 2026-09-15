@@ -516,7 +516,8 @@
                   <ElCheckbox
                     :model-value="isMergeSelected(row.id)"
                     :disabled="row.status !== 0"
-                    @change="toggleMergeRow(row)"
+                    @click.stop
+                    @change="onMergeCheckboxChange(row, $event)"
                   />
                 </template>
               </ElTableColumn>
@@ -687,6 +688,17 @@
     const idx = mergeForm.sourceIds.indexOf(row.id)
     if (idx === -1) mergeForm.sourceIds.push(row.id)
     else mergeForm.sourceIds.splice(idx, 1)
+  }
+  const onMergeCheckboxChange = (
+    row: ChatListItem,
+    checked: unknown
+  ) => {
+    // 直接根据 checkbox 的新状态同步选中列表，避免与行点击 toggle 互相抵消。
+    if (row.status !== 0) return
+    const want = !!checked
+    const idx = mergeForm.sourceIds.indexOf(row.id)
+    if (want && idx === -1) mergeForm.sourceIds.push(row.id)
+    else if (!want && idx !== -1) mergeForm.sourceIds.splice(idx, 1)
   }
   const mergeTableRowClass = ({ row }: { row: ChatListItem }) =>
     isMergeSelected(row.id) ? 'merge-row-selected' : ''
