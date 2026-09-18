@@ -6,14 +6,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	"genericim/internal/cache"
+	"genericim/internal/config"
+	"genericim/internal/handlers"
+	"genericim/internal/middleware"
+	"genericim/internal/models"
+	"genericim/internal/mq"
+	"genericim/internal/redisclient"
+	"genericim/internal/services"
+	"genericim/internal/ws"
+	"genericim/internal/ws/crossnode"
 	"log"
 	"net/http"
 	"os"
@@ -23,14 +25,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"genericim/internal/cache"
-	"genericim/internal/config"
-	"genericim/internal/handlers"
-	"genericim/internal/middleware"
-	"genericim/internal/models"
-	"genericim/internal/mq"
-	"genericim/internal/services"
-	"genericim/internal/ws"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func main() {
@@ -63,22 +65,44 @@ func main() {
 	log.Println("✓ MongoDB connected")
 
 	// 4. 初始化Redis
-	redisClient, err := initRedis(cfg.Redis)
+	// redisclient.New picks ClusterClient vs Client based on the configured
+	// addrs list; single-node deploys keep working without touching any
+	// other code.
+	redisClient, err := redisclient.New(context.Background(), cfg.Redis)
 	if err != nil {
 		log.Fatalf("Failed to connect Redis: %v", err)
 	}
-	log.Println("✓ Redis connected")
+	log.Printf("✓ Redis connected (cluster=%v, nodes=%d)", redisclient.IsCluster(redisClient), len(cfg.Redis.Addrs))
+
+	// 4b. 构造跨节点 WebSocket 桥接 publisher。单机部署（cluster.enabled=false）
+	// 走 NoopPublisher，零网络开销；3 机部署下走 Redis Pub/Sub。
+	var crossNodePub crossnode.Publisher
+	queueShards := 1
+	if cfg.Cluster.Enabled {
+		p, perr := crossnode.NewRedisPublisher(redisClient, cfg.Cluster.NodeID, cfg.Cluster.Channel)
+		if perr != nil {
+			log.Fatalf("Failed to build cross-node publisher: %v", perr)
+		}
+		crossNodePub = p
+		if cfg.Cluster.ShardedQueue {
+			queueShards = cfg.Cluster.QueueShards
+		}
+		log.Printf("✓ Cross-node bridge enabled (node=%s, channel=%s, shards=%d)",
+			cfg.Cluster.NodeID, cfg.Cluster.Channel, queueShards)
+	} else {
+		crossNodePub = crossnode.NewNoopPublisher(cfg.Cluster.NodeID)
+	}
 
 	// 5. 初始化缓存
 	cacheService := cache.NewCache(redisClient)
 
 	// 6. 初始化WebSocket Hub
-	hub := ws.NewHub(mysqlDB)
+	hub := ws.NewHub(mysqlDB, crossNodePub)
 	go hub.Run()
 	log.Println("✓ WebSocket Hub started")
 
-	// 7. 初始化消息队列
-	mqService := mq.NewMessageQueue(redisClient, cfg.MessageQueue.Workers)
+	// 7. 初始化消息队列（Cluster 下可选用 hash-tag 分片）
+	mqService := mq.NewMessageQueue(redisClient, cfg.MessageQueue.Workers, queueShards)
 
 	// 8. 初始化服务
 	msgService := services.NewMessageService(
@@ -165,6 +189,10 @@ func main() {
 		log.Printf("Server shutdown error: %v", err)
 	}
 	mqService.Stop()
+	if crossNodePub != nil {
+		_ = crossNodePub.Close()
+	}
+	_ = redisClient.Close()
 	log.Println("Server stopped")
 }
 
@@ -862,22 +890,10 @@ func initMongoDB(cfg config.MongoDBConfig) (*mongo.Database, error) {
 }
 
 // initRedis 初始化Redis连接
-func initRedis(cfg config.RedisConfig) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         cfg.Addr,
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		PoolSize:     cfg.PoolSize,
-		MinIdleConns: cfg.MinIdleConns,
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, err
-	}
-	return client, nil
-}
+// initRedis was replaced by internal/redisclient.New which auto-selects
+// between *redis.Client and *redis.ClusterClient based on the configured
+// addrs list. Keeping the stub here would silently re-introduce the
+// single-node-only behaviour the cluster rollout is removing.
 
 func uploadSecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1438,6 +1454,8 @@ func setupRouter(
 					userMgmt.GET("/list", userMgmtHandler.ListUsers)
 					userMgmt.GET("/stats", userMgmtHandler.GetUserStats)
 					userMgmt.GET("/:id/diagnostics", userMgmtHandler.GetUserDiagnostics)
+					// 递归导出指定用户所有下级为 Excel 数据源（GET + ?root_id= 是另一种风格，路径参数更便于阅读）
+					userMgmt.GET("/:id/subordinates/export", userMgmtHandler.ExportSubordinates)
 					// 写操作需要非演示管理员权限
 					userMgmt.PUT("/:id", middleware.RequireWriteRole(), userMgmtHandler.UpdateUser)
 					userMgmt.PUT("/:id/status", middleware.RequireWriteRole(), userMgmtHandler.UpdateUserStatus)

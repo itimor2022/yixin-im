@@ -5,16 +5,18 @@ package handlers
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
 	"genericim/internal/cache"
 	"genericim/internal/models"
 	"genericim/internal/services"
 	"genericim/pkg/response"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type UserMgmtHub interface {
@@ -68,15 +70,15 @@ type UserListItem struct {
 	ServiceNickname        *string `json:"service_nickname"`
 	ServiceInviteCode      *string `json:"service_invite_code"`
 	// InviteCode 用户个人邀请码（10 位数字，首位 1-9）
-	InviteCode            *string `json:"invite_code,omitempty"`
+	InviteCode *string `json:"invite_code,omitempty"`
 	// BindID 绑定的官方客服用户 ID，可空
-	BindID                *uint64 `json:"bind_id,omitempty"`
+	BindID *uint64 `json:"bind_id,omitempty"`
 	// BindUserName 绑定的官方客服昵称（冗余字段，仅展示用），可空
-	BindUserName          *string `json:"bind_user_name,omitempty"`
+	BindUserName *string `json:"bind_user_name,omitempty"`
 	// RecommenderID 推荐人用户 ID，可空
-	RecommenderID         *uint64 `json:"recommender_id,omitempty"`
+	RecommenderID *uint64 `json:"recommender_id,omitempty"`
 	// RecommenderName 推荐人昵称（冗余字段，方便后台展示），可空
-	RecommenderName       *string `json:"recommender_name,omitempty"`
+	RecommenderName *string `json:"recommender_name,omitempty"`
 }
 
 func uint64Ptr(v uint64) *uint64 {
@@ -439,12 +441,12 @@ func (h *UserMgmtHandler) UpdateUser(c *gin.Context) {
 	userID := c.Param("id")
 
 	var req struct {
-		Nickname *string  `json:"nickname"`
-		Username *string  `json:"username"`
-		Phone    *string  `json:"phone"`
-		Bio      *string  `json:"bio"`
-		Status   *int8    `json:"status"`
-		Gender   *string  `json:"gender"`
+		Nickname *string `json:"nickname"`
+		Username *string `json:"username"`
+		Phone    *string `json:"phone"`
+		Bio      *string `json:"bio"`
+		Status   *int8   `json:"status"`
+		Gender   *string `json:"gender"`
 		// BindID 绑定客服用户 ID，0 或 nil 表示解绑
 		BindID *uint64 `json:"bind_id"`
 	}
@@ -762,5 +764,165 @@ func (h *UserMgmtHandler) ResetUserPassword(c *gin.Context) {
 	response.SuccessWithMessage(c, "密码重置成功，用户已强制下线", gin.H{
 		"user_id": user.ID,
 		"uuid":    user.UUID,
+	})
+}
+
+// ExportSubordinatesItem 导出下级用户列表的单行数据。
+// 字段命名与前端 Excel 表头一一对应，避免在导出时再做一次映射。
+type ExportSubordinatesItem struct {
+	ID       uint64  `json:"id"`
+	Username string  `json:"username"`
+	Nickname string  `json:"nickname"`
+	Phone    *string `json:"phone"`
+	DeviceIP *string `json:"device_ip"`
+}
+
+// ExportSubordinates 递归查询指定用户的所有下级并返回导出数据。
+//
+// 字段说明：
+//   - 通过 recommender_id 自关联，按 BFS 逐层展开，避免在 MySQL 上使用
+//     复杂递归 CTE（兼容当前依赖的 GORM 版本）。
+//   - 每个用户只取最近活跃设备的一条 IP，device_ip 与现有 ListUsers 行为保持一致。
+//   - 加 maxDepth 与 maxNodes 双重上限，防止恶意请求拉爆数据库。
+//   - 根用户本身不出现在导出列表里，列表只包含真正的下级。
+func (h *UserMgmtHandler) ExportSubordinates(c *gin.Context) {
+	rootIDStr := strings.TrimSpace(c.Param("id"))
+	rootID, parseErr := strconv.ParseUint(rootIDStr, 10, 64)
+	if parseErr != nil || rootID == 0 {
+		response.Error(c, http.StatusBadRequest, "用户ID格式错误")
+		return
+	}
+
+	// 校验根用户存在
+	var rootUser models.User
+	if err := h.db.First(&rootUser, rootID).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+
+	const maxDepth = 32
+	const maxNodes = 10000
+
+	// 用 visited 标记「已经遍历过其子节点」的用户，避免在环状关系中死循环。
+	visited := make(map[uint64]struct{}, 1024)
+	// collectedIDs 是真正要导出的下级用户 ID 集合。
+	collectedIDs := make([]uint64, 0, 512)
+	// 队列中保留 (userID, depth)，用于 BFS 逐层展开。
+	type queueItem struct {
+		id    uint64
+		depth int
+	}
+	// 根用户不直接导出，先把它的下级入队；下级的下级在循环里继续展开。
+	var firstLevelIDs []uint64
+	if err := h.db.Model(&models.User{}).
+		Where("recommender_id = ? AND deleted_at IS NULL", rootID).
+		Pluck("id", &firstLevelIDs).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询下级失败")
+		return
+	}
+	queue := make([]queueItem, 0, len(firstLevelIDs))
+	for _, childID := range firstLevelIDs {
+		queue = append(queue, queueItem{id: childID, depth: 1})
+	}
+
+	truncated := false
+	for len(queue) > 0 {
+		head := queue[0]
+		queue = queue[1:]
+
+		if _, dup := visited[head.id]; dup {
+			continue
+		}
+		visited[head.id] = struct{}{}
+
+		// 达到递归深度上限，停止继续向下展开，但仍保留当前节点作为叶子。
+		if head.depth > maxDepth {
+			continue
+		}
+		if len(collectedIDs) >= maxNodes {
+			truncated = true
+			break
+		}
+
+		collectedIDs = append(collectedIDs, head.id)
+
+		// 拉取当前层级的所有下级用户 ID
+		var childIDs []uint64
+		if err := h.db.Model(&models.User{}).
+			Where("recommender_id = ? AND deleted_at IS NULL", head.id).
+			Pluck("id", &childIDs).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "查询下级失败")
+			return
+		}
+		for _, childID := range childIDs {
+			if _, dup := visited[childID]; dup {
+				continue
+			}
+			if head.depth+1 > maxDepth {
+				continue
+			}
+			queue = append(queue, queueItem{id: childID, depth: head.depth + 1})
+		}
+	}
+
+	if len(collectedIDs) == 0 {
+		response.Success(c, gin.H{
+			"list":      []ExportSubordinatesItem{},
+			"root_user": gin.H{"id": rootUser.ID, "username": rootUser.Username, "nickname": rootUser.Nickname},
+			"total":     0,
+			"truncated": false,
+		})
+		return
+	}
+
+	// 一次性取出这些用户的核心字段
+	var users []models.User
+	if err := h.db.Select("id, username, nickname, phone").
+		Where("id IN ? AND deleted_at IS NULL", collectedIDs).
+		Find(&users).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询用户信息失败")
+		return
+	}
+
+	// 取出这些用户的最近活跃设备 IP
+	var devices []models.UserDevice
+	if err := h.db.Where("user_id IN ?", collectedIDs).
+		Order("last_active DESC").
+		Find(&devices).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "查询设备IP失败")
+		return
+	}
+	deviceMap := make(map[uint64]models.UserDevice, len(devices))
+	for _, d := range devices {
+		if _, ok := deviceMap[d.UserID]; !ok {
+			deviceMap[d.UserID] = d
+		}
+	}
+
+	items := make([]ExportSubordinatesItem, 0, len(users))
+	for _, u := range users {
+		item := ExportSubordinatesItem{
+			ID:       u.ID,
+			Username: u.Username,
+			Nickname: u.Nickname,
+			Phone:    u.Phone,
+		}
+		if d, ok := deviceMap[u.ID]; ok && d.IP != "" {
+			ip := d.IP
+			item.DeviceIP = &ip
+		}
+		items = append(items, item)
+	}
+
+	// 用稳定排序（ID 升序）保证导出顺序可复现，方便对比
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].ID < items[j].ID
+	})
+
+	response.Success(c, gin.H{
+		"list":      items,
+		"root_user": gin.H{"id": rootUser.ID, "username": rootUser.Username, "nickname": rootUser.Nickname},
+		"total":     len(items),
+		"truncated": truncated,
 	})
 }

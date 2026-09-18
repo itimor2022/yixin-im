@@ -89,7 +89,17 @@
       label: '搜索',
       key: 'userName',
       type: 'input',
-      placeholder: '用户名/昵称/手机号',
+      placeholder: '用户名/昵称',
+      clearable: true,
+      props: {
+        style: { width: '200px' }
+      }
+    },
+    {
+      label: '手机号',
+      key: 'userPhone',
+      type: 'input',
+      placeholder: '精确或模糊搜索手机号',
       clearable: true,
       props: {
         style: { width: '200px' }
@@ -113,36 +123,36 @@
         clearable: true
       }
     },
-    {
-      label: '性别',
-      key: 'gender',
-      type: 'select',
-      props: {
-        placeholder: '请选择性别',
-        options: genderOptions,
-        clearable: true
-      }
-    },
-    {
-      label: '注册来源',
-      key: 'registerSource',
-      type: 'select',
-      props: {
-        placeholder: '请选择来源',
-        options: registerSourceOptions,
-        clearable: true
-      }
-    },
-    {
-      label: '登录凭证',
-      key: 'credentialsStatus',
-      type: 'select',
-      props: {
-        placeholder: '请选择状态',
-        options: credentialsStatusOptions,
-        clearable: true
-      }
-    },
+    // {
+    //   label: '性别',
+    //   key: 'gender',
+    //   type: 'select',
+    //   props: {
+    //     placeholder: '请选择性别',
+    //     options: genderOptions,
+    //     clearable: true
+    //   }
+    // },
+    // {
+    //   label: '注册来源',
+    //   key: 'registerSource',
+    //   type: 'select',
+    //   props: {
+    //     placeholder: '请选择来源',
+    //     options: registerSourceOptions,
+    //     clearable: true
+    //   }
+    // },
+    // {
+    //   label: '登录凭证',
+    //   key: 'credentialsStatus',
+    //   type: 'select',
+    //   props: {
+    //     placeholder: '请选择状态',
+    //     options: credentialsStatusOptions,
+    //     clearable: true
+    //   }
+    // },
     {
       label: '邀请码',
       key: 'inviteCode',
@@ -169,6 +179,7 @@
   function handleReset() {
     onlineOnly.value = false
     formData.value.searchMode = 'exact'
+    formData.value.userPhone = undefined
     emit('reset')
   }
 
