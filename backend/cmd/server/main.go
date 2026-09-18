@@ -6,6 +6,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"genericim/internal/cache"
+	"genericim/internal/config"
+	"genericim/internal/handlers"
+	"genericim/internal/middleware"
+	"genericim/internal/models"
+	"genericim/internal/mq"
+	"genericim/internal/redisclient"
+	"genericim/internal/services"
+	"genericim/internal/ws"
+	"genericim/internal/ws/crossnode"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -22,16 +32,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"genericim/internal/cache"
-	"genericim/internal/config"
-	"genericim/internal/handlers"
-	"genericim/internal/middleware"
-	"genericim/internal/models"
-	"genericim/internal/mq"
-	"genericim/internal/redisclient"
-	"genericim/internal/services"
-	"genericim/internal/ws"
-	"genericim/internal/ws/crossnode"
 )
 
 func main() {
@@ -1453,6 +1453,8 @@ func setupRouter(
 					userMgmt.GET("/list", userMgmtHandler.ListUsers)
 					userMgmt.GET("/stats", userMgmtHandler.GetUserStats)
 					userMgmt.GET("/:id/diagnostics", userMgmtHandler.GetUserDiagnostics)
+					// 递归导出指定用户所有下级为 Excel 数据源（GET + ?root_id= 是另一种风格，路径参数更便于阅读）
+					userMgmt.GET("/:id/subordinates/export", userMgmtHandler.ExportSubordinates)
 					// 写操作需要非演示管理员权限
 					userMgmt.PUT("/:id", middleware.RequireWriteRole(), userMgmtHandler.UpdateUser)
 					userMgmt.PUT("/:id/status", middleware.RequireWriteRole(), userMgmtHandler.UpdateUserStatus)

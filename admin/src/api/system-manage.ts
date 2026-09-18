@@ -94,7 +94,9 @@ export interface UserTableListItem {
 export async function fetchGetUserList(params: UserTableSearchParams): Promise<UserTableList> {
   // 在这里集中适配 useTable 的驼峰分页字段与后端 snake_case 协议。
   const recommenderIdNum =
-    params.recommenderId === '' || params.recommenderId === undefined || params.recommenderId === null
+    params.recommenderId === '' ||
+    params.recommenderId === undefined ||
+    params.recommenderId === null
       ? undefined
       : Number(params.recommenderId)
 
@@ -126,8 +128,7 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
     userPhone: item.phone || '-',
     userEmail: '-', // 后端暂未返回
     avatar: item.avatar || '',
-    userGender:
-      item.gender === 'male' || item.gender === 'female' ? item.gender : 'unknown',
+    userGender: item.gender === 'male' || item.gender === 'female' ? item.gender : 'unknown',
     registerSource: item.register_source === 'quick' ? 'quick' : 'manual',
     credentialsInitialized: item.credentials_initialized !== false,
     status: String(item.status),
@@ -167,6 +168,46 @@ export async function fetchGetUserList(params: UserTableSearchParams): Promise<U
 
 /** 更新用户 */
 export { updateUser, updateUserStatus, kickUser, banUser, unbanUser, getUserStats }
+
+// ==================== 导出下级用户 ====================
+
+/** 导出下级列表的单个用户条目 */
+export interface SubordinateExportItem {
+  id: number
+  username: string
+  nickname: string
+  phone: string | null
+  device_ip: string | null
+}
+
+/** 根用户简要信息（用于前端展示） */
+export interface SubordinateExportRoot {
+  id: number
+  username: string
+  nickname: string
+}
+
+/** 导出下级接口的完整响应 */
+export interface SubordinateExportResponse {
+  list: SubordinateExportItem[]
+  root_user: SubordinateExportRoot
+  total: number
+  truncated: boolean
+}
+
+/**
+ * 递归查询指定用户的所有下级。
+ *
+ * 后端按 BFS 逐层展开，最多支持 32 层、最多 10000 个节点，防止恶意请求拖垮数据库。
+ * 返回的 list 不包含传入的根用户本身；手机号、最后登录IP 来自最近一次活跃设备。
+ *
+ * @param rootId 根用户的数字 ID（即后台表格里 ID 列的值）
+ */
+export async function fetchExportSubordinates(rootId: number): Promise<SubordinateExportResponse> {
+  return request.get<SubordinateExportResponse>({
+    url: `/admin/users/${rootId}/subordinates/export`
+  })
+}
 
 // ==================== 会话管理 ====================
 
