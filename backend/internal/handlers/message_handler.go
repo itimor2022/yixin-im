@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"regexp"
 
 	"gaoranim/internal/cache"
 	"gaoranim/internal/models"
@@ -744,35 +744,35 @@ func (h *MessageHandler) SendMessage(c *gin.Context) {
 	// }
 
 	// =========================================================================
-    //  新增/修改：群组网址屏蔽与 .top 域名限制硬拦截
-    // =========================================================================
-    if req.Type == 1 && !hasEncryptedPayload {
-        if text, ok := req.Content["text"].(string); ok && text != "" {
-            
-            if chat.Type != 1 && !chat.CanSendLinks && senderMember.Role < 1 {
-                
-                linkRegex := regexp.MustCompile(`(?i)((https?://)?([a-zA-Z0-9-]+\.)+([a-zA-Z]{2,6}|top)(/[^\s]*)?)`)
-                
-                containsTopDomain := strings.Contains(strings.ToLower(text), ".top")
+	//  新增/修改：群组网址屏蔽与 .top 域名限制硬拦截
+	// =========================================================================
+	if req.Type == 1 && !hasEncryptedPayload {
+		if text, ok := req.Content["text"].(string); ok && text != "" {
 
-                if linkRegex.MatchString(text) || containsTopDomain {
-                    response.Forbidden(c, "当前群组已关闭“发送链接”权限，禁止发送网址域名消息")
-                    return
-                }
-            }
+			if chat.Type != 1 && !chat.CanSendLinks && senderMember.Role < 1 {
 
-            // 4. 原有的违禁词过滤逻辑保持不变
-            filtered, blocked := filterContentWithDB(h.db, text)
-            if blocked {
-                response.Forbidden(c, "消息包含违禁词，无法发送")
-                return
-            }
-            req.Content["text"] = filtered
-        }
-    }
-    // =========================================================================
-    //  拦截控制结束
-    // =========================================================================
+				linkRegex := regexp.MustCompile(`(?i)((https?://)?([a-zA-Z0-9-]+\.)+([a-zA-Z]{2,6}|top)(/[^\s]*)?)`)
+
+				containsTopDomain := strings.Contains(strings.ToLower(text), ".top")
+
+				if linkRegex.MatchString(text) || containsTopDomain {
+					response.Forbidden(c, "当前群组已关闭“发送链接”权限，禁止发送网址域名消息")
+					return
+				}
+			}
+
+			// 4. 原有的违禁词过滤逻辑保持不变
+			filtered, blocked := filterContentWithDB(h.db, text)
+			if blocked {
+				response.Forbidden(c, "消息包含违禁词，无法发送")
+				return
+			}
+			req.Content["text"] = filtered
+		}
+	}
+	// =========================================================================
+	//  拦截控制结束
+	// =========================================================================
 
 	burnAfterReadEnabled := !isSystemSettingFalse(
 		h.getStringSetting(models.SettingBurnAfterReadEnabled, "true"),
@@ -1372,13 +1372,23 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 	}
 	if targetSeq > 0 {
 		// 防回退:只在新 seq 更大时才推进 last_read_seq
+		// ★ 同步清零 unread_count:该字段是历史脏数据累积,只在 GetChatList
+		//   三层兜底链（Redis→chat_last_msg→UnreadCount）的最后一环被读到。
+		//   一旦 Redis 临时失效或 chat_last_msg 异步延迟,旧 unread_count
+		//   就会导致"已读后重新显示红点"+"退出登录后还是红点"的 bug。
 		result = h.db.Model(&models.UserChat{}).
 			Where("chat_id = ? AND user_id = ? AND last_read_seq < ?", chat.ID, user.ID, targetSeq).
-			Update("last_read_seq", targetSeq)
+			Updates(map[string]interface{}{
+				"last_read_seq": targetSeq,
+				"unread_count":  0,
+			})
 	} else {
 		result = h.db.Model(&models.UserChat{}).
 			Where("chat_id = ? AND user_id = ?", chat.ID, user.ID).
-			Update("unread_count", 0)
+			Updates(map[string]interface{}{
+				"last_read_seq": 0,
+				"unread_count":  0,
+			})
 	}
 
 	if result.Error != nil {
@@ -1714,7 +1724,6 @@ func (h *MessageHandler) EditMessage(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "消息已编辑"})
 }
-
 
 // ForwardBatchRequest 批量转发请求
 type ForwardBatchRequest struct {

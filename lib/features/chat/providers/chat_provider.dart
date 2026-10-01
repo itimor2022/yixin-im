@@ -346,7 +346,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   String? get activeChatId => _activeChatId;
 
   ChatListNotifier(this._chatService, this._wsService, this._ref)
-    : super(const ChatListState()) {
+      : super(const ChatListState()) {
     _setupWebSocketHandlers();
   }
 
@@ -367,9 +367,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final raw = data['message'];
         if (raw == null) return;
         if (raw is! Map) {
-          if (kDebugMode) debugPrint(
-            '[Chat] WS new_message: expected message object, got ${raw.runtimeType}',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[Chat] WS new_message: expected message object, got ${raw.runtimeType}',
+            );
           return;
         }
         try {
@@ -378,7 +379,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           );
           _handleNewMessage(message);
         } catch (e, st) {
-          if (kDebugMode) debugPrint('[Chat] WS new_message fromJson failed: $e');
+          if (kDebugMode)
+            debugPrint('[Chat] WS new_message fromJson failed: $e');
           debugPrintStack(stackTrace: st, maxFrames: 12);
         }
       }),
@@ -401,7 +403,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     // 监听重连事件 → 静默刷新会话列表，并对本地会话做增量预取写入 Isar（无需再进会话才拉到断网期间消息）
     _wsHandlerIds.add(
       _wsService.registerHandler(WSMessageType.reconnected, (data) {
-        if (kDebugMode) debugPrint('[Chat] WS reconnected, silent refreshing chat list...');
+        if (kDebugMode)
+          debugPrint('[Chat] WS reconnected, silent refreshing chat list...');
         unawaited(_onWebSocketReconnectedResume());
       }),
     );
@@ -411,7 +414,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler('read', (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          if (kDebugMode) debugPrint('[Chat] Received read receipt for chat: $chatId');
+          if (kDebugMode)
+            debugPrint('[Chat] Received read receipt for chat: $chatId');
         }
       }),
     );
@@ -426,7 +430,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           _localReadClearedAt[chatId] = DateTime.now();
           final chat = _findChatById(chatId);
           if (chat != null && chat.unreadCount > 0) {
-            if (kDebugMode) debugPrint('[Chat] read_sync: clearing unread for chat $chatId');
+            if (kDebugMode)
+              debugPrint('[Chat] read_sync: clearing unread for chat $chatId');
             updateChat(chat.copyWith(unreadCount: 0));
           }
         }
@@ -449,16 +454,16 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler(WSMessageType.chatHidden, (data) {
         final chatId = data['chat_id'] as String?;
         if (chatId != null) {
-          if (kDebugMode) debugPrint('[Chat] Chat hidden on another device, syncing: $chatId');
+          if (kDebugMode)
+            debugPrint(
+                '[Chat] Chat hidden on another device, syncing: $chatId');
           _clearTypingForChat(chatId);
           // 从本地列表移除（不再调用后端，避免循环）
           state = state.copyWith(
-            pinnedChats: state.pinnedChats
-                .where((c) => c.id != chatId)
-                .toList(),
-            regularChats: state.regularChats
-                .where((c) => c.id != chatId)
-                .toList(),
+            pinnedChats:
+                state.pinnedChats.where((c) => c.id != chatId).toList(),
+            regularChats:
+                state.regularChats.where((c) => c.id != chatId).toList(),
           );
         }
       }),
@@ -509,7 +514,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     // 监听个人资料更新（其他设备编辑后同步，type: "profile_updated"）
     _wsHandlerIds.add(
       _wsService.registerHandler(WSMessageType.profileUpdated, (data) {
-        if (kDebugMode) debugPrint('[Chat] Profile updated from another device');
+        if (kDebugMode)
+          debugPrint('[Chat] Profile updated from another device');
         // 刷新当前用户信息
         _ref.read(authServiceProvider.notifier).getCurrentUser();
         // 同步刷新聊天列表，确保自己的会员状态变更后相关会话样式及时更新
@@ -522,26 +528,27 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler('friend_request', (data) {
         _ref.read(friendRequestProvider.notifier).increment();
         _playNotificationSound(ChatItemType.private);
-        
+
         final ctx = rootNavigatorKey.currentContext;
-        
+
         if (ctx != null) {
           final inner = data['data'];
           final fromName = (inner is Map && inner['from_name'] != null)
               ? inner['from_name'].toString()
               : '有人';
 
-          ScaffoldMessenger.of(ctx).clearSnackBars(); 
+          ScaffoldMessenger.of(ctx).clearSnackBars();
 
           ScaffoldMessenger.of(ctx).showSnackBar(
             SnackBar(
               content: Text('$fromName 请求添加你为好友'),
-              duration: const Duration(seconds: 4), 
+              duration: const Duration(seconds: 4),
               action: SnackBarAction(
                 label: '查看',
                 onPressed: () {
-                  ScaffoldMessenger.of(ctx).hideCurrentSnackBar(); 
-                  GoRouter.of(rootNavigatorKey.currentContext!).push('/friend-requests');
+                  ScaffoldMessenger.of(ctx).hideCurrentSnackBar();
+                  GoRouter.of(rootNavigatorKey.currentContext!)
+                      .push('/friend-requests');
                 },
               ),
             ),
@@ -549,7 +556,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
           Future.delayed(const Duration(seconds: 4), () {
             if (rootNavigatorKey.currentContext != null) {
-              ScaffoldMessenger.of(rootNavigatorKey.currentContext!).hideCurrentSnackBar();
+              ScaffoldMessenger.of(rootNavigatorKey.currentContext!)
+                  .hideCurrentSnackBar();
             }
           });
         }
@@ -582,12 +590,15 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     // 监听对方删除好友 / 自己删除好友（立即从会话列表移除，无需重启）
     _wsHandlerIds.add(
       _wsService.registerHandler('chat_hidden', (data) {
-        final chatId = data['chat_id']?.toString() ?? data['data']?['chat_id']?.toString();
+        final chatId =
+            data['chat_id']?.toString() ?? data['data']?['chat_id']?.toString();
         // 立即从内存状态移除该会话
         if (chatId != null && chatId.isNotEmpty) {
           state = state.copyWith(
-            pinnedChats: state.pinnedChats.where((c) => c.id != chatId).toList(),
-            regularChats: state.regularChats.where((c) => c.id != chatId).toList(),
+            pinnedChats:
+                state.pinnedChats.where((c) => c.id != chatId).toList(),
+            regularChats:
+                state.regularChats.where((c) => c.id != chatId).toList(),
           );
         }
         // 同步刷新联系人列表
@@ -625,7 +636,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler(WSMessageType.joinApproved, (data) {
         final chatId = data['chat_id'] as String?;
         final name = data['name'] as String?;
-        if (kDebugMode) debugPrint('[Chat] Join request approved for chat: $chatId ($name)');
+        if (kDebugMode)
+          debugPrint('[Chat] Join request approved for chat: $chatId ($name)');
         loadFromServer();
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
@@ -638,7 +650,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       _wsService.registerHandler(WSMessageType.joinRejected, (data) {
         final chatId = data['chat_id'] as String?;
         final name = data['name'] as String?;
-        if (kDebugMode) debugPrint('[Chat] Join request rejected for chat: $chatId ($name)');
+        if (kDebugMode)
+          debugPrint('[Chat] Join request rejected for chat: $chatId ($name)');
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
         }
@@ -664,7 +677,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final userId = data['user_id'] as String?;
         final isOnline = data['is_online'] as bool? ?? false;
         if (userId == null) return;
-        if (kDebugMode) debugPrint('[Chat] User status changed: $userId, isOnline=$isOnline');
+        if (kDebugMode)
+          debugPrint('[Chat] User status changed: $userId, isOnline=$isOnline');
 
         // 只找到与该用户的私聊并刷新（O(1) 而不是 O(N)）
         final allChats = [...state.regularChats, ...state.pinnedChats];
@@ -697,7 +711,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             );
             return;
           } catch (e) {
-            if (kDebugMode) debugPrint('[Chat] parse edited message failed: $e');
+            if (kDebugMode)
+              debugPrint('[Chat] parse edited message failed: $e');
           }
         }
         final chatId = data['chat_id']?.toString();
@@ -729,14 +744,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               return;
             }
             final isSelf = revokerId == _getCurrentUserId();
-            final isGroup =
-                chat.type == ChatItemType.group ||
+            final isGroup = chat.type == ChatItemType.group ||
                 chat.type == ChatItemType.channel;
             final revokeText = isSelf
                 ? '你撤回了一条消息'
                 : isGroup
-                ? '有人撤回了一条消息'
-                : '对方撤回了一条消息';
+                    ? '有人撤回了一条消息'
+                    : '对方撤回了一条消息';
             final updatedChat = chat.copyWith(lastMessage: revokeText);
             updateChat(updatedChat);
           }
@@ -752,9 +766,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             : data;
         final chatId = payload['chat_id'] as String?;
         final userId = payload['user_id'] as String?;
-        if (kDebugMode) debugPrint(
-          '[Chat] Member mute status changed: chatId=$chatId, userId=$userId',
-        );
+        if (kDebugMode)
+          debugPrint(
+            '[Chat] Member mute status changed: chatId=$chatId, userId=$userId',
+          );
         if (chatId != null && userId != null) {
           _ref.invalidate(myMuteStatusProvider((chatId, userId)));
           _ref.invalidate(chatMembersProvider(chatId));
@@ -769,7 +784,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final message = data['message'] as Map<String, dynamic>?;
         final chatId =
             message?['chat_id'] as String? ?? data['chat_id'] as String?;
-        if (kDebugMode) debugPrint('[Chat] Chat permissions updated: chatId=$chatId');
+        if (kDebugMode)
+          debugPrint('[Chat] Chat permissions updated: chatId=$chatId');
         if (chatId != null) {
           _ref.invalidate(chatDetailProvider(chatId));
         }
@@ -881,7 +897,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             );
           });
         } catch (e) {
-          if (kDebugMode) debugPrint('[Chat] Failed to persist user profile update: $e');
+          if (kDebugMode)
+            debugPrint('[Chat] Failed to persist user profile update: $e');
         }
       });
     }
@@ -899,8 +916,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     String? badgeText,
     String? badgeColor,
   }) {
-    final isTargetUser =
-        chat.type == ChatItemType.private &&
+    final isTargetUser = chat.type == ChatItemType.private &&
         (chat.targetUserUuid == userId || chat.targetUserId == userId);
     if (!isTargetUser) return chat;
 
@@ -983,9 +999,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     } else if (chat.type == ChatItemType.private) {
       next[chatId] = '正在输入...';
     } else {
-      final latestName = typingUsers.values.isNotEmpty
-          ? typingUsers.values.last
-          : '有人';
+      final latestName =
+          typingUsers.values.isNotEmpty ? typingUsers.values.last : '有人';
       next[chatId] = '$latestName 正在输入...';
     }
 
@@ -995,9 +1010,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   void _clearTypingForChat(String chatId) {
     _typingUsersByChat.remove(chatId);
     final prefix = '$chatId:';
-    final keysToRemove = _typingTimers.keys
-        .where((k) => k.startsWith(prefix))
-        .toList();
+    final keysToRemove =
+        _typingTimers.keys.where((k) => k.startsWith(prefix)).toList();
     for (final key in keysToRemove) {
       _typingTimers[key]?.cancel();
       _typingTimers.remove(key);
@@ -1127,7 +1141,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   /// 消息重灌一次 _handleNewMessage → 提示音狂响，即使用户所有消息都已读。）
   void _handleNewMessage(api.Message message, {bool playSound = true}) {
     if (!_rememberMessageId(message.msgId)) {
-      if (kDebugMode) debugPrint('[Chat] Skip duplicate new_message: ${message.msgId}');
+      if (kDebugMode)
+        debugPrint('[Chat] Skip duplicate new_message: ${message.msgId}');
       return;
     }
 
@@ -1146,8 +1161,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
       // 这条消息是否会给用户带来一个"新未读增量"（会触发红点 +1）
       final createsUnread = !isSelf && !isViewing && !isSystemMsg;
-      final newUnread =
-          createsUnread ? chat.unreadCount + 1 : chat.unreadCount;
+      final newUnread = createsUnread ? chat.unreadCount + 1 : chat.unreadCount;
 
       final updatedChat = chat.copyWith(
         lastMessage: lastMessage,
@@ -1242,7 +1256,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
       soundService.playNotification(notificationType, isInApp: true).catchError(
         (e) {
-          if (kDebugMode) debugPrint('[Chat] Play notification sound async error: $e');
+          if (kDebugMode)
+            debugPrint('[Chat] Play notification sound async error: $e');
         },
       );
     } catch (e) {
@@ -1286,7 +1301,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         unreadCount: unreadCount,
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('[ChatProvider] Background notification error: $e');
+      if (kDebugMode)
+        debugPrint('[ChatProvider] Background notification error: $e');
     }
   }
 
@@ -1326,7 +1342,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         payload: chat.id,
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('[ChatProvider] Desktop notification error: $e');
+      if (kDebugMode)
+        debugPrint('[ChatProvider] Desktop notification error: $e');
     }
   }
 
@@ -1347,9 +1364,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     if (chatId == null) return;
 
-    if (kDebugMode) debugPrint(
-      '[Chat] Received new_chat notification: $chatId, name: $name, type: $chatType',
-    );
+    if (kDebugMode)
+      debugPrint(
+        '[Chat] Received new_chat notification: $chatId, name: $name, type: $chatType',
+      );
 
     // 检查是否已存在
     if (_findChatById(chatId) != null) {
@@ -1365,8 +1383,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       type: chatType == 1
           ? ChatItemType.private
           : chatType == 2
-          ? ChatItemType.group
-          : ChatItemType.channel,
+              ? ChatItemType.group
+              : ChatItemType.channel,
       createdAt: DateTime.now(),
     );
 
@@ -1383,12 +1401,10 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       final others = state.pinnedChats.where((c) => c.id != chat.id).toList();
       state = state.copyWith(pinnedChats: [chat, ...others]);
     } else {
-      final pinnedWithout = state.pinnedChats
-          .where((c) => c.id != chat.id)
-          .toList();
-      final regularWithout = state.regularChats
-          .where((c) => c.id != chat.id)
-          .toList();
+      final pinnedWithout =
+          state.pinnedChats.where((c) => c.id != chat.id).toList();
+      final regularWithout =
+          state.regularChats.where((c) => c.id != chat.id).toList();
       state = state.copyWith(
         pinnedChats: pinnedWithout,
         regularChats: [chat, ...regularWithout],
@@ -1471,8 +1487,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     final type = m.type == storage.ChatType.private
         ? ChatItemType.private
         : m.type == storage.ChatType.group
-        ? ChatItemType.group
-        : ChatItemType.channel;
+            ? ChatItemType.group
+            : ChatItemType.channel;
     MessageContentType? lastMsgType;
     switch (m.lastMessageType) {
       case storage.MessageType.text:
@@ -1534,8 +1550,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     final type = c.type == ChatItemType.private
         ? storage.ChatType.private
         : c.type == ChatItemType.group
-        ? storage.ChatType.group
-        : storage.ChatType.channel;
+            ? storage.ChatType.group
+            : storage.ChatType.channel;
     storage.MessageType lastMsgType = storage.MessageType.text;
     if (c.lastMessageType != null) {
       switch (c.lastMessageType!) {
@@ -1614,7 +1630,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     // 数据为空时读取本地缓存（解决重开App后provider未销毁但数据为空的问题）
     final isEmpty = state.pinnedChats.isEmpty && state.regularChats.isEmpty;
-    if (kDebugMode) debugPrint('[Chat] loadFromServer: isEmpty=$isEmpty isInitialized=${state.isInitialized}');
+    if (kDebugMode)
+      debugPrint(
+          '[Chat] loadFromServer: isEmpty=$isEmpty isInitialized=${state.isInitialized}');
     if (isEmpty && !PlatformUtils.isWeb) {
       await _loadChatListFromCache();
     }
@@ -1651,9 +1669,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 pendingJoinRequestCount: userChat.pendingRequestCount ?? 0,
                 hasPendingJoinRequests:
                     (userChat.pendingRequestCount ?? 0) > 0 ||
-                    (userChat.pendingRequest ??
-                        userChat.chat?.pendingRequest ??
-                        false),
+                        (userChat.pendingRequest ??
+                            userChat.chat?.pendingRequest ??
+                            false),
                 type: userChat.type != null
                     ? _mapChatTypeFromInt(userChat.type!)
                     : _mapChatType(userChat.chat?.type ?? api.ChatType.private),
@@ -1665,7 +1683,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 nicknameColor: userChat.nicknameColor, // 昵称颜色
                 premiumType: userChat.premiumType, // 会员类型
                 lastMessageSeq: userChat.lastMsgSeq,
-                                // 会员/徽章字段：直接信任接口值（getChatList 已稳定下发 is_member/badge_*）
+                // 会员/徽章字段：直接信任接口值（getChatList 已稳定下发 is_member/badge_*）
                 isMember: userChat.isMember,
                 badgeText: userChat.badgeText,
                 badgeColor: userChat.badgeColor,
@@ -1677,7 +1695,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         // 服务端字段兜底：保留本地更新过的 lastMessageTime / 8s 内清零的 unread
         final reconciled = _reconcileServerChats(chats);
 
-        final pinned  = reconciled.where((c) =>  c.isPinned).toList();
+        final pinned = reconciled.where((c) => c.isPinned).toList();
         final regular = reconciled.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
@@ -1718,9 +1736,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
             await IsarService.instance.isar.writeTxn(() async {
               // 获取现有聊天 ID
-              final existingModels = await IsarService.instance.isar.chatModels
-                  .where()
-                  .findAll();
+              final existingModels =
+                  await IsarService.instance.isar.chatModels.where().findAll();
               final existingIds = existingModels.map((m) => m.id).toSet();
 
               // 删除不再存在的聊天（用户已删除/离开的）
@@ -1774,7 +1791,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     await loadFromServer();
   }
 
-/// 静默刷新聊天列表（从后台恢复时使用，不显示加载状态）
+  /// 静默刷新聊天列表（从后台恢复时使用，不显示加载状态）
   ///
   /// [bypassDebounce]：WS 重连后必须尽快对齐服务端未读/预览，避免与上一请求落在同一 500ms 窗口被吞掉。
   Future<void> silentRefresh({bool bypassDebounce = false}) async {
@@ -1830,9 +1847,9 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
                 pendingJoinRequestCount: userChat.pendingRequestCount ?? 0,
                 hasPendingJoinRequests:
                     (userChat.pendingRequestCount ?? 0) > 0 ||
-                    (userChat.pendingRequest ??
-                        userChat.chat?.pendingRequest ??
-                        false),
+                        (userChat.pendingRequest ??
+                            userChat.chat?.pendingRequest ??
+                            false),
                 type: userChat.type != null
                     ? _mapChatTypeFromInt(userChat.type!)
                     : _mapChatType(userChat.chat?.type ?? api.ChatType.private),
@@ -1860,7 +1877,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final reconciled = _reconcileServerChats(chats);
 
         // 🌟 最核心修改：恢复成原版，直接将全量 chats 数据源分别拆分给置顶和常规列表
-        final pinned  = reconciled.where((c) =>  c.isPinned).toList();
+        final pinned = reconciled.where((c) => c.isPinned).toList();
         final regular = reconciled.where((c) => !c.isPinned).toList();
 
         // 按最后消息时间降序排序（最新的在前）
@@ -1911,7 +1928,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               await IsarService.instance.isar.chatModels.putAll(models);
             });
           } catch (e) {
-            if (kDebugMode) debugPrint('[Chat] Failed to cache chats in silent refresh: $e');
+            if (kDebugMode)
+              debugPrint('[Chat] Failed to cache chats in silent refresh: $e');
           }
         });
       } else {
@@ -1992,13 +2010,15 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           for (final msg in resp.data!) {
             _handleNewMessage(msg, playSound: false);
           }
-          if (kDebugMode) debugPrint(
-            '[Chat] Reconnect prefetch: ${items.length} messages → Isar, chat=${chat.id}',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[Chat] Reconnect prefetch: ${items.length} messages → Isar, chat=${chat.id}',
+            );
         } catch (e) {
-          if (kDebugMode) debugPrint(
-            '[Chat] Reconnect prefetch failed for chat ${chat.id}: $e',
-          );
+          if (kDebugMode)
+            debugPrint(
+              '[Chat] Reconnect prefetch failed for chat ${chat.id}: $e',
+            );
         }
         await Future<void>.delayed(const Duration(milliseconds: 40));
       }
@@ -2387,8 +2407,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     final changedChats = <ChatItem>[];
     ChatItem updateIfMatched(ChatItem chat) {
-      final matched =
-          chat.type == ChatItemType.private &&
+      final matched = chat.type == ChatItemType.private &&
           (chat.targetUserUuid == userId || chat.targetUserId == userId);
       if (!matched || chat.name == nextName) return chat;
 
@@ -2463,9 +2482,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       } else {
         state = state.copyWith(
           pinnedChats: [chat, ...state.pinnedChats],
-          regularChats: state.regularChats
-              .where((c) => c.id != chatId)
-              .toList(),
+          regularChats:
+              state.regularChats.where((c) => c.id != chatId).toList(),
         );
       }
       throw AppCleanException(
@@ -2530,13 +2548,21 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   /// 的延迟兜底调用仍然存在，作为二次保险。
   void markAsRead(String chatId) {
     final chat = _findChatById(chatId);
-    if (chat == null) return;
 
     // 0. 打时间戳：让紧接着的 silentRefresh / loadFromServer 在 8s 内不要用
     //    服务端仍然滞后的 unread_count 覆盖本地清零结果（未读气泡抖动 bug）。
+    //    即使本地没找到 chat（极少见：刚登出/刚登入瞬间进入会话、chatList
+    //    还在加载），也要打这个时间戳，避免后续 silentRefresh 立刻反弹红点。
     _localReadClearedAt[chatId] = DateTime.now();
 
-    // 1. 本地乐观更新（避免不必要的重复 setState）
+    if (chat == null) {
+      // 1a. 本地无 chat 状态（列表未加载完），只发请求，让服务端去拉平
+      //     last_read_seq，服务端会基于 Redis chat:last_seq 自动覆盖。
+      unawaited(_chatService.markAsRead(chatId));
+      return;
+    }
+
+    // 1b. 本地乐观更新（避免不必要的重复 setState）
     if (chat.unreadCount > 0) {
       final updatedChat = chat.copyWith(unreadCount: 0);
       updateChat(updatedChat);
@@ -2547,7 +2573,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     if (lastSeq > 0) {
       unawaited(_chatService.markAsRead(chatId, msgSeq: lastSeq));
     } else {
-      // 拿不到 seq 时用无参调用，让后端用 Redis last_seq 覆盖
+      // 拿不到 seq 时用无参调用，让后端用 Redis last_seq 兜底覆盖
       unawaited(_chatService.markAsRead(chatId));
     }
   }
@@ -2825,8 +2851,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               type: chat.type == api.ChatType.private
                   ? ChatItemType.private
                   : chat.type == api.ChatType.group
-                  ? ChatItemType.group
-                  : ChatItemType.channel,
+                      ? ChatItemType.group
+                      : ChatItemType.channel,
               lastMessage: null,
               lastMessageTime: DateTime.now(),
               unreadCount: 0,
@@ -2838,7 +2864,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             state = state.copyWith(
               regularChats: [chatItem, ...state.regularChats],
             );
-            if (kDebugMode) debugPrint('[Chat] Added joined chat to list: ${chat.name}');
+            if (kDebugMode)
+              debugPrint('[Chat] Added joined chat to list: ${chat.name}');
           }
         }
         // 同时刷新列表确保数据同步
@@ -2885,64 +2912,64 @@ final chatDetailProvider = FutureProvider.family.autoDispose<api.Chat?, String>(
 /// 群成员列表 Provider
 final chatMembersProvider = FutureProvider.family
     .autoDispose<List<api.ChatMember>, String>((ref, chatId) async {
-      final currentUserId = ref.watch(
-        authServiceProvider.select((state) => state.user?.uuid),
-      );
-      if (currentUserId == null || currentUserId.isEmpty) {
-        return [];
-      }
+  final currentUserId = ref.watch(
+    authServiceProvider.select((state) => state.user?.uuid),
+  );
+  if (currentUserId == null || currentUserId.isEmpty) {
+    return [];
+  }
 
-      final chatService = ref.read(api.chatServiceProvider);
-      final response = await chatService.getMembers(chatId);
-      if (response.isSuccess && response.data != null) {
-        return response.data!;
-      }
-      return [];
-    });
+  final chatService = ref.read(api.chatServiceProvider);
+  final response = await chatService.getMembers(chatId);
+  if (response.isSuccess && response.data != null) {
+    return response.data!;
+  }
+  return [];
+});
 
 /// 当前用户禁言状态 Provider
 final chatMemberSearchProvider = FutureProvider.family
     .autoDispose<List<api.ChatMember>, ({String chatId, String keyword})>((
-      ref,
-      params,
-    ) async {
-      final currentUserId = ref.watch(
-        authServiceProvider.select((state) => state.user?.uuid),
-      );
-      if (currentUserId == null || currentUserId.isEmpty) {
-        return [];
-      }
+  ref,
+  params,
+) async {
+  final currentUserId = ref.watch(
+    authServiceProvider.select((state) => state.user?.uuid),
+  );
+  if (currentUserId == null || currentUserId.isEmpty) {
+    return [];
+  }
 
-      final chatService = ref.read(api.chatServiceProvider);
-      final response = await chatService.searchMembers(
-        params.chatId,
-        params.keyword,
-      );
-      if (response.isSuccess && response.data != null) {
-        return response.data!;
-      }
-      return [];
-    });
+  final chatService = ref.read(api.chatServiceProvider);
+  final response = await chatService.searchMembers(
+    params.chatId,
+    params.keyword,
+  );
+  if (response.isSuccess && response.data != null) {
+    return response.data!;
+  }
+  return [];
+});
 
 final myMuteStatusProvider = FutureProvider.family
     .autoDispose<api.MuteStatus?, (String chatId, String myUserId)>((
-      ref,
-      params,
-    ) async {
-      final currentUserId = ref.watch(
-        authServiceProvider.select((state) => state.user?.uuid),
-      );
-      if (currentUserId == null || currentUserId.isEmpty) {
-        return null;
-      }
+  ref,
+  params,
+) async {
+  final currentUserId = ref.watch(
+    authServiceProvider.select((state) => state.user?.uuid),
+  );
+  if (currentUserId == null || currentUserId.isEmpty) {
+    return null;
+  }
 
-      final chatService = ref.read(api.chatServiceProvider);
-      final response = await chatService.getMuteStatus(params.$1, params.$2);
-      if (response.isSuccess && response.data != null) {
-        return response.data;
-      }
-      return null;
-    });
+  final chatService = ref.read(api.chatServiceProvider);
+  final response = await chatService.getMuteStatus(params.$1, params.$2);
+  if (response.isSuccess && response.data != null) {
+    return response.data;
+  }
+  return null;
+});
 
 /// 聊天编辑模式状态
 final chatEditModeProvider = StateProvider<bool>((ref) => false);

@@ -469,6 +469,18 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 					}
 					return int(lm.LastSeq - userChat.LastReadSeq)
 				}
+				// ★ 兜底1：Redis 和 chat_last_msg 都 miss 时,用 user_chats.last_msg_seq
+				//   与 last_read_seq 比较。该字段在 SendMessage 中是同步更新的,
+				//   比 chat_last_msg 异步 MQ 写入更可靠,能在 Redis 失效场景下
+				//   避免退回到脏 unread_count 字段。
+				if userChat.LastMsgSeq > 0 && userChat.LastMsgSeq <= userChat.LastReadSeq {
+					return 0
+				}
+				// ★ 兜底2：用户曾 markAsRead 过（LastReadSeq>0），历史 unread_count
+				//   字段已不可信,直接返回 0。
+				if userChat.LastReadSeq > 0 {
+					return 0
+				}
 				return userChat.UnreadCount
 			}(),
 			"is_pinned":   userChat.IsPinned,
@@ -1291,10 +1303,10 @@ func (h *ChatHandler) GetMembers(c *gin.Context) {
 			MuteEndTime:   m.MuteEndTime,
 			NicknameColor: user.NicknameColor,
 			EmojiAvatar:   user.EmojiAvatar,
-   PremiumType:   user.PremiumType,
-   IsMember:      user.IsMember,
-   BadgeText:     user.BadgeText,
-   BadgeColor:    user.BadgeColor,
+			PremiumType:   user.PremiumType,
+			IsMember:      user.IsMember,
+			BadgeText:     user.BadgeText,
+			BadgeColor:    user.BadgeColor,
 		})
 	}
 
