@@ -35,7 +35,7 @@ class ServerDiscovery {
   /// 多个 DNS TXT 查询域名
   /// 建议: 注册在不同域名服务商，同一 TXT 值（加密节点列表）
   /// 示例: 阿里云 + Cloudflare + Namecheap 各一个
-  static const List<String> _dnsDomains = ['cft.jnsk.shop', 'cft.xh1t.cyou'];
+  static const List<String> _dnsDomains = ['cf.65258.top', 'cf.11822.it.com'];
 
   /// DoH 服务商列表（每个 DNS 域名都会被所有 DoH 并行查询）
   static const List<String> _dohProviders = [
@@ -52,7 +52,11 @@ class ServerDiscovery {
   /// 保持这里非空是为了首装即可引导起来。
   ///
   /// 建议: 阿里云OSS + 腾讯COS + Cloudflare R2，各自独立
-  static const List<String> _ossUrls = ['https://dl.huzhutian.cn/pkgs/csh.txt'];
+  static const List<String> _ossUrls = [
+    'https://dann54zb7yar1.cloudfront.net/csh/duo.txt',
+    'https://d2pvzx7xdvbqsq.cloudfront.net/csh/duo.txt',
+    'https://d3a7lygnh9yxfj.cloudfront.net/csh/duo.txt',
+  ];
 
   /// 内置保底节点（所有轨道失败时的最后防线）
   static const List<String> _fallbackNodes = [];
@@ -314,7 +318,8 @@ class ServerDiscovery {
         return;
       }
       tracksDone++;
-      if (kDebugMode) debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
+      if (kDebugMode)
+        debugPrint('[Discovery] $name 无结果 ($tracksDone/$totalTracks)');
       if (tracksDone >= totalTracks && !completer.isCompleted) {
         if (kDebugMode) debugPrint('[Discovery] 双轨均无结果，兜底当前节点');
         completer.complete(_currentNode != null ? [_currentNode!] : <String>[]);
@@ -322,18 +327,14 @@ class ServerDiscovery {
     }
 
     if (hasDns) {
-      _fetchFromDns()
-          .then((n) => onResult(n, 'DNS'))
-          .catchError((e) {
+      _fetchFromDns().then((n) => onResult(n, 'DNS')).catchError((e) {
         if (kDebugMode) debugPrint('[Discovery] DNS error: $e');
         onResult(null, 'DNS');
       });
     }
 
     if (hasOss) {
-      _fetchFromOss()
-          .then((n) => onResult(n, 'OSS'))
-          .catchError((e) {
+      _fetchFromOss().then((n) => onResult(n, 'OSS')).catchError((e) {
         if (kDebugMode) debugPrint('[Discovery] OSS error: $e');
         onResult(null, 'OSS');
       });
@@ -418,12 +419,14 @@ class ServerDiscovery {
           // 补全 padding 到 4 的倍数
           cleanB64 = cleanB64.replaceAll('=', '');
           final pad = cleanB64.length % 4;
-          if (pad == 2) cleanB64 += '==';
+          if (pad == 2)
+            cleanB64 += '==';
           else if (pad == 3) cleanB64 += '=';
           decoded = utf8.decode(base64.decode(cleanB64));
           if (kDebugMode) debugPrint('[Discovery] Base64 decoded: $decoded');
         } catch (e) {
-          if (kDebugMode) debugPrint('[Discovery] Base64 decode error: $e, raw: $txtValue');
+          if (kDebugMode)
+            debugPrint('[Discovery] Base64 decode error: $e, raw: $txtValue');
           decoded = txtValue;
         }
 
