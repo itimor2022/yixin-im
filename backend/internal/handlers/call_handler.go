@@ -638,8 +638,8 @@ func (h *CallHandler) GetPendingCall(c *gin.Context) {
 
 	activeSince := time.Now().Add(-5 * time.Minute)
 
-	var call models.Call
-	err := h.db.
+	var calls []models.Call
+	if err := h.db.
 		Where("status IN ? AND start_time > ? AND (caller_id = ? OR callee_id = ?)",
 			[]string{"calling", "connected"},
 			activeSince,
@@ -647,11 +647,18 @@ func (h *CallHandler) GetPendingCall(c *gin.Context) {
 			user.ID,
 		).
 		Order("start_time DESC").
-		First(&call).Error
-	if err != nil {
+		Limit(1).
+		Find(&calls).Error; err != nil {
+		// 真正的数据库错误
+		response.ServerError(c, "查询通话失败")
+		return
+	}
+	if len(calls) == 0 {
+		// 没有活跃通话 —— 正常情况，不再打 record not found
 		response.Success(c, gin.H{"has_pending": false})
 		return
 	}
+	call := calls[0]
 
 	asRole := "caller"
 	otherUserID := call.CalleeID
