@@ -220,8 +220,17 @@ func initMySQL(cfg config.MySQLConfig, serverMode string) (*gorm.DB, error) {
 	}
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: logger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			logger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  logLevel,
+				IgnoreRecordNotFoundError: true, // ← 关键：不打印 record not found
+				Colorful:                  true,
+			},
+		),
 	})
+
 	if err != nil {
 		return nil, err
 	}
