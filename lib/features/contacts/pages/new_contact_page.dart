@@ -257,34 +257,37 @@ class _NewContactPageState extends ConsumerState<NewContactPage> {
     }
 
     try {
-      final apiClient = ref.read(apiClientProvider);
-      final response = await apiClient.post(
-        '/contact/add',
-        data: {'user_id': user.id},
-      );
+      final result = await ref
+          .read(contactListProvider.notifier)
+          .addContactWithStatus(user.id);
 
       if (!mounted) return;
 
-      if (response.code == 0) {
+      if (result.success || result.pending) {
         ref.read(contactListProvider.notifier).loadFromServer();
+        final message = result.message?.trim();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('好友申请已发送，等待 ${user.name} 验证'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      } else if (response.message == '已经是联系人') {
-        ref.read(contactListProvider.notifier).loadFromServer();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${user.name} 已在联系人中'),
+            content: Text(
+              (message != null &&
+                      (message.contains('联系人') ||
+                          message.contains('好友') ||
+                          message.contains('already')))
+                  ? '${user.name} 已在联系人中'
+                  : (message != null && message.isNotEmpty
+                      ? message
+                      : '好友申请已发送，等待 ${user.name} 验证'),
+            ),
             backgroundColor: AppColors.success,
           ),
         );
       } else {
+        final message = result.message?.trim();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(response.message),
+            content: Text(message != null && message.isNotEmpty
+                ? message
+                : '添加失败，请重试'),
           ),
         );
       }

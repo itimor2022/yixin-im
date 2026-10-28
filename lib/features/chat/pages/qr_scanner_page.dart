@@ -170,10 +170,30 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
 
       switch (action) {
         case _ScanAction.addFriend:
-          final success = await ref
+          final result = await ref
               .read(contactListProvider.notifier)
-              .addContact(scannedUser.uuid);
-          _showMessage(success ? '已将 ${scannedUser.name} 添加到联系人' : '添加失败，请重试');
+              .addContactWithStatus(scannedUser.uuid);
+          final message = result.message?.trim();
+          if (result.success) {
+            _showMessage(
+              (message != null &&
+                      (message.contains('联系人') ||
+                          message.contains('好友') ||
+                          message.contains('already')))
+                  ? '${scannedUser.name} 已在联系人中'
+                  : '已将 ${scannedUser.name} 添加到联系人',
+            );
+          } else if (result.pending) {
+            _showMessage(
+              message != null && message.isNotEmpty
+                  ? message
+                  : '好友申请已发送，等待 ${scannedUser.name} 验证',
+            );
+          } else {
+            _showMessage(message != null && message.isNotEmpty
+                ? message
+                : '添加失败，请重试');
+          }
           await _resumeScanner();
           break;
         case _ScanAction.viewProfile:

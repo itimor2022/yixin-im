@@ -593,12 +593,25 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
       return (success: true, pending: false, message: null);
     }
 
+    final msg = (response.message ?? '').toLowerCase();
+    final isAlreadyContact = msg.contains('already') ||
+        msg.contains('已在联系人') ||
+        msg.contains('已经是联系人') ||
+        msg.contains('联系人中') ||
+        msg.contains('已经是好友') ||
+        (msg.contains('friend') && msg.contains('exist'));
+    if (isAlreadyContact) {
+      return (
+        success: true,
+        pending: false,
+        message: response.message ?? '已经是联系人',
+      );
+    }
+
     // 服务端返回"已申请/等待验证"相关错误码或消息时，视为 pending
-    final msg = response.message.toLowerCase();
     final isPending = response.code == 1005 ||
         response.code == 1006 ||
         msg.contains('pending') ||
-        msg.contains('already') ||
         msg.contains('申请') ||
         msg.contains('等待') ||
         msg.contains('已发送') ||
@@ -608,7 +621,7 @@ class ContactListNotifier extends StateNotifier<List<ContactItem>> {
 
   Future<bool> addContact(String userId, {String? remark}) async {
     final result = await addContactWithStatus(userId, remark: remark);
-    return result.success;
+    return result.success || result.pending;
   }
 
   /// 删除联系人（调用API）
