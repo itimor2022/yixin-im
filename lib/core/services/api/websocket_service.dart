@@ -1494,7 +1494,8 @@ class WebSocketService extends StateNotifier<WSConnectionState>
   void _startPing() {
     _pingTimer?.cancel();
     _pongTimeoutCount = 0;
-    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+    // ★ 前台心跳改为15s：服务器 PongWait=20s，留5s余量避免移动网络抖动误判超时
+    _pingTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       if (_isDisposed) {
         _pingTimer?.cancel();
         return;

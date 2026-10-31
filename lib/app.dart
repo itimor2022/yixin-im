@@ -811,6 +811,10 @@ class _GaoRanIMAppState extends ConsumerState<GaoRanIMApp>
       unawaited(
         ref.read(authServiceProvider.notifier).ensureSessionRecoveredOnResume(),
       );
+      // ★ App 重新进入前台时，清理自己可能残留的脏通话（崩溃/被杀场景）
+      unawaited(
+        ref.read(callServiceProvider.notifier).cleanupSelfCalls(),
+      );
       final authState = ref.read(authServiceProvider);
       if (authState.status == AuthStatus.authenticated &&
           PlatformUtils.isMobile) {

@@ -191,11 +191,20 @@ func (h *CallHandler) CreateCall(c *gin.Context) {
 		return
 	}
 
-	activeSince := time.Now().Add(-2 * time.Hour)
+	// ★ 自动清理双方异常残留通话（App崩溃/被杀导致的脏数据）
+	// calling 超过90秒 → missed；connected 超过5分钟无心跳 → hangup
+	// 同时清理 caller 和 callee，防止任一方残留时误判 already in a call
+	tx.Exec(`UPDATE calls SET status='missed', end_time=NOW() WHERE status='calling' AND (caller_id=? OR callee_id=?) AND TIMESTAMPDIFF(SECOND, start_time, NOW()) > 90`,
+		caller.ID, caller.ID)
+	tx.Exec(`UPDATE calls SET status='missed', end_time=NOW() WHERE status='calling' AND (caller_id=? OR callee_id=?) AND TIMESTAMPDIFF(SECOND, start_time, NOW()) > 90`,
+		callee.ID, callee.ID)
+
+	// activeCallCount 只检查90秒内的通话（超过90秒必然已被上面清理）
+	activeSince := time.Now().Add(-90 * time.Second)
 	var activeCallCount int64
 	if err := tx.Model(&models.Call{}).
 		Where("status IN ? AND start_time > ? AND (caller_id IN ? OR callee_id IN ?)",
-			[]string{"calling", "connected"},
+			[]string{"calling"},
 			activeSince,
 			[]uint64{caller.ID, callee.ID},
 			[]uint64{caller.ID, callee.ID},
@@ -641,7 +650,7 @@ func (h *CallHandler) GetPendingCall(c *gin.Context) {
 	var call models.Call
 	err := h.db.
 		Where("status IN ? AND start_time > ? AND (caller_id = ? OR callee_id = ?)",
-			[]string{"calling", "connected"},
+			[]string{"calling"},
 			activeSince,
 			user.ID,
 			user.ID,
@@ -956,4 +965,65 @@ func (h *CallHandler) ensureCallUserChatRecord(chatID, userID, targetID uint64, 
 		SortTime:  effectiveTime,
 		UpdatedAt: effectiveTime,
 	}).Error
+}
+
+// CleanupSelfCalls 清理当前用户自己的残留通话（App崩溃重启后调用）
+func (h *CallHandler) CleanupSelfCalls(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var user models.User
+	if err := h.db.Where("uuid = ?", userID).First(&user).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+
+	// 清理自己的 calling 超过2分钟的
+	h.db.Exec(`UPDATE calls SET status='missed', end_time=NOW()
+		WHERE status='calling' AND caller_id=?
+		AND TIMESTAMPDIFF(MINUTE, start_time, NOW()) > 2`, user.ID)
+
+	// 清理自己参与的 connected 超过10分钟的
+	h.db.Exec(`UPDATE calls SET status='hangup', end_time=NOW()
+		WHERE status='connected' AND (caller_id=? OR callee_id=?)
+		AND TIMESTAMPDIFF(MINUTE, start_time, NOW()) > 10`, user.ID, user.ID)
+
+	// 查出仍残留的通话并通知对方
+	var staleCalls []struct {
+		ID       uint64
+		CallerID uint64
+		CalleeID uint64
+		Status   string
+	}
+	h.db.Table("calls").
+		Select("id, caller_id, callee_id, status").
+		Where("status IN ? AND (caller_id=? OR callee_id=?)",
+			[]string{"calling"}, user.ID, user.ID).
+		Scan(&staleCalls)
+
+	for _, call := range staleCalls {
+		endReason := "missed"
+		if call.Status == "connected" {
+			endReason = "hangup"
+		}
+		h.db.Exec("UPDATE calls SET status=?, end_time=NOW() WHERE id=?", endReason, call.ID)
+
+		var otherID uint64
+		if call.CallerID == user.ID {
+			otherID = call.CalleeID
+		} else {
+			otherID = call.CallerID
+		}
+		var otherUser models.User
+		if err := h.db.Select("uuid").First(&otherUser, otherID).Error; err == nil {
+			h.wsHub.SendToUserCluster(otherUser.UUID, map[string]interface{}{
+				"type": "call_ended",
+				"data": map[string]interface{}{
+					"call_id": call.ID,
+					"reason":  endReason,
+				},
+			})
+		}
+	}
+
+	response.Success(c, gin.H{"cleaned": len(staleCalls)})
 }

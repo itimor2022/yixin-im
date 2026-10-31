@@ -174,6 +174,7 @@ class CallService extends StateNotifier<CallServiceState> {
   Completer<void>? _webAudioReadyCompleter;
 
   bool _isDisposed = false;
+  bool _isStartingCall = false;
 
   CallService(this._api, this._wsService) : super(const CallServiceState()) {
     // ★ WS handler 必须在构造函数里同步注册！
@@ -305,6 +306,8 @@ class CallService extends StateNotifier<CallServiceState> {
     final endedId = _wsService.registerHandler(WSMessageType.callEnded, (data) {
       if (kDebugMode) debugPrint('[CallService] Call ended: $data');
       final reason = data['data']?['reason'] as String? ?? 'hangup';
+      // ★ notifyServer: false 只跳过POST /call/end（服务端hub.go已更新DB）
+      // 但仍需确保本地state和Agora engine完全清理
       endCall(reason: reason, notifyServer: false);
     });
     _wsHandlerIds.add(endedId);
@@ -331,6 +334,18 @@ class CallService extends StateNotifier<CallServiceState> {
       },
     );
     _wsHandlerIds.add(reconnectedId);
+  }
+
+
+  /// App 重新进入前台时，通知后端清理自己的残留通话（崩溃/被系统杀掉场景）
+  Future<void> cleanupSelfCalls() async {
+    if (_isDisposed) return;
+    try {
+      await _api.post<Map<String, dynamic>>('/call/cleanup-self', data: {});
+      if (kDebugMode) debugPrint('[CallService] cleanupSelfCalls done');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[CallService] cleanupSelfCalls error: \$e');
+    }
   }
 
   /// 拉取"当前是否有未接的通话"。见 backend `GetPendingCall`。
@@ -574,7 +589,21 @@ class CallService extends StateNotifier<CallServiceState> {
         if (kDebugMode) debugPrint('[Agora] User offline: $remoteUid, reason: $reason');
         if (_isDisposed) return;
         if (state.state == CallState.connected) {
-          endCall(reason: 'remote_hangup');
+          // ★ 修复：UserOfflineReasonDropped = 网络超时掉线（非主动离开）
+          //   给 3 秒缓冲，等待 Agora 自动重连，避免网络抖动误挂断。
+          //   UserOfflineReasonQuit = 对方主动离开，立即挂断。
+          if (reason == UserOfflineReasonType.userOfflineDropped) {
+            // 网络抖动掉线，延迟3秒等重连
+            Future.delayed(const Duration(seconds: 3), () {
+              if (!_isDisposed && state.state == CallState.connected) {
+                if (kDebugMode) debugPrint('[Agora] User still offline after 3s delay, ending call');
+                endCall(reason: 'remote_hangup');
+              }
+            });
+          } else {
+            // 主动退出（Quit），立即挂断
+            endCall(reason: 'remote_hangup');
+          }
         }
       },
       onRemoteVideoStateChanged:
@@ -655,13 +684,20 @@ class CallService extends StateNotifier<CallServiceState> {
       onConnectionStateChanged: (connection, stateType, reason) {
         if (kDebugMode) debugPrint('[Agora] Connection state: $stateType, reason: $reason');
         if (_isDisposed) return;
-        if (stateType == ConnectionStateType.connectionStateDisconnected ||
-            stateType == ConnectionStateType.connectionStateFailed) {
+        // ★ 修复：切后台时 Agora 会短暂进入 Disconnected/Reconnecting，
+        //   SDK 自身会在20分钟内持续重试，不应在此时挂断通话。
+        //   只有 connectionStateFailed（重连20分钟失败）才真正结束通话。
+        //   connectionStateDisconnected 是过渡态，等待 SDK 自动重连即可。
+        if (stateType == ConnectionStateType.connectionStateFailed) {
           if (state.state == CallState.connected ||
               state.state == CallState.connecting) {
-            if (kDebugMode) debugPrint('[Agora] Network disconnected during call, ending call');
+            if (kDebugMode) debugPrint('[Agora] Network failed (20min retry exhausted), ending call');
             endCall(reason: 'network_error');
           }
+        }
+        // Reconnecting 时更新 UI 状态提示用户网络不稳定（不挂断）
+        if (stateType == ConnectionStateType.connectionStateReconnecting) {
+          if (kDebugMode) debugPrint('[Agora] Network reconnecting, keeping call alive...');
         }
       },
     );
@@ -782,9 +818,21 @@ class CallService extends StateNotifier<CallServiceState> {
       return false;
     }
 
+    // ★ 如果 state 显示 isInCall 但 engine 已为 null，说明通话已结束
+    //   但 _resetState 的 addPostFrameCallback 还未执行（信号丢失/时序问题）
+    //   强制同步重置，避免误判忙线
     if (state.isInCall) {
-      state = state.copyWith(errorMessage: '通话失败，请重试');
-      return false;
+      if (_engine == null) {
+        if (kDebugMode) debugPrint('[CallService] startCall: stale isInCall (engine=null), force reset');
+        state = const CallServiceState();
+        _isStartingCall = false;
+        _isEndingCall = false;
+        _isAcceptingCall = false;
+        _isCancellingCall = false;
+      } else {
+        state = state.copyWith(errorMessage: '通话失败，请重试');
+        return false;
+      }
     }
 
     // ★ 通话前主动探活 WebSocket。浏览器（尤其 Safari 后台 30s 就 kill、
@@ -794,15 +842,19 @@ class CallService extends StateNotifier<CallServiceState> {
     //   ensureAliveForCriticalAction 会 send ping、等 pong、失败就强制重连
     //   并等最多 6s 建连成功，全部走完才放行 create。原生 APK 走 kIsWeb 短路
     //   不进这条路径，保持原有的 fail-fast 行为。
-    if (kIsWeb) {
-      final wsAlive = await _wsService.ensureAliveForCriticalAction();
+    // ★ 修复：Web 和 Android 都做探活，不再 fail-fast。
+    //   Android 切后台重连后 WS state 可能有短暂延迟，直接判断 state 会误判。
+    //   ensureAliveForCriticalAction 会 ping/pong 确认连通，失败才重连。
+    {
+      final wsAlive = await _wsService.ensureAliveForCriticalAction(
+        probeTimeout: const Duration(seconds: 3),
+        reconnectTimeout: const Duration(seconds: 8),
+      );
       if (!wsAlive) {
+        _isStartingCall = false;
         state = state.copyWith(errorMessage: '网络连接异常，请检查网络后重试');
         return false;
       }
-    } else if (_wsService.state != WSConnectionState.connected) {
-      state = state.copyWith(errorMessage: '通话失败，请重试');
-      return false;
     }
 
     try {
@@ -822,7 +874,14 @@ class CallService extends StateNotifier<CallServiceState> {
       );
 
       if (!response.isSuccess || response.data == null) {
-        state = state.copyWith(errorMessage: response.message);
+        // ★ 修复：后端英文错误消息转为中文友好提示
+        String errMsg = response.message ?? '通话失败，请重试';
+        if (errMsg.contains('already in a call')) {
+          errMsg = '对方正在通话中，请稍后再试';
+        } else if (errMsg.contains('user is')) {
+          errMsg = '通话失败，请稍后重试';
+        }
+        state = state.copyWith(errorMessage: errMsg);
         return false;
       }
 
@@ -924,11 +983,13 @@ class CallService extends StateNotifier<CallServiceState> {
       return true;
     } catch (e) {
       if (kDebugMode) debugPrint('[CallService] Start call error: $e');
-
+      _isStartingCall = false;
       final errorMessage = _classifyError(e, '通话');
-
       state = state.copyWith(state: CallState.idle, errorMessage: errorMessage);
       return false;
+    } finally {
+      // ★ 修复：无论成功/失败/异常，必须重置防抖标志，否则下次调用被永久拦截
+      _isStartingCall = false;
     }
   }
 

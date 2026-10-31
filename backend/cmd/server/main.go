@@ -1223,6 +1223,7 @@ func setupRouter(
 				// GetPendingCall: 客户端在 WS 重连 / 页面恢复可见时轮询，
 				// 用来补偿"WS 掉线时错过 incoming_call"这种 web 上高发的场景。
 				call.GET("/pending", callHandler.GetPendingCall)
+				call.POST("/cleanup-self", callHandler.CleanupSelfCalls)
 			}
 
 			// 群会议（声网）

@@ -183,6 +183,23 @@ func (h *Hub) handleRegister(client *Client) {
 
 	// 如果用户是新上线，广播在线状态
 	if isNewOnline {
+		// ★ 修复：用户重新上线时清理残留 calling 通话（异常退出脏数据）
+		go func(uid string) {
+			if h.db == nil {
+				return
+			}
+			var u struct{ ID uint64 }
+			if err := h.db.Table("users").Select("id").Where("uuid = ?", uid).Scan(&u).Error; err != nil || u.ID == 0 {
+				return
+			}
+			result := h.db.Exec(
+				"UPDATE calls SET status='missed', end_time=NOW() WHERE status='calling' AND (caller_id=? OR callee_id=?)",
+				u.ID, u.ID,
+			)
+			if result.RowsAffected > 0 {
+				log.Printf("[WS Hub] 用户 %s 重新上线，清理残留 calling 通话 %d 条", uid, result.RowsAffected)
+			}
+		}(userID)
 		h.broadcastUserStatus(userID, true)
 	}
 
@@ -255,6 +272,54 @@ func (h *Hub) handleUnregister(client *Client) {
 			go h.cluster.LeaveGroupOnline(userID)
 		}
 		// ========== 新增结束 ==========
+		// ★ 修复：用户异常下线，立即结束进行中的通话并通知对方
+		go func(uid string) {
+			if h.db == nil {
+				return
+			}
+			var u struct{ ID uint64 }
+			if err := h.db.Table("users").Select("id").Where("uuid = ?", uid).Scan(&u).Error; err != nil || u.ID == 0 {
+				return
+			}
+			var activeCalls []struct {
+				ID       uint64
+				CallerID uint64
+				CalleeID uint64
+				Status   string
+			}
+			h.db.Table("calls").
+				Select("id, caller_id, callee_id, status").
+				Where("status IN ? AND (caller_id=? OR callee_id=?)",
+					[]string{"calling", "connected"}, u.ID, u.ID).
+				Scan(&activeCalls)
+			if len(activeCalls) == 0 {
+				return
+			}
+			for _, call := range activeCalls {
+				endReason := "missed"
+				if call.Status == "connected" {
+					endReason = "hangup"
+				}
+				h.db.Exec("UPDATE calls SET status=?, end_time=NOW() WHERE id=?", endReason, call.ID)
+				var otherID uint64
+				if call.CallerID == u.ID {
+					otherID = call.CalleeID
+				} else {
+					otherID = call.CallerID
+				}
+				var otherUser struct{ UUID string }
+				if err := h.db.Table("users").Select("uuid").Where("id=?", otherID).Scan(&otherUser).Error; err == nil && otherUser.UUID != "" {
+					h.SendToUserCluster(otherUser.UUID, map[string]interface{}{
+						"type": "call_ended",
+						"data": map[string]interface{}{
+							"call_id": call.ID,
+							"reason":  endReason,
+						},
+					})
+					log.Printf("[WS Hub] 用户 %s 异常下线，通话 %d 已结束(%s)，通知对方 %s", uid, call.ID, endReason, otherUser.UUID)
+				}
+			}
+		}(userID)
 	}
 }
 
