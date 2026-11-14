@@ -778,7 +778,7 @@ func initMongoDB(cfg config.MongoDBConfig) (*mongo.Database, error) {
 		indexCtx, indexCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer indexCancel()
 		now := time.Now()
-		for i := 0; i <= 3; i++ {
+		for i := -2; i <= 3; i++ {
 			t := now.AddDate(0, -i, 0)
 			collName := "messages_" + t.Format("200601")
 			coll := db.Collection(collName)
@@ -800,6 +800,38 @@ func initMongoDB(cfg config.MongoDBConfig) (*mongo.Database, error) {
 			} else {
 				log.Printf("[MongoDB] 索引确认完成 collection=%s", collName)
 			}
+		}
+	}()
+
+	// ★ 每月1号自动为下2个月建索引（覆盖跨年场景）
+	go func() {
+		for {
+			now := time.Now()
+			// 计算下个月1号0点
+			nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
+			time.Sleep(time.Until(nextMonth))
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			cur := time.Now()
+			for i := -2; i <= 2; i++ {
+				t := cur.AddDate(0, -i, 0)
+				collName := "messages_" + t.Format("200601")
+				coll := db.Collection(collName)
+				idxs := []mongo.IndexModel{
+					{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "seq", Value: -1}}},
+					{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "created_at", Value: -1}}},
+					{Keys: bson.D{{Key: "sender_id", Value: 1}, {Key: "created_at", Value: -1}}},
+					{Keys: bson.D{{Key: "msg_id", Value: 1}},
+						Options: options.Index().SetUnique(true).SetSparse(true)},
+					{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "deleted_for", Value: 1}}},
+				}
+				if _, err := coll.Indexes().CreateMany(ctx, idxs); err != nil {
+					log.Printf("[MongoDB] 月度索引失败 collection=%s err=%v", collName, err)
+				} else {
+					log.Printf("[MongoDB] 月度索引完成 collection=%s", collName)
+				}
+			}
+			cancel()
 		}
 	}()
 
