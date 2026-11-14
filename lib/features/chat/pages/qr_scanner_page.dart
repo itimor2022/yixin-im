@@ -422,6 +422,10 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
         return '扫码器正在初始化，请稍后重试';
       case MobileScannerErrorCode.controllerDisposed:
         return '扫码器已关闭，请重新进入页面';
+      case MobileScannerErrorCode.controllerInitializing:
+        return '扫码器正在初始化，请稍后重试';
+      case MobileScannerErrorCode.controllerNotAttached:
+        return '扫码器尚未就绪，请稍后重试';
       case MobileScannerErrorCode.genericError:
         return '相机初始化失败，请重试或使用相册识别';
     }
@@ -528,7 +532,7 @@ class _QRScannerPageState extends ConsumerState<QRScannerPage>
             controller: _controller,
             fit: BoxFit.cover,
             onDetect: _handleDetect,
-            errorBuilder: (context, error, child) {
+            errorBuilder: (context, error) {
               return _buildScannerErrorWidget(error);
               /*
               return Center(

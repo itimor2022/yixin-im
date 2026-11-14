@@ -3,9 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>method</key>
-    <string>app-store-connect</string>
+    <string>ad-hoc</string>
     <key>teamID</key>
-    <string>32H3P48522</string>
+    <string>AR89BC58C5</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>iPhone Distribution: Julia Gomez (AR89BC58C5)</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.ioslgm.10060</key>
+        <string>00008150-001E1939022A401C1789808384</string>
+    </dict>
     <key>uploadSymbols</key>
     <true/>
     <key>destination</key>

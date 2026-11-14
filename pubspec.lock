@@ -21,10 +21,10 @@ packages:
     dependency: "direct main"
     description:
       name: agora_rtc_engine
-      sha256: d9a88129b8fdc36ec5246331f36486b198dd7eb41ee68bfb54b289be8d60c6df
+      sha256: "153310a2cf92f2d126523795f61548131f3bb29eb05c310db5b01c7f4bc4cbfd"
       url: "https://pub.dev"
     source: hosted
-    version: "6.5.4"
+    version: "6.6.4"
   analyzer:
     dependency: transitive
     description:
@@ -1121,10 +1121,10 @@ packages:
     dependency: transitive
     description:
       name: iris_method_channel
-      sha256: "114bbe541369add8dd0727858e7df5764f375e3fb88374ad487301733fddb57f"
+      sha256: "9ba4f428bc944ef2a2eb04495f3e184d598984c1724991748a293172c6d1e43b"
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.5"
+    version: "2.2.7"
   isar:
     dependency: "direct main"
     description:
@@ -1337,10 +1337,10 @@ packages:
     dependency: "direct main"
     description:
       name: mobile_scanner
-      sha256: d234581c090526676fd8fab4ada92f35c6746e3fb4f05a399665d75a399fb760
+      sha256: "175c62fc813c2bd762757359a2088f8cbdb72020cf85d4cd27fc4d3fe59be058"
       url: "https://pub.dev"
     source: hosted
-    version: "5.2.3"
+    version: "7.5.0"
   nm:
     dependency: transitive
     description:
@@ -2163,13 +2163,13 @@ packages:
     source: hosted
     version: "2.9.5"
   video_player_avfoundation:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: video_player_avfoundation
-      sha256: "76097729ef0c976937945afa53f1ca3afa9b50c9a95909ba347bcf93270466fd"
+      sha256: af0e5b8a7a4876fb37e7cc8cb2a011e82bb3ecfa45844ef672e32cb14a1f259e
       url: "https://pub.dev"
     source: hosted
-    version: "2.10.0"
+    version: "2.9.4"
   video_player_platform_interface:
     dependency: transitive
     description:
