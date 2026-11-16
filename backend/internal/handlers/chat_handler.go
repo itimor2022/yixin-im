@@ -416,11 +416,17 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			effectiveMemberCount += chat.FakeMemberCount
 		}
 
+		listName := chat.Name
+		if chat.Type != 1 && strings.TrimSpace(userChat.Remark) != "" {
+			listName = strings.TrimSpace(userChat.Remark)
+		}
 		item := gin.H{
 			"id":                    userChat.ID,
 			"chat_id":               chat.UUID,
 			"type":                  chat.Type,
-			"name":                  chat.Name,
+			"name":                  listName,
+			"group_name": chat.Name,
+			"remark": userChat.Remark,
 			"avatar":                chat.Avatar,
 			"description":           chat.Description,
 			"member_count":          effectiveMemberCount,
@@ -1000,7 +1006,17 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	}
 
 	// 确定返回的名字和头像（私聊用对方用户的信息）
+	myRemark := ""
+	if chat.Type != 1 {
+		var myUC models.UserChat
+		if err := h.db.Select("remark").Where("user_id = ? AND chat_id = ?", currentUser.ID, chat.ID).First(&myUC).Error; err == nil {
+			myRemark = strings.TrimSpace(myUC.Remark)
+		}
+	}
 	respName := chat.Name
+	if myRemark != "" {
+		respName = myRemark
+	}
 	respAvatar := chat.Avatar
 	if chat.Type == 1 && targetUserName != "" {
 		respName = targetUserName
@@ -1012,6 +1028,8 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"uuid":              chat.UUID,
 		"type":              chat.Type,
 		"name":              respName,
+		"group_name": chat.Name,
+		"remark": myRemark,
 		"avatar":            respAvatar,
 		"description":       chat.Description,
 		"owner_id":          chat.OwnerID,
@@ -3263,4 +3281,53 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 		"total":  len(messages),
 		"engine": "mongodb",
 	})
+}
+
+
+// SetChatRemark 设置群备注（仅当前用户自己可见，不影响群名称和其他成员）
+func (h *ChatHandler) SetChatRemark(c *gin.Context) {
+	userID := c.GetString("user_id")
+	chatUUID := c.Param("id")
+
+	var req struct {
+		Remark string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	remark := strings.TrimSpace(req.Remark)
+	if len([]rune(remark)) > 50 {
+		response.Error(c, http.StatusBadRequest, "备注最多50个字")
+		return
+	}
+
+	var user models.User
+	if err := h.db.Where("uuid = ?", userID).First(&user).Error; err != nil {
+		response.Error(c, http.StatusUnauthorized, "请先登录")
+		return
+	}
+
+	var chat models.Chat
+	if err := h.db.Where("uuid = ?", chatUUID).First(&chat).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+	if chat.Type == 1 {
+		response.Error(c, http.StatusBadRequest, "私聊请使用联系人备注")
+		return
+	}
+
+	var userChat models.UserChat
+	if err := h.db.Where("user_id = ? AND chat_id = ?", user.ID, chat.ID).First(&userChat).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+
+	if err := h.db.Model(&userChat).Update("remark", remark).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "操作失败")
+		return
+	}
+
+	response.Success(c, gin.H{"remark": remark})
 }

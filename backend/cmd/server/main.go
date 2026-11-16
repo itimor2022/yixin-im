@@ -1138,6 +1138,7 @@ func setupRouter(
 				chat.GET("/:id/mute-status", chatHandler.GetMemberMuteStatus)
 				chat.POST("/:id/pin", chatHandler.TogglePin)
 				chat.POST("/:id/mute-chat", chatHandler.ToggleMuteChat)
+				chat.PUT("/:id/remark", chatHandler.SetChatRemark)
 				chat.POST("/:id/toggle-unread", chatHandler.ToggleUnread)
 				pinHandler := handlers.NewPinHandler(db, mongoDB, hub)
 				chat.POST("/:id/pin-message", pinHandler.PinMessage)

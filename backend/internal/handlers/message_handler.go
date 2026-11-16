@@ -1729,7 +1729,7 @@ func (h *MessageHandler) EditMessage(c *gin.Context) {
 type ForwardBatchRequest struct {
 	SourceChatID  string   `json:"source_chat_id" binding:"required"`
 	SourceMsgIDs  []string `json:"source_msg_ids" binding:"required,min=1,max=100"`
-	TargetChatIDs []string `json:"target_chat_ids" binding:"required,min=1,max=20"`
+	TargetChatIDs []string `json:"target_chat_ids" binding:"required,min=1,max=100"`
 }
 
 // ForwardBatchResult 单条转发结果

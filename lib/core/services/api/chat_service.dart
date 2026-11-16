@@ -55,6 +55,8 @@ class Chat {
   final bool canPinMessages;
   final bool memberProtection;
   final bool joinApproval; // 是否需要审批加入
+  final String? groupName; // 原始群名（name 在有备注时是备注）
+  final String? remark; // 我对该群的备注（仅自己可见）
   final DateTime createdAt;
 
   Chat({
@@ -86,6 +88,8 @@ class Chat {
     this.canPinMessages = false,
     this.memberProtection = false,
     this.joinApproval = false,
+    this.groupName,
+    this.remark,
     required this.createdAt,
   });
 
@@ -135,6 +139,8 @@ class Chat {
       canPinMessages: json['can_pin_messages'] ?? false,
       memberProtection: json['member_protection'] ?? false,
       joinApproval: json['join_approval'] ?? false,
+      groupName: json['group_name'],
+      remark: json['remark'],
       createdAt:
           _parseOptionalServerDateTime(json['created_at']) ?? DateTime.now(),
     );
@@ -1507,6 +1513,25 @@ class ChatService {
       );
     }
     return ApiResponse<bool>(code: response.code, message: response.message);
+  }
+
+  /// 设置群备注（仅自己可见）
+  Future<ApiResponse<String>> setChatRemark(
+    String chatId,
+    String remark,
+  ) async {
+    final response = await _api.put(
+      '/chat/$chatId/remark',
+      data: {'remark': remark},
+    );
+    if (response.isSuccess) {
+      return ApiResponse<String>(
+        code: 0,
+        data: remark,
+        message: response.message,
+      );
+    }
+    return ApiResponse<String>(code: response.code, message: response.message);
   }
 
   /// 切换会话未读状态

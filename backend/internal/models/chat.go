@@ -90,6 +90,7 @@ type UserChat struct {
 	UserID      uint64     `gorm:"index:idx_user_chat;not null" json:"user_id"`
 	ChatID      uint64     `gorm:"index:idx_user_chat;not null" json:"chat_id"`
 	TargetID    uint64     `gorm:"index" json:"target_id"` // 私聊对方ID
+	Remark      string     `gorm:"type:varchar(100);not null;default:''" json:"-"` // 群备注（仅本人可见）
 	LastMsgID     string     `gorm:"type:varchar(36);default:''" json:"last_msg_id"` // MongoDB msg_id (UUID)
 	LastMsgSeq    uint64     `gorm:"default:0" json:"last_msg_seq"`
 	LastMsgTime   time.Time  `gorm:"type:datetime" json:"last_msg_time"`

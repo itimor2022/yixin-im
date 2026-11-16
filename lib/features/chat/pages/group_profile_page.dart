@@ -177,6 +177,11 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     final String groupName = widget.name?.trim().isNotEmpty == true
         ? widget.name!.trim()
         : '群组';
+    final String originalGroupName =
+        chatDetail?.groupName?.trim().isNotEmpty == true
+            ? chatDetail!.groupName!.trim()
+            : groupName;
+    final String myRemark = chatDetail?.remark?.trim() ?? '';
     final String? groupDesc = chatDetail?.description?.trim().isNotEmpty == true
         ? chatDetail!.description!.trim()
         : null;
@@ -251,11 +256,19 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
                               _buildFlatRow(
                                 isDark: isDark,
                                 label: '群名称',
-                                valueText: groupName,
+                                valueText: originalGroupName,
                                 editable: myRole >= 2,
                                 onEdit: myRole >= 2
                                     ? () => _editGroup(context)
                                     : null,
+                              ),
+                              _buildFlatRow(
+                                isDark: isDark,
+                                label: '群备注',
+                                valueText: myRemark.isNotEmpty ? myRemark : '未设置（仅自己可见）',
+                                isPlaceholder: myRemark.isEmpty,
+                                editable: true,
+                                onEdit: () => _editRemark(context, myRemark),
                               ),
                               _buildFlatRow(
                                 isDark: isDark,
@@ -1266,6 +1279,56 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
     );
   }
 
+  /// 原始群名（widget.name 在有备注时可能是备注）
+  String? _originalGroupName() {
+    final detail = ref.read(chatDetailProvider(widget.groupId)).valueOrNull;
+    final g = detail?.groupName?.trim();
+    if (g != null && g.isNotEmpty) return g;
+    return widget.name;
+  }
+
+  /// 设置群备注（仅自己可见）
+  Future<void> _editRemark(BuildContext context, String current) async {
+    final controller = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('群备注'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 50,
+          decoration: const InputDecoration(
+            hintText: '仅自己可见，其他成员看到的仍是群名称',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result == current) return;
+    final resp = await ref
+        .read(api.chatServiceProvider)
+        .setChatRemark(widget.groupId, result);
+    if (!mounted) return;
+    if (resp.isSuccess) {
+      ref.invalidate(chatDetailProvider(widget.groupId));
+      ref.read(chatListProvider.notifier).loadFromServer();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('设置失败，请重试')),
+      );
+    }
+  }
+
   /// 编辑群组
   void _editGroup(BuildContext context) {
     // 桌面端使用面板模式
@@ -1273,7 +1336,7 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
       ref.read(desktopProfileProvider.notifier).state = DesktopProfileInfo(
         type: DesktopPanelType.groupEdit,
         id: widget.groupId,
-        name: widget.name,
+        name: _originalGroupName(),
         avatar: widget.avatar,
       );
     } else {
@@ -1282,7 +1345,7 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
         createPageRoute(
           builder: (context) => _EditGroupPage(
             chatId: widget.groupId,
-            name: widget.name,
+            name: _originalGroupName(),
             avatar: widget.avatar,
           ),
         ),
