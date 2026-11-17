@@ -1066,7 +1066,9 @@ class _GroupProfilePageState extends ConsumerState<GroupProfilePage> {
       context,
       createPageRoute(
         builder: (context) => _GroupQrCodePage(
-          groupName: chat.name ?? widget.name ?? '群组',
+          groupName: (chat.groupName?.trim().isNotEmpty == true
+              ? chat.groupName!.trim()
+              : (chat.name ?? widget.name ?? '群组')),
           groupAvatar: chat.avatar ?? widget.avatar,
           memberCount: chat.memberCount,
           inviteLink: inviteLink,
@@ -2824,7 +2826,7 @@ class SearchMessagesPage extends ConsumerStatefulWidget {
   final String chatId;
   final String chatName;
 
-  const SearchMessagesPage({required this.chatId, required this.chatName});
+  const SearchMessagesPage({super.key, required this.chatId, required this.chatName});
 
   @override
   ConsumerState<SearchMessagesPage> createState() =>
@@ -3896,10 +3898,20 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
 
     try {
       final apiClient = ref.read(apiClientProvider);
+      final detail = ref.read(chatDetailProvider(widget.chatId)).valueOrNull;
+      final inputName = _nameController.text.trim();
+      final originalName = (detail?.groupName?.trim().isNotEmpty == true)
+          ? detail!.groupName!.trim()
+          : (detail?.name?.trim() ?? widget.name?.trim() ?? '');
+      final myRemark = detail?.remark?.trim() ?? '';
+      // 输入框等于原群名或自己的备注时视为未改名，不提交 name
+      final nameChanged = inputName.isNotEmpty &&
+          inputName != originalName &&
+          inputName != myRemark;
       final response = await apiClient.put(
         '/chat/${widget.chatId}',
         data: {
-          'name': _nameController.text.trim(),
+          if (nameChanged) 'name': inputName,
           'description': _descController.text.trim(),
         },
       );
@@ -3913,13 +3925,14 @@ class _EditGroupPageState extends ConsumerState<_EditGroupPage> {
             .getChatById(widget.chatId);
         if (existingChat != null) {
           final updatedChat = existingChat.copyWith(
-            name: _nameController.text.trim(),
             description: _descController.text.trim().isNotEmpty
                 ? _descController.text.trim()
                 : null,
           );
           ref.read(chatListProvider.notifier).updateChat(updatedChat);
         }
+        // 名称（含群备注优先规则）以服务端为准，避免保存后列表丢失备注
+        ref.read(chatListProvider.notifier).loadFromServer();
         ref.invalidate(chatDetailProvider(widget.chatId));
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

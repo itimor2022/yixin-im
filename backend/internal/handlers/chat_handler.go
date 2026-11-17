@@ -425,8 +425,8 @@ func (h *ChatHandler) GetChatList(c *gin.Context) {
 			"chat_id":               chat.UUID,
 			"type":                  chat.Type,
 			"name":                  listName,
-			"group_name": chat.Name,
-			"remark": userChat.Remark,
+			"group_name":            chat.Name,
+			"remark":                userChat.Remark,
 			"avatar":                chat.Avatar,
 			"description":           chat.Description,
 			"member_count":          effectiveMemberCount,
@@ -1028,8 +1028,8 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"uuid":              chat.UUID,
 		"type":              chat.Type,
 		"name":              respName,
-		"group_name": chat.Name,
-		"remark": myRemark,
+		"group_name":        chat.Name,
+		"remark":            myRemark,
 		"avatar":            respAvatar,
 		"description":       chat.Description,
 		"owner_id":          chat.OwnerID,
@@ -1116,7 +1116,9 @@ func (h *ChatHandler) UpdateChat(c *gin.Context) {
 		"updated_at": time.Now(),
 	}
 	if req.Name != nil && *req.Name != "" {
-		updates["name"] = *req.Name
+		if !chatNameIsOwnRemark(h.db, currentUser.ID, chat.ID, chat.Name, *req.Name) {
+			updates["name"] = *req.Name
+		}
 	}
 	if req.Description != nil {
 		updates["description"] = *req.Description
@@ -3283,7 +3285,6 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 	})
 }
 
-
 // SetChatRemark 设置群备注（仅当前用户自己可见，不影响群名称和其他成员）
 func (h *ChatHandler) SetChatRemark(c *gin.Context) {
 	userID := c.GetString("user_id")
@@ -3330,4 +3331,15 @@ func (h *ChatHandler) SetChatRemark(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"remark": remark})
+}
+
+// chatNameIsOwnRemark 判断请求里的群名是否只是请求者自己群备注的回显（备注仅自己可见，不能写成群名）
+func chatNameIsOwnRemark(db *gorm.DB, userID, chatID uint64, curName, newName string) bool {
+	var uc models.UserChat
+	if err := db.Select("remark").Where("user_id = ? AND chat_id = ?", userID, chatID).First(&uc).Error; err != nil {
+		return false
+	}
+	r := strings.TrimSpace(uc.Remark)
+	n := strings.TrimSpace(newName)
+	return r != "" && n == r && n != strings.TrimSpace(curName)
 }

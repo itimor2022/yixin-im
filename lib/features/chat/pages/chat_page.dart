@@ -2209,6 +2209,26 @@ class _PreviewBubble extends ConsumerWidget {
     final createdAt = message['created_at'] as String?;
     final isMine = senderId == currentUserId;
 
+    // ★ 被撤回的消息不再显示原内容（长按会话预览窗口）
+    if (message['is_revoked'] == true) {
+      final revokedBy = message['revoked_by'] as String? ?? '';
+      final revokeText = revokedBy.isNotEmpty && revokedBy == currentUserId
+          ? '你撤回了一条消息'
+          : (isPrivate ? '对方撤回了一条消息' : '有人撤回了一条消息');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Center(
+          child: Text(
+            revokeText,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.white70,
+            ),
+          ),
+        ),
+      );
+    }
+
     // 获取用户设置的气泡颜色
     final bubbleColors = ref.watch(bubbleColorProvider);
     final outgoingColor = bubbleColors.outgoing;

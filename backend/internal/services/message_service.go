@@ -1,8 +1,6 @@
 package services
 
 import (
-	"sync"
-	"sync/atomic"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"gaoranim/internal/cache"
@@ -30,12 +30,12 @@ import (
 // MessageService 消息服务
 type MessageService struct {
 	searchSvc *SearchService // ES搜索服务，nil时降级
-	mongoDB *mongo.Database
-	db      *gorm.DB
-	cache   *cache.Cache
-	mq      *mq.MessageQueue
-	hub     *ws.Hub
-	mongoCh chan mongoWriteTask // 异步批量写MongoDB channel
+	mongoDB   *mongo.Database
+	db        *gorm.DB
+	cache     *cache.Cache
+	mq        *mq.MessageQueue
+	hub       *ws.Hub
+	mongoCh   chan mongoWriteTask // 异步批量写MongoDB channel
 }
 
 // NewMessageService 创建消息服务
@@ -297,7 +297,6 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 		UpdatedAt:           now,
 	}
 
-
 	// 5. ★ 异步写MongoDB（seq分配后立即释放锁，不再阻塞后续消息）
 
 	// 异步持久化到MongoDB，失败时记录日志（消息已通过Redis/WS下发，不影响实时性）
@@ -315,8 +314,6 @@ func (s *MessageService) SendMessageWithResult(ctx context.Context, params *Send
 			}
 		}(collectionName, msg)
 	}
-
-
 
 	// ★ 写入Redis热数据缓存（最近200条，优先内存读取，降低MongoDB读压力）
 	go func(m *models.Message) {
@@ -384,7 +381,6 @@ func (s *MessageService) publishSyncMessage(msg *models.Message) {
 		log.Printf("[MessageService] publish sync_message failed: chatId=%s msgId=%s err=%v", msg.ChatID, msg.MsgID, err)
 	}
 }
-
 
 // buildMsgPreviewText 根据消息类型生成会话列表预览文本
 func buildMsgPreviewText(msg *models.Message) string {
@@ -493,6 +489,7 @@ func (s *MessageService) publishUserChatSync(msg *models.Message) {
 		_ = s.cache.SetChatLastMsg(cacheCtx, msg.ChatID, lastMsg)
 	}
 }
+
 // SendMessage 发送消息
 func (s *MessageService) SendMessage(ctx context.Context, params *SendMessageParams, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar string, targetUserIDs []string) (*models.Message, error) {
 	result, err := s.SendMessageWithResult(ctx, params, senderName, senderAvatar, senderNicknameColor, senderPremiumType, senderEmojiAvatar, targetUserIDs)
@@ -577,12 +574,19 @@ func (s *MessageService) getMessagesBySeq(
 					if userID != "" {
 						deleted := false
 						for _, uid := range m.DeletedFor {
-							if uid == userID { deleted = true; break }
+							if uid == userID {
+								deleted = true
+								break
+							}
 						}
-						if deleted { continue }
+						if deleted {
+							continue
+						}
 					}
 					// 过滤 clearedAt
-					if clearedAt != nil && !m.CreatedAt.After(*clearedAt) { continue }
+					if clearedAt != nil && !m.CreatedAt.After(*clearedAt) {
+						continue
+					}
 					cached = append(cached, &m)
 				}
 			}
@@ -599,7 +603,6 @@ func (s *MessageService) getMessagesBySeq(
 			)
 		}
 	}
-
 
 	// 构建查询条件
 	filter := bson.M{"chat_id": chatID}
@@ -900,6 +903,35 @@ func (s *MessageService) RevokeMessage(ctx context.Context, chatID, msgID, userI
 					Updates(map[string]interface{}{"last_msg_text": "有人撤回了一条消息", "last_msg_sender": ""})
 			}
 		}
+	}
+
+	// ★ 撤回后同步 chat_last_msg 表：GetChatList 缓存 miss 时从这张表兜底
+	if revokedSeq > 0 && chat.ID > 0 {
+		s.db.Exec("UPDATE chat_last_msg SET last_msg_text = ?, last_msg_sender = ? WHERE chat_id = ? AND last_seq = ?",
+			"有人撤回了一条消息", "", chat.ID, revokedSeq)
+	}
+
+	// ★ 撤回后同步 Redis：GetChatList 优先读 chat:lastmsg 缓存，不更新会一直显示原消息
+	if s.cache != nil {
+		cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cacheCancel()
+		var cached map[string]interface{}
+		if err := s.cache.GetChatLastMsg(cacheCtx, chatID, &cached); err == nil && cached != nil {
+			var cachedSeq int64
+			switch v := cached["seq"].(type) {
+			case float64:
+				cachedSeq = int64(v)
+			case int64:
+				cachedSeq = v
+			}
+			cachedMsgID, _ := cached["msg_id"].(string)
+			if (revokedSeq > 0 && cachedSeq == revokedSeq) || (cachedMsgID != "" && cachedMsgID == msgID) {
+				cached["text"] = "有人撤回了一条消息"
+				cached["sender_name"] = ""
+				_ = s.cache.SetChatLastMsg(cacheCtx, chatID, cached)
+			}
+		}
+		_ = s.cache.DeleteChatMessages(cacheCtx, chatID)
 	}
 
 	return nil
