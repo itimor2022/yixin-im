@@ -233,11 +233,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		if count > 0 {
 			return nil
 		}
-		return tx.Create(&models.UserChat{
-			UserID:   user.ID,
-			ChatID:   chatID,
-			SortTime: sortTime,
-		}).Error
+		uc := models.UserChat{UserID: user.ID, ChatID: chatID, SortTime: sortTime}
+		// ★ 官方群/频道的新用户看不到注册前的历史消息（公告走独立表，不受影响）
+		var chatType int
+		if err := tx.Table("chats").Select("type").Where("id = ?", chatID).Scan(&chatType).Error; err == nil && chatType > 1 {
+			t := time.Now().Add(-time.Second)
+			uc.ClearedAt = &t
+		}
+		return tx.Create(&uc).Error
 	}
 
 	if err := tx.Create(&user).Error; err != nil {
@@ -421,7 +424,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			}
 		}
 	}
-
 
 	// 注册成功后自动初始化钱包
 	var existWallet models.Wallet

@@ -126,6 +126,44 @@ func (h *ChatHandler) getEffectiveMaxMembers(chat *models.Chat) int {
 func (h *ChatHandler) ensureUserChatRecord(tx *gorm.DB, userID uint64, chatID uint64, sortTime time.Time) error {
 	effectiveTime := nowOr(sortTime)
 
+	// ★ 已存在记录只更新不插入：user_chats 的 (user_id, chat_id) 不是唯一索引，
+	// ON CONFLICT 不会触发，直接插入会产生重复行，也会让老成员被误设 cleared_at。
+	var existing int64
+	if err := tx.Table("user_chats").Where("user_id = ? AND chat_id = ?", userID, chatID).Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 {
+		return tx.Table("user_chats").Where("user_id = ? AND chat_id = ?", userID, chatID).Updates(map[string]interface{}{
+			"updated_at":  effectiveTime,
+			"sort_time":   effectiveTime,
+			"is_archived": false,
+		}).Error
+	}
+
+	row := map[string]interface{}{
+		"user_id":     userID,
+		"chat_id":     chatID,
+		"target_id":   0,
+		"is_archived": false,
+		"sort_time":   effectiveTime,
+		"updated_at":  effectiveTime,
+	}
+	// ★ 新入群成员看不到入群前的历史消息：仅首次创建记录时设置 cleared_at。
+	// 减 1 秒是为了避开 datetime 秒级取整，保证入群系统消息可见。
+	var ci struct {
+		UUID string
+		Type int
+	}
+	if err := tx.Table("chats").Select("uuid, type").Where("id = ?", chatID).Scan(&ci).Error; err == nil && ci.Type > 1 && h.joinedRecently(tx, userID, chatID) {
+		row["cleared_at"] = time.Now().Add(-time.Second)
+		// 未读数从入群时的最新 seq 开始算，避免新成员出现巨大红点
+		if h.cache != nil && ci.UUID != "" {
+			if seq, serr := h.cache.GetCurrentMsgSeq(context.Background(), ci.UUID); serr == nil {
+				row["last_read_seq"] = seq
+			}
+		}
+	}
+
 	return tx.Table("user_chats").Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "user_id"},
@@ -136,14 +174,7 @@ func (h *ChatHandler) ensureUserChatRecord(tx *gorm.DB, userID uint64, chatID ui
 			"sort_time":   effectiveTime,
 			"is_archived": false,
 		}),
-	}).Create(map[string]interface{}{
-		"user_id":     userID,
-		"chat_id":     chatID,
-		"target_id":   0,
-		"is_archived": false,
-		"sort_time":   effectiveTime,
-		"updated_at":  effectiveTime,
-	}).Error
+	}).Create(row).Error
 }
 
 func nowOr(t time.Time) time.Time {
@@ -3259,7 +3290,15 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 	defer cancel()
 
 	// 优先走 ES 搜索，降级到 MongoDB 正则搜索
-	if h.searchSvc != nil && h.searchSvc.IsEnabled() {
+	// ★ 有入群可见起点的成员：ES 结果不带入群时间过滤，直接走 MongoDB 路径
+	skipES := false
+	{
+		var ucj models.UserChat
+		if err := h.db.Select("cleared_at").Where("user_id = ? AND chat_id = ?", user.ID, chat.ID).Order("cleared_at DESC").Take(&ucj).Error; err == nil && ucj.ClearedAt != nil && !ucj.ClearedAt.IsZero() {
+			skipES = true
+		}
+	}
+	if !skipES && h.searchSvc != nil && h.searchSvc.IsEnabled() {
 		results, total, err := h.searchSvc.Search(ctx, keyword, chat.UUID, 1, 50)
 		if err == nil {
 			response.Success(c, gin.H{
@@ -3274,6 +3313,7 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 
 	// 降级：MongoDB 正则搜索
 	messages, err := h.msgService.SearchMessages(ctx, chat.UUID, keyword, 50)
+	messages = h.filterMessagesAfterJoin(user.ID, chat.ID, messages)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "搜索失败")
 		return
@@ -3342,4 +3382,28 @@ func chatNameIsOwnRemark(db *gorm.DB, userID, chatID uint64, curName, newName st
 	r := strings.TrimSpace(uc.Remark)
 	n := strings.TrimSpace(newName)
 	return r != "" && n == r && n != strings.TrimSpace(curName)
+}
+
+// filterMessagesAfterJoin 只保留当前用户入群（cleared_at）之后的消息
+func (h *ChatHandler) filterMessagesAfterJoin(userID, chatID uint64, msgs []*models.Message) []*models.Message {
+	var uc models.UserChat
+	if err := h.db.Select("cleared_at").Where("user_id = ? AND chat_id = ?", userID, chatID).Order("cleared_at DESC").Take(&uc).Error; err != nil || uc.ClearedAt == nil || uc.ClearedAt.IsZero() {
+		return msgs
+	}
+	out := make([]*models.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if m != nil && m.CreatedAt.After(*uc.ClearedAt) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// joinedRecently 仅最近刚加入的成员才设置 cleared_at，避免老成员（如隐藏会话后重新打开）丢失历史
+func (h *ChatHandler) joinedRecently(tx *gorm.DB, userID, chatID uint64) bool {
+	var m models.ChatMember
+	if err := tx.Select("joined_at").Where("chat_id = ? AND user_id = ?", chatID, userID).Take(&m).Error; err != nil {
+		return false
+	}
+	return time.Since(m.JoinedAt) < 2*time.Minute
 }

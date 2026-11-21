@@ -1618,6 +1618,11 @@ func (s *MessageService) GetChatMediaMessages(ctx context.Context, chatID, userI
 		"deleted_for": bson.M{"$ne": userID}, // 排除用户已删除的消息
 	}
 
+	// ★ 新入群成员只能看到入群后的媒体/文件/链接
+	if clearedAt, cerr := s.getUserChatClearedAt(chatID, userID); cerr == nil && clearedAt != nil {
+		filter["created_at"] = bson.M{"$gt": *clearedAt}
+	}
+
 	// 如果是链接类型，需要检查内容中是否包含链接
 	if filterType == "link" {
 		filter["content.text"] = bson.M{"$regex": `https?://`, "$options": "i"}
@@ -1721,6 +1726,15 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 		"voice": 0,
 	}
 
+	// ★ 新入群成员的媒体数量只统计入群后的消息
+	clearedAt, _ := s.getUserChatClearedAt(chatID, userID)
+	withCleared := func(f bson.M) bson.M {
+		if clearedAt != nil {
+			f["created_at"] = bson.M{"$gt": *clearedAt}
+		}
+		return f
+	}
+
 	// 搜索最近 12 个月的集合
 	now := time.Now()
 	for i := 0; i < 12; i++ {
@@ -1734,7 +1748,7 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 			"is_revoked":  bson.M{"$ne": true},
 			"deleted_for": bson.M{"$ne": userID},
 		}
-		mediaCount, _ := collection.CountDocuments(ctx, mediaFilter)
+		mediaCount, _ := collection.CountDocuments(ctx, withCleared(mediaFilter))
 		counts["media"] += mediaCount
 
 		// 文件
@@ -1744,7 +1758,7 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 			"is_revoked":  bson.M{"$ne": true},
 			"deleted_for": bson.M{"$ne": userID},
 		}
-		fileCount, _ := collection.CountDocuments(ctx, fileFilter)
+		fileCount, _ := collection.CountDocuments(ctx, withCleared(fileFilter))
 		counts["file"] += fileCount
 
 		// 链接（文本消息中包含URL）
@@ -1755,7 +1769,7 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 			"deleted_for":  bson.M{"$ne": userID},
 			"content.text": bson.M{"$regex": `https?://`, "$options": "i"},
 		}
-		linkCount, _ := collection.CountDocuments(ctx, linkFilter)
+		linkCount, _ := collection.CountDocuments(ctx, withCleared(linkFilter))
 		counts["link"] += linkCount
 
 		// 语音
@@ -1765,7 +1779,7 @@ func (s *MessageService) GetChatMediaCounts(ctx context.Context, chatID, userID 
 			"is_revoked":  bson.M{"$ne": true},
 			"deleted_for": bson.M{"$ne": userID},
 		}
-		voiceCount, _ := collection.CountDocuments(ctx, voiceFilter)
+		voiceCount, _ := collection.CountDocuments(ctx, withCleared(voiceFilter))
 		counts["voice"] += voiceCount
 	}
 
