@@ -168,7 +168,7 @@ android {
         // namespace 依然保留 com.cshim.app，是为了不移动 Kotlin 源码物理路径
         // (AndroidManifest 里的 android:name=".MainActivity" 走 namespace 解析)。
         // Android 12+ AGP 允许 applicationId 与 namespace 不同，属于官方推荐做法。
-        applicationId = "com.cshim.app.v2"
+        applicationId = "com.dbajk.adeq.v108"
         // 由 LEGACY_COMPAT 决定 minSdk：
         //   兼容包 → 26（Android 8.0+，含 Android 10 用户）
         //   精简包 → 30（Android 11+，原始行为）
